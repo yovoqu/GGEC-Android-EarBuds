@@ -1,0 +1,75 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.yotheme'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // 当此库被其他模块依赖时，自动应用的混淆规则
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            // 库模块不自行混淆，由最终 App 的 R8 统一处理，避免公共 API 被提前改名导致 NoClassDefFoundError
+            minifyEnabled false
+            // 启用资源压缩
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+}
+
+// 配置发布AAR到指定目录的task
+tasks.register('exportReleaseAar', Copy) {
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.dir("outputs/aar"))
+    include("yotheme-release.aar")
+
+    // 目标目录
+    def targetDir = "${rootProject.projectDir}/releases"
+    into(targetDir)
+
+    def versionName = "1.0.1"
+
+    // 重命名AAR文件
+    rename { String fileName ->
+        "yotheme-${versionName}.aar"
+    }
+
+    doLast {
+        println "=== AAR包已导出 ==="
+        println "位置: ${targetDir}"
+        println "文件名: yotheme-${versionName}.aar"
+    }
+
+    // 添加inputs和outputs的设置，让Gradle每次都执行此任务
+    inputs.property("timestamp", System.currentTimeMillis())
+    outputs.upToDateWhen { false }
+}

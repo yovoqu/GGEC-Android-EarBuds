@@ -1,0 +1,124 @@
+package com.yovo.lib_bluetooth.internal.classic.error;
+
+import com.yovo.lib_bluetooth.internal.common.error.YoErrorCode;
+
+/**
+ * @author tingfeng.yang
+ * @date 2026-06-18
+ * @description 经典蓝牙 SDK 按能力域（发现、配对、ACL、Profile、SPP、协议等）划分的完整错误码。
+ */
+public enum YoCbtErrorCode implements YoErrorCode {
+
+    // ── GENERAL ──────────────────────────────────────────────────
+    YO_CBT_BLUETOOTH_NOT_SUPPORTED,
+    YO_CBT_BLUETOOTH_DISABLED,
+    YO_CBT_INTERNAL_ERROR,
+
+    // ── PERMISSION ───────────────────────────────────────────────
+    YO_CBT_PERMISSION_SCAN_DENIED,
+    YO_CBT_PERMISSION_CONNECT_DENIED,
+    YO_CBT_PERMISSION_LOCATION_DENIED,
+
+    // ── DISCOVERY ────────────────────────────────────────────────
+    YO_CBT_DISCOVERY_ALREADY_RUNNING,
+    YO_CBT_DISCOVERY_START_FAILED,
+    YO_CBT_DISCOVERY_STOP_FAILED,
+    YO_CBT_DISCOVERY_TIMEOUT,
+    YO_CBT_DISCOVERY_RECEIVER_ERROR,
+
+    // ── PAIRING ──────────────────────────────────────────────────
+    YO_CBT_BONDED_DEVICE_NOT_FOUND,
+    YO_CBT_BOND_START_FAILED,
+    YO_CBT_BOND_CANCEL_FAILED,
+    YO_CBT_BOND_REMOVE_FAILED,
+    YO_CBT_BOND_HIDDEN_API_BLOCKED,
+    YO_CBT_BOND_STATE_UNKNOWN,
+    YO_CBT_BOND_DEVICE_NOT_CONNECTABLE,
+
+    // ── ACL LINK ─────────────────────────────────────────────────
+    YO_CBT_ACL_STATE_UNKNOWN,
+    YO_CBT_ACL_STATE_QUERY_FAILED,
+    YO_CBT_ACL_RECEIVER_ERROR,
+
+    // ── SERVICE DISCOVERY (SDP) ──────────────────────────────────
+    YO_CBT_SDP_START_FAILED,
+    YO_CBT_SDP_TIMEOUT,
+    YO_CBT_SDP_UUID_EMPTY,
+    YO_CBT_SDP_UUID_NOT_MATCHED,
+    YO_CBT_SDP_ACTION_UUID_NOT_RECEIVED,
+    YO_CBT_SDP_CHANNEL_NOT_RESOLVED,
+
+    // ── PROFILE ──────────────────────────────────────────────────
+    YO_CBT_PROFILE_UNSUPPORTED,
+    YO_CBT_PROFILE_TYPE_UNSUPPORTED,
+    YO_CBT_PROFILE_STATE_QUERY_FAILED,
+    YO_CBT_PROFILE_CAPABILITY_UNKNOWN,
+
+    // ── PROFILE PROXY ────────────────────────────────────────────
+    YO_CBT_PROFILE_PROXY_GET_FAILED,
+    YO_CBT_PROFILE_PROXY_NOT_READY,
+    YO_CBT_PROFILE_PROXY_ALREADY_REQUESTED,
+    YO_CBT_PROFILE_PROXY_LIFECYCLE_ERROR,
+
+    // ── A2DP ─────────────────────────────────────────────────────
+    YO_CBT_A2DP_STATE_QUERY_FAILED,
+    YO_CBT_A2DP_PROXY_NOT_READY,
+    YO_CBT_A2DP_ACTIVE_DEVICE_UNAVAILABLE,
+    YO_CBT_A2DP_CODEC_STATE_UNAVAILABLE,
+
+    // ── HEADSET / HFP ────────────────────────────────────────────
+    YO_CBT_HEADSET_STATE_QUERY_FAILED,
+    YO_CBT_HEADSET_PROXY_NOT_READY,
+    YO_CBT_HEADSET_AUDIO_STATE_UNKNOWN,
+    YO_CBT_HEADSET_SCO_STATE_UNAVAILABLE,
+
+    // ── SPP TRANSPORT ────────────────────────────────────────────
+    YO_CBT_SPP_DEVICE_INVALID,
+    YO_CBT_SPP_UUID_INVALID,
+    YO_CBT_SPP_NOT_CONNECTED,
+    YO_CBT_SPP_ALREADY_CONNECTED,
+    YO_CBT_SPP_SOCKET_CREATE_FAILED,
+    YO_CBT_SPP_CONNECT_FAILED,
+    YO_CBT_SPP_CONNECT_TIMEOUT,
+    YO_CBT_SPP_STREAM_OPEN_FAILED,
+    YO_CBT_SPP_WRITE_FAILED,
+    YO_CBT_SPP_READ_FAILED,
+    YO_CBT_SPP_REMOTE_CLOSED,
+    YO_CBT_SPP_LOCAL_CLOSED,
+    YO_CBT_SPP_CONNECTION_ID_NOT_FOUND,
+
+    // ── SPP MULTI-CONNECTION ─────────────────────────────────────
+    YO_CBT_SPP_CONNECTION_KEY_CONFLICT,
+    YO_CBT_SPP_CONNECTION_LIMIT_EXCEEDED,
+    YO_CBT_SPP_CONNECTION_GENERATION_EXPIRED,
+
+    // ── SPP CHANNEL ──────────────────────────────────────────────
+    YO_CBT_SPP_CHANNEL_INVALID,
+    YO_CBT_SPP_CHANNEL_HIDDEN_API_NOT_AVAILABLE,
+    YO_CBT_SPP_CHANNEL_HIDDEN_API_BLOCKED,
+    YO_CBT_SPP_CHANNEL_REFLECTION_FAILED,
+    YO_CBT_SPP_CHANNEL_SOCKET_CREATE_FAILED,
+    YO_CBT_SPP_CHANNEL_CONNECT_FAILED,
+    YO_CBT_SPP_CHANNEL_UNSUPPORTED_ON_ROM,
+    YO_CBT_SPP_CHANNEL_IN_USE,
+
+    // ── PROTOCOL ─────────────────────────────────────────────────
+    YO_CBT_PACKET_ENCODE_FAILED,
+    YO_CBT_PACKET_DECODE_FAILED,
+    YO_CBT_COMMAND_TIMEOUT,
+    YO_CBT_COMMAND_CANCELLED,
+    YO_CBT_RESPONSE_NOT_MATCHED,
+    YO_CBT_COMMAND_QUEUE_FULL,
+
+    // ── LIFECYCLE ────────────────────────────────────────────────
+    YO_CBT_OPERATION_CANCELLED,
+    YO_CBT_TIMEOUT,
+    YO_CBT_RELEASED,
+    YO_CBT_ALREADY_RELEASED,
+    YO_CBT_RELEASE_IN_PROGRESS;
+
+    @Override
+    public String code() {
+        return name();
+    }
+}

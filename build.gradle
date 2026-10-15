@@ -1,3 +1,24 @@
 plugins {
     id 'com.android.application' version '9.4.1' apply false
+    id 'com.android.library' version '9.4.1' apply false
+}
+
+// These libraries use Java 21 collection/stream APIs while minSdk stays at 24.
+// Language desugaring does not ship those runtime APIs, so every Android module
+// has to enable core library desugaring.
+def configureAndroidCoreLibraryDesugaring = { Project androidProject ->
+    def androidExtension = androidProject.extensions.getByName('android')
+    androidExtension.compileOptions.coreLibraryDesugaringEnabled = true
+    androidProject.dependencies.add(
+            'coreLibraryDesugaring',
+            'com.android.tools:desugar_jdk_libs:2.1.5')
+}
+
+subprojects { androidProject ->
+    androidProject.pluginManager.withPlugin('com.android.application') {
+        configureAndroidCoreLibraryDesugaring(androidProject)
+    }
+    androidProject.pluginManager.withPlugin('com.android.library') {
+        configureAndroidCoreLibraryDesugaring(androidProject)
+    }
 }

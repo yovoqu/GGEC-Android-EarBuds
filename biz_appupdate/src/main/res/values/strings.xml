@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="toast_already_latest">当前已是最新版本</string>
+    <string name="toast_check_update_failed">检查更新失败：%1$s</string>
+    <string name="update_dialog_title">发现新版本 %1$s</string>
+    <string name="update_dialog_no_description">暂无更新说明</string>
+    <string name="update_dialog_download">立即更新</string>
+    <string name="update_dialog_later">稍后</string>
+    <string name="update_download_mode_title">选择下载方式</string>
+    <string name="update_download_mode_app_internal">APP 内部下载</string>
+    <string name="update_download_mode_system">系统下载器下载</string>
+    <string name="update_download_mode_browser">浏览器下载</string>
+    <string name="toast_system_download_started">系统下载已开始，完成后可在通知栏查看</string>
+    <string name="toast_browser_download_started">已跳转浏览器下载，请留意浏览器下载进度</string>
+    <string name="toast_download_complete">下载完成：%1$s</string>
+    <string name="toast_download_failed">下载发起失败</string>
+    <string name="toast_download_failed_detail">下载失败：%1$s</string>
+    <string name="toast_browser_download_failed">无法打开浏览器下载，请检查浏览器应用</string>
+    <string name="toast_system_download_failed">系统下载发起失败</string>
+    <string name="download_progress_title">正在下载更新</string>
+    <string name="download_progress_text">下载进度：%1$d%%</string>
+    <string name="download_progress_background">后台下载</string>
+    <string name="install_confirm_title">安装更新</string>
+    <string name="install_confirm_message">已下载 %1$s，是否现在安装？</string>
+    <string name="install_confirm_positive">安装</string>
+    <string name="install_confirm_negative">稍后</string>
+    <string name="local_apk_picker_title">选择本地安装包</string>
+    <string name="local_apk_picker_install">安装</string>
+    <string name="local_apk_picker_cancel">取消</string>
+    <string name="toast_no_installer">未找到可安装 APK 的系统应用</string>
+    <string name="toast_install_permission_denied">未开启“安装未知应用”权限，无法安装</string>
+    <string name="toast_install_verify_failed">安装包校验失败（签名/版本/大小不符），请重新下载</string>
+</resources>

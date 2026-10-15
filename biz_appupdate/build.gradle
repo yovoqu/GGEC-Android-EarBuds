@@ -1,0 +1,82 @@
+plugins {
+    id 'com.android.library'
+}
+
+def pgyProperties = new Properties()
+def pgyLocalFile = rootProject.file("local.properties")
+if (pgyLocalFile.exists()) {
+    pgyLocalFile.withInputStream { pgyProperties.load(it) }
+}
+def pgyApiKey = pgyProperties.getProperty("PGY_API_KEY", project.findProperty("PGY_API_KEY") ?: "")
+def pgyAppKey = pgyProperties.getProperty("PGY_APP_KEY", project.findProperty("PGY_APP_KEY") ?: "")
+
+android {
+    namespace 'com.yovo.biz_appupdate'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+        buildConfigField "String", "PGY_API_KEY", "\"${pgyApiKey}\""
+        buildConfigField "String", "PGY_APP_KEY", "\"${pgyAppKey}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+dependencies {
+    implementation project(':lib_common')
+    implementation project(':yotheme')
+    implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation 'com.google.android.material:material:1.14.0'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-livedata:2.8.7'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+}
+
+tasks.register('checkBizAppUpdateInternalImports') {
+    group = 'verification'
+    description = 'Fail if business modules import biz_appupdate internal packages.'
+    doLast {
+        def rootDir = project.rootDir
+        def offenders = []
+        fileTree(rootDir) {
+            include '**/*.java'
+            include '**/*.kt'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'biz_appupdate/**'
+        }.each { file ->
+            file.text.eachLine { line, index ->
+                def matcher = (line =~ /import\s+(com\.yovo\.biz_appupdate\.internal\.[\w.]+);/)
+                if (matcher) {
+                    offenders << "${file}:${index}: ${matcher.group(1)}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Forbidden biz_appupdate internal imports:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkBizAppUpdateInternalImports'
+}

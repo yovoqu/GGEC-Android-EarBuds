@@ -1,0 +1,16 @@
+package com.yovo.lib_bluetooth.internal.classic.discovery;
+
+/**
+ * @author tingfeng.yang
+ * @date 2026-06-18
+ * @description 设备发现会话的生命周期状态枚举。
+ */
+public enum YoCbtDiscoveryState {
+    IDLE,
+    PREPARING,
+    DISCOVERING,
+    STOPPING,
+    FINISHED,
+    FAILED,
+    RELEASED
+}
