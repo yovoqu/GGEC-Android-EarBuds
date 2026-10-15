@@ -1,0 +1,157 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.lib_common'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+
+}
+
+dependencies {
+    api 'androidx.activity:activity:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation 'com.google.android.material:material:1.14.0'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-livedata:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-process:2.8.7'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+}
+
+def internalPackagePattern = /com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal(?:\.[A-Za-z0-9_]+)+/
+
+tasks.register('checkLibCommonInternalImports') {
+    group = 'verification'
+    description = 'Fail if business modules import or reference lib_common internal packages.'
+    doLast {
+        def offenders = []
+        fileTree(project.rootDir) {
+            include '**/*.java'
+            include '**/*.kt'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'lib_common/**'
+        }.each { file ->
+            file.text.eachLine { line, index ->
+                if (line =~ internalPackagePattern) {
+                    offenders << "${file}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Forbidden lib_common internal references:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkLibCommonPublicApiBoundary') {
+    group = 'verification'
+    description = 'Fail if public API types (models/extension points) leak internal packages.'
+    doLast {
+        def allowedClass = { name ->
+            name.startsWith('Yo')
+                    || name in ['BaseKeepAliveService', 'BaseKeepAliveActionReceiver']
+        }
+        def offenders = []
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            if (rel.contains('/internal/')) {
+                return
+            }
+            def className = file.name - '.java'
+            if (allowedClass(className)) {
+                return
+            }
+            file.text.eachLine { line, index ->
+                if (line =~ /^\s*import\s+(?:static\s+)?com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal/) {
+                    offenders << "${rel}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        // 签名级检查：门面/扩展点也不得在 public/protected 声明中引用 internal 类型。
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            if (rel.contains('/internal/')) {
+                return
+            }
+            def internalSimpleNames = []
+            file.text.eachLine { line, index ->
+                def matcher = (line =~ /^\s*import\s+(?:static\s+)?com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal\.([A-Za-z0-9_]+)/)
+                if (matcher) {
+                    internalSimpleNames << matcher.group(1)
+                }
+            }
+            internalSimpleNames.unique().each { name ->
+                file.text.eachLine { line, index ->
+                    if (line =~ /(?:public|protected)\s+(?!class\b|interface\b|enum\b|@)[^{;]*\b${name}\b/) {
+                        offenders << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Public API must not depend on internal packages:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkLibCommonManifestOwnership') {
+    group = 'verification'
+    description = 'Fail if lib_common manifest aggregates consumer-owned permissions.'
+    doLast {
+        def allowedPermissions = [
+                'android.permission.INTERNET',
+                'android.permission.ACCESS_NETWORK_STATE'
+        ]
+        def manifest = new File(project.projectDir, 'src/main/AndroidManifest.xml')
+        def offenders = []
+        manifest.eachLine { line, index ->
+            def matcher = (line =~ /android:name="(android\.permission\.[A-Z0-9_]+)"/)
+            if (matcher && !allowedPermissions.contains(matcher.group(1))) {
+                offenders << "${line.trim()} (move to the owning consumer module)"
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'lib_common manifest must not declare consumer-owned permissions:\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkLibCommonInternalImports',
+            'checkLibCommonPublicApiBoundary',
+            'checkLibCommonManifestOwnership'
+}

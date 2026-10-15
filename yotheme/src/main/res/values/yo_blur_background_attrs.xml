@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 高斯模糊背景 View 的属性定义 -->
+    <declare-styleable name="YoBlurBackgroundView">
+        <!-- 模糊半径，推荐 0dp ~ 25dp -->
+        <attr name="blur_radius" format="dimension" />
+
+        <!-- 采样率（>0，越大性能越好，细节越少，默认 4） -->
+        <attr name="blur_down_sample" format="float" />
+
+        <!-- 蒙层颜色（在模糊图像上叠加的颜色），默认透明 -->
+        <attr name="blur_overlay_color" format="color" />
+
+        <!-- 统一圆角半径（如果单独四个角都未设置，则使用该值） -->
+        <attr name="blur_corner_radius" format="dimension" />
+
+        <!-- 分别设置四个圆角半径 -->
+        <attr name="blur_corner_radius_top_left" format="dimension" />
+        <attr name="blur_corner_radius_top_right" format="dimension" />
+        <attr name="blur_corner_radius_bottom_left" format="dimension" />
+        <attr name="blur_corner_radius_bottom_right" format="dimension" />
+
+        <!-- 边框宽度与颜色 -->
+        <attr name="blur_border_width" format="dimension" />
+        <attr name="blur_border_color" format="color" />
+
+        <!-- 模糊形状：矩形 / 圆形 / 椭圆 -->
+        <attr name="blur_mode">
+            <enum name="rectangle" value="0" />
+            <enum name="circle" value="1" />
+            <enum name="oval" value="2" />
+        </attr>
+    </declare-styleable>
+
+</resources>

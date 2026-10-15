@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Android 11 及更低：BLUETOOTH / BLUETOOTH_ADMIN 为安装时权限。
+      Android 12+：连接用 BLUETOOTH_CONNECT，cancelDiscovery 与 SDP 用 BLUETOOTH_SCAN。
+      BLUETOOTH 的 maxSdkVersion 放到 31：部分 Android 12 厂商栈在
+      BluetoothSocket.connect() 里仍校验旧的 BLUETOOTH。官方建议是 30，
+      这里只多覆盖 API 31，Android 12L 及以上不再声明。
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="31" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- lib_bluetooth 同时提供 Classic 与 BLE API；BLE 不作为宿主硬件强制要求 -->
+    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    
+</manifest>

@@ -16,3 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "GGEC-Android-EarBuds"
 include ':app'
+include ':lib_common'
+include ':lib_bluetooth'
+include ':biz_appupdate'
+include ':yotheme'
