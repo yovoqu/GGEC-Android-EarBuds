@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- HarmonyOS Symbol compass_fill -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,2.5C17.25,2.5,21.5,6.75,21.5,12C21.5,17.25,17.25,21.5,12,21.5C6.75,21.5,2.5,17.25,2.5,12C2.5,6.75,6.75,2.5,12,2.5ZM15.92,9.14C16.14,8.58,15.42,7.86,14.86,8.08L8.08,11.94C7.52,12.22,7.52,13.02,8.08,13.3L12.34,15.4C12.48,15.47,12.62,15.5,12.77,15.5C13.18,15.5,13.55,15.24,13.7,14.86L15.92,9.14Z" />
+</vector>

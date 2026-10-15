@@ -44,11 +44,64 @@ dependencies {
     implementation project(':lib_bluetooth')
     implementation project(':biz_appupdate')
 
+    implementation files('libs/youi_kit-1.0.0.aar')
     implementation 'androidx.appcompat:appcompat:1.8.0'
+    implementation 'androidx.activity:activity:1.13.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-savedstate:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-livedata:2.9.4'
+    implementation 'androidx.core:core:1.18.0'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'com.google.android.material:material:1.14.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.2.2'
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'androidx.arch.core:core-testing:2.2.0'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+}
+
+tasks.register('checkShellLayerImports') {
+    group = 'verification'
+    description = 'Fail if shell UI, domain, or data cross their layer boundary.'
+    doLast {
+        def offenders = []
+        def scan = { File file, List<String> forbidden ->
+            def rel = rootProject.relativePath(file).replace('\\', '/')
+            if (rel.endsWith('app/src/main/java/com/ggec/earbuds/wiring/ShellGraph.java')) {
+                return
+            }
+            file.eachLine { line, index ->
+                forbidden.each { token ->
+                    if (line.contains(token)) {
+                        offenders << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/*.java'
+        }.each { file ->
+            scan(file, ['com.ggec.earbuds.data'])
+        }
+        scan(project.file('src/main/java/com/ggec/earbuds/ui/shell/ShellViewModel.java'),
+                ['android.view', 'android.widget', 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+        fileTree(project.file('src/main/java/com/ggec/earbuds/domain')) {
+            include '**/*.java'
+        }.each { file ->
+            scan(file, ['com.ggec.earbuds.data', 'com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+        }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/data')) {
+            include '**/*.java'
+        }.each { file ->
+            scan(file, ['com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Shell layer boundary violated:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkShellLayerImports'
 }
