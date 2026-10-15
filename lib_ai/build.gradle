@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.lib_ai'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'org.json:json:20240303'
+}
+
+tasks.withType(Test).configureEach {
+    // android.jar 里的 org.json 是抛异常的桩。单元测试改用 Maven 上的实现。
+    classpath = classpath.filter { file ->
+        def name = file.name
+        name != 'android.jar' && !name.startsWith('mockable-android')
+    }
+}
+
+def publicRoots = [
+        'src/main/java/com/yovo/lib_ai/api/',
+        'src/main/java/com/yovo/lib_ai/endpoint/',
+        'src/main/java/com/yovo/lib_ai/error/',
+        'src/main/java/com/yovo/lib_ai/chat/',
+        'src/main/java/com/yovo/lib_ai/responses/',
+        'src/main/java/com/yovo/lib_ai/messages/'
+]
+
+tasks.register('checkLibAiPublicBoundary') {
+    group = 'verification'
+    description = 'Fail if public lib_ai types depend on internal packages or OkHttp.'
+    doLast {
+        def offenders = []
+        publicRoots.each { root ->
+            fileTree(project.projectDir) {
+                include "${root}**/*.java"
+            }.each { file ->
+                def rel = project.relativePath(file).replace('\\', '/')
+                file.eachLine { line, index ->
+                    if (line =~ /^\s*import\s+(com\.yovo\.lib_ai\.internal\.|okhttp3\.|okio\.)/) {
+                        offenders << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'lib_ai public types must not import internal, OkHttp, or Okio:\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkLibAiPublicBoundary'
+}
