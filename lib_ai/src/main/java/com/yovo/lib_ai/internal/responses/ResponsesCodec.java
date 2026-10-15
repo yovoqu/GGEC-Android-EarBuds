@@ -1,0 +1,253 @@
+package com.yovo.lib_ai.internal.responses;
+
+import androidx.annotation.Nullable;
+
+import com.yovo.lib_ai.internal.json.Jsons;
+import com.yovo.lib_ai.responses.YoResponseInput;
+import com.yovo.lib_ai.responses.YoResponseObject;
+import com.yovo.lib_ai.responses.YoResponseOutputItem;
+import com.yovo.lib_ai.responses.YoResponseRequest;
+import com.yovo.lib_ai.responses.YoResponseStreamEvent;
+import com.yovo.lib_ai.responses.YoResponseTextFormat;
+import com.yovo.lib_ai.responses.YoResponseTool;
+import com.yovo.lib_ai.responses.YoResponseToolChoice;
+import com.yovo.lib_ai.responses.YoResponseUsage;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public final class ResponsesCodec {
+
+    private ResponsesCodec() {
+    }
+
+    public static JSONObject encodeHttp(YoResponseRequest request, boolean stream) throws JSONException {
+        JSONObject json = encode(request, stream);
+        json.remove("generate");
+        return json;
+    }
+
+    public static JSONObject encodeWebSocket(YoResponseRequest request, @Nullable String streamId) throws JSONException {
+        JSONObject json = encode(request, false);
+        json.put("type", ResponsesEvents.CREATE);
+        json.remove("stream");
+        json.remove("background");
+        if (streamId != null) {
+            json.put("stream_id", streamId);
+        }
+        if (request.generate() != null) {
+            json.put("generate", request.generate());
+        }
+        return json;
+    }
+
+    public static JSONObject encodeSteer(String previousResponseId, Object input) throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("type", ResponsesEvents.STEER);
+        json.put("previous_response_id", previousResponseId);
+        json.put("input", input);
+        return json;
+    }
+
+    public static Object encodeInputValue(YoResponseRequest request) throws JSONException {
+        if (request.inputText() != null) {
+            return request.inputText();
+        }
+        return encodeItems(request.inputItems());
+    }
+
+    public static JSONArray encodeItems(List<YoResponseInput> items) throws JSONException {
+        JSONArray array = new JSONArray();
+        for (YoResponseInput item : items) {
+            array.put(encodeItem(item));
+        }
+        return array;
+    }
+
+    public static YoResponseObject decodeResponse(String raw) {
+        return decodeResponse(Jsons.parseObject(raw));
+    }
+
+    public static YoResponseObject decodeResponse(JSONObject json) {
+        JSONArray output = Jsons.optArray(json, "output");
+        List<YoResponseOutputItem> items = new ArrayList<>();
+        if (output != null) {
+            for (int i = 0; i < output.length(); i++) {
+                JSONObject item = output.optJSONObject(i);
+                if (item != null) {
+                    items.add(decodeItem(item));
+                }
+            }
+        }
+        return new YoResponseObject(
+                Jsons.optString(json, "id"),
+                Jsons.optString(json, "status"),
+                Jsons.optString(json, "model"),
+                items,
+                decodeUsage(Jsons.optObject(json, "usage")),
+                json.toString());
+    }
+
+    public static YoResponseStreamEvent decodeEvent(JSONObject json) {
+        return new YoResponseStreamEvent(
+                json.optString("type", ""),
+                Jsons.optString(json, "stream_id"),
+                Jsons.optString(json, "delta"),
+                json.optInt("output_index", -1),
+                json.toString());
+    }
+
+    private static JSONObject encode(YoResponseRequest request, boolean stream) throws JSONException {
+        JSONObject json = Jsons.copy(request.extraFields());
+        json.put("model", request.model());
+        json.put("input", encodeInputValue(request));
+        Jsons.put(json, "instructions", request.instructions());
+        Jsons.put(json, "previous_response_id", request.previousResponseId());
+        if (!request.tools().isEmpty()) {
+            JSONArray tools = new JSONArray();
+            for (YoResponseTool tool : request.tools()) {
+                tools.put(encodeTool(tool));
+            }
+            json.put("tools", tools);
+        }
+        if (request.toolChoice() != null) {
+            json.put("tool_choice", encodeToolChoice(request.toolChoice()));
+        }
+        Jsons.put(json, "parallel_tool_calls", request.parallelToolCalls());
+        Jsons.put(json, "max_output_tokens", request.maxOutputTokens());
+        Jsons.put(json, "temperature", request.temperature());
+        Jsons.put(json, "top_p", request.topP());
+        Jsons.put(json, "store", request.store());
+        if (request.textFormat() != null) {
+            json.put("text", encodeText(request.textFormat()));
+        }
+        if (stream) {
+            json.put("stream", true);
+        } else {
+            json.remove("stream");
+        }
+        json.remove("background");
+        return json;
+    }
+
+    private static JSONObject encodeItem(YoResponseInput item) throws JSONException {
+        if (item.type() == YoResponseInput.Type.RAW) {
+            return item.raw();
+        }
+        JSONObject json = new JSONObject();
+        switch (item.type()) {
+            case MESSAGE -> {
+                json.put("type", "message");
+                json.put("role", item.role());
+                JSONArray content = new JSONArray();
+                JSONObject text = new JSONObject();
+                text.put("type", "input_text");
+                text.put("text", item.text());
+                content.put(text);
+                json.put("content", content);
+            }
+            case FUNCTION_CALL -> {
+                json.put("type", "function_call");
+                json.put("call_id", item.callId());
+                json.put("name", item.name());
+                json.put("arguments", item.arguments());
+            }
+            case FUNCTION_CALL_OUTPUT -> {
+                json.put("type", "function_call_output");
+                json.put("call_id", item.callId());
+                json.put("output", item.output());
+            }
+            case RAW -> {
+                return item.raw();
+            }
+            default -> throw new JSONException("Unsupported input type");
+        }
+        return json;
+    }
+
+    private static JSONObject encodeTool(YoResponseTool tool) throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("type", "function");
+        json.put("name", tool.name());
+        Jsons.put(json, "description", tool.description());
+        json.put("parameters", tool.parameters());
+        Jsons.put(json, "strict", tool.strict());
+        return json;
+    }
+
+    private static Object encodeToolChoice(YoResponseToolChoice choice) throws JSONException {
+        return switch (choice.kind()) {
+            case AUTO -> "auto";
+            case NONE -> "none";
+            case REQUIRED -> "required";
+            case FUNCTION -> {
+                JSONObject json = new JSONObject();
+                json.put("type", "function");
+                json.put("name", choice.functionName());
+                yield json;
+            }
+        };
+    }
+
+    private static JSONObject encodeText(YoResponseTextFormat format) throws JSONException {
+        JSONObject encoded = new JSONObject();
+        JSONObject inner = new JSONObject();
+        switch (format.kind()) {
+            case TEXT -> inner.put("type", "text");
+            case JSON_OBJECT -> inner.put("type", "json_object");
+            case JSON_SCHEMA -> {
+                inner.put("type", "json_schema");
+                inner.put("name", format.name());
+                inner.put("strict", format.strict());
+                inner.put("schema", format.schema());
+            }
+            default -> throw new JSONException("Unsupported text format");
+        }
+        encoded.put("format", inner);
+        return encoded;
+    }
+
+    private static YoResponseOutputItem decodeItem(JSONObject item) {
+        String type = item.optString("type", "");
+        String text = null;
+        JSONArray content = Jsons.optArray(item, "content");
+        if (content != null) {
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < content.length(); i++) {
+                JSONObject part = content.optJSONObject(i);
+                if (part != null && "output_text".equals(part.optString("type"))) {
+                    String piece = Jsons.optString(part, "text");
+                    if (piece != null) {
+                        builder.append(piece);
+                    }
+                }
+            }
+            text = builder.toString();
+        }
+        return new YoResponseOutputItem(
+                type,
+                Jsons.optString(item, "id"),
+                Jsons.optString(item, "role"),
+                Jsons.optString(item, "status"),
+                text,
+                Jsons.optString(item, "name"),
+                Jsons.optString(item, "call_id"),
+                Jsons.optString(item, "arguments"),
+                item.toString());
+    }
+
+    @Nullable
+    private static YoResponseUsage decodeUsage(@Nullable JSONObject usage) {
+        if (usage == null) {
+            return null;
+        }
+        int input = usage.optInt("input_tokens", 0);
+        int output = usage.optInt("output_tokens", 0);
+        int total = usage.has("total_tokens") ? usage.optInt("total_tokens") : input + output;
+        return new YoResponseUsage(input, output, total);
+    }
+}

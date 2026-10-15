@@ -1,0 +1,6 @@
+-keep class com.yovo.lib_ai.api.** { public *; }
+-keep class com.yovo.lib_ai.endpoint.** { public *; }
+-keep class com.yovo.lib_ai.error.** { public *; }
+-keep class com.yovo.lib_ai.chat.** { public *; }
+-keep class com.yovo.lib_ai.responses.** { public *; }
+-keep class com.yovo.lib_ai.messages.** { public *; }
