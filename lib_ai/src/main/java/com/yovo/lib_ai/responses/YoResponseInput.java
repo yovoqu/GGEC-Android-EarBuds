@@ -3,16 +3,14 @@ package com.yovo.lib_ai.responses;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONException;
-import org.json.JSONObject;
+import java.util.List;
 
 public final class YoResponseInput {
 
     public enum Type {
         MESSAGE,
         FUNCTION_CALL,
-        FUNCTION_CALL_OUTPUT,
-        RAW
+        FUNCTION_CALL_OUTPUT
     }
 
     private final Type type;
@@ -28,8 +26,7 @@ public final class YoResponseInput {
     private final String arguments;
     @Nullable
     private final String output;
-    @Nullable
-    private final JSONObject raw;
+    private final List<YoResponseContentPart> parts;
 
     private YoResponseInput(
             Type type,
@@ -39,7 +36,7 @@ public final class YoResponseInput {
             @Nullable String name,
             @Nullable String arguments,
             @Nullable String output,
-            @Nullable JSONObject raw) {
+            @NonNull List<YoResponseContentPart> parts) {
         this.type = type;
         this.role = role;
         this.text = text;
@@ -47,7 +44,7 @@ public final class YoResponseInput {
         this.name = name;
         this.arguments = arguments;
         this.output = output;
-        this.raw = raw;
+        this.parts = parts;
     }
 
     @NonNull
@@ -60,7 +57,18 @@ public final class YoResponseInput {
         if (role.isBlank()) {
             throw new IllegalArgumentException("role is required");
         }
-        return new YoResponseInput(Type.MESSAGE, role, text, null, null, null, null, null);
+        return new YoResponseInput(Type.MESSAGE, role, text, null, null, null, null, List.of());
+    }
+
+    @NonNull
+    public static YoResponseInput message(@NonNull String role, @NonNull YoResponseContentPart... parts) {
+        if (role.isBlank()) {
+            throw new IllegalArgumentException("role is required");
+        }
+        if (parts.length == 0) {
+            throw new IllegalArgumentException("content parts are required");
+        }
+        return new YoResponseInput(Type.MESSAGE, role, null, null, null, null, null, List.of(parts));
     }
 
     @NonNull
@@ -71,7 +79,7 @@ public final class YoResponseInput {
         if (callId.isBlank() || name.isBlank()) {
             throw new IllegalArgumentException("callId and name are required");
         }
-        return new YoResponseInput(Type.FUNCTION_CALL, null, null, callId, name, arguments, null, null);
+        return new YoResponseInput(Type.FUNCTION_CALL, null, null, callId, name, arguments, null, List.of());
     }
 
     @NonNull
@@ -79,16 +87,7 @@ public final class YoResponseInput {
         if (callId.isBlank()) {
             throw new IllegalArgumentException("callId is required");
         }
-        return new YoResponseInput(Type.FUNCTION_CALL_OUTPUT, null, null, callId, null, null, output, null);
-    }
-
-    @NonNull
-    public static YoResponseInput raw(@NonNull JSONObject raw) {
-        try {
-            return new YoResponseInput(Type.RAW, null, null, null, null, null, null, new JSONObject(raw.toString()));
-        } catch (JSONException exception) {
-            throw new IllegalArgumentException("Invalid JSON object", exception);
-        }
+        return new YoResponseInput(Type.FUNCTION_CALL_OUTPUT, null, null, callId, null, null, output, List.of());
     }
 
     @NonNull
@@ -126,15 +125,8 @@ public final class YoResponseInput {
         return output;
     }
 
-    @Nullable
-    public JSONObject raw() {
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return new JSONObject(raw.toString());
-        } catch (JSONException exception) {
-            throw new IllegalArgumentException(exception);
-        }
+    @NonNull
+    public List<YoResponseContentPart> parts() {
+        return parts;
     }
 }

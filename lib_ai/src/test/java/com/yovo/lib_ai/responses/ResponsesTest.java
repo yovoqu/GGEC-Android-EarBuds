@@ -6,7 +6,8 @@ import static org.junit.Assert.assertTrue;
 
 import com.yovo.lib_ai.api.YoAiClient;
 import com.yovo.lib_ai.api.YoResponsesConnection;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
+import com.yovo.lib_ai.platform.sensenova.SenseNovaResponsesPolicy;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.internal.responses.ResponsesCodec;
 import com.yovo.lib_ai.internal.responses.ResponsesLaneTable;
@@ -42,7 +43,6 @@ public final class ResponsesTest {
                 .maxOutputTokens(40)
                 .textFormat(YoResponseTextFormat.jsonSchema("answer", new JSONObject().put("type", "object"), true))
                 .generate(false)
-                .extraFields(new JSONObject().put("stream", true).put("background", true))
                 .build();
 
         JSONObject http = ResponsesCodec.encodeHttp(request, true);
@@ -58,6 +58,30 @@ public final class ResponsesTest {
         assertEquals(false, socket.getBoolean("generate"));
         assertFalse(socket.has("stream"));
         assertFalse(socket.has("background"));
+    }
+
+    @Test
+    public void encodesInputImageParts() throws Exception {
+        YoResponseRequest request = YoResponseRequest.builder()
+                .model("sensenova-6.8-flash-lite")
+                .addInput(YoResponseInput.message(
+                        "user",
+                        YoResponseContentPart.text("图片里面有什么"),
+                        YoResponseContentPart.imageUrl("https://example.com/a.png", "low"),
+                        YoResponseContentPart.imageUrl("data:image/webp;base64,cccc"),
+                        YoResponseContentPart.imageFile("file-api-1")))
+                .build();
+        org.json.JSONArray content = ResponsesCodec.encodeHttp(request, false)
+                .getJSONArray("input")
+                .getJSONObject(0)
+                .getJSONArray("content");
+        assertEquals("input_text", content.getJSONObject(0).getString("type"));
+        assertEquals("input_image", content.getJSONObject(1).getString("type"));
+        assertEquals("https://example.com/a.png", content.getJSONObject(1).getString("image_url"));
+        assertEquals("low", content.getJSONObject(1).getString("detail"));
+        assertEquals("data:image/webp;base64,cccc", content.getJSONObject(2).getString("image_url"));
+        assertEquals("file-api-1", content.getJSONObject(3).getString("file_id"));
+        assertFalse(content.getJSONObject(3).has("image_url"));
     }
 
     @Test
@@ -300,9 +324,22 @@ public final class ResponsesTest {
 
     @Test
     public void endpointToStringRedactsTheKey() {
-        YoOpenAiEndpoint endpoint = YoOpenAiEndpoint.builder().apiKey("super-secret").build();
-        assertFalse(endpoint.toString().contains("super-secret"));
-        assertEquals("Bearer super-secret", endpoint.authHeaders().get("Authorization"));
+        OpenAiPlatform platform = OpenAiPlatform.builder().apiKey("super-secret").build();
+        assertFalse(platform.toString().contains("super-secret"));
+        assertEquals("Bearer super-secret", platform.chatTarget().headers().get("Authorization"));
+        SenseNovaResponsesPolicy policy = new SenseNovaResponsesPolicy(false);
+        YoResponseRequest blocked = YoResponseRequest.builder()
+                .model("sensenova-6.8-flash-lite")
+                .previousResponseId("resp_prev")
+                .input("Hello")
+                .build();
+        boolean rejected = false;
+        try {
+            policy.check(blocked);
+        } catch (IllegalArgumentException exception) {
+            rejected = exception.getMessage().contains("previous_response_id");
+        }
+        assertTrue(rejected);
     }
 
     private static YoResponseStreamListener listener(AtomicReference<String> text, CountDownLatch done) {
@@ -343,7 +380,7 @@ public final class ResponsesTest {
     private static YoAiClient client(MockWebServer server) {
         String baseUrl = server.url("/").toString().replaceAll("/+$", "");
         return YoAiClient.builder()
-                .openAiEndpoint(YoOpenAiEndpoint.builder().baseUrl(baseUrl).apiKey("test-key").build())
+                .platform(OpenAiPlatform.builder().baseUrl(baseUrl).apiKey("test-key").build())
                 .initialRetryDelayMillis(0)
                 .callbackExecutor(Runnable::run)
                 .build();

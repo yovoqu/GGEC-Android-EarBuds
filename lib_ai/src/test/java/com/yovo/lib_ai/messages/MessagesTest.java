@@ -5,7 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.yovo.lib_ai.api.YoAiClient;
-import com.yovo.lib_ai.endpoint.YoAnthropicEndpoint;
+import com.yovo.lib_ai.platform.anthropic.AnthropicPlatform;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.internal.messages.MessageAccumulator;
 import com.yovo.lib_ai.internal.messages.MessagesCodec;
@@ -13,6 +13,7 @@ import com.yovo.lib_ai.internal.messages.MessagesCodec;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,6 +44,28 @@ public final class MessagesTest {
         assertEquals("tool", json.getJSONObject("tool_choice").getString("type"));
         assertEquals("user-1", json.getJSONObject("metadata").getString("user_id"));
         assertFalse(json.has("stream"));
+    }
+
+    @Test
+    public void encodesImageSources() throws Exception {
+        YoMessageRequest request = YoMessageRequest.builder()
+                .model("sensenova-6.8-flash-lite")
+                .maxTokens(32)
+                .addMessage(YoMessageTurn.of("user", List.of(
+                        YoMessageContent.text("描述一下图片内容"),
+                        YoMessageContent.imageUrl("https://example.com/a.png"),
+                        YoMessageContent.imageBase64("image/png", "aaaa"),
+                        YoMessageContent.imageFile("file-api-1"))))
+                .build();
+        org.json.JSONArray content = MessagesCodec.encode(request, false)
+                .getJSONArray("messages")
+                .getJSONObject(0)
+                .getJSONArray("content");
+        assertEquals("url", content.getJSONObject(1).getJSONObject("source").getString("type"));
+        assertEquals("https://example.com/a.png", content.getJSONObject(1).getJSONObject("source").getString("url"));
+        assertEquals("image/png", content.getJSONObject(2).getJSONObject("source").getString("media_type"));
+        assertEquals("aaaa", content.getJSONObject(2).getJSONObject("source").getString("data"));
+        assertEquals("file-api-1", content.getJSONObject(3).getJSONObject("source").getString("file_id"));
     }
 
     @Test
@@ -127,7 +150,7 @@ public final class MessagesTest {
                     """));
             String baseUrl = server.url("/").toString().replaceAll("/+$", "");
             YoAiClient client = YoAiClient.builder()
-                    .anthropicEndpoint(YoAnthropicEndpoint.builder()
+                    .platform(AnthropicPlatform.builder()
                             .baseUrl(baseUrl)
                             .apiKey("test-key")
                             .addBeta("fine-grained-tool-streaming")

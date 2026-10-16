@@ -13,6 +13,8 @@ import com.yovo.lib_ai.chat.YoChatTool;
 import com.yovo.lib_ai.chat.YoChatToolCall;
 import com.yovo.lib_ai.chat.YoChatToolChoice;
 import com.yovo.lib_ai.chat.YoChatUsage;
+import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
+import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.json.Jsons;
 
@@ -29,16 +31,40 @@ public final class ChatCodec {
     }
 
     public static JSONObject encode(YoChatCompletionRequest request, boolean stream) throws JSONException {
-        JSONObject json = Jsons.copy(request.extraFields());
+        return encode(request, stream, OpenAiChatPartEncoder.INSTANCE);
+    }
+
+    public static JSONObject encode(
+            YoChatCompletionRequest request,
+            boolean stream,
+            YoChatPartEncoder partEncoder) throws JSONException {
+        JSONObject json = new JSONObject();
         json.put("model", request.model());
         JSONArray messages = new JSONArray();
         for (YoChatMessage message : request.messages()) {
-            messages.put(encodeMessage(message));
+            messages.put(encodeMessage(message, partEncoder));
         }
         json.put("messages", messages);
         Jsons.put(json, "temperature", request.temperature());
         Jsons.put(json, "top_p", request.topP());
         Jsons.put(json, "max_completion_tokens", request.maxCompletionTokens());
+        Jsons.put(json, "frequency_penalty", request.frequencyPenalty());
+        Jsons.put(json, "presence_penalty", request.presencePenalty());
+        Jsons.put(json, "n", request.n());
+        Jsons.put(json, "seed", request.seed());
+        Jsons.put(json, "store", request.store());
+        Jsons.put(json, "service_tier", request.serviceTier());
+        Jsons.put(json, "reasoning_effort", request.reasoningEffort());
+        if (request.metadata() != null) {
+            json.put("metadata", request.metadata());
+        }
+        if (!request.modalities().isEmpty()) {
+            JSONArray modalities = new JSONArray();
+            for (String modality : request.modalities()) {
+                modalities.put(modality);
+            }
+            json.put("modalities", modalities);
+        }
         if (!request.tools().isEmpty()) {
             JSONArray tools = new JSONArray();
             for (YoChatTool tool : request.tools()) {
@@ -60,7 +86,6 @@ public final class ChatCodec {
             json.put("stop", stop);
         }
         Jsons.put(json, "parallel_tool_calls", request.parallelToolCalls());
-        Jsons.put(json, "reasoning_effort", request.reasoningEffort());
         if (stream) {
             json.put("stream", true);
             JSONObject streamOptions = json.optJSONObject("stream_options");
@@ -101,14 +126,14 @@ public final class ChatCodec {
                 json.toString());
     }
 
-    private static JSONObject encodeMessage(YoChatMessage message) throws JSONException {
+    private static JSONObject encodeMessage(YoChatMessage message, YoChatPartEncoder partEncoder) throws JSONException {
         JSONObject json = new JSONObject();
         json.put("role", message.role());
         YoChatContentPart[] parts = message.parts();
         if (parts != null && parts.length > 0) {
             JSONArray content = new JSONArray();
             for (YoChatContentPart part : parts) {
-                content.put(encodePart(part));
+                content.put(partEncoder.encode(part));
             }
             json.put("content", content);
         } else if (message.content() != null) {
@@ -129,16 +154,7 @@ public final class ChatCodec {
             json.put("tool_calls", calls);
         }
         Jsons.put(json, "tool_call_id", message.toolCallId());
-        return json;
-    }
-
-    private static JSONObject encodePart(YoChatContentPart part) throws JSONException {
-        if (part.raw() != null) {
-            return part.raw();
-        }
-        JSONObject json = new JSONObject();
-        json.put("type", "text");
-        json.put("text", part.text());
+        Jsons.put(json, "refusal", message.refusal());
         return json;
     }
 

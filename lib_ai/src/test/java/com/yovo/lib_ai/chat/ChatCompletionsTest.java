@@ -5,11 +5,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.yovo.lib_ai.api.YoAiClient;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
+import com.yovo.lib_ai.platform.deepseek.DeepSeekChatPartEncoder;
 import com.yovo.lib_ai.error.YoAiHttpException;
 import com.yovo.lib_ai.internal.chat.ChatAccumulator;
 import com.yovo.lib_ai.internal.chat.ChatCodec;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
@@ -56,6 +58,40 @@ public final class ChatCompletionsTest {
         assertEquals("Hi", completion.text());
         assertEquals(4, completion.usage().totalTokens());
         assertTrue(completion.rawJson().contains("future_field"));
+    }
+
+    @Test
+    public void encodesImageAndFileParts() throws Exception {
+        YoChatCompletionRequest request = YoChatCompletionRequest.builder()
+                .model("sensenova-6.8-flash-lite")
+                .addMessage(YoChatMessage.builder()
+                        .role("user")
+                        .parts(
+                                YoChatContentPart.text("图片里面有什么"),
+                                YoChatContentPart.imageUrl("https://example.com/a.png", "low"),
+                                YoChatContentPart.imageUrl("data:image/png;base64,aaaa"),
+                                YoChatContentPart.fileId("file-api-1"),
+                                YoChatContentPart.fileData("bbbb", "a.pdf"))
+                        .build())
+                .build();
+        JSONArray content = ChatCodec.encode(request, false)
+                .getJSONArray("messages")
+                .getJSONObject(0)
+                .getJSONArray("content");
+        assertEquals("text", content.getJSONObject(0).getString("type"));
+        JSONObject image = content.getJSONObject(1).getJSONObject("image_url");
+        assertEquals("https://example.com/a.png", image.getString("url"));
+        assertEquals("low", image.getString("detail"));
+        assertEquals("data:image/png;base64,aaaa", content.getJSONObject(2).getJSONObject("image_url").getString("url"));
+        assertEquals("file-api-1", content.getJSONObject(3).getJSONObject("file").getString("file_id"));
+        assertEquals("a.pdf", content.getJSONObject(4).getJSONObject("file").getString("filename"));
+        assertEquals("bbbb", content.getJSONObject(4).getJSONObject("file").getString("file_data"));
+        JSONArray deepSeek = ChatCodec.encode(request, false, DeepSeekChatPartEncoder.INSTANCE)
+                .getJSONArray("messages")
+                .getJSONObject(0)
+                .getJSONArray("content");
+        assertEquals("file-api-1", deepSeek.getJSONObject(3).getString("file_id"));
+        assertFalse(deepSeek.getJSONObject(3).has("file"));
     }
 
     @Test
@@ -202,7 +238,7 @@ public final class ChatCompletionsTest {
     private static YoAiClient client(MockWebServer server) {
         String baseUrl = server.url("/").toString().replaceAll("/+$", "");
         return YoAiClient.builder()
-                .openAiEndpoint(YoOpenAiEndpoint.builder().baseUrl(baseUrl).apiKey("test-key").build())
+                .platform(OpenAiPlatform.builder().baseUrl(baseUrl).apiKey("test-key").build())
                 .maxRetries(2)
                 .initialRetryDelayMillis(0)
                 .callbackExecutor(Runnable::run)

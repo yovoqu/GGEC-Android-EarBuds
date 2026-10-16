@@ -4,7 +4,8 @@ import androidx.annotation.NonNull;
 
 import com.yovo.lib_ai.api.YoAiCall;
 import com.yovo.lib_ai.api.YoAnthropicMessages;
-import com.yovo.lib_ai.endpoint.YoAnthropicEndpoint;
+import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.protocol.ProtocolSupport;
 import com.yovo.lib_ai.internal.protocol.WirePaths;
@@ -28,19 +29,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class MessagesResource implements YoAnthropicMessages {
 
     private final OkHttpTransport transport;
-    private final YoAnthropicEndpoint endpoint;
+    private final YoServiceTarget target;
+    private final YoMessagesPolicy policy;
     private final Executor network;
     private final OrderedCallbacks callbacks;
     private final CallRegistry registry;
 
     public MessagesResource(
             OkHttpTransport transport,
-            YoAnthropicEndpoint endpoint,
+            YoServiceTarget target,
+            YoMessagesPolicy policy,
             Executor network,
             OrderedCallbacks callbacks,
             CallRegistry registry) {
         this.transport = transport;
-        this.endpoint = endpoint;
+        this.target = target;
+        this.policy = policy;
         this.network = network;
         this.callbacks = callbacks;
         this.registry = registry;
@@ -156,11 +160,12 @@ public final class MessagesResource implements YoAnthropicMessages {
     }
 
     private HttpRequestSpec spec(YoMessageRequest request, boolean stream, CancelToken token) {
+        policy.check(request);
         try {
             return new HttpRequestSpec(
                     "POST",
-                    ProtocolSupport.url(endpoint.baseUrl(), WirePaths.MESSAGES),
-                    ProtocolSupport.jsonHeaders(endpoint.authHeaders(), stream),
+                    ProtocolSupport.url(target.baseUrl(), WirePaths.MESSAGES),
+                    ProtocolSupport.jsonHeaders(target.headers(), stream),
                     MessagesCodec.encode(request, stream).toString(),
                     stream,
                     token);

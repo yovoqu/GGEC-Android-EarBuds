@@ -3,9 +3,6 @@ package com.yovo.lib_ai.responses;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,8 +33,6 @@ public final class YoResponseRequest {
     private final YoResponseTextFormat textFormat;
     @Nullable
     private final Boolean generate;
-    @Nullable
-    private final JSONObject extraFields;
 
     private YoResponseRequest(
             String model,
@@ -53,8 +48,7 @@ public final class YoResponseRequest {
             @Nullable Double topP,
             @Nullable Boolean store,
             @Nullable YoResponseTextFormat textFormat,
-            @Nullable Boolean generate,
-            @Nullable JSONObject extraFields) {
+            @Nullable Boolean generate) {
         this.model = model;
         this.inputText = inputText;
         this.inputItems = inputItems;
@@ -69,7 +63,6 @@ public final class YoResponseRequest {
         this.store = store;
         this.textFormat = textFormat;
         this.generate = generate;
-        this.extraFields = extraFields;
     }
 
     @NonNull
@@ -150,18 +143,6 @@ public final class YoResponseRequest {
         return generate;
     }
 
-    @Nullable
-    public JSONObject extraFields() {
-        if (extraFields == null) {
-            return null;
-        }
-        try {
-            return new JSONObject(extraFields.toString());
-        } catch (JSONException exception) {
-            throw new IllegalArgumentException(exception);
-        }
-    }
-
     public static final class Builder {
         private String model;
         private String inputText;
@@ -178,7 +159,6 @@ public final class YoResponseRequest {
         private Boolean store;
         private YoResponseTextFormat textFormat;
         private Boolean generate;
-        private JSONObject extraFields;
 
         @NonNull
         public Builder model(@NonNull String model) {
@@ -284,16 +264,6 @@ public final class YoResponseRequest {
         }
 
         @NonNull
-        public Builder extraFields(@NonNull JSONObject extraFields) {
-            try {
-                this.extraFields = new JSONObject(extraFields.toString());
-            } catch (JSONException exception) {
-                throw new IllegalArgumentException(exception);
-            }
-            return this;
-        }
-
-        @NonNull
         public YoResponseRequest build() {
             if (model == null) {
                 throw new IllegalArgumentException("model is required");
@@ -315,8 +285,7 @@ public final class YoResponseRequest {
                     topP,
                     store,
                     textFormat,
-                    generate,
-                    extraFields);
+                    generate);
         }
     }
 }
