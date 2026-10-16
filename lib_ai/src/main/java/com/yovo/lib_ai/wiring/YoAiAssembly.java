@@ -3,15 +3,20 @@ package com.yovo.lib_ai.wiring;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiClient;
-import com.yovo.lib_ai.endpoint.YoAnthropicEndpoint;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.api.YoAnthropicMessages;
+import com.yovo.lib_ai.api.YoChatCompletions;
+import com.yovo.lib_ai.api.YoResponses;
 import com.yovo.lib_ai.internal.chat.ChatCompletionsResource;
 import com.yovo.lib_ai.internal.messages.MessagesResource;
 import com.yovo.lib_ai.internal.responses.ResponsesResource;
 import com.yovo.lib_ai.internal.runtime.CallRegistry;
 import com.yovo.lib_ai.internal.runtime.OrderedCallbacks;
 import com.yovo.lib_ai.internal.transport.OkHttpTransport;
+import com.yovo.lib_ai.platform.YoPlatform;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,8 +33,7 @@ public final class YoAiAssembly {
     }
 
     public static YoAiClient open(
-            @Nullable YoOpenAiEndpoint openAi,
-            @Nullable YoAnthropicEndpoint anthropic,
+            List<YoPlatform> platforms,
             int maxRetries,
             long initialRetryDelayMillis,
             long maxRetryDelayMillis,
@@ -64,19 +68,43 @@ public final class YoAiAssembly {
                 maxRetryDelayMillis,
                 Thread::sleep);
         OrderedCallbacks ordered = new OrderedCallbacks(callbacks);
-        ExecutorService callbackToClose = ownedCallback;
-        return new YoAiClient(
-                openAi == null ? null : new ChatCompletionsResource(transport, openAi, network, ordered, registry),
-                openAi == null ? null : new ResponsesResource(
+        Map<String, YoChatCompletions> chat = new LinkedHashMap<>();
+        Map<String, YoResponses> responses = new LinkedHashMap<>();
+        Map<String, YoAnthropicMessages> messages = new LinkedHashMap<>();
+        for (YoPlatform platform : platforms) {
+            if (platform.chatTarget() != null) {
+                chat.put(platform.id(), new ChatCompletionsResource(
+                        transport,
+                        platform.chatTarget(),
+                        platform.chatPartEncoder(),
+                        platform.chatPolicy(),
+                        network,
+                        ordered,
+                        registry));
+            }
+            if (platform.responsesTarget() != null) {
+                responses.put(platform.id(), new ResponsesResource(
                         transport,
                         httpClient,
-                        openAi,
+                        platform.responsesTarget(),
+                        platform.responsesPolicy(),
                         network,
                         ordered,
                         registry,
-                        connectTimeoutMillis),
-                anthropic == null ? null : new MessagesResource(transport, anthropic, network, ordered, registry),
-                () -> shutdown(registry, network, httpClient, callbackToClose));
+                        connectTimeoutMillis));
+            }
+            if (platform.messagesTarget() != null) {
+                messages.put(platform.id(), new MessagesResource(
+                        transport,
+                        platform.messagesTarget(),
+                        platform.messagesPolicy(),
+                        network,
+                        ordered,
+                        registry));
+            }
+        }
+        ExecutorService callbackToClose = ownedCallback;
+        return new YoAiClient(chat, responses, messages, () -> shutdown(registry, network, httpClient, callbackToClose));
     }
 
     private static void shutdown(

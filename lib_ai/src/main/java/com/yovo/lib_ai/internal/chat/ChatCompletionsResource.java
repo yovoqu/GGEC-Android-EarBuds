@@ -8,7 +8,9 @@ import com.yovo.lib_ai.chat.YoChatChunk;
 import com.yovo.lib_ai.chat.YoChatCompletion;
 import com.yovo.lib_ai.chat.YoChatCompletionRequest;
 import com.yovo.lib_ai.chat.YoChatStreamListener;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.chat.YoChatPartEncoder;
+import com.yovo.lib_ai.chat.YoChatRequestPolicy;
+import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.internal.protocol.ProtocolSupport;
 import com.yovo.lib_ai.internal.protocol.WirePaths;
@@ -29,19 +31,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ChatCompletionsResource implements YoChatCompletions {
 
     private final OkHttpTransport transport;
-    private final YoOpenAiEndpoint endpoint;
+    private final YoServiceTarget target;
+    private final YoChatPartEncoder partEncoder;
+    private final YoChatRequestPolicy policy;
     private final Executor network;
     private final OrderedCallbacks callbacks;
     private final CallRegistry registry;
 
     public ChatCompletionsResource(
             OkHttpTransport transport,
-            YoOpenAiEndpoint endpoint,
+            YoServiceTarget target,
+            YoChatPartEncoder partEncoder,
+            YoChatRequestPolicy policy,
             Executor network,
             OrderedCallbacks callbacks,
             CallRegistry registry) {
         this.transport = transport;
-        this.endpoint = endpoint;
+        this.target = target;
+        this.partEncoder = partEncoder;
+        this.policy = policy;
         this.network = network;
         this.callbacks = callbacks;
         this.registry = registry;
@@ -147,12 +155,13 @@ public final class ChatCompletionsResource implements YoChatCompletions {
     }
 
     private HttpRequestSpec spec(YoChatCompletionRequest request, boolean stream, CancelToken token) {
+        policy.check(request);
         try {
             return new HttpRequestSpec(
                     "POST",
-                    ProtocolSupport.url(endpoint.baseUrl(), WirePaths.CHAT_COMPLETIONS),
-                    ProtocolSupport.jsonHeaders(endpoint.authHeaders(), stream),
-                    ChatCodec.encode(request, stream).toString(),
+                    ProtocolSupport.url(target.baseUrl(), WirePaths.CHAT_COMPLETIONS),
+                    ProtocolSupport.jsonHeaders(target.headers(), stream),
+                    ChatCodec.encode(request, stream, partEncoder).toString(),
                     stream,
                     token);
         } catch (JSONException exception) {

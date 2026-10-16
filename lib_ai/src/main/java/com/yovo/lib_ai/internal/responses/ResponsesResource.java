@@ -6,7 +6,8 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.api.YoAiCall;
 import com.yovo.lib_ai.api.YoResponses;
 import com.yovo.lib_ai.api.YoResponsesConnection;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.platform.YoServiceTarget;
+import com.yovo.lib_ai.responses.YoResponsesPolicy;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.protocol.ProtocolSupport;
 import com.yovo.lib_ai.internal.protocol.WirePaths;
@@ -33,7 +34,8 @@ public final class ResponsesResource implements YoResponses {
 
     private final OkHttpTransport transport;
     private final OkHttpClient httpClient;
-    private final YoOpenAiEndpoint endpoint;
+    private final YoServiceTarget target;
+    private final YoResponsesPolicy policy;
     private final Executor network;
     private final OrderedCallbacks callbacks;
     private final CallRegistry registry;
@@ -42,14 +44,16 @@ public final class ResponsesResource implements YoResponses {
     public ResponsesResource(
             OkHttpTransport transport,
             OkHttpClient httpClient,
-            YoOpenAiEndpoint endpoint,
+            YoServiceTarget target,
+            YoResponsesPolicy policy,
             Executor network,
             OrderedCallbacks callbacks,
             CallRegistry registry,
             long connectTimeoutMillis) {
         this.transport = transport;
         this.httpClient = httpClient;
-        this.endpoint = endpoint;
+        this.target = target;
+        this.policy = policy;
         this.network = network;
         this.callbacks = callbacks;
         this.registry = registry;
@@ -95,7 +99,7 @@ public final class ResponsesResource implements YoResponses {
     @NonNull
     @Override
     public YoResponsesConnection connect() {
-        return ResponsesSession.open(httpClient, endpoint, callbacks, connectTimeoutMillis);
+        return ResponsesSession.open(httpClient, target, policy, callbacks, connectTimeoutMillis);
     }
 
     private void read(
@@ -170,12 +174,15 @@ public final class ResponsesResource implements YoResponses {
     }
 
     private HttpRequestSpec spec(YoResponseRequest request, boolean stream, CancelToken token) {
+        policy.check(request);
         try {
+            JSONObject body = ResponsesCodec.encodeHttp(request, stream);
+            policy.apply(body);
             return new HttpRequestSpec(
                     "POST",
-                    ProtocolSupport.url(endpoint.baseUrl(), WirePaths.RESPONSES),
-                    ProtocolSupport.jsonHeaders(endpoint.authHeaders(), stream),
-                    ResponsesCodec.encodeHttp(request, stream).toString(),
+                    ProtocolSupport.url(target.baseUrl(), WirePaths.RESPONSES),
+                    ProtocolSupport.jsonHeaders(target.headers(), stream),
+                    body.toString(),
                     stream,
                     token);
         } catch (JSONException exception) {

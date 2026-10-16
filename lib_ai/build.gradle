@@ -49,11 +49,11 @@ tasks.withType(Test).configureEach {
 
 def publicRoots = [
         'src/main/java/com/yovo/lib_ai/api/',
-        'src/main/java/com/yovo/lib_ai/endpoint/',
         'src/main/java/com/yovo/lib_ai/error/',
         'src/main/java/com/yovo/lib_ai/chat/',
         'src/main/java/com/yovo/lib_ai/responses/',
-        'src/main/java/com/yovo/lib_ai/messages/'
+        'src/main/java/com/yovo/lib_ai/messages/',
+        'src/main/java/com/yovo/lib_ai/platform/'
 ]
 
 tasks.register('checkLibAiPublicBoundary') {

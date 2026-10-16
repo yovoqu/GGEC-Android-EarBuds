@@ -3,6 +3,7 @@ package com.yovo.lib_ai.internal.responses;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.internal.json.Jsons;
+import com.yovo.lib_ai.responses.YoResponseContentPart;
 import com.yovo.lib_ai.responses.YoResponseInput;
 import com.yovo.lib_ai.responses.YoResponseObject;
 import com.yovo.lib_ai.responses.YoResponseOutputItem;
@@ -102,7 +103,7 @@ public final class ResponsesCodec {
     }
 
     private static JSONObject encode(YoResponseRequest request, boolean stream) throws JSONException {
-        JSONObject json = Jsons.copy(request.extraFields());
+        JSONObject json = new JSONObject();
         json.put("model", request.model());
         json.put("input", encodeInputValue(request));
         Jsons.put(json, "instructions", request.instructions());
@@ -135,19 +136,22 @@ public final class ResponsesCodec {
     }
 
     private static JSONObject encodeItem(YoResponseInput item) throws JSONException {
-        if (item.type() == YoResponseInput.Type.RAW) {
-            return item.raw();
-        }
         JSONObject json = new JSONObject();
         switch (item.type()) {
             case MESSAGE -> {
                 json.put("type", "message");
                 json.put("role", item.role());
                 JSONArray content = new JSONArray();
-                JSONObject text = new JSONObject();
-                text.put("type", "input_text");
-                text.put("text", item.text());
-                content.put(text);
+                if (!item.parts().isEmpty()) {
+                    for (YoResponseContentPart part : item.parts()) {
+                        content.put(encodeContentPart(part));
+                    }
+                } else {
+                    JSONObject text = new JSONObject();
+                    text.put("type", "input_text");
+                    text.put("text", item.text());
+                    content.put(text);
+                }
                 json.put("content", content);
             }
             case FUNCTION_CALL -> {
@@ -161,10 +165,44 @@ public final class ResponsesCodec {
                 json.put("call_id", item.callId());
                 json.put("output", item.output());
             }
-            case RAW -> {
-                return item.raw();
-            }
             default -> throw new JSONException("Unsupported input type");
+        }
+        return json;
+    }
+
+    private static JSONObject encodeContentPart(YoResponseContentPart part) throws JSONException {
+        JSONObject json = new JSONObject();
+        switch (part.kind()) {
+            case INPUT_TEXT -> {
+                json.put("type", "input_text");
+                json.put("text", part.text());
+            }
+            case INPUT_IMAGE -> {
+                json.put("type", "input_image");
+                if (part.fileId() != null) {
+                    json.put("file_id", part.fileId());
+                } else {
+                    json.put("image_url", part.imageUrl());
+                    if (part.detail() != null) {
+                        json.put("detail", part.detail());
+                    }
+                }
+            }
+            case INPUT_FILE -> {
+                json.put("type", "input_file");
+                if (part.fileId() != null) {
+                    json.put("file_id", part.fileId());
+                } else if (part.fileData() != null) {
+                    json.put("file_data", part.fileData());
+                    json.put("filename", part.filename());
+                } else {
+                    json.put("file_url", part.fileUrl());
+                }
+                if (part.detail() != null) {
+                    json.put("detail", part.detail());
+                }
+            }
+            default -> throw new JSONException("Unsupported content part");
         }
         return json;
     }

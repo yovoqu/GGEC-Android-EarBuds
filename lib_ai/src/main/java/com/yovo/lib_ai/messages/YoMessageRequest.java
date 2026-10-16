@@ -3,9 +3,6 @@ package com.yovo.lib_ai.messages;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,7 +24,7 @@ public final class YoMessageRequest {
     @Nullable
     private final String userId;
     @Nullable
-    private final JSONObject extraFields;
+    private final Integer topK;
 
     private YoMessageRequest(
             String model,
@@ -40,7 +37,7 @@ public final class YoMessageRequest {
             @Nullable Double topP,
             List<String> stopSequences,
             @Nullable String userId,
-            @Nullable JSONObject extraFields) {
+            @Nullable Integer topK) {
         this.model = model;
         this.maxTokens = maxTokens;
         this.messages = messages;
@@ -51,7 +48,7 @@ public final class YoMessageRequest {
         this.topP = topP;
         this.stopSequences = stopSequences;
         this.userId = userId;
-        this.extraFields = extraFields;
+        this.topK = topK;
     }
 
     @NonNull
@@ -109,16 +106,8 @@ public final class YoMessageRequest {
     }
 
     @Nullable
-    public JSONObject extraFields() {
-        return extraFields == null ? null : copy(extraFields);
-    }
-
-    private static JSONObject copy(JSONObject json) {
-        try {
-            return new JSONObject(json.toString());
-        } catch (JSONException exception) {
-            throw new IllegalArgumentException(exception);
-        }
+    public Integer topK() {
+        return topK;
     }
 
     public static final class Builder {
@@ -132,7 +121,7 @@ public final class YoMessageRequest {
         private Double topP;
         private final List<String> stopSequences = new ArrayList<>();
         private String userId;
-        private JSONObject extraFields;
+        private Integer topK;
 
         @NonNull
         public Builder model(@NonNull String model) {
@@ -206,8 +195,11 @@ public final class YoMessageRequest {
         }
 
         @NonNull
-        public Builder extraFields(@NonNull JSONObject extraFields) {
-            this.extraFields = copy(extraFields);
+        public Builder topK(int topK) {
+            if (topK < 0) {
+                throw new IllegalArgumentException("topK must be >= 0");
+            }
+            this.topK = topK;
             return this;
         }
 
@@ -233,7 +225,7 @@ public final class YoMessageRequest {
                     topP,
                     List.copyOf(stopSequences),
                     userId,
-                    extraFields);
+                    topK);
         }
     }
 }

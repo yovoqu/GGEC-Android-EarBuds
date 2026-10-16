@@ -2,6 +2,7 @@ package com.yovo.lib_ai.internal.messages;
 
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.json.Jsons;
 import com.yovo.lib_ai.messages.YoMessage;
 import com.yovo.lib_ai.messages.YoMessageContent;
@@ -25,7 +26,7 @@ public final class MessagesCodec {
     }
 
     public static JSONObject encode(YoMessageRequest request, boolean stream) throws JSONException {
-        JSONObject json = Jsons.copy(request.extraFields());
+        JSONObject json = new JSONObject();
         json.put("model", request.model());
         json.put("max_tokens", request.maxTokens());
         JSONArray messages = new JSONArray();
@@ -50,6 +51,7 @@ public final class MessagesCodec {
         }
         Jsons.put(json, "temperature", request.temperature());
         Jsons.put(json, "top_p", request.topP());
+        Jsons.put(json, "top_k", request.topK());
         if (!request.stopSequences().isEmpty()) {
             JSONArray stop = new JSONArray();
             for (String item : request.stopSequences()) {
@@ -58,10 +60,7 @@ public final class MessagesCodec {
             json.put("stop_sequences", stop);
         }
         if (request.userId() != null) {
-            JSONObject metadata = Jsons.optObject(json, "metadata");
-            if (metadata == null) {
-                metadata = new JSONObject();
-            }
+            JSONObject metadata = new JSONObject();
             metadata.put("user_id", request.userId());
             json.put("metadata", metadata);
         }
@@ -129,14 +128,29 @@ public final class MessagesCodec {
     }
 
     private static JSONObject encodeBlock(YoMessageContent block) throws JSONException {
-        if (block.type() == YoMessageContent.Type.RAW) {
-            return block.raw();
-        }
         JSONObject json = new JSONObject();
         switch (block.type()) {
             case TEXT -> {
                 json.put("type", "text");
                 json.put("text", block.text());
+            }
+            case IMAGE -> {
+                json.put("type", "image");
+                JSONObject source = new JSONObject();
+                source.put("type", block.sourceType());
+                if ("base64".equals(block.sourceType())) {
+                    source.put("media_type", block.mediaType());
+                    source.put("data", block.payload());
+                } else if ("file".equals(block.sourceType())) {
+                    source.put("file_id", block.payload());
+                } else {
+                    source.put("url", block.payload());
+                }
+                json.put("source", source);
+            }
+            case DOCUMENT -> {
+                json.put("type", "document");
+                json.put("source", encodeSource(block));
             }
             case TOOL_USE -> {
                 json.put("type", "tool_use");
@@ -156,12 +170,27 @@ public final class MessagesCodec {
                     json.put("signature", block.signature());
                 }
             }
-            case RAW -> {
-                return block.raw();
+            case REDACTED_THINKING -> {
+                json.put("type", "redacted_thinking");
+                json.put("data", block.payload());
             }
             default -> throw new JSONException("Unsupported content block");
         }
         return json;
+    }
+
+    private static JSONObject encodeSource(YoMessageContent block) throws JSONException {
+        JSONObject source = new JSONObject();
+        source.put("type", block.sourceType());
+        if ("base64".equals(block.sourceType()) || "text".equals(block.sourceType())) {
+            source.put("media_type", block.mediaType());
+            source.put("data", block.payload());
+        } else if ("file".equals(block.sourceType())) {
+            source.put("file_id", block.payload());
+        } else {
+            source.put("url", block.payload());
+        }
+        return source;
     }
 
     private static JSONObject encodeToolChoice(YoMessageToolChoice choice) throws JSONException {
@@ -183,11 +212,13 @@ public final class MessagesCodec {
         String type = block.optString("type", "");
         return switch (type) {
             case "text" -> YoMessageContent.text(block.optString("text", ""));
+            case "image" -> decodeSource(block, true);
+            case "document" -> decodeSource(block, false);
             case "tool_use" -> {
                 String id = block.optString("id", "");
                 String name = block.optString("name", "");
                 if (id.isBlank() || name.isBlank()) {
-                    yield YoMessageContent.raw(block);
+                    throw new YoAiProtocolException("tool_use requires id and name", block.toString());
                 }
                 JSONObject input = Jsons.optObject(block, "input");
                 yield YoMessageContent.toolUse(id, name, input == null ? new JSONObject() : input);
@@ -195,15 +226,46 @@ public final class MessagesCodec {
             case "tool_result" -> {
                 String toolUseId = block.optString("tool_use_id", "");
                 if (toolUseId.isBlank()) {
-                    yield YoMessageContent.raw(block);
+                    throw new YoAiProtocolException("tool_result requires tool_use_id", block.toString());
                 }
                 yield YoMessageContent.toolResult(toolUseId, block.optString("content", ""));
             }
             case "thinking" -> YoMessageContent.thinking(
                     block.optString("thinking", ""),
                     Jsons.optString(block, "signature"));
-            default -> YoMessageContent.raw(block);
+            case "redacted_thinking" -> YoMessageContent.redactedThinking(block.optString("data", ""));
+            default -> throw new YoAiProtocolException("Unsupported content block: " + type, block.toString());
         };
+    }
+
+    private static YoMessageContent decodeSource(JSONObject block, boolean image) {
+        JSONObject source = Jsons.optObject(block, "source");
+        if (source == null) {
+            throw new YoAiProtocolException("content block requires source", block.toString());
+        }
+        String sourceType = source.optString("type", "");
+        try {
+            return switch (sourceType) {
+                case "url" -> image
+                        ? YoMessageContent.imageUrl(source.optString("url", ""))
+                        : YoMessageContent.documentUrl(source.optString("url", ""));
+                case "base64" -> image
+                        ? YoMessageContent.imageBase64(source.optString("media_type", ""), source.optString("data", ""))
+                        : YoMessageContent.documentBase64(source.optString("media_type", ""), source.optString("data", ""));
+                case "file" -> image
+                        ? YoMessageContent.imageFile(source.optString("file_id", ""))
+                        : YoMessageContent.documentFile(source.optString("file_id", ""));
+                case "text" -> {
+                    if (image) {
+                        throw new YoAiProtocolException("image source does not accept text", block.toString());
+                    }
+                    yield YoMessageContent.documentText(source.optString("data", ""));
+                }
+                default -> throw new YoAiProtocolException("Unsupported source type: " + sourceType, block.toString());
+            };
+        } catch (IllegalArgumentException exception) {
+            throw new YoAiProtocolException(exception.getMessage(), block.toString(), exception);
+        }
     }
 
     @Nullable

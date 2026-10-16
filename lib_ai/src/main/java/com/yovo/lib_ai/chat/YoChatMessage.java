@@ -18,18 +18,22 @@ public final class YoChatMessage {
     private final YoChatToolCall[] toolCalls;
     @Nullable
     private final String toolCallId;
+    @Nullable
+    private final String refusal;
 
     private YoChatMessage(
             String role,
             @Nullable String content,
             @Nullable YoChatContentPart[] parts,
             YoChatToolCall[] toolCalls,
-            @Nullable String toolCallId) {
+            @Nullable String toolCallId,
+            @Nullable String refusal) {
         this.role = role;
         this.content = content;
         this.parts = parts;
         this.toolCalls = toolCalls;
         this.toolCallId = toolCallId;
+        this.refusal = refusal;
     }
 
     @NonNull
@@ -87,12 +91,18 @@ public final class YoChatMessage {
         return toolCallId;
     }
 
+    @Nullable
+    public String refusal() {
+        return refusal;
+    }
+
     public static final class Builder {
         private String role;
         private String content;
         private YoChatContentPart[] parts;
         private YoChatToolCall[] toolCalls = new YoChatToolCall[0];
         private String toolCallId;
+        private String refusal;
 
         @NonNull
         public Builder role(@NonNull String role) {
@@ -128,14 +138,20 @@ public final class YoChatMessage {
         }
 
         @NonNull
+        public Builder refusal(@NonNull String refusal) {
+            this.refusal = refusal;
+            return this;
+        }
+
+        @NonNull
         public YoChatMessage build() {
             if (role == null) {
                 throw new IllegalArgumentException("role is required");
             }
-            if (content == null && (parts == null || parts.length == 0) && toolCalls.length == 0) {
+            if (content == null && (parts == null || parts.length == 0) && toolCalls.length == 0 && refusal == null) {
                 throw new IllegalArgumentException("message content is required");
             }
-            return new YoChatMessage(role, content, parts, toolCalls, toolCallId);
+            return new YoChatMessage(role, content, parts, toolCalls, toolCallId, refusal);
         }
     }
 }

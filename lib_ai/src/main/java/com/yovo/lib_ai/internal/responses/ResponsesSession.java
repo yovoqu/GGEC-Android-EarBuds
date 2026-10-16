@@ -5,7 +5,8 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiCall;
 import com.yovo.lib_ai.api.YoResponsesConnection;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.platform.YoServiceTarget;
+import com.yovo.lib_ai.responses.YoResponsesPolicy;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.error.YoAiTransportException;
@@ -35,22 +36,25 @@ public final class ResponsesSession implements YoResponsesConnection {
 
     private final ResponsesLaneTable lanes = new ResponsesLaneTable();
     private final OrderedCallbacks callbacks;
+    private final YoResponsesPolicy policy;
     private volatile WebSocketPipe pipe;
     private volatile boolean closed;
 
-    private ResponsesSession(OrderedCallbacks callbacks) {
+    private ResponsesSession(OrderedCallbacks callbacks, YoResponsesPolicy policy) {
         this.callbacks = callbacks;
+        this.policy = policy;
     }
 
     public static YoResponsesConnection open(
             OkHttpClient client,
-            YoOpenAiEndpoint endpoint,
+            YoServiceTarget target,
+            YoResponsesPolicy policy,
             OrderedCallbacks callbacks,
             long connectTimeoutMillis) {
-        ResponsesSession session = new ResponsesSession(callbacks);
+        ResponsesSession session = new ResponsesSession(callbacks, policy);
         Request request = new Request.Builder()
-                .url(webSocketUrl(endpoint.baseUrl()))
-                .headers(OkHttpTransport.headersOf(endpoint.authHeaders()))
+                .url(webSocketUrl(target.baseUrl()))
+                .headers(OkHttpTransport.headersOf(target.headers()))
                 .build();
         session.pipe = WebSocketPipe.open(client, request, new WebSocketPipe.Incoming() {
             @Override
@@ -77,7 +81,10 @@ public final class ResponsesSession implements YoResponsesConnection {
         String laneKey = streamId == null ? "" : streamId;
         lanes.begin(laneKey, listener);
         try {
-            pipe.send(ResponsesCodec.encodeWebSocket(request, streamId).toString());
+            policy.check(request);
+            JSONObject body = ResponsesCodec.encodeWebSocket(request, streamId);
+            policy.apply(body);
+            pipe.send(body.toString());
         } catch (JSONException exception) {
             lanes.cancel(laneKey);
             throw new YoAiProtocolException("Failed to encode response.create", null, exception);
@@ -94,6 +101,7 @@ public final class ResponsesSession implements YoResponsesConnection {
             throw new IllegalArgumentException("previousResponseId is required");
         }
         ensureOpen();
+        policy.checkSteer(previousResponseId);
         try {
             pipe.send(ResponsesCodec.encodeSteer(previousResponseId, inputText).toString());
         } catch (JSONException exception) {
@@ -110,6 +118,7 @@ public final class ResponsesSession implements YoResponsesConnection {
             throw new IllegalArgumentException("input is required");
         }
         ensureOpen();
+        policy.checkSteer(previousResponseId);
         try {
             pipe.send(ResponsesCodec.encodeSteer(previousResponseId, ResponsesCodec.encodeItems(inputItems)).toString());
         } catch (JSONException exception) {

@@ -3,32 +3,31 @@ package com.yovo.lib_ai.api;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_ai.endpoint.YoAnthropicEndpoint;
-import com.yovo.lib_ai.endpoint.YoOpenAiEndpoint;
+import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.wiring.YoAiAssembly;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 的调用入口。
- * 一个客户端复用连接池。各资源上的一次性调用在调用线程阻塞，不要在主线程调用。
+ * 按平台绑定调用 Chat Completions、Responses 和 Messages。
+ * 一个客户端复用连接池。一次性调用在调用线程阻塞，不要在主线程调用。
  */
 public final class YoAiClient implements AutoCloseable {
 
-    @Nullable
-    private final YoChatCompletions chat;
-    @Nullable
-    private final YoResponses responses;
-    @Nullable
-    private final YoAnthropicMessages messages;
+    private final Map<String, YoChatCompletions> chat;
+    private final Map<String, YoResponses> responses;
+    private final Map<String, YoAnthropicMessages> messages;
     private final Closer closer;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public YoAiClient(
-            @Nullable YoChatCompletions chat,
-            @Nullable YoResponses responses,
-            @Nullable YoAnthropicMessages messages,
+            @NonNull Map<String, YoChatCompletions> chat,
+            @NonNull Map<String, YoResponses> responses,
+            @NonNull Map<String, YoAnthropicMessages> messages,
             @NonNull Closer closer) {
         this.chat = chat;
         this.responses = responses;
@@ -43,29 +42,32 @@ public final class YoAiClient implements AutoCloseable {
 
     @NonNull
     public YoChatCompletions chatCompletions() {
-        ensureOpen();
-        if (chat == null) {
-            throw new IllegalStateException("OpenAI endpoint is not configured");
-        }
-        return chat;
+        return only(chat, "chat completions");
+    }
+
+    @NonNull
+    public YoChatCompletions chatCompletions(@NonNull String platformId) {
+        return require(chat, platformId, "chat completions");
     }
 
     @NonNull
     public YoResponses responses() {
-        ensureOpen();
-        if (responses == null) {
-            throw new IllegalStateException("OpenAI endpoint is not configured");
-        }
-        return responses;
+        return only(responses, "responses");
+    }
+
+    @NonNull
+    public YoResponses responses(@NonNull String platformId) {
+        return require(responses, platformId, "responses");
     }
 
     @NonNull
     public YoAnthropicMessages messages() {
-        ensureOpen();
-        if (messages == null) {
-            throw new IllegalStateException("Anthropic endpoint is not configured");
-        }
-        return messages;
+        return only(messages, "messages");
+    }
+
+    @NonNull
+    public YoAnthropicMessages messages(@NonNull String platformId) {
+        return require(messages, platformId, "messages");
     }
 
     @Override
@@ -82,16 +84,32 @@ public final class YoAiClient implements AutoCloseable {
         }
     }
 
-    /**
-     * 关闭客户端持有的连接池和线程。由装配根实现。
-     */
+    private <T> T only(Map<String, T> resources, String name) {
+        ensureOpen();
+        if (resources.isEmpty()) {
+            throw new IllegalStateException("No platform provides " + name);
+        }
+        if (resources.size() > 1) {
+            throw new IllegalStateException("Select a platform for " + name);
+        }
+        return resources.values().iterator().next();
+    }
+
+    private <T> T require(Map<String, T> resources, String platformId, String name) {
+        ensureOpen();
+        T resource = resources.get(platformId);
+        if (resource == null) {
+            throw new IllegalStateException("Platform " + platformId + " does not provide " + name);
+        }
+        return resource;
+    }
+
     public interface Closer {
         void close();
     }
 
     public static final class Builder {
-        private YoOpenAiEndpoint openAi;
-        private YoAnthropicEndpoint anthropic;
+        private final List<YoPlatform> platforms = new ArrayList<>();
         private int maxRetries = 2;
         private long initialRetryDelayMillis = 200;
         private long maxRetryDelayMillis = 60_000;
@@ -102,14 +120,13 @@ public final class YoAiClient implements AutoCloseable {
         private Executor callbackExecutor;
 
         @NonNull
-        public Builder openAiEndpoint(@NonNull YoOpenAiEndpoint endpoint) {
-            this.openAi = endpoint;
-            return this;
-        }
-
-        @NonNull
-        public Builder anthropicEndpoint(@NonNull YoAnthropicEndpoint endpoint) {
-            this.anthropic = endpoint;
+        public Builder platform(@NonNull YoPlatform platform) {
+            for (YoPlatform existing : platforms) {
+                if (existing.id().equals(platform.id())) {
+                    throw new IllegalArgumentException("Platform is already configured: " + platform.id());
+                }
+            }
+            platforms.add(platform);
             return this;
         }
 
@@ -139,12 +156,11 @@ public final class YoAiClient implements AutoCloseable {
 
         @NonNull
         public YoAiClient build() {
-            if (openAi == null && anthropic == null) {
-                throw new IllegalArgumentException("At least one endpoint is required");
+            if (platforms.isEmpty()) {
+                throw new IllegalArgumentException("At least one platform is required");
             }
             return YoAiAssembly.open(
-                    openAi,
-                    anthropic,
+                    List.copyOf(platforms),
                     maxRetries,
                     initialRetryDelayMillis,
                     maxRetryDelayMillis,
