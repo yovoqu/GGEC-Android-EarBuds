@@ -4,3 +4,7 @@
 -keep class com.yovo.lib_ai.responses.** { public *; }
 -keep class com.yovo.lib_ai.messages.** { public *; }
 -keep class com.yovo.lib_ai.platform.** { public *; }
+-keep class com.yovo.lib_ai.catalog.** { public *; }
+-keep class com.yovo.lib_ai.models.** { public *; }
+-keep class com.yovo.lib_ai.completion.** { public *; }
+-keep class com.yovo.lib_ai.probe.** { public *; }

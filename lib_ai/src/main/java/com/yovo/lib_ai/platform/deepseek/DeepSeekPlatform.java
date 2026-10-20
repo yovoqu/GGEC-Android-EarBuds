@@ -6,6 +6,8 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.models.OpenAiModelListing;
+import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.AnthropicHeaders;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
@@ -23,10 +25,12 @@ public final class DeepSeekPlatform implements YoPlatform {
 
     public static final String ID = "deepseek";
 
+    private final String id;
     private final YoServiceTarget openAi;
     private final YoServiceTarget messages;
 
-    private DeepSeekPlatform(YoServiceTarget openAi, YoServiceTarget messages) {
+    private DeepSeekPlatform(String id, YoServiceTarget openAi, YoServiceTarget messages) {
+        this.id = id;
         this.openAi = openAi;
         this.messages = messages;
     }
@@ -39,7 +43,13 @@ public final class DeepSeekPlatform implements YoPlatform {
     @NonNull
     @Override
     public String id() {
-        return ID;
+        return id;
+    }
+
+    @NonNull
+    @Override
+    public YoModelListing modelListing() {
+        return new OpenAiModelListing(openAi);
     }
 
     @NonNull
@@ -91,11 +101,18 @@ public final class DeepSeekPlatform implements YoPlatform {
     }
 
     public static final class Builder {
+        private String id = ID;
         private String baseUrl = "https://api.deepseek.com";
         private String anthropicBaseUrl = "https://api.deepseek.com/anthropic";
         private String apiKey;
         private String version = "2023-06-01";
         private final List<String> betas = new ArrayList<>();
+
+        @NonNull
+        public Builder id(@NonNull String id) {
+            this.id = YoServiceTarget.requireText(id, "id");
+            return this;
+        }
 
         @NonNull
         public Builder baseUrl(@NonNull String baseUrl) {
@@ -127,6 +144,7 @@ public final class DeepSeekPlatform implements YoPlatform {
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Authorization", "Bearer " + key);
             return new DeepSeekPlatform(
+                    id,
                     new YoServiceTarget(baseUrl, headers),
                     AnthropicHeaders.target(anthropicBaseUrl, key, version, betas));
         }

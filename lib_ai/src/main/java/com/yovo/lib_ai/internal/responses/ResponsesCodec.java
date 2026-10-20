@@ -147,8 +147,9 @@ public final class ResponsesCodec {
                         content.put(encodeContentPart(part));
                     }
                 } else {
+                    // 助手历史是模型已经说过的话，协议要求标成 output_text，input_text 会被官方接口拒绝。
                     JSONObject text = new JSONObject();
-                    text.put("type", "input_text");
+                    text.put("type", "assistant".equals(item.role()) ? "output_text" : "input_text");
                     text.put("text", item.text());
                     content.put(text);
                 }

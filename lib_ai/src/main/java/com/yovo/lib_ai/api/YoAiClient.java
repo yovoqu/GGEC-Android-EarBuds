@@ -13,7 +13,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 按平台绑定调用 Chat Completions、Responses 和 Messages。
+ * 按平台绑定调用 Chat Completions、Responses 和 Messages，
+ * 以及建立在它们之上的支持服务：模型列表、统一补全和测速。
  * 一个客户端复用连接池。一次性调用在调用线程阻塞，不要在主线程调用。
  */
 public final class YoAiClient implements AutoCloseable {
@@ -21,6 +22,9 @@ public final class YoAiClient implements AutoCloseable {
     private final Map<String, YoChatCompletions> chat;
     private final Map<String, YoResponses> responses;
     private final Map<String, YoAnthropicMessages> messages;
+    private final Map<String, YoModels> models;
+    private final Map<String, YoCompletions> completions;
+    private final Map<String, YoLatencyProbe> probes;
     private final Closer closer;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -28,10 +32,16 @@ public final class YoAiClient implements AutoCloseable {
             @NonNull Map<String, YoChatCompletions> chat,
             @NonNull Map<String, YoResponses> responses,
             @NonNull Map<String, YoAnthropicMessages> messages,
+            @NonNull Map<String, YoModels> models,
+            @NonNull Map<String, YoCompletions> completions,
+            @NonNull Map<String, YoLatencyProbe> probes,
             @NonNull Closer closer) {
         this.chat = chat;
         this.responses = responses;
         this.messages = messages;
+        this.models = models;
+        this.completions = completions;
+        this.probes = probes;
         this.closer = closer;
     }
 
@@ -68,6 +78,36 @@ public final class YoAiClient implements AutoCloseable {
     @NonNull
     public YoAnthropicMessages messages(@NonNull String platformId) {
         return require(messages, platformId, "messages");
+    }
+
+    @NonNull
+    public YoModels models() {
+        return only(models, "model listing");
+    }
+
+    @NonNull
+    public YoModels models(@NonNull String platformId) {
+        return require(models, platformId, "model listing");
+    }
+
+    @NonNull
+    public YoCompletions completions() {
+        return only(completions, "completions");
+    }
+
+    @NonNull
+    public YoCompletions completions(@NonNull String platformId) {
+        return require(completions, platformId, "completions");
+    }
+
+    @NonNull
+    public YoLatencyProbe latencyProbe() {
+        return only(probes, "latency probe");
+    }
+
+    @NonNull
+    public YoLatencyProbe latencyProbe(@NonNull String platformId) {
+        return require(probes, platformId, "latency probe");
     }
 
     @Override
@@ -146,6 +186,43 @@ public final class YoAiClient implements AutoCloseable {
             }
             this.initialRetryDelayMillis = initialRetryDelayMillis;
             return this;
+        }
+
+        @NonNull
+        public Builder maxRetryDelayMillis(long maxRetryDelayMillis) {
+            if (maxRetryDelayMillis < 0) {
+                throw new IllegalArgumentException("maxRetryDelayMillis must be >= 0");
+            }
+            this.maxRetryDelayMillis = maxRetryDelayMillis;
+            return this;
+        }
+
+        @NonNull
+        public Builder connectTimeoutMillis(long connectTimeoutMillis) {
+            this.connectTimeoutMillis = positive(connectTimeoutMillis, "connectTimeoutMillis");
+            return this;
+        }
+
+        /**
+         * 两次读到数据之间允许的最长间隔，不是整个响应的时限。推理模型首字前可能很久没有字节。
+         */
+        @NonNull
+        public Builder readTimeoutMillis(long readTimeoutMillis) {
+            this.readTimeoutMillis = positive(readTimeoutMillis, "readTimeoutMillis");
+            return this;
+        }
+
+        @NonNull
+        public Builder writeTimeoutMillis(long writeTimeoutMillis) {
+            this.writeTimeoutMillis = positive(writeTimeoutMillis, "writeTimeoutMillis");
+            return this;
+        }
+
+        private static long positive(long value, String name) {
+            if (value <= 0) {
+                throw new IllegalArgumentException(name + " must be > 0");
+            }
+            return value;
         }
 
         @NonNull

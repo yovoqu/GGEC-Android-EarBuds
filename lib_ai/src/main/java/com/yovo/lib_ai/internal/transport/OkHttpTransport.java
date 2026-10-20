@@ -65,7 +65,7 @@ public final class OkHttpTransport {
                 return toExchange(response, spec.stream());
             } catch (IOException exception) {
                 if (token.isCancelled() || exception instanceof InterruptedIOException && token.isCancelled()) {
-                    throw new YoAiTransportException("Call cancelled", exception);
+                    throw YoAiTransportException.cancelled(exception);
                 }
                 if (attempt < maxRetries && !token.isCancelled()) {
                     attempt++;
@@ -194,7 +194,7 @@ public final class OkHttpTransport {
                 sleeper.sleep(step);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                throw new YoAiTransportException("Call cancelled", exception);
+                throw YoAiTransportException.cancelled(exception);
             }
             remaining -= step;
         }
@@ -203,7 +203,7 @@ public final class OkHttpTransport {
 
     private static void throwIfCancelled(CancelToken token) {
         if (token.isCancelled()) {
-            throw new YoAiTransportException("Call cancelled", null);
+            throw YoAiTransportException.cancelled(null);
         }
     }
 

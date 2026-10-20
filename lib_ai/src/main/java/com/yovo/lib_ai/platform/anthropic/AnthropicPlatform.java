@@ -7,6 +7,8 @@ import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.models.AnthropicModelListing;
+import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.AnthropicHeaders;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
@@ -22,9 +24,11 @@ public final class AnthropicPlatform implements YoPlatform {
 
     public static final String ID = "anthropic";
 
+    private final String id;
     private final YoServiceTarget messages;
 
-    private AnthropicPlatform(YoServiceTarget messages) {
+    private AnthropicPlatform(String id, YoServiceTarget messages) {
+        this.id = id;
         this.messages = messages;
     }
 
@@ -36,7 +40,13 @@ public final class AnthropicPlatform implements YoPlatform {
     @NonNull
     @Override
     public String id() {
-        return ID;
+        return id;
+    }
+
+    @NonNull
+    @Override
+    public YoModelListing modelListing() {
+        return new AnthropicModelListing(messages);
     }
 
     @Nullable
@@ -88,10 +98,20 @@ public final class AnthropicPlatform implements YoPlatform {
     }
 
     public static final class Builder {
+        private String id = ID;
         private String baseUrl = "https://api.anthropic.com";
         private String apiKey;
         private String version = "2023-06-01";
         private final List<String> betas = new ArrayList<>();
+
+        /**
+         * 同一个客户端里挂多台 Anthropic 兼容主机时，用不同的 id 区分。
+         */
+        @NonNull
+        public Builder id(@NonNull String id) {
+            this.id = YoServiceTarget.requireText(id, "id");
+            return this;
+        }
 
         @NonNull
         public Builder baseUrl(@NonNull String baseUrl) {
@@ -119,7 +139,7 @@ public final class AnthropicPlatform implements YoPlatform {
 
         @NonNull
         public AnthropicPlatform build() {
-            return new AnthropicPlatform(AnthropicHeaders.target(baseUrl, apiKey, version, betas));
+            return new AnthropicPlatform(id, AnthropicHeaders.target(baseUrl, apiKey, version, betas));
         }
     }
 }
