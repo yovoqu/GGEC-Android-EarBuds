@@ -106,6 +106,51 @@ tasks.register('checkShellLayerImports') {
     }
 }
 
+tasks.register('checkAiLayerImports') {
+    group = 'verification'
+    description = 'Fail if the AI feature crosses its layer boundaries.'
+    doLast {
+        def offenders = []
+        def scanTree = { String dir, String pattern, List<String> forbidden ->
+            fileTree(project.file(dir)) {
+                include pattern
+            }.each { File file ->
+                def rel = rootProject.relativePath(file).replace('\\', '/')
+                file.eachLine { line, index ->
+                    forbidden.each { token ->
+                        if (line.contains(token)) {
+                            offenders << "${rel}:${index}: ${line.trim()}"
+                        }
+                    }
+                }
+            }
+        }
+        def base = 'src/main/java/com/ggec/earbuds'
+        // 领域层：纯 Java，不认识 lib_ai、JSON 和任何 Android 层。
+        scanTree("${base}/domain/ai", '**/*.java',
+                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring'])
+        // 数据层：只通过端口和 lib_ai 说话，不碰界面、平台实现和装配。
+        scanTree("${base}/data/ai", '**/*.java',
+                ['com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring'])
+        // 界面层：只依赖用例和领域模型，不直接拿仓库、网关或 lib_ai。
+        scanTree("${base}/ui/ai", '**/*.java',
+                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
+                 'domain.ai.port.AiSettingsRepository', 'domain.ai.port.AiConversationRepository',
+                 'domain.ai.port.AiChatGateway', 'domain.ai.port.AiModelGateway',
+                 'domain.ai.port.AiSpeedTestGateway', 'domain.ai.port.AiPlatformCatalog'])
+        // ViewModel 不持有 Context，也不创建视图。
+        scanTree("${base}/ui/ai", '**/*ViewModel.java',
+                ['android.view', 'android.widget', 'android.content', 'android.app',
+                 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+        // 平台层：只放 Android 实现，不反向依赖界面。
+        scanTree("${base}/platform", '**/*.java',
+                ['com.ggec.earbuds.ui', 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+        if (!offenders.isEmpty()) {
+            throw new GradleException('AI layer boundary violated:\n' + offenders.join('\n'))
+        }
+    }
+}
+
 tasks.named('preBuild').configure {
-    dependsOn 'checkShellLayerImports'
+    dependsOn 'checkShellLayerImports', 'checkAiLayerImports'
 }
