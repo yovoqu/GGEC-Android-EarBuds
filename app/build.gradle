@@ -42,6 +42,7 @@ android {
 dependencies {
     implementation project(':lib_common')
     implementation project(':lib_bluetooth')
+    implementation project(':lib_ai')
     implementation project(':biz_appupdate')
 
     implementation files('libs/youi_kit-1.0.0.aar')
@@ -57,6 +58,9 @@ dependencies {
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'androidx.arch.core:core-testing:2.2.0'
+    // android.jar 里的 org.json 是抛异常的桩，数据层的 JSON 编解码测试需要真实实现。
+    testImplementation 'org.json:json:20240303'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
 }
