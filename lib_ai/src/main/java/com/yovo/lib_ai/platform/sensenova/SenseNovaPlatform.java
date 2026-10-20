@@ -7,6 +7,8 @@ import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.models.OpenAiModelListing;
+import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.AnthropicHeaders;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
@@ -24,14 +26,17 @@ public final class SenseNovaPlatform implements YoPlatform {
 
     public static final String ID = "sensenova";
 
+    private final String id;
     private final YoServiceTarget openAi;
     private final YoServiceTarget messages;
     private final YoResponsesPolicy responsesPolicy;
 
     private SenseNovaPlatform(
+            String id,
             YoServiceTarget openAi,
             YoServiceTarget messages,
             YoResponsesPolicy responsesPolicy) {
+        this.id = id;
         this.openAi = openAi;
         this.messages = messages;
         this.responsesPolicy = responsesPolicy;
@@ -45,7 +50,13 @@ public final class SenseNovaPlatform implements YoPlatform {
     @NonNull
     @Override
     public String id() {
-        return ID;
+        return id;
+    }
+
+    @NonNull
+    @Override
+    public YoModelListing modelListing() {
+        return new OpenAiModelListing(openAi);
     }
 
     @NonNull
@@ -97,12 +108,19 @@ public final class SenseNovaPlatform implements YoPlatform {
     }
 
     public static final class Builder {
+        private String id = ID;
         private String baseUrl = "https://token.sensenova.cn";
         private String apiKey;
         private String version = "2023-06-01";
         private final List<String> betas = new ArrayList<>();
         @Nullable
         private Boolean enableThinking;
+
+        @NonNull
+        public Builder id(@NonNull String id) {
+            this.id = YoServiceTarget.requireText(id, "id");
+            return this;
+        }
 
         @NonNull
         public Builder baseUrl(@NonNull String baseUrl) {
@@ -134,6 +152,7 @@ public final class SenseNovaPlatform implements YoPlatform {
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Authorization", "Bearer " + key);
             return new SenseNovaPlatform(
+                    id,
                     new YoServiceTarget(baseUrl, headers),
                     AnthropicHeaders.target(baseUrl, key, version, betas),
                     new SenseNovaResponsesPolicy(enableThinking));

@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.responses.YoResponsesPolicy;
 
 /**
@@ -36,4 +37,12 @@ public interface YoPlatform {
 
     @NonNull
     YoMessagesPolicy messagesPolicy();
+
+    /**
+     * 平台怎样列出自己的模型。不支持列表的平台返回空，调用方改用手动输入模型名。
+     */
+    @Nullable
+    default YoModelListing modelListing() {
+        return null;
+    }
 }

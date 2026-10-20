@@ -7,6 +7,8 @@ import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
+import com.yovo.lib_ai.models.OpenAiModelListing;
+import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.responses.YoResponsesPolicy;
@@ -21,9 +23,11 @@ public final class OpenAiPlatform implements YoPlatform {
 
     public static final String ID = "openai";
 
+    private final String id;
     private final YoServiceTarget target;
 
-    private OpenAiPlatform(YoServiceTarget target) {
+    private OpenAiPlatform(String id, YoServiceTarget target) {
+        this.id = id;
         this.target = target;
     }
 
@@ -35,7 +39,13 @@ public final class OpenAiPlatform implements YoPlatform {
     @NonNull
     @Override
     public String id() {
-        return ID;
+        return id;
+    }
+
+    @NonNull
+    @Override
+    public YoModelListing modelListing() {
+        return new OpenAiModelListing(target);
     }
 
     @NonNull
@@ -87,12 +97,22 @@ public final class OpenAiPlatform implements YoPlatform {
     }
 
     public static final class Builder {
+        private String id = ID;
         private String baseUrl = "https://api.openai.com";
         private String apiKey;
         @Nullable
         private String organization;
         @Nullable
         private String project;
+
+        /**
+         * 同一个客户端里挂多台 OpenAI 兼容主机时，用不同的 id 区分。
+         */
+        @NonNull
+        public Builder id(@NonNull String id) {
+            this.id = YoServiceTarget.requireText(id, "id");
+            return this;
+        }
 
         @NonNull
         public Builder baseUrl(@NonNull String baseUrl) {
@@ -129,7 +149,7 @@ public final class OpenAiPlatform implements YoPlatform {
             if (project != null && !project.isBlank()) {
                 headers.put("OpenAI-Project", project.trim());
             }
-            return new OpenAiPlatform(new YoServiceTarget(baseUrl, headers));
+            return new OpenAiPlatform(id, new YoServiceTarget(baseUrl, headers));
         }
     }
 }
