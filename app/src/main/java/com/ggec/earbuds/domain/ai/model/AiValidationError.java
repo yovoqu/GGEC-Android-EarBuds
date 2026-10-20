@@ -1,0 +1,17 @@
+package com.ggec.earbuds.domain.ai.model;
+
+public enum AiValidationError {
+    API_KEY_EMPTY,
+    API_KEY_INVALID,
+    BASE_URL_REQUIRED,
+    BASE_URL_INVALID,
+    BASE_URL_NOT_HTTPS,
+    NAME_EMPTY,
+    PROTOCOL_UNSUPPORTED,
+    MODEL_ID_EMPTY,
+    MODEL_ID_INVALID,
+    PLATFORM_UNKNOWN,
+    PLATFORM_NOT_CONFIGURED,
+    MODEL_UNKNOWN,
+    PROMPT_TOO_LONG
+}
