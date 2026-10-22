@@ -32,10 +32,6 @@ public final class AiComposerView extends LinearLayout {
 
         void onStop();
 
-        void onModelClick();
-
-        void onDisabledClick();
-
         void onDraftChanged(@NonNull String draft);
     }
 
@@ -86,11 +82,6 @@ public final class AiComposerView extends LinearLayout {
         input.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_M),
                 theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_XS));
         YoFonts.applyRegular(input);
-        input.setOnClickListener(view -> {
-            if (!enabled && listener != null) {
-                listener.onDisabledClick();
-            }
-        });
         field.addView(input, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -103,24 +94,13 @@ public final class AiComposerView extends LinearLayout {
         chip.setOrientation(HORIZONTAL);
         chip.setGravity(Gravity.CENTER_VERTICAL);
         chip.setPadding(theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS),
-                theme.dp(AiTheme.SPACE_S), theme.dp(AiTheme.SPACE_XS));
-        chip.setBackground(theme.pressable(AiTheme.SPACE_S));
+                theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS));
         chipText = theme.text(AiTheme.TEXT_CAPTION, theme.text3, AiTheme.Weight.MEDIUM);
         chipText.setSingleLine(true);
         chipText.setEllipsize(TextUtils.TruncateAt.END);
         chipText.setMaxWidth(theme.dp(230));
         chip.addView(chipText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        ImageView chevron = theme.icon(R.drawable.ic_ai_chevron_down, theme.text3);
-        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(theme.dp(14), theme.dp(14));
-        chevronParams.setMarginStart(theme.dp(AiTheme.SPACE_XS));
-        chip.addView(chevron, chevronParams);
-        chip.setContentDescription(theme.context.getString(R.string.ai_chip_choose_model));
-        chip.setOnClickListener(view -> {
-            if (listener != null) {
-                listener.onModelClick();
-            }
-        });
         bottom.addView(chip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, theme.dp(36)));
         bottom.addView(new View(theme.context), new LinearLayout.LayoutParams(0, 1, 1f));
 

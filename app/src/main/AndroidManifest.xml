@@ -22,13 +22,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".ui.ai.settings.AiSettingsActivity"
-            android:exported="false" />
-        <activity
-            android:name=".ui.ai.settings.AiPlatformActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
     </application>
 
 </manifest>

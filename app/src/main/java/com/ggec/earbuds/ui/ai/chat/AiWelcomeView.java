@@ -28,10 +28,6 @@ public final class AiWelcomeView extends ScrollView {
 
     public interface Listener {
         void onSuggestion(@NonNull String text);
-
-        void onOpenSettings();
-
-        void onPickModel();
     }
 
     private final AiTheme theme;
@@ -48,8 +44,6 @@ public final class AiWelcomeView extends ScrollView {
 
     @Nullable
     private final Listener listener;
-    @Nullable
-    private YoButton setupButton;
     @Nullable
     private AiChatUiState.Welcome mode;
 
@@ -131,22 +125,12 @@ public final class AiWelcomeView extends ScrollView {
                 addSuggestion(R.drawable.ic_ai_text, R.string.ai_suggest_manual);
             }
             case NEEDS_PLATFORM -> {
-                showSetup(R.string.ai_setup_title, R.string.ai_setup_message, R.string.ai_setup_action,
-                        () -> {
-                            if (listener != null) {
-                                listener.onOpenSettings();
-                            }
-                        });
+                showSetup(R.string.ai_setup_title, R.string.ai_setup_message);
                 note.setText(R.string.ai_privacy_hint);
                 note.setVisibility(VISIBLE);
             }
             case NEEDS_MODEL -> {
-                showSetup(R.string.ai_pick_model_title, R.string.ai_pick_model_message,
-                        R.string.ai_pick_model_action, () -> {
-                            if (listener != null) {
-                                listener.onPickModel();
-                            }
-                        });
+                showSetup(R.string.ai_pick_model_title, R.string.ai_pick_model_message);
                 note.setVisibility(GONE);
             }
             default -> {
@@ -154,8 +138,7 @@ public final class AiWelcomeView extends ScrollView {
         }
     }
 
-    private void showSetup(@StringRes int title, @StringRes int body, @StringRes int action,
-                           @NonNull Runnable onAction) {
+    private void showSetup(@StringRes int title, @StringRes int body) {
         suggestions.setVisibility(GONE);
         setupCard.setVisibility(VISIBLE);
         message.setVisibility(GONE);
@@ -164,17 +147,6 @@ public final class AiWelcomeView extends ScrollView {
         setupContent.removeAllViews();
         setupContent.addView(setupBody, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        if (setupButton != null) {
-            setupButton.destroy();
-        }
-        setupButton = YoButton.create(theme.context)
-                .setText(theme.context.getString(action))
-                .setOnClickListener(view -> onAction.run())
-                .build();
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        buttonParams.topMargin = theme.dp(AiTheme.SPACE_L);
-        setupContent.addView(setupButton.getView(), buttonParams);
     }
 
     private void addSuggestion(@DrawableRes int icon, @StringRes int text) {
@@ -202,9 +174,6 @@ public final class AiWelcomeView extends ScrollView {
             button.destroy();
         }
         suggestionButtons.clear();
-        if (setupButton != null) {
-            setupButton.destroy();
-        }
         setupHost.destroy();
     }
 }

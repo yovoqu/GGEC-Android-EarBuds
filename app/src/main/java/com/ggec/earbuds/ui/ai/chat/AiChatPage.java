@@ -23,25 +23,24 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.ui.ai.AiTheme;
-import com.ggec.earbuds.ui.ai.settings.AiSettingsActivity;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoPage;
 import com.yohu.youi.api.controls.YoButton;
-import com.yohu.youi.api.controls.YoTextInput;
 import com.yohu.youi.api.feedback.YoToast;
 import com.yohu.youi.api.navigation.YoMenu;
 
 import java.util.List;
 
 /**
- * AI 标签页：标题栏、消息列表（或欢迎引导）、底部输入区，以及历史和模型两个面板。
+ * AI 标签页：标题栏、消息列表（或欢迎引导）、底部输入区。
  * 页面不保存对话状态，只把 {@link AiChatViewModel} 的界面状态画出来、把用户操作转交给它。
+ *
+ * <p>AI 设置页已经整个删掉：模型标签、引导卡片和禁用态点击都直接进平台页，
+ * 这一页负责聊天，平台页负责密钥、模型和测速。</p>
  */
 public final class AiChatPage implements AiMessageActions {
 
     private static final int MENU_NEW_CHAT = 1;
-    private static final int MENU_HISTORY = 2;
-    private static final int MENU_SETTINGS = 3;
     private static final int ACTION_COPY = 1;
     private static final int ACTION_REGENERATE = 2;
     private static final int ACTION_DELETE = 3;
@@ -57,16 +56,11 @@ public final class AiChatPage implements AiMessageActions {
     private final TextView storageBanner;
     private final YoButton toBottom;
     private final AiComposerView composer;
-    private final AiHistorySheet historySheet;
-    private final AiModelSheet modelSheet;
     private final AiChatBottomInset bottomInset;
 
-    private boolean awaitingModelSheet;
     private boolean jumpToEnd = true;
     private String firstMessageId = "";
     private int shownCount;
-    @Nullable
-    private Runnable afterHistoryClosed;
 
     public AiChatPage(@NonNull AppCompatActivity activity, @NonNull AiChatViewModel viewModel) {
         this.activity = activity;
@@ -92,16 +86,6 @@ public final class AiChatPage implements AiMessageActions {
             public void onSuggestion(@NonNull String text) {
                 jumpToEnd = true;
                 viewModel.send(text);
-            }
-
-            @Override
-            public void onOpenSettings() {
-                AiChatPage.this.openSettings();
-            }
-
-            @Override
-            public void onPickModel() {
-                openModelSheet();
             }
         });
         storageBanner = theme.text(12.5f, theme.warning, AiTheme.Weight.MEDIUM);
@@ -146,78 +130,15 @@ public final class AiChatPage implements AiMessageActions {
         column.addView(bottomBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        historySheet = new AiHistorySheet(theme, new AiHistorySheet.Listener() {
-            @Override
-            public void onNewChat() {
-                viewModel.newConversation();
-                historySheet.dismiss();
-            }
-
-            @Override
-            public void onOpen(@NonNull AiHistoryItemUi item) {
-                jumpToEnd = true;
-                viewModel.openConversation(item.id());
-                historySheet.dismiss();
-            }
-
-            @Override
-            public void onMore(@NonNull View anchor, @NonNull AiHistoryItemUi item) {
-                // 面板是窗口级容器，直接弹对话框会被盖住；先收起面板，关闭后再弹。
-                historySheet.dismiss();
-                afterHistoryClosed = () -> showConversationActions(item);
-            }
-
-            @Override
-            public void onClearAll() {
-                historySheet.dismiss();
-                afterHistoryClosed = () -> AiDialogs.confirm(activity,
-                        activity.getString(R.string.ai_history_clear_title),
-                        activity.getString(R.string.ai_history_clear_message),
-                        activity.getString(R.string.ai_delete), true, viewModel::clearHistory);
-            }
-
-            @Override
-            public void onClosed() {
-                viewModel.unwatchHistory();
-                Runnable action = afterHistoryClosed;
-                afterHistoryClosed = null;
-                if (action != null) {
-                    action.run();
-                }
-            }
-        });
-        modelSheet = new AiModelSheet(theme, new AiModelSheet.Listener() {
-            @Override
-            public void onChoose(@NonNull String platformId, @NonNull String modelId, @NonNull String displayName) {
-                viewModel.chooseModel(platformId, modelId, displayName);
-                modelSheet.dismiss();
-            }
-
-            @Override
-            public void onManage() {
-                modelSheet.dismiss();
-                openSettings();
-            }
-
-            @Override
-            public void onClosed() {
-                awaitingModelSheet = false;
-            }
-        });
-
         page = YoPage.create(activity)
                 .setTitle(activity.getString(R.string.ai_title))
                 .setSubtitle(activity.getString(R.string.ai_subtitle_no_model))
                 .setTitleMode(YoPage.TitleMode.MINI)
                 .setLevel(YoPage.Level.PRIMARY)
-                .setMenuMaxCount(3)
+                .setMenuMaxCount(1)
                 .setMenuItems(List.of(
                         new YoPage.MenuItem(MENU_NEW_CHAT, activity.getString(R.string.ai_menu_new_chat),
-                                R.drawable.ic_ai_new_chat, viewModel::newConversation),
-                        new YoPage.MenuItem(MENU_HISTORY, activity.getString(R.string.ai_menu_history),
-                                R.drawable.ic_ai_history, this::openHistory),
-                        new YoPage.MenuItem(MENU_SETTINGS, activity.getString(R.string.ai_menu_settings),
-                                R.drawable.ic_ai_settings, this::openSettings)))
+                                R.drawable.ic_ai_new_chat, viewModel::newConversation)))
                 .setContent(column)
                 .build();
 
@@ -226,8 +147,6 @@ public final class AiChatPage implements AiMessageActions {
         components.own(page::destroy);
         components.own(toBottom::destroy);
         components.own(welcome::destroy);
-        components.own(historySheet::destroy);
-        components.own(modelSheet::destroy);
 
         wireInput();
         wireScrolling();
@@ -266,21 +185,6 @@ public final class AiChatPage implements AiMessageActions {
             }
 
             @Override
-            public void onModelClick() {
-                openModelSheet();
-            }
-
-            @Override
-            public void onDisabledClick() {
-                AiChatUiState state = viewModel.uiState().getValue();
-                if (state != null && state.welcome() == AiChatUiState.Welcome.NEEDS_MODEL) {
-                    openModelSheet();
-                } else {
-                    openSettings();
-                }
-            }
-
-            @Override
             public void onDraftChanged(@NonNull String draft) {
                 viewModel.setDraft(draft);
             }
@@ -304,23 +208,6 @@ public final class AiChatPage implements AiMessageActions {
                     ? activity.getString(event.message())
                     : activity.getString(event.message(), event.argument());
             YoToast.show(activity, text);
-        });
-        viewModel.history().observe(activity, items -> {
-            if (historySheet.isShowing()) {
-                historySheet.update(items);
-            }
-        });
-        viewModel.modelSheet().observe(activity, ui -> {
-            if (ui == null) {
-                return;
-            }
-            if (modelSheet.isShowing()) {
-                modelSheet.update(ui);
-            } else if (awaitingModelSheet) {
-                awaitingModelSheet = false;
-                modelSheet.update(ui);
-                modelSheet.show();
-            }
         });
     }
 
@@ -373,42 +260,6 @@ public final class AiChatPage implements AiMessageActions {
         if (adapter.getItemCount() > 0) {
             messages.scrollToPosition(adapter.getItemCount() - 1);
         }
-    }
-
-    // ---- 面板与跳转 ----
-
-    private void openHistory() {
-        composer.hideKeyboard();
-        viewModel.watchHistory();
-        historySheet.show();
-    }
-
-    private void openModelSheet() {
-        composer.hideKeyboard();
-        awaitingModelSheet = true;
-        viewModel.prepareModelSheet();
-    }
-
-    private void openSettings() {
-        composer.hideKeyboard();
-        activity.startActivity(new Intent(activity, AiSettingsActivity.class));
-    }
-
-    private void showConversationActions(@NonNull AiHistoryItemUi item) {
-        String title = item.title().isBlank() ? activity.getString(R.string.ai_history_untitled) : item.title();
-        AiDialogs.choices(activity, title, List.of(
-                new AiDialogs.Choice(activity.getString(R.string.ai_rename), false, () ->
-                        AiDialogs.input(activity, activity.getString(R.string.ai_history_rename_title),
-                                activity.getString(R.string.ai_history_rename_hint), item.title(),
-                                YoTextInput.InputType.TEXT, 40, text -> {
-                                    viewModel.renameConversation(item.id(), text);
-                                    return null;
-                                })),
-                new AiDialogs.Choice(activity.getString(R.string.ai_delete), true, () ->
-                        AiDialogs.confirm(activity, activity.getString(R.string.ai_history_delete_title),
-                                activity.getString(R.string.ai_history_delete_message),
-                                activity.getString(R.string.ai_delete), true,
-                                () -> viewModel.deleteConversation(item.id())))));
     }
 
     // ---- 消息操作 ----
