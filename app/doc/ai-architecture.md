@@ -8,7 +8,7 @@
 | 目标 | 落点 |
 | --- | --- |
 | 对话页：流式回复、思考过程、停止、重试、历史、Markdown 渲染 | `AiChatSession` + `ui/ai/chat` |
-| 设置页：多平台各存一把 API Key，拉取模型，测速并选择模型 | `ui/ai/settings` + 平台相关用例 |
+| AI 页签：对话本身（流式回复、思考过程、停止、重试、Markdown 渲染） | `AiChatSession` + `ui/ai/chat` |
 | `lib_ai` 提供"支持服务"，而不是把功能耦合进某个调用 | `catalog` / `models` / `completion` / `probe` / `error` 五组服务，全部建立在三条协议的公共端口之上 |
 | 每个功能细节都先有架构再实现，并且可测 | 依赖只朝一个方向，层边界由 Gradle 任务强制 |
 
@@ -98,6 +98,8 @@ Responses 协议里助手历史消息改用 `output_text` 编码。
 
 ## 6. 界面层 `ui/ai`
 
+AI 的界面只剩对话页，挂在 AI 页签里——应用一共三个主页：**设备、AI、我的**。
+
 每个页面都是同一个模式：**ViewModel 只出状态，Mapper 做取舍，视图只画**。
 
 ```
@@ -108,9 +110,15 @@ Responses 协议里助手历史消息改用 `output_text` 编码。
 
 | 页面 | ViewModel | 状态 / 映射 | 视图 |
 | --- | --- | --- | --- |
-| 对话 | `AiChatViewModel` | `AiChatUiState`、`AiMessageUi`、`AiChatUiMapper`、`AiModelSheetMapper` | `AiChatPage`、`AiMessageAdapter`、`AiAssistantMessageView`、`AiUserMessageView`、`AiComposerView`、`AiWelcomeView`、`AiHistorySheet`、`AiModelSheet` |
-| 设置总览 | `AiSettingsViewModel` | `AiSettingsUiState`、`AiSettingsUiMapper` | `AiSettingsActivity`、`AiAddPlatformDialog` |
-| 平台详情 | `AiPlatformViewModel` | `AiPlatformUiState`、`AiPlatformLocal`、`AiPlatformUiMapper` | `AiPlatformActivity` |
+| 对话 | `AiChatViewModel` | `AiChatUiState`、`AiMessageUi`、`AiChatUiMapper` | `AiChatPage`、`AiMessageAdapter`、`AiAssistantMessageView`、`AiUserMessageView`、`AiComposerView`、`AiWelcomeView` |
+
+界面上的配置入口全部删除：AI 设置页、平台详情页（API Key 配置）、历史面板、模型面板、自定义平台对话框都不再有，
+`ui/ai/settings` 包里一个界面类都不剩，`AiDialogs` 只剩"确认删除"。
+
+也就是说界面上没有地方能改 API Key、换模型或清空历史。这些能力留在领域层和数据层：
+`SavePlatform`、`FetchPlatformModels`、`AddManualModel`、`RemoveModel`、`RemovePlatform`、`SelectModel`、
+`RunSpeedTest`、`SaveChatPreferences` 等用例，以及带 Keystore 加密的仓库都还在，只是当前没有入口调用。
+对话参数（系统提示词、温度、最大输出、上下文条数、思考过程）同样只存在设置文档里。
 
 ### UI 基础设施
 
@@ -122,12 +130,10 @@ Responses 协议里助手历史消息改用 `output_text` 编码。
 | `ui/common/YoComponents` | 页面级 YoUI 组件释放集合：逆序、幂等，Activity 销毁时统一 `close()` |
 | `ui/common/YoPageActivity` | 以 `YoPage` 为窗口根的 Activity 基类，建页/销毁/edge-to-edge 只做一次 |
 | `ui/ai/AiTheme` | AI 界面的颜色、字号、间距、圆角与文本/图标/背景工厂；颜色取自 `YoColors` 快照 |
-| `ui/ai/AiKeyboard` | 键盘收起，对话框与输入区共用 |
-| `ui/ai/AiDialogs` | 确认、动作列表、单行/多行输入、滑块；统一 `YoDialog.Builder.show()`，关闭即销毁；多行编辑用 `YoTextInput` | 
-| `ui/ai/settings/AiSectionList` | 设置总览/平台详情的一块：标题/说明在列表外，中间一张独立 `YoList`；行 Ripple 走独立列表几何 | 
-| `ui/ai/chat/AiListSheet` | 历史/模型面板共用的 `YoSheet` + `YoList` 骨架，行内组件随刷新回收 |
+| `ui/ai/AiKeyboard` | 键盘收起，输入区与对话框共用 |
+| `ui/ai/AiDialogs` | 只保留确认框；统一 `YoDialog.Builder.show()`，关闭即销毁 |
 
-规则：页面创建的 YoUI 组件（菜单、面板、按钮、输入框、滑块）必须登记到 `YoComponents`；
+规则：页面创建的 YoUI 组件（菜单、按钮、输入框）必须登记到 `YoComponents`；
 已经用 `YoPage` 的页面不再补顶部 inset；左右/底部由 `YoTabs`、`YoPage` 负责，页面不得重复补；
 除 `com.yohu.youi.api.*` 外不得引用库内部包。
 
@@ -138,44 +144,27 @@ Responses 协议里助手历史消息改用 `output_text` 编码。
   链接由 `LinkTextView` 自己判断点击（不抢走父级的长按），并且只放行 `http`/`https`/`mailto`（`MdLinks`）。
 - **对话列表**：`stackFromEnd` 让最新内容贴底；在底部时自动跟随，向上翻看时不抢滚动位置，并出现"回到底部"按钮。
 - **输入区底部留白**：悬浮标签栏高度（`YoTabs.setOnContentInsetListener`）和输入法高度（`WindowInsets`）取较大者。
-- **设置类页面**：`AiSectionList` 包一张独立 `YoList`，标题/说明在列表外面；列表项由 `ListPrefixSpec` /
-  `ListTextSpec` / `ListSuffixSpec` 描述，每次状态变化按新状态重填。
-  测速时每个模型行的"排队 / 测试中 / 首字延迟 / 失败 / 超时"由对应的列表项显示。
-- **输入校验**：规则在领域策略里，ViewModel 同步调用并把 `AiValidationError` 返回给对话框，
-  对话框保持打开并把错误显示在输入框上，内容不丢；通过后才异步写入。
-- **一次性事件**（提示、打开页面、关闭页面）走 `OneShotLiveData`，重建后不重放。
-
-### 平台详情页的状态
-
-持久的设置来自仓库，临时的（搜索词、排序方式、拉取进度、测速进度）由 `AiPlatformViewModel` 持有，
-两块合并成界面状态。所有可变状态都在同一把锁下修改并在锁内发布，保证后发布的永远是更新的；
-读写磁盘、访问网络的用例一律在锁外执行。
-
-- **自动拉取**：配置了密钥却从没拉取过模型时（打开页面、保存密钥、换了服务地址），自动拉取一次，同时验证密钥是否可用；
-  失败后不会反复重试，用户点"重试"。
-- **测速**：对当前列表（已按搜索词过滤、按排序方式排好）的前 24 个模型测速；每个结果一到就写回配置，
-  所以中途离开页面已测完的数据也在；离开页面时取消未完成的测速。停止在拿到网关句柄之前发出也能生效。
-- **使用最快**：测速完成后，如果最快的模型不是当前模型，出现提示条，一键切换。
+- **模型标签**：输入区左下角只显示"平台 · 模型"，纯展示、不可点——没有选择面板可开。
+- **一次性事件**（提示）走 `OneShotLiveData`，重建后不重放。
 
 ## 7. 装配与线程
 
-`AiGraph.get(context)` 是应用级单例，持有：
+`AiGraph.get(context)` 是应用级单例，只装配对话要用的东西：文档存储、带 Keystore 加密的密钥存储、设置仓库、
+对话仓库、`LibAiChatGateway`、`AiChatSession`，以及对话页的 `AiChatViewModel`。
 
 | 执行器 | 线程 | 用途 |
 | --- | --- | --- |
-| `ai-io` | 4 | ViewModel 的读写、拉取模型 |
 | `ai-chat` | 1 | `AiChatSession` 的串行执行器 |
 | `ai-callbacks` | 1 | lib_ai 的回调。单线程保证同一次调用的增量按顺序送达 |
 
-三种 ViewModel 都由同一个 `ViewModelProvider.Factory` 创建；平台详情页从启动参数 `AiGraph.ARG_PLATFORM_ID` 取平台标识。
-`AiSettingsFeed` 把"启动时读一次"和"之后的变化通知"合成一条不会倒退的流：读盘慢于通知时，读到的旧值会被丢掉。
+配置界面撤掉之后，`AiGraph` 不再装配平台目录、输入策略和各平台用例；那些类仍留在领域层与数据层。
 
 ## 8. 安全
 
 - 密钥只经 `EncryptedSecretStore` 落盘；`AiPlatformConfig.toString()` 打印 `apiKey=redacted`；
   `LibAiFailures.redact` 在错误文字里遮掉密钥和 `sk-…` 形状的串。
-- 服务地址只接受 https（输入没写协议头时补 `https://`），密钥随每个请求发出，明文传输等于泄露。
-- 密钥输入框用密码类型（带显示开关）；列表里只显示头尾（`sk-••••••••3xyz`）。
+- 服务地址只接受 https（`AiBaseUrlPolicy`；输入没写协议头时补 `https://`），密钥随每个请求发出，明文传输等于泄露。
+- 界面上不再有密钥输入框，也没有显示半掩码的列表；密钥只经上面那条加密链路落盘。
 - 链接只放行网页和邮件；密文不进备份。
 
 ## 9. 测试
@@ -185,28 +174,28 @@ Responses 协议里助手历史消息改用 `output_text` 编码。
 | `lib_ai`（63 个） | 目录与归类、翻页、补全三协议的事件拆分、延迟探测、错误分类、地址整理、传输取消标记 |
 | `app` 领域（策略、用例、会话） | 输入规则、各用例的边界、`AiChatSession` 的状态机时序（停止后的迟到回调、恢复被中断的消息等） |
 | `app` 数据 | JSON 往返和容错、仓库的原子更新与失败时不通知、对话索引重建、网关（MockWebServer 做端到端） |
-| `app` 界面（ViewModel、Mapper、Markdown 解析） | 对话、设置、平台详情三个 ViewModel，包括拉取、测速、停止、清理、字符串资源格式 |
+| `app` 界面（ViewModel、Mapper、Markdown 解析） | 对话 ViewModel 与 Mapper、Markdown 解析、字符串资源格式 |
 
 测速和拉取相关的时序用 `QueueExecutor`（任务先排队、由测试决定何时执行）演练，例如"后台任务还没跑起来用户就点了停止"。
 
 ## 10. 真机验证与 YoUI 使用注意
 
-在 moto edge 60 pro（Android 15，应用目标 SDK 37）上跑过：首次进入的引导、设置总览、平台详情、拉取模型、测速、输入校验、
-对话列表（Markdown、思考块、异常说明）、历史面板、模型面板、长按菜单、输入法弹出。接口用的是一把假密钥，
-所以真实网络链路走到了平台并拿到了 401，对应的失败提示、拉取失败条、测速"失败"状态都已看过；
+在 moto edge 60 pro（Android 15，应用目标 SDK 37）上跑过：三个主页签、首次进入的引导、
+对话列表（Markdown、思考块、异常说明）、长按菜单、输入法弹出；那时还带着配置界面（平台详情、拉取模型、测速、输入校验）。
+接口用的是一把假密钥，所以真实网络链路走到了平台并拿到了 401，对应的失败提示、拉取失败条、测速"失败"状态都已看过；
 正常返回的流式回复由单元测试和 MockWebServer 覆盖，没有用真实密钥验证。
+
+配置界面（AI 设置页、平台页）撤掉之后重新在真机上跑过：三个主页签切换、AI 页签的引导卡片与输入区、长按菜单与确认框都正常，且不再有任何进入配置的入口。
 
 这几条是踩出来的，改界面时要留意：
 
 | 现象 | 原因与做法 |
 | --- | --- |
 | 对话框、面板里按返回键，整个页面一起关掉 | YoUI 靠 `OnBackInvokedCallback` 接管返回键，而 Android 15 及以下默认不启用它，所以清单必须显式写 `android:enableOnBackInvokedCallback="true"`，已写在 `AndroidManifest.xml` |
-| 在面板里弹出的对话框、菜单看不见 | 它们被面板盖在下面。要做这类操作，先收起面板再弹，用底部动作列表 `AiDialogs.choices` 代替锚定菜单 |
 | 输入类对话框关闭后键盘还留着 | 对话框关闭时由 `AiKeyboard.hide(context)` 主动收起 |
 | 多个输入框的对话框被键盘盖住 | 这类对话框顶部对齐（`Alignment.TOP`） |
 | 给 `ImageView` 着半透明色（`text2`、`text3`）结果是黑色 | `setColorFilter(color)` 默认 `SRC_ATOP`，半透明色盖在黑色图标上还是黑的；统一用 `SRC_IN` |
 | `FrameLayout` 里放 `MATCH_PARENT` 的空 `View` 把父容器撑满 | 空 `View` 在 `AT_MOST` 下取满可用高度；输入区的"不可用遮罩"因此改成不可聚焦加点击回调 |
-| 面板内容隐约透出后面的页面 | 面板默认是模糊背景，改用 `BackdropMode.SOLID` 加不透明的表面色 |
 | 字符串资源 `" · "` 首尾的空格丢失 | 资源里首尾空白会被去掉，要用引号包起来 |
 
 ## 11. 已知限制
