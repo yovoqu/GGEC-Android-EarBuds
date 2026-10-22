@@ -7,25 +7,16 @@
 
     <!-- 通用 -->
     <string name="ai_cancel">取消</string>
-    <string name="ai_save">保存</string>
-    <string name="ai_add">添加</string>
     <string name="ai_delete">删除</string>
-    <string name="ai_remove">移除</string>
-    <string name="ai_rename">重命名</string>
     <string name="ai_retry">重试</string>
     <string name="ai_copy">复制</string>
     <string name="ai_copied">已复制</string>
-    <string name="ai_default_value">默认</string>
-    <string name="ai_value_all">全部</string>
-    <string name="ai_value_messages">%d 条</string>
     <string name="ai_value_tokens">%d tokens</string>
 
     <!-- 对话页：标题栏 -->
     <string name="ai_title">AI</string>
     <string name="ai_subtitle_no_model">尚未选择模型</string>
     <string name="ai_menu_new_chat">新对话</string>
-    <string name="ai_menu_history">历史对话</string>
-    <string name="ai_menu_settings">AI 设置</string>
 
     <!-- 对话页：欢迎与引导 -->
     <string name="ai_welcome_title">可以这样问</string>
@@ -34,12 +25,10 @@
     <string name="ai_suggest_battery">怎么延长耳机的续航时间？</string>
     <string name="ai_suggest_anc">降噪和通透模式有什么区别？</string>
     <string name="ai_suggest_manual">帮我写一份耳机使用说明</string>
-    <string name="ai_setup_title">配置 AI 平台</string>
-    <string name="ai_setup_message">添加 API Key 后可以拉取模型列表。</string>
-    <string name="ai_setup_action">去配置</string>
+    <string name="ai_setup_title">尚未配置 AI 平台</string>
+    <string name="ai_setup_message">平台和模型就绪后才能对话。</string>
     <string name="ai_pick_model_title">还没有选择模型</string>
-    <string name="ai_pick_model_message">从已配置的平台里选一个模型。</string>
-    <string name="ai_pick_model_action">选择模型</string>
+    <string name="ai_pick_model_message">还没有选中可用的模型。</string>
     <string name="ai_privacy_hint">密钥只保存在本机。</string>
 
     <!-- 对话页：输入区 -->
@@ -84,140 +73,31 @@
     <string name="ai_failure_unknown">出现未知错误。</string>
 
     <!-- 历史对话 -->
-    <string name="ai_history_title">历史对话</string>
-    <string name="ai_history_empty">还没有历史对话</string>
-    <string name="ai_history_untitled">新对话</string>
-    <string name="ai_history_current">当前</string>
-    <string name="ai_history_clear">清空</string>
-    <string name="ai_history_new">开始新对话</string>
-    <string name="ai_history_delete_title">删除这段对话？</string>
     <string name="ai_history_delete_message">删除后无法恢复。</string>
-    <string name="ai_history_clear_title">清空所有历史对话？</string>
-    <string name="ai_history_clear_message">所有对话都会被删除，无法恢复。</string>
-    <string name="ai_history_rename_title">重命名对话</string>
-    <string name="ai_history_rename_hint">对话标题</string>
-    <string name="ai_history_item_meta">%1$s · %2$d 条消息</string>
     <string name="ai_time_now">刚刚</string>
     <string name="ai_time_minutes">%d 分钟前</string>
     <string name="ai_time_hours">%d 小时前</string>
     <string name="ai_time_yesterday">昨天</string>
     <string name="ai_time_date">%1$d月%2$d日</string>
 
-    <!-- 模型选择面板 -->
-    <string name="ai_model_sheet_title">选择模型</string>
-    <string name="ai_model_sheet_manage">管理平台与密钥</string>
-    <string name="ai_model_sheet_empty">还没有可以选择的模型</string>
-    <string name="ai_model_sheet_empty_hint">先添加 API Key，再拉取模型列表。</string>
     <string name="ai_model_switched">已切换到 %s</string>
 
     <!-- AI 设置 -->
-    <string name="ai_settings_title">AI 设置</string>
-    <string name="ai_settings_section_model">当前模型</string>
-    <string name="ai_settings_section_platforms">平台与密钥</string>
-    <string name="ai_settings_section_chat">对话参数</string>
-    <string name="ai_settings_section_data">数据</string>
-    <string name="ai_settings_no_model">尚未选择模型</string>
-    <string name="ai_settings_no_model_hint">添加平台并拉取模型后，在这里选择</string>
-    <string name="ai_settings_model_detail">%1$s · %2$s</string>
-    <string name="ai_settings_privacy">API Key 加密后只保存在本机。</string>
-    <string name="ai_platform_status_unset">未配置</string>
-    <string name="ai_platform_status_no_models">已配置 · 尚未拉取模型</string>
-    <string name="ai_platform_status_models">已配置 · %d 个模型</string>
-    <string name="ai_platform_active_badge">使用中</string>
-    <string name="ai_platform_add_custom">添加自定义平台</string>
-    <string name="ai_platform_add_custom_summary">任何 OpenAI 或 Anthropic 兼容的服务地址</string>
-    <string name="ai_platform_custom_openai">OpenAI 兼容</string>
-    <string name="ai_platform_custom_anthropic">Anthropic 兼容</string>
-    <string name="ai_custom_dialog_title">添加自定义平台</string>
-    <string name="ai_custom_name_hint">名称，例如：公司网关</string>
-    <string name="ai_custom_url_hint">服务地址，例如：https://example.com</string>
-    <string name="ai_custom_key_hint">API Key</string>
-    <string name="ai_custom_type_label">兼容类型</string>
 
-    <!-- 对话参数 -->
-    <string name="ai_pref_system_prompt">系统提示词</string>
-    <string name="ai_pref_system_prompt_hint">设定 AI 的身份和回答风格</string>
-    <string name="ai_pref_system_prompt_empty">未设置</string>
-    <string name="ai_pref_system_prompt_restore">恢复默认</string>
-    <string name="ai_pref_temperature">温度</string>
-    <string name="ai_pref_temperature_summary">越低越稳定，越高越有创意</string>
-    <string name="ai_pref_max_tokens">最大输出长度</string>
-    <string name="ai_pref_context">上下文消息数</string>
-    <string name="ai_pref_context_summary">每次请求带上的历史消息条数</string>
-    <string name="ai_pref_reasoning">显示思考过程</string>
-    <string name="ai_pref_reasoning_summary">模型提供时，在回答上方显示</string>
-    <string name="ai_pref_clear_history">清空历史对话</string>
-    <string name="ai_pref_clear_history_summary">删除本机保存的全部对话</string>
-    <string name="ai_pref_cleared">历史对话已清空</string>
 
     <!-- 平台详情 -->
-    <string name="ai_platform_section_connection">连接</string>
-    <string name="ai_platform_section_models">模型</string>
-    <string name="ai_platform_section_danger">危险操作</string>
-    <string name="ai_platform_key">API Key</string>
-    <string name="ai_platform_key_unset">未设置</string>
-    <string name="ai_platform_name">名称</string>
-    <string name="ai_platform_base_url">接口地址</string>
-    <string name="ai_platform_base_url_default">默认</string>
-    <string name="ai_platform_protocol">接口协议</string>
-    <string name="ai_platform_get_key">获取 API Key</string>
-    <string name="ai_platform_get_key_summary">打开平台控制台</string>
-    <string name="ai_platform_remove">移除此平台</string>
-    <string name="ai_platform_remove_title">移除“%s”？</string>
-    <string name="ai_platform_remove_message">会同时删除保存在本机的 API Key 和模型缓存。</string>
-    <string name="ai_platform_missing">这个平台已经不存在</string>
     <string name="ai_protocol_chat">Chat Completions</string>
     <string name="ai_protocol_responses">Responses</string>
     <string name="ai_protocol_messages">Messages</string>
-    <string name="ai_key_dialog_title">API Key</string>
-    <string name="ai_key_dialog_hint">粘贴 API Key</string>
-    <string name="ai_url_dialog_title">接口地址</string>
-    <string name="ai_url_dialog_hint">https://example.com</string>
-    <string name="ai_url_restore_default">恢复默认</string>
-    <string name="ai_name_dialog_title">平台名称</string>
-    <string name="ai_key_saved">已保存 API Key</string>
-    <string name="ai_saved">已保存</string>
 
     <!-- 拉取模型 -->
-    <string name="ai_fetch_models">拉取模型</string>
-    <string name="ai_fetch_running">正在拉取…</string>
     <string name="ai_fetch_done">已拉取 %s 个模型</string>
-    <string name="ai_fetch_done_time">%1$d 个模型 · %2$s 更新</string>
-    <string name="ai_fetch_failed_reason">拉取失败：%s</string>
-    <string name="ai_fetch_need_key">先设置 API Key</string>
-    <string name="ai_fetch_empty">平台没有返回可用于对话的模型</string>
 
     <!-- 模型列表 -->
-    <string name="ai_models_count">模型 · %d</string>
-    <string name="ai_models_empty">还没有模型。拉取模型列表，或手动添加模型名。</string>
-    <string name="ai_models_search_hint">搜索模型</string>
-    <string name="ai_models_no_match">没有匹配的模型</string>
-    <string name="ai_model_add">添加模型</string>
-    <string name="ai_model_add_title">手动添加模型</string>
-    <string name="ai_model_add_hint">模型名，例如 gpt-4o</string>
-    <string name="ai_model_manual_tag">手动</string>
-    <string name="ai_model_use">设为当前模型</string>
     <string name="ai_model_context">%s 上下文</string>
-    <string name="ai_model_feature_reasoning">推理</string>
-    <string name="ai_model_feature_vision">视觉</string>
-    <string name="ai_model_remove_title">移除“%s”？</string>
-    <string name="ai_model_remove_message">不会影响平台上的模型，重新拉取时拉取来的模型会回来。</string>
 
     <!-- 测速 -->
-    <string name="ai_speed_start">测速</string>
-    <string name="ai_speed_stop">停止</string>
-    <string name="ai_speed_running">测速中 %1$d/%2$d</string>
-    <string name="ai_speed_summary_fastest">最快：%1$s</string>
-    <string name="ai_speed_summary_detail">首字 %1$s · 总耗时 %2$s</string>
-    <string name="ai_speed_use">使用</string>
-    <string name="ai_speed_sort">按速度排序</string>
-    <string name="ai_speed_sort_off">恢复原顺序</string>
-    <string name="ai_speed_need_models">先拉取模型再测速</string>
     <string name="ai_speed_capped">一次最多测 %s 个模型，已从列表开头测起。可以用搜索缩小范围。</string>
-    <string name="ai_speed_failed">失败</string>
-    <string name="ai_speed_timeout">超时</string>
-    <string name="ai_speed_waiting">等待</string>
-    <string name="ai_speed_hint">测速只发送一句很短的话，会消耗极少量额度。</string>
 
     <!-- 输入校验 -->
     <string name="ai_error_key_empty">请输入 API Key</string>
