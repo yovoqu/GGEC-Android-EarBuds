@@ -66,6 +66,18 @@ public final class ChatAccumulator {
                 usageJson.put("prompt_tokens", usage.promptTokens());
                 usageJson.put("completion_tokens", usage.completionTokens());
                 usageJson.put("total_tokens", usage.totalTokens());
+                // 合成的报文要和真实报文同形，否则把 rawJson 再解一次会丢缓存和费用。
+                if (usage.cachedTokens() != null) {
+                    JSONObject details = new JSONObject();
+                    details.put("cached_tokens", usage.cachedTokens());
+                    usageJson.put("prompt_tokens_details", details);
+                }
+                if (usage.cacheCreationInputTokens() != null) {
+                    usageJson.put("cache_creation_input_tokens", usage.cacheCreationInputTokens());
+                }
+                if (usage.cost() != null) {
+                    usageJson.put("cost", usage.cost());
+                }
                 raw.put("usage", usageJson);
             }
         } catch (JSONException exception) {

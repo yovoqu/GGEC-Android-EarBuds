@@ -208,7 +208,7 @@ public final class LatencyProbeResource implements YoLatencyProbe {
     private static YoProbeResult success(String model, Flight flight) {
         long total = flight.millisAt(flight.endNanos);
         long first = flight.firstNanos < 0 ? total : flight.millisAt(flight.firstNanos);
-        return YoProbeResult.ok(model, first, total, flight.sample());
+        return YoProbeResult.ok(model, first, total, flight.sample(), flight.outputTokens());
     }
 
     private static YoProbeResult failure(String model, Flight flight, Throwable error) {
@@ -244,6 +244,16 @@ public final class LatencyProbeResource implements YoLatencyProbe {
 
         long millisAt(long nanos) {
             return TimeUnit.NANOSECONDS.toMillis(nanos - startNanos);
+        }
+
+        /** 输出 token 数：平台没回报 usage 时返回 -1，界面据此退回显示总时长。 */
+        int outputTokens() {
+            YoCompletionResult finished = result;
+            if (finished == null || finished.usage() == null) {
+                return -1;
+            }
+            int tokens = finished.usage().outputTokens();
+            return tokens > 0 ? tokens : -1;
         }
 
         synchronized String sample() {

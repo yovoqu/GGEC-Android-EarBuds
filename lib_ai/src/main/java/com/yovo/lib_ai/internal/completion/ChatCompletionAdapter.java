@@ -116,7 +116,8 @@ final class ChatCompletionAdapter implements CompletionAdapter {
                 reasoning,
                 YoFinishReason.fromChat(choice == null ? null : choice.finishReason()),
                 usage == null ? null : new YoCompletionUsage(
-                        usage.promptTokens(), usage.completionTokens(), usage.totalTokens()),
+                        usage.promptTokens(), usage.completionTokens(), usage.totalTokens(),
+                        usage.cachedTokens(), usage.cacheCreationInputTokens(), usage.cost()),
                 completion.model(),
                 completion.id());
     }

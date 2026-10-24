@@ -27,6 +27,8 @@ public final class YoProbeResult {
     private final int httpStatus;
     @Nullable
     private final String sample;
+    /** 平台回报的输出 token 数；拿不到时为 -1。用来算 tok/s —— 总时长受回答长度影响，tok/s 才是模型属性。 */
+    private final int outputTokens;
 
     private YoProbeResult(
             String model,
@@ -36,7 +38,8 @@ public final class YoProbeResult {
             @Nullable String message,
             @Nullable YoAiErrorKind errorKind,
             int httpStatus,
-            @Nullable String sample) {
+            @Nullable String sample,
+            int outputTokens) {
         this.model = model;
         this.status = status;
         this.firstTokenMillis = firstTokenMillis;
@@ -45,12 +48,22 @@ public final class YoProbeResult {
         this.errorKind = errorKind;
         this.httpStatus = httpStatus;
         this.sample = sample;
+        this.outputTokens = outputTokens;
     }
 
     @NonNull
     public static YoProbeResult ok(
             @NonNull String model, long firstTokenMillis, long totalMillis, @Nullable String sample) {
-        return new YoProbeResult(model, Status.OK, firstTokenMillis, totalMillis, null, null, 0, sample);
+        return ok(model, firstTokenMillis, totalMillis, sample, -1);
+    }
+
+    /** @param outputTokens 平台回报的输出 token 数，未知传 -1 */
+    @NonNull
+    public static YoProbeResult ok(
+            @NonNull String model, long firstTokenMillis, long totalMillis,
+            @Nullable String sample, int outputTokens) {
+        return new YoProbeResult(model, Status.OK, firstTokenMillis, totalMillis, null, null, 0,
+                sample, outputTokens);
     }
 
     @NonNull
@@ -60,13 +73,14 @@ public final class YoProbeResult {
             @NonNull YoAiErrorKind kind,
             @Nullable String message,
             int httpStatus) {
-        return new YoProbeResult(model, Status.FAILED, -1L, elapsedMillis, message, kind, httpStatus, null);
+        return new YoProbeResult(model, Status.FAILED, -1L, elapsedMillis, message, kind, httpStatus,
+                null, -1);
     }
 
     @NonNull
     public static YoProbeResult timeout(@NonNull String model, long timeoutMillis) {
         return new YoProbeResult(model, Status.TIMEOUT, -1L, timeoutMillis, null,
-                YoAiErrorKind.TIMEOUT, 0, null);
+                YoAiErrorKind.TIMEOUT, 0, null, -1);
     }
 
     @NonNull
@@ -117,5 +131,10 @@ public final class YoProbeResult {
     @Nullable
     public String sample() {
         return sample;
+    }
+
+    /** 输出 token 数；未回报时为 -1。 */
+    public int outputTokens() {
+        return outputTokens;
     }
 }

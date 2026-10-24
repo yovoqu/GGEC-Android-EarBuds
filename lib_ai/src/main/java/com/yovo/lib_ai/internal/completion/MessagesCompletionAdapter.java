@@ -115,7 +115,9 @@ final class MessagesCompletionAdapter implements CompletionAdapter {
                 message.text(),
                 reasoning.toString(),
                 YoFinishReason.fromMessages(message.stopReason()),
-                usage == null ? null : new YoCompletionUsage(usage.inputTokens(), usage.outputTokens(), 0),
+                usage == null ? null : new YoCompletionUsage(
+                        usage.inputTokens(), usage.outputTokens(), 0,
+                        usage.cachedInputTokens(), usage.cacheCreationInputTokens(), usage.cost()),
                 message.model(),
                 message.id());
     }

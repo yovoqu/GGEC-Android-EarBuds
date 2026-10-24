@@ -17,6 +17,7 @@ import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.json.Jsons;
+import com.yovo.lib_ai.internal.protocol.UsageFields;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -293,14 +294,21 @@ public final class ChatCodec {
         return text.toString();
     }
 
+    /**
+     * OpenAI 系的用量。少数兼容网关用 input/output 的写法，两个名字都试一次；
+     * 缓存命中与费用只在部分网关上有，读不到就留 null。
+     */
     @Nullable
     private static YoChatUsage decodeUsage(@Nullable JSONObject usage) {
         if (usage == null) {
             return null;
         }
         return new YoChatUsage(
-                usage.optInt("prompt_tokens", 0),
-                usage.optInt("completion_tokens", 0),
-                usage.optInt("total_tokens", 0));
+                UsageFields.intOrZero(usage, "prompt_tokens", "input_tokens"),
+                UsageFields.intOrZero(usage, "completion_tokens", "output_tokens"),
+                UsageFields.intOrZero(usage, "total_tokens"),
+                UsageFields.cachedTokens(usage),
+                UsageFields.cacheCreationTokens(usage),
+                UsageFields.cost(usage));
     }
 }
