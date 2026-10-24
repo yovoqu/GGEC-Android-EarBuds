@@ -1,12 +1,15 @@
 package com.ggec.earbuds.ui.ai.chat;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatState;
+import com.ggec.earbuds.domain.ai.model.AiActiveModel;
+import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -18,8 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 对话页的 ViewModel。真正的对话状态在应用级的 {@link AiChatSession} 里，它不随界面销毁；
  * 这里只负责把状态翻译成界面状态、保存只属于界面的临时状态（思考块的展开、输入草稿）。
  *
- * <p>AI 的配置界面（设置页、平台页、历史面板、模型面板）都已经撤掉，所以这里不再有读盘、
- * 不再有后台任务：配置和存储由领域层与数据层自己负责，界面只剩对话本身。</p>
+ * <p>设置页、平台页、历史面板、模型面板各有自己的 ViewModel；这一层只管对话本身，
+ * 不读盘、不跑后台任务，也不碰存储——那些由领域层与数据层负责。</p>
  */
 public final class AiChatViewModel extends ViewModel {
 
@@ -55,6 +58,24 @@ public final class AiChatViewModel extends ViewModel {
     @NonNull
     public String draft() {
         return draft;
+    }
+
+    /**
+     * 当前语音配置。通话页要用它决定走哪种模式，所以由对话页传过去，
+     * 通话页自己不去读设置仓库（那会把存储依赖带进界面层）。
+     */
+    @NonNull
+    public AiVoiceSettings voiceSettings() {
+        return latest.voice();
+    }
+
+    /**
+     * 当前选中的平台 id，没有可用模型时为空。通话页拿它做默认平台。
+     */
+    @Nullable
+    public String activePlatformId() {
+        AiActiveModel model = latest.model();
+        return model == null ? null : model.platform().id();
     }
 
     public void setDraft(@NonNull String draft) {

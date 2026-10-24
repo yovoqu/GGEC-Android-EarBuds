@@ -26,7 +26,7 @@ public class StringResourcesTest {
     private static final Pattern PLACEHOLDER = Pattern.compile("%(?:(\\d+)\\$)?([a-zA-Z])");
 
     /** 事件里带参数的提示：参数一律以 String 传入，占位符只能是 %s，写成 %d 会在显示时抛异常。 */
-    private static final Set<String> STRING_ARGUMENT = Set.of("ai_model_switched", "ai_fetch_done", "ai_speed_capped");
+    private static final Set<String> STRING_ARGUMENT = Set.of("ai_fetch_done");
 
     private Map<String, String> load() throws Exception {
         File file = new File("src/main/res/values/strings.xml");

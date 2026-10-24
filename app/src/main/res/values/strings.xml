@@ -11,32 +11,32 @@
     <string name="ai_retry">重试</string>
     <string name="ai_copy">复制</string>
     <string name="ai_copied">已复制</string>
+    <string name="ai_message_expand">展开</string>
+    <string name="ai_message_collapse">收起</string>
+    <string name="ai_value_speed">%1$d tok/s</string>
     <string name="ai_value_tokens">%d tokens</string>
 
-    <!-- 对话页：标题栏 -->
+    <!-- 对话页：标题行 -->
     <string name="ai_title">AI</string>
-    <string name="ai_subtitle_no_model">尚未选择模型</string>
     <string name="ai_menu_new_chat">新对话</string>
+    <string name="ai_settings_entry">设置</string>
+    <string name="ai_more_entry">更多</string>
 
-    <!-- 对话页：欢迎与引导 -->
-    <string name="ai_welcome_title">可以这样问</string>
-    <string name="ai_welcome_subtitle">直接输入问题，或者从下面选一个。</string>
-    <string name="ai_suggest_connect">耳机连不上手机怎么办？</string>
-    <string name="ai_suggest_battery">怎么延长耳机的续航时间？</string>
-    <string name="ai_suggest_anc">降噪和通透模式有什么区别？</string>
-    <string name="ai_suggest_manual">帮我写一份耳机使用说明</string>
-    <string name="ai_setup_title">尚未配置 AI 平台</string>
-    <string name="ai_setup_message">平台和模型就绪后才能对话。</string>
-    <string name="ai_pick_model_title">还没有选择模型</string>
-    <string name="ai_pick_model_message">还没有选中可用的模型。</string>
+    <!-- 对话页：空状态 -->
+    <string name="ai_welcome_title">耳机有什么问题？</string>
+    <string name="ai_welcome_subtitle_voice">直接问，或者点右上角通话说给它听。</string>
+    <string name="ai_setup_title">还没接入 AI 平台</string>
+    <string name="ai_setup_message">接入平台、选好模型之后，这里就能对话。</string>
+    <string name="ai_pick_model_title">还没有可用的模型</string>
+    <string name="ai_pick_model_message">选好模型再开始对话。</string>
     <string name="ai_privacy_hint">密钥只保存在本机。</string>
 
     <!-- 对话页：输入区 -->
     <string name="ai_composer_hint">输入消息…</string>
-    <string name="ai_composer_hint_setup">先配置模型，再开始对话</string>
+    <string name="ai_composer_hint_setup">没有可用的模型，暂不能发送</string>
     <string name="ai_send">发送</string>
     <string name="ai_stop">停止生成</string>
-    <string name="ai_chip_choose_model">选择模型</string>
+    <string name="ai_model_none">未接入平台</string>
     <string name="ai_scroll_to_bottom">回到底部</string>
     <string name="ai_storage_failed">历史记录保存失败，请检查存储空间</string>
 
@@ -68,19 +68,13 @@
     <string name="ai_failure_network">网络连接失败，请检查网络后重试。</string>
     <string name="ai_failure_timeout">等待平台响应超时，请重试。</string>
     <string name="ai_failure_cancelled">已取消。</string>
+    <string name="ai_failure_unsupported_capability">当前平台没有能做这件事的模型，去设置里换一个。</string>
     <string name="ai_failure_protocol">平台返回的内容无法识别，请检查接口地址和协议。</string>
     <string name="ai_failure_storage">读写本地数据失败，请检查存储空间。</string>
     <string name="ai_failure_unknown">出现未知错误。</string>
 
     <!-- 历史对话 -->
     <string name="ai_history_delete_message">删除后无法恢复。</string>
-    <string name="ai_time_now">刚刚</string>
-    <string name="ai_time_minutes">%d 分钟前</string>
-    <string name="ai_time_hours">%d 小时前</string>
-    <string name="ai_time_yesterday">昨天</string>
-    <string name="ai_time_date">%1$d月%2$d日</string>
-
-    <string name="ai_model_switched">已切换到 %s</string>
 
     <!-- AI 设置 -->
 
@@ -97,14 +91,13 @@
     <string name="ai_model_context">%s 上下文</string>
 
     <!-- 测速 -->
-    <string name="ai_speed_capped">一次最多测 %s 个模型，已从列表开头测起。可以用搜索缩小范围。</string>
 
     <!-- 输入校验 -->
     <string name="ai_error_key_empty">请输入 API Key</string>
     <string name="ai_error_key_invalid">API Key 含有空格或非法字符，请重新复制</string>
     <string name="ai_error_url_required">请输入服务地址</string>
     <string name="ai_error_url_invalid">地址格式不正确</string>
-    <string name="ai_error_url_not_https">出于安全考虑，只支持 https 地址</string>
+    <string name="ai_error_url_not_https">公网地址只支持 https；局域网或本机地址可以用 http</string>
     <string name="ai_error_name_empty">请输入名称</string>
     <string name="ai_error_protocol_unsupported">该平台不支持这个协议</string>
     <string name="ai_error_model_empty">请输入模型名</string>
@@ -113,4 +106,9 @@
     <string name="ai_error_platform_not_configured">请先设置这个平台的 API Key</string>
     <string name="ai_error_model_unknown">找不到这个模型，请先拉取模型列表</string>
     <string name="ai_error_prompt_too_long">系统提示词太长了</string>
+    <string name="ai_error_voice_realtime_model">全双工模式需要先选一个实时语音模型</string>
+    <string name="ai_error_voice_transcription_model">级联模式需要先选一个转写模型</string>
+    <string name="ai_history_loading">正在读取对话…</string>
+    <string name="ai_history_load_failed_title">没能读取对话记录</string>
+    <string name="ai_history_load_failed_action">重试</string>
 </resources>

@@ -6,11 +6,10 @@ import java.util.List;
 
 /**
  * 对话页的整体界面状态。
- * {@code subtitle} 为空表示还没有可用的模型；{@code welcome} 不是 NONE 时显示欢迎或引导，而不是消息列表。
+ * {@code welcome} 不是 NONE 时显示空状态，而不是消息列表；当前模型只在 {@code composer} 里出现一次。
  */
 public record AiChatUiState(
         boolean loaded,
-        String subtitle,
         List<AiMessageUi> messages,
         Welcome welcome,
         Composer composer,
@@ -24,7 +23,7 @@ public record AiChatUiState(
     }
 
     /**
-     * @param modelChip 输入区里的模型标签文字；为空表示还没有可用模型，标签显示"选择模型"
+     * @param modelChip 输入区上方的模型文字；为空表示还没有可用模型，那一行不显示
      */
     public record Composer(boolean enabled, boolean generating, @Nullable String modelChip) {
     }
@@ -34,6 +33,6 @@ public record AiChatUiState(
     }
 
     public static AiChatUiState empty() {
-        return new AiChatUiState(false, "", List.of(), Welcome.NONE, new Composer(false, false, null), false);
+        return new AiChatUiState(false, List.of(), Welcome.NONE, new Composer(false, false, null), false);
     }
 }

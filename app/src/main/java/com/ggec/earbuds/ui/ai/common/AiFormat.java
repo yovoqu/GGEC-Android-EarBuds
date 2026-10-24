@@ -33,6 +33,19 @@ public final class AiFormat {
     }
 
     /** 密钥只露出头尾，中间用圆点遮住。太短的密钥全部遮住，免得露出来的比遮住的还多。 */
+    /**
+     * 生成速率。只用能确证的口径：这段时间里出了多少 token。
+     *
+     * <p>没有首字时间，所以这是"整轮平均"，不是"生成阶段速率"。数据不足时返回 -1，
+     * 界面据此不显示，而不是显示 0 或估算值。</p>
+     */
+    public static int tokensPerSecond(int outputTokens, long elapsedMillis) {
+        if (outputTokens <= 0 || elapsedMillis < 300L) {
+            return -1;
+        }
+        return (int) Math.round(outputTokens * 1000d / elapsedMillis);
+    }
+
     public static String maskKey(String key) {
         if (key.length() <= 8) {
             return "••••••••";

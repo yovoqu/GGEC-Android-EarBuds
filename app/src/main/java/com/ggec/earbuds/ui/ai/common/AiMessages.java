@@ -30,6 +30,7 @@ public final class AiMessages {
             case NETWORK -> R.string.ai_failure_network;
             case TIMEOUT -> R.string.ai_failure_timeout;
             case CANCELLED -> R.string.ai_failure_cancelled;
+            case UNSUPPORTED_CAPABILITY -> R.string.ai_failure_unsupported_capability;
             case PROTOCOL -> R.string.ai_failure_protocol;
             case STORAGE -> R.string.ai_failure_storage;
             case UNKNOWN -> R.string.ai_failure_unknown;
@@ -52,6 +53,8 @@ public final class AiMessages {
             case PLATFORM_NOT_CONFIGURED -> R.string.ai_error_platform_not_configured;
             case MODEL_UNKNOWN -> R.string.ai_error_model_unknown;
             case PROMPT_TOO_LONG -> R.string.ai_error_prompt_too_long;
+            case VOICE_NEEDS_REALTIME_MODEL -> R.string.ai_error_voice_realtime_model;
+            case VOICE_NEEDS_TRANSCRIPTION_MODEL -> R.string.ai_error_voice_transcription_model;
         };
     }
 

@@ -2,6 +2,7 @@ package com.ggec.earbuds.ui.ai.chat;
 
 import android.graphics.PorterDuff;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -180,6 +181,9 @@ final class AiAssistantMessageView extends LinearLayout {
         deleteButton = footerButton(R.drawable.ic_ai_delete, R.string.ai_delete);
         footer.addView(copyButton);
         footer.addView(regenerateButton);
+        // 删除不可恢复，和复制之间留一段空，别让两个图标读成一组。
+        View deleteGap = new View(theme.context);
+        footer.addView(deleteGap, new LinearLayout.LayoutParams(theme.dp(12), 1));
         footer.addView(deleteButton);
         meta = theme.text(12, theme.text3);
         meta.setGravity(Gravity.END);
@@ -189,9 +193,9 @@ final class AiAssistantMessageView extends LinearLayout {
         metaParams.setMarginStart(theme.dp(8));
         footer.addView(meta, metaParams);
         LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(34));
+                ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(40));
         footerParams.topMargin = theme.dp(4);
-        footerParams.setMarginStart(-theme.dp(6));
+        footerParams.setMarginStart(-theme.dp(10));
         addView(footer, footerParams);
 
         copyButton.setOnClickListener(view -> {
@@ -221,7 +225,7 @@ final class AiAssistantMessageView extends LinearLayout {
     }
 
     private ImageView footerButton(@DrawableRes int icon, @StringRes int description) {
-        return theme.iconButton(icon, theme.text3, 34, 9, theme.context.getString(description));
+        return theme.iconButton(icon, theme.text3, 40, 10, theme.context.getString(description));
     }
 
     void bind(@NonNull AiMessageUi next) {
@@ -248,10 +252,20 @@ final class AiAssistantMessageView extends LinearLayout {
             return;
         }
         boolean thinking = next.streaming() && next.text().isEmpty();
+        boolean expanded = next.reasoningExpanded();
         reasoningTitle.setText(thinking ? R.string.ai_reasoning_thinking : R.string.ai_reasoning_title);
-        reasoningBody.setVisibility(next.reasoningExpanded() ? VISIBLE : GONE);
-        reasoningChevron.setRotation(next.reasoningExpanded() ? 180f : 0f);
-        if (next.reasoningExpanded() && !reasoning.equals(shownReasoning)) {
+        reasoningBody.setVisibility(expanded ? VISIBLE : GONE);
+        reasoningChevron.setRotation(expanded ? 180f : 0f);
+        // 收起时只是一行"有什么可展开"，不该占一块最重的灰底；
+        // 展开才需要容器来界定那一大段低优先级文字（Claude / Gemini 同此形态）。
+        reasoningCard.setBackground(expanded
+                ? theme.rounded(theme.fill, AiTheme.RADIUS_ROW) : null);
+        int insetX = expanded ? theme.dp(AiTheme.SPACE_M) : 0;
+        int insetY = expanded ? theme.dp(AiTheme.SPACE_S) : theme.dp(AiTheme.SPACE_XS);
+        if (reasoningCard.getPaddingLeft() != insetX || reasoningCard.getPaddingTop() != insetY) {
+            reasoningCard.setPadding(insetX, insetY, insetX, insetY);
+        }
+        if (expanded && !reasoning.equals(shownReasoning)) {
             reasoningBody.setText(reasoning.strip());
             shownReasoning = reasoning;
         }
@@ -338,6 +352,15 @@ final class AiAssistantMessageView extends LinearLayout {
         StringBuilder text = new StringBuilder();
         if (next.elapsedMillis() > 0) {
             text.append(AiFormat.duration(next.elapsedMillis()));
+        }
+        // 速率紧跟耗时：这两个数一起才说明"等多久、之后多快"。
+        int tps = com.ggec.earbuds.ui.ai.common.AiFormat.tokensPerSecond(
+                next.outputTokens(), next.elapsedMillis());
+        if (tps > 0) {
+            if (text.length() > 0) {
+                text.append(theme.context.getString(R.string.ai_footer_separator));
+            }
+            text.append(theme.context.getString(R.string.ai_value_speed, tps));
         }
         if (next.outputTokens() > 0) {
             if (text.length() > 0) {
