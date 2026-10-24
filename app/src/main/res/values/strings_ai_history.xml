@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AI 会话历史面板的文案（页面规格 §2）。单独一个文件，与 strings_ai_settings.xml / strings_ai_call.xml 同规矩；
+  键名统一带 ai_history_ 前缀，上线前要合并时直接搬进去即可。
+
+  通用词（取消 / 删除 / 保存）不在这里重复定义；加载与读取失败这三条已经在 strings.xml 里，
+  这里不再抄一份。同一句话只允许有一处定义。
+-->
+<resources>
+    <!-- 对话页标题行左侧的入口，按钮本身没有文字，只做无障碍标签 -->
+    <string name="ai_history_entry">历史记录</string>
+
+    <!-- 面板头：页名 + 新建 + 关闭 -->
+    <string name="ai_history_panel_title">历史记录</string>
+    <string name="ai_history_new_chat">新对话</string>
+    <string name="ai_history_close">关闭</string>
+    <string name="ai_history_row_more">更多操作</string>
+
+    <!-- 标题兜底：没起名的对话不能是空白行，空白行会被读成"记录坏了" -->
+    <string name="ai_history_title_untitled">未命名对话</string>
+
+    <!-- 分组：今天 / 昨天 / 更早 -->
+    <string name="ai_history_group_today">今天</string>
+    <string name="ai_history_group_yesterday">昨天</string>
+    <string name="ai_history_group_earlier">更早</string>
+
+    <!--
+      时刻：今天给 HH:mm（"今天"由分组标题说过一次，时刻里不再重复），
+      7 天内给「N 天前」，更早给日期。
+    -->
+    <string name="ai_history_time_clock">%1$s</string>
+    <string name="ai_history_time_days">%1$d 天前</string>
+    <string name="ai_history_time_date">%1$d月%2$d日</string>
+
+    <!-- 空态：一句话 + 一个动作，不放插画 -->
+    <string name="ai_history_empty_title">还没有对话</string>
+    <string name="ai_history_empty_action">开始新对话</string>
+
+    <!-- 行操作 -->
+    <string name="ai_history_rename">重命名</string>
+    <string name="ai_history_rename_title">重命名对话</string>
+    <string name="ai_history_rename_hint">给这段对话起个名字</string>
+    <string name="ai_history_rename_empty">标题不能为空</string>
+    <string name="ai_history_delete_title">删除这个对话？</string>
+
+    <!-- 清空全部：卡外、底部、破坏色；确认框里说清后果 -->
+    <string name="ai_history_clear_all">清空全部</string>
+    <string name="ai_history_clear_title">清空全部对话？</string>
+    <string name="ai_history_clear_message">清空后无法恢复。</string>
+
+    <!-- 已有内容时刷新失败：保留旧行，只弹一次原因 -->
+    <string name="ai_history_load_failed">读取历史失败，请稍后重试</string>
+</resources>
