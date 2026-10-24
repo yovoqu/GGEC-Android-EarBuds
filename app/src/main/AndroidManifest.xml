@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 语音通话：采集与扬声器路由。相机权限不申请：通话中插入照片这轮只有入口，没有实现。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- enableOnBackInvokedCallback 必须显式打开：YoUI 的对话框、面板和菜单靠它接管返回键，
          不写时返回键会越过它们直接关掉整个页面。 -->
@@ -22,6 +25,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 通话页是全屏单页：竖屏、不参与多任务快照的缩略图（里面可能有正在念的内容）。 -->
+        <activity
+            android:name=".ui.ai.call.AiCallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.ai.settings.AiSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.ai.settings.AiPlatformActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
     </application>
 
 </manifest>
