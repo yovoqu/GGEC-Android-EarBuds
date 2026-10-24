@@ -9,9 +9,11 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
+import com.ggec.earbuds.domain.ai.model.AiModelParams;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.policy.AiContextPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiMessageRecovery;
+import com.ggec.earbuds.domain.ai.policy.AiParamsPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiTitlePolicy;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
 import com.ggec.earbuds.domain.ai.port.AiChatGateway;
@@ -230,7 +232,7 @@ public final class AiChatSession {
         long now = clock.now();
         List<AiMessage> messages = new ArrayList<>(conversation.messages());
         messages.add(AiMessage.user(ids.next(), text, now));
-        messages.add(AiMessage.assistantPlaceholder(ids.next(), active.get().model().id(), now));
+        messages.add(placeholder(active.get(), now));
         conversation = conversation.withMessages(messages, now);
         if (conversation.untitled()) {
             conversation = conversation.withTitle(titlePolicy.titleFor(text));
@@ -258,10 +260,35 @@ public final class AiChatSession {
             return;
         }
         long now = clock.now();
-        messages.add(AiMessage.assistantPlaceholder(ids.next(), active.get().model().id(), now));
+        messages.add(placeholder(active.get(), now));
         conversation = conversation.withMessages(messages, now);
         persist();
         beginRun(active.get());
+    }
+
+    /** 回答占位：记下由哪个平台的哪个模型回答，失败卡的"去设置"据此打开平台页。 */
+    private AiMessage placeholder(AiActiveModel active, long now) {
+        return AiMessage.assistantPlaceholder(ids.next(), active.model().name(), now)
+                .withOrigin(active.platform().id(), active.model().id());
+    }
+
+    /**
+     * 网络断开：正在生成的回答直接转成网络失败卡（CHAT-12），不等底层连接自己超时。
+     */
+    public void networkLost() {
+        executor.execute(() -> {
+            if (activeToken == 0) {
+                return;
+            }
+            AiCancellable handle = running;
+            List<AiMessage> all = conversation.messages();
+            String messageId = all.get(all.size() - 1).id();
+            long token = activeToken;
+            onFailed(token, messageId, new AiFailure(AiFailureKind.NETWORK, null));
+            if (handle != null) {
+                handle.cancel();
+            }
+        });
     }
 
     private void beginRun(AiActiveModel active) {
@@ -273,8 +300,10 @@ public final class AiChatSession {
             List<AiChatTurn> turns = contextPolicy.window(all.subList(0, all.size() - 1),
                     preferences.contextMessages());
             String system = preferences.systemPrompt().isBlank() ? null : preferences.systemPrompt();
+            // 生成参数按 GEN-04 逐项解析：此模型 → 全局（开启且范围含它）→ 平台默认（不发送）。
+            AiModelParams params = AiParamsPolicy.resolve(active.platform(), active.model(), preferences).sent();
             request = new AiChatRequest(active.platform(), active.model().id(), system, turns,
-                    preferences.temperature(), preferences.topP(), preferences.maxOutputTokens());
+                    params.temperature(), params.topP(), params.maxOutputTokens());
         } catch (IllegalStateException unusable) {
             failRun(messageId, AiFailureKind.UNKNOWN, unusable.getMessage());
             return;
@@ -332,7 +361,16 @@ public final class AiChatSession {
         if (token != activeToken || delta.isEmpty()) {
             return;
         }
-        replace(messageId, message -> reasoning ? message.appendReasoning(delta) : message.appendText(delta));
+        long sinceStart = Math.max(0L, clock.now() - runStartedAt);
+        replace(messageId, message -> {
+            // 首字＝发出请求到第一个输出片段，思考过程的片段也算（SPD-A-01）。
+            AiMessage next = message.withFirstToken(sinceStart);
+            if (reasoning) {
+                return next.appendReasoning(delta);
+            }
+            // 第一个正文片段到达时，思考阶段结束。
+            return next.closeReasoning(sinceStart).appendText(delta);
+        });
         publish();
     }
 
@@ -351,7 +389,7 @@ public final class AiChatSession {
             if (merged.reasoning() == null && result.reasoning() != null) {
                 merged = merged.appendReasoning(result.reasoning());
             }
-            return merged.complete(result.finishReason(), result.usage(), elapsed);
+            return merged.closeReasoning(elapsed).complete(result.finishReason(), result.usage(), elapsed);
         });
         // 记账放在消息收尾之后：账本写不进去，不该影响这条回答的状态。
         recordUsage.success(conversation.id(), runPlatformId, runModelId, result.usage(), runStartedAt);
@@ -367,7 +405,8 @@ public final class AiChatSession {
         activeToken = 0;
         running = null;
         long elapsed = clock.now() - runStartedAt;
-        replace(messageId, message -> message.fail(failure.kind(), failure.getMessage(), elapsed));
+        replace(messageId, message -> message.closeReasoning(elapsed)
+                .fail(failure.kind(), failure.getMessage(), elapsed));
         recordUsage.failed(conversation.id(), runPlatformId, runModelId, null, runStartedAt,
                 failure.kind().name());
         touch();
@@ -405,7 +444,7 @@ public final class AiChatSession {
             if (!message.streaming()) {
                 next.add(message);
             } else if (!message.blank()) {
-                next.add(message.stop(elapsed));
+                next.add(message.closeReasoning(elapsed).stop(elapsed));
             }
         }
         conversation = conversation.withMessages(next, clock.now());

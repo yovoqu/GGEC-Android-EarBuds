@@ -1,0 +1,2 @@
+{"ts":1729700001000,"conversation":"c-legacy","platform":"deepseek","model":"deepseek-chat","in":12,"out":200,"total":212,"cost":"0.0012","elapsed":5200,"status":"SUCCESS"}
+{"ts":1729700251000,"conversation":"c-legacy","platform":"deepseek","model":"deepseek-chat","in":0,"out":0,"total":0,"elapsed":15000,"status":"FAILED","failure":"NETWORK"}

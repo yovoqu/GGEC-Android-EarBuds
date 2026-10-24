@@ -55,6 +55,12 @@ public final class AiMessages {
             case PROMPT_TOO_LONG -> R.string.ai_error_prompt_too_long;
             case VOICE_NEEDS_REALTIME_MODEL -> R.string.ai_error_voice_realtime_model;
             case VOICE_NEEDS_TRANSCRIPTION_MODEL -> R.string.ai_error_voice_transcription_model;
+            case MODEL_ID_DUPLICATE -> R.string.ai_error_model_duplicate;
+            case MODEL_NOT_CHAT -> R.string.ai_error_model_not_chat;
+            case CONTEXT_INVALID -> R.string.ai_error_context_invalid;
+            case PARAM_OUT_OF_RANGE -> R.string.ai_error_param_out_of_range;
+            case NAME_TOO_LONG -> R.string.ai_error_name_too_long;
+            case NAME_DUPLICATE -> R.string.ai_error_name_duplicate;
         };
     }
 

@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 决定一次请求带哪些历史：只带真正说完或被主动停下且有内容的消息，出错和仍在生成的不带；
+ * 决定一次请求带哪些历史（CHAT-14）：只带正常说完且有内容的消息；失败、停止、未完成和仍在生成的不带；
  * 超出条数上限时丢最早的，并保证从用户发言开始，最后一条是用户发言。
  */
 public final class AiContextPolicy {
@@ -38,6 +38,6 @@ public final class AiContextPolicy {
         if (message.text().isBlank()) {
             return false;
         }
-        return message.status() == AiMessageStatus.COMPLETE || message.status() == AiMessageStatus.STOPPED;
+        return message.status() == AiMessageStatus.COMPLETE;
     }
 }

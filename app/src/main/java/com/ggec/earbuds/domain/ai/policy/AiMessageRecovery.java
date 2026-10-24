@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * 进程在生成途中被杀掉时，磁盘上会留下状态仍为"生成中"的助手消息。重新打开对话时把它收尾：
- * 有内容的标为已停止，什么都没收到的直接丢掉。
+ * 标为"未完成"（CHAT-15），保留已收到的内容，用户可以重新生成。
  */
 public final class AiMessageRecovery {
 
@@ -21,9 +21,7 @@ public final class AiMessageRecovery {
                 continue;
             }
             changed = true;
-            if (!message.blank()) {
-                next.add(message.stop(message.elapsedMillis()));
-            }
+            next.add(message.interrupt());
         }
         return changed ? conversation.withMessages(next, conversation.updatedAtMillis()) : conversation;
     }

@@ -70,7 +70,7 @@ public class AiSettingsModelTest {
     }
 
     @Test
-    public void changingTheHostDropsTheModelCacheButChangingTheKeyKeepsIt() {
+    public void changingCredentialsKeepsModelsAndResultsBecauseFingerprintsDecideStaleness() {
         AiSpeedResult result = new AiSpeedResult("m1", AiSpeedResult.Status.OK, 100, 200, null, null, 5);
         AiPlatformConfig cached = platform("deepseek", "k", "m1", "m2").withModels(
                 List.of(model("m1"), model("m2")), 99L).withSpeedResult(result);
@@ -82,9 +82,9 @@ public class AiSettingsModelTest {
 
         AiPlatformConfig newHost = cached.withCredentials("DeepSeek", "k", "https://proxy.example.com",
                 AiProtocol.CHAT_COMPLETIONS);
-        assertTrue(newHost.models().isEmpty());
-        assertEquals(0L, newHost.modelsFetchedAtMillis());
-        assertTrue(newHost.speedResults().isEmpty());
+        assertEquals(2, newHost.models().size());
+        assertEquals(99L, newHost.modelsFetchedAtMillis());
+        assertEquals(result, newHost.speedResults().get("m1"));
     }
 
     @Test

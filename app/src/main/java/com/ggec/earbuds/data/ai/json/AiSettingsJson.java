@@ -15,6 +15,10 @@ import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.domain.ai.model.AiConnectionResult;
+import com.ggec.earbuds.domain.ai.model.AiModelKind;
+import com.ggec.earbuds.domain.ai.model.AiParamsScope;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,6 +26,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,6 +120,12 @@ public final class AiSettingsJson {
         JsonValues.put(json, "contextMessages", preferences.contextMessages());
         JsonValues.put(json, "showReasoning", preferences.showReasoning());
         JsonValues.put(json, "globalParams", preferences.globalParamsEnabled());
+        JsonValues.put(json, "globalScope", preferences.globalScope().name());
+        JSONArray keys = new JSONArray();
+        for (String key : preferences.globalModelKeys()) {
+            keys.put(key);
+        }
+        JsonValues.put(json, "globalModels", keys);
         return json;
     }
 
@@ -131,10 +142,34 @@ public final class AiSettingsJson {
                     JsonValues.integer(json, "maxOutputTokens"),
                     contextMessages == null ? AiChatPreferences.DEFAULT_CONTEXT_MESSAGES : contextMessages,
                     JsonValues.flag(json, "showReasoning", true),
-                    JsonValues.flag(json, "globalParams", false));
+                    JsonValues.flag(json, "globalParams", false),
+                    decodeScope(JsonValues.string(json, "globalScope")),
+                    decodeStrings(json.optJSONArray("globalModels")));
         } catch (IllegalArgumentException invalid) {
             return AiChatPreferences.DEFAULT;
         }
+    }
+
+    private static AiParamsScope decodeScope(@Nullable String name) {
+        if (name != null) {
+            for (AiParamsScope scope : AiParamsScope.values()) {
+                if (scope.name().equals(name)) {
+                    return scope;
+                }
+            }
+        }
+        return AiParamsScope.ALL;
+    }
+
+    private static Set<String> decodeStrings(@Nullable JSONArray array) {
+        Set<String> values = new LinkedHashSet<>();
+        for (int i = 0; array != null && i < array.length(); i++) {
+            String value = array.optString(i, "");
+            if (!value.isEmpty()) {
+                values.add(value);
+            }
+        }
+        return values;
     }
 
     private static JSONObject encodeModelParams(Map<String, AiModelParams> params) {
@@ -189,6 +224,10 @@ public final class AiSettingsJson {
             speed.put(encodeSpeed(result));
         }
         JsonValues.put(json, "speed", speed);
+        JsonValues.put(json, "testModelId", platform.testModelId());
+        if (platform.connection() != null) {
+            JsonValues.put(json, "connection", encodeConnection(platform.connection()));
+        }
         return json;
     }
 
@@ -226,7 +265,36 @@ public final class AiSettingsJson {
                 models,
                 JsonValues.number(json, "fetchedAt", 0L),
                 speed,
-                decodeModelParams(json.optJSONObject("modelParams")));
+                decodeModelParams(json.optJSONObject("modelParams")),
+                JsonValues.string(json, "testModelId"),
+                decodeConnection(json.optJSONObject("connection")));
+    }
+
+    private static JSONObject encodeConnection(AiConnectionResult result) {
+        JSONObject json = new JSONObject();
+        JsonValues.put(json, "ok", result.ok());
+        JsonValues.put(json, "first", result.firstTokenMillis());
+        JsonValues.put(json, "failure", result.failureKind() == null ? null : result.failureKind().name());
+        JsonValues.put(json, "message", result.message());
+        JsonValues.put(json, "modelId", result.modelId());
+        JsonValues.put(json, "at", result.testedAtMillis());
+        JsonValues.put(json, "fingerprint", result.fingerprint());
+        return json;
+    }
+
+    @Nullable
+    private static AiConnectionResult decodeConnection(@Nullable JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        String modelId = JsonValues.string(json, "modelId");
+        if (modelId == null) {
+            return null;
+        }
+        String failure = JsonValues.string(json, "failure");
+        return new AiConnectionResult(JsonValues.flag(json, "ok", false), JsonValues.number(json, "first", -1L),
+                failure == null ? null : AiFailureKind.fromName(failure), JsonValues.string(json, "message"),
+                modelId, JsonValues.number(json, "at", 0L), JsonValues.string(json, "fingerprint", ""));
     }
 
     private static JSONObject encodeModel(AiModel model) {
@@ -241,6 +309,8 @@ public final class AiSettingsJson {
         }
         JsonValues.put(json, "features", features);
         JsonValues.put(json, "manual", model.manual());
+        JsonValues.put(json, "kind", model.kind().name());
+        JsonValues.put(json, "missing", model.remoteMissing());
         return json;
     }
 
@@ -260,7 +330,19 @@ public final class AiSettingsJson {
             }
         }
         return new AiModel(id, JsonValues.string(json, "name", id), JsonValues.integer(json, "context"),
-                JsonValues.integer(json, "maxOutput"), features, JsonValues.flag(json, "manual", false));
+                JsonValues.integer(json, "maxOutput"), features, JsonValues.flag(json, "manual", false),
+                decodeKind(JsonValues.string(json, "kind")), JsonValues.flag(json, "missing", false));
+    }
+
+    private static AiModelKind decodeKind(@Nullable String name) {
+        if (name != null) {
+            for (AiModelKind kind : AiModelKind.values()) {
+                if (kind.name().equals(name)) {
+                    return kind;
+                }
+            }
+        }
+        return AiModelKind.CHAT;
     }
 
     private static JSONObject encodeSpeed(AiSpeedResult result) {
@@ -272,6 +354,7 @@ public final class AiSettingsJson {
         JsonValues.put(json, "failure", result.failureKind() == null ? null : result.failureKind().name());
         JsonValues.put(json, "message", result.message());
         JsonValues.put(json, "at", result.testedAtMillis());
+        JsonValues.put(json, "fingerprint", result.fingerprint());
         return json;
     }
 
@@ -290,6 +373,7 @@ public final class AiSettingsJson {
         String failure = JsonValues.string(json, "failure");
         return new AiSpeedResult(modelId, parsed, JsonValues.number(json, "first", -1L),
                 JsonValues.number(json, "total", 0L), failure == null ? null : AiFailureKind.fromName(failure),
-                JsonValues.string(json, "message"), JsonValues.number(json, "at", 0L));
+                JsonValues.string(json, "message"), JsonValues.number(json, "at", 0L), -1,
+                JsonValues.string(json, "fingerprint"));
     }
 }

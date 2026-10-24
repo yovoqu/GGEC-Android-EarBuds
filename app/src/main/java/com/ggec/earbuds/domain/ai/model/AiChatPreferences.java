@@ -2,7 +2,10 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.Nullable;
 
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 对话参数。{@code temperature}/{@code topP}/{@code maxOutputTokens} 为空表示沿用平台默认值，
@@ -23,7 +26,10 @@ public record AiChatPreferences(
         int contextMessages,
         boolean showReasoning,
         /** 全局参数总开关。关着时所有模型走自己的默认值，全局滑杆只是备着不被使用。 */
-        boolean globalParamsEnabled) {
+        boolean globalParamsEnabled,
+        /** 全局参数作用范围：全部模型，或 {@code globalModelKeys} 列出的模型（"平台id/模型id"）。 */
+        AiParamsScope globalScope,
+        Set<String> globalModelKeys) {
 
     public static final String DEFAULT_SYSTEM_PROMPT =
             "你是 GGEC 耳机的 AI 助手，熟悉蓝牙耳机的连接、配对、音效、降噪、续航和日常使用，也可以回答其他问题。"
@@ -32,13 +38,21 @@ public record AiChatPreferences(
     public static final int MAX_SYSTEM_PROMPT_LENGTH = 4000;
 
     public static final AiChatPreferences DEFAULT = new AiChatPreferences(
-            DEFAULT_SYSTEM_PROMPT, null, null, null, DEFAULT_CONTEXT_MESSAGES, true, false);
+            DEFAULT_SYSTEM_PROMPT, null, null, null, DEFAULT_CONTEXT_MESSAGES, true, false, AiParamsScope.ALL, Set.of());
 
     /** 兼容旧调用方：不带开关参数的构造一律视为"全局参数关闭"。 */
     public AiChatPreferences(String systemPrompt, @Nullable Double temperature, @Nullable Double topP,
                              @Nullable Integer maxOutputTokens, int contextMessages,
                              boolean showReasoning) {
         this(systemPrompt, temperature, topP, maxOutputTokens, contextMessages, showReasoning, false);
+    }
+
+    /** 兼容旧调用：全局参数作用于全部模型。 */
+    public AiChatPreferences(String systemPrompt, @Nullable Double temperature, @Nullable Double topP,
+                             @Nullable Integer maxOutputTokens, int contextMessages,
+                             boolean showReasoning, boolean globalParamsEnabled) {
+        this(systemPrompt, temperature, topP, maxOutputTokens, contextMessages, showReasoning, globalParamsEnabled,
+                AiParamsScope.ALL, Set.of());
     }
 
     public AiChatPreferences {
@@ -51,6 +65,9 @@ public record AiChatPreferences(
         if (contextMessages < 0) {
             throw new IllegalArgumentException("contextMessages must be >= 0");
         }
+        globalScope = globalScope == null ? AiParamsScope.ALL : globalScope;
+        globalModelKeys = globalModelKeys == null ? Set.of()
+                : Collections.unmodifiableSet(new LinkedHashSet<>(globalModelKeys));
     }
 
     private static void requireRange(@Nullable Double value, double min, double max, String name) {
@@ -61,36 +78,50 @@ public record AiChatPreferences(
 
     public AiChatPreferences withGlobalParamsEnabled(boolean enabled) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, enabled);
+                showReasoning, enabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withSystemPrompt(String systemPrompt) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withTemperature(@Nullable Double temperature) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withTopP(@Nullable Double topP) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withMaxOutputTokens(@Nullable Integer maxOutputTokens) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withContextMessages(int contextMessages) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
     }
 
     public AiChatPreferences withShowReasoning(boolean showReasoning) {
         return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
-                showReasoning, globalParamsEnabled);
+                showReasoning, globalParamsEnabled, globalScope, globalModelKeys);
+    }
+
+    public AiChatPreferences withGlobalScope(AiParamsScope scope, Set<String> modelKeys) {
+        return new AiChatPreferences(systemPrompt, temperature, topP, maxOutputTokens, contextMessages,
+                showReasoning, globalParamsEnabled, scope, modelKeys);
+    }
+
+    /** 全局参数是否作用于这个模型（不看总开关）。 */
+    public boolean globalCovers(String platformId, String modelId) {
+        return globalScope == AiParamsScope.ALL || globalModelKeys.contains(modelKey(platformId, modelId));
+    }
+
+    public static String modelKey(String platformId, String modelId) {
+        return platformId + "/" + modelId;
     }
 }

@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.usage;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiUsageRecord;
+import com.ggec.earbuds.domain.ai.model.AiUsageSource;
 import com.ggec.earbuds.domain.ai.model.AiUsageStatus;
 
 import org.json.JSONException;
@@ -39,6 +40,7 @@ public final class AiUsageRecordJson {
             }
             json.put("elapsed", record.elapsedMillis());
             json.put("status", record.status().name());
+            json.put("source", record.source().name());
             if (record.failureReason() != null) {
                 json.put("failure", record.failureReason());
             }
@@ -82,10 +84,22 @@ public final class AiUsageRecordJson {
                 cost(json),
                 longValue(json, "elapsed"),
                 status,
-                string(json, "failure"));
+                string(json, "failure"),
+                source(string(json, "source")));
     }
 
     @Nullable
+    private static AiUsageSource source(String name) {
+        if (name != null) {
+            for (AiUsageSource source : AiUsageSource.values()) {
+                if (source.name().equals(name)) {
+                    return source;
+                }
+            }
+        }
+        return AiUsageSource.CHAT;
+    }
+
     private static String string(JSONObject json, String key) {
         if (!json.has(key) || json.isNull(key)) {
             return null;

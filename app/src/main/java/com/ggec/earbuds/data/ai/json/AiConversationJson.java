@@ -127,6 +127,14 @@ public final class AiConversationJson {
         JsonValues.put(json, "model", message.modelLabel());
         JsonValues.put(json, "createdAt", message.createdAtMillis());
         JsonValues.put(json, "elapsed", message.elapsedMillis());
+        if (message.hasFirstToken()) {
+            JsonValues.put(json, "first", message.firstTokenMillis());
+        }
+        if (message.reasoningMillis() >= 0) {
+            JsonValues.put(json, "thinking", message.reasoningMillis());
+        }
+        JsonValues.put(json, "platformId", message.platformId());
+        JsonValues.put(json, "modelId", message.modelId());
         if (message.usage() != null) {
             JSONObject usage = new JSONObject();
             JsonValues.put(usage, "in", message.usage().inputTokens());
@@ -179,7 +187,11 @@ public final class AiConversationJson {
                 JsonValues.string(json, "model"),
                 JsonValues.number(json, "createdAt", 0L),
                 JsonValues.number(json, "elapsed", 0L),
-                usage);
+                usage,
+                JsonValues.number(json, "first", -1L),
+                JsonValues.number(json, "thinking", -1L),
+                JsonValues.string(json, "platformId"),
+                JsonValues.string(json, "modelId"));
     }
 
     /**

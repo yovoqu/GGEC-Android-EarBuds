@@ -23,7 +23,16 @@ public record AiUsageRecord(
         @Nullable BigDecimal cost,
         long elapsedMillis,
         AiUsageStatus status,
-        @Nullable String failureReason) {
+        @Nullable String failureReason,
+        AiUsageSource source) {
+
+    /** 兼容旧调用：来源按对话计。 */
+    public AiUsageRecord(long timestampMillis, @Nullable String conversationId, String platformId, String modelId,
+                         int inputTokens, int outputTokens, int totalTokens, @Nullable BigDecimal cost,
+                         long elapsedMillis, AiUsageStatus status, @Nullable String failureReason) {
+        this(timestampMillis, conversationId, platformId, modelId, inputTokens, outputTokens, totalTokens, cost,
+                elapsedMillis, status, failureReason, AiUsageSource.CHAT);
+    }
 
     public AiUsageRecord {
         platformId = platformId == null ? "" : platformId;
@@ -35,6 +44,12 @@ public record AiUsageRecord(
         status = status == null ? AiUsageStatus.SUCCESS : status;
         conversationId = conversationId == null || conversationId.isBlank() ? null : conversationId;
         failureReason = failureReason == null || failureReason.isBlank() ? null : failureReason;
+        source = source == null ? AiUsageSource.CHAT : source;
+    }
+
+    public AiUsageRecord withSource(AiUsageSource newSource) {
+        return new AiUsageRecord(timestampMillis, conversationId, platformId, modelId, inputTokens, outputTokens,
+                totalTokens, cost, elapsedMillis, status, failureReason, newSource);
     }
 
     /**

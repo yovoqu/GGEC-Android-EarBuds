@@ -26,7 +26,7 @@ public class AiConversationPoliciesTest {
     private final AiSpeedRanking ranking = new AiSpeedRanking();
 
     @Test
-    public void contextKeepsFinishedAndStoppedMessagesOnly() {
+    public void contextKeepsFinishedMessagesOnly() {
         AiMessage failed = assistant("a2", "half").fail(AiFailureKind.NETWORK, "x", 5);
         List<AiChatTurn> turns = context.window(List.of(
                 user("u1", "hi"),
@@ -42,7 +42,6 @@ public class AiConversationPoliciesTest {
                 new AiChatTurn(AiRole.ASSISTANT, "hello"),
                 new AiChatTurn(AiRole.USER, "again"),
                 new AiChatTurn(AiRole.USER, "retry"),
-                new AiChatTurn(AiRole.ASSISTANT, "partial"),
                 new AiChatTurn(AiRole.USER, "last")), turns);
     }
 
@@ -101,11 +100,14 @@ public class AiConversationPoliciesTest {
 
         AiConversation recovered = recovery.recover(interrupted);
 
-        assertEquals(3, recovered.messages().size());
-        assertEquals(AiMessageStatus.STOPPED, recovered.messages().get(1).status());
+        assertEquals(4, recovered.messages().size());
+        assertEquals(AiMessageStatus.INTERRUPTED, recovered.messages().get(1).status());
         assertEquals("half an ans", recovered.messages().get(1).text());
         assertEquals("u2", recovered.messages().get(2).id());
+        assertEquals(AiMessageStatus.INTERRUPTED, recovered.messages().get(3).status());
+        assertEquals("", recovered.messages().get(3).text());
         assertEquals(2L, recovered.updatedAtMillis());
+        assertSame(recovered, recovery.recover(recovered));
     }
 
     @Test

@@ -197,17 +197,19 @@ public final class AiPlatformUiMapper {
         }
         com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.Resolved resolved =
                 com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.resolve(
-                        model, platform, settings.preferences());
-        String source = switch (resolved.source()) {
-            case MODEL -> "此模型";
-            case GLOBAL -> "全局";
-            case DEFAULT -> null;
-        };
-        String temperature = resolved.temperature() == null
-                ? "平台默认" : trim(resolved.temperature()) + (source == null ? "" : "（" + source + "）");
-        String topP = resolved.topP() == null
-                ? "平台默认" : trim(resolved.topP()) + (source == null ? "" : "（" + source + "）");
+                        platform, model, settings.preferences());
+        String temperature = describe(resolved.temperature());
+        String topP = describe(resolved.topP());
         return "温度 " + temperature + " · top_p " + topP;
+    }
+
+    private static String describe(com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.Value value) {
+        if (value.sent() == null) {
+            return "平台默认";
+        }
+        String source = value.source() == com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.Source.MODEL
+                ? "此模型" : "全局";
+        return trim(value.sent().doubleValue()) + "（" + source + "）";
     }
 
     /**

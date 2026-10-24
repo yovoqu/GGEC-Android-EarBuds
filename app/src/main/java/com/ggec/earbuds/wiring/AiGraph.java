@@ -7,6 +7,10 @@ import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
+import com.ggec.earbuds.domain.ai.chat.AiCallChat;
+import com.ggec.earbuds.domain.ai.port.AiNetworkMonitor;
+import com.ggec.earbuds.domain.ai.usecase.AiPlatformJobs;
+import com.ggec.earbuds.platform.ai.AndroidNetworkMonitor;
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
 import com.ggec.earbuds.data.ai.usage.FileAiUsageStore;
 import com.ggec.earbuds.data.ai.gateway.LibAiChatGateway;
@@ -118,6 +122,11 @@ public final class AiGraph {
     private final LibAiPlatformCatalog catalog = new LibAiPlatformCatalog();
     private final AiIdGenerator ids;
     private final FileAiUsageStore usageStore;
+    private final LibAiChatGateway chatGateway;
+    /** 网络状态：对话页横幅、平台页测试前置条件共用；断网时把生成中的回答转失败（CHAT-12）。 */
+    private final AiNetworkMonitor network;
+    /** 连接测试与测速：应用级，离开平台页后照样跑完写结果（CON-08）。 */
+    private final AiPlatformJobs platformJobs;
     private final ViewModelProvider.Factory factory = new Factory();
 
     private AiGraph(Context context) {
@@ -138,8 +147,16 @@ public final class AiGraph {
         ids = () -> UUID.randomUUID().toString();
         // 账本和对话共用同一个存储根，但各自一个文档：一次对话写坏不该连带账本。
         usageStore = new FileAiUsageStore(documents);
-        session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients), clock, ids,
+        chatGateway = new LibAiChatGateway(clients);
+        session = new AiChatSession(settings, conversations, chatGateway, clock, ids,
                 new RecordUsage(usageStore, clock), pool("ai-chat", 1));
+        network = new AndroidNetworkMonitor(context);
+        network.observe(online -> {
+            if (!online) {
+                session.networkLost();
+            }
+        });
+        platformJobs = new AiPlatformJobs(settings, new LibAiSpeedTestGateway(clients), clock, usageStore);
         synthesizer = new SystemTtsSynthesizer(context);
         recognizer = new WhisperSpeechRecognizer(settings);
     }
@@ -154,6 +171,16 @@ public final class AiGraph {
     @NonNull
     public AiChatSession chatSession() {
         return session;
+    }
+
+    @NonNull
+    public AiNetworkMonitor network() {
+        return network;
+    }
+
+    @NonNull
+    public AiPlatformJobs platformJobs() {
+        return platformJobs;
     }
 
     @NonNull
@@ -180,7 +207,10 @@ public final class AiGraph {
                 return new OmniVoiceStrategy(settings, input, output, new RealtimeLinkAdapter(),
                         clock, voiceState);
             }
-            return new CascadedVoiceStrategy(settings, session, input, output, recognizer, synthesizer,
+            // 通话内容不进对话历史，用量记为"通话"（CALL-10）：每次通话一个只在内存里的会话。
+            AiChatSession callChat = AiCallChat.create(settings, chatGateway, clock, ids, usageStore,
+                    pool("ai-call-chat", 1));
+            return new CascadedVoiceStrategy(settings, callChat, input, output, recognizer, synthesizer,
                     clock, voiceState, voiceBlocking);
         };
     }

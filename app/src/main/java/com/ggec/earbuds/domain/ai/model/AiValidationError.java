@@ -17,5 +17,15 @@ public enum AiValidationError {
     /** 选了全双工模式，但没有指定或没有可用的实时语音模型。 */
     VOICE_NEEDS_REALTIME_MODEL,
     /** 级联模式的转写模型为空，且当前平台没有具备转写能力的模型。 */
-    VOICE_NEEDS_TRANSCRIPTION_MODEL
+    VOICE_NEEDS_TRANSCRIPTION_MODEL,
+    /** 本平台已有这个模型 ID。 */
+    MODEL_ID_DUPLICATE,
+    /** 只有对话模型能设为当前、测速、设生成参数。 */
+    MODEL_NOT_CHAT,
+    /** 上下文必须是正整数（单位 K）。 */
+    CONTEXT_INVALID,
+    NAME_TOO_LONG,
+    NAME_DUPLICATE,
+    /** 生成参数超出该协议/模型允许的范围。 */
+    PARAM_OUT_OF_RANGE
 }

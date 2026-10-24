@@ -1,6 +1,7 @@
 package com.ggec.earbuds.data.ai.gateway;
 
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelKind;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.yovo.lib_ai.models.YoModelCapability;
 import com.yovo.lib_ai.models.YoModelCatalog;
@@ -9,15 +10,15 @@ import com.yovo.lib_ai.models.YoModelFeature;
 import com.yovo.lib_ai.models.YoModelInfo;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
- * 平台的模型列表混着向量、图片、语音模型，对话只要能聊天的那部分。
- * 排序：发布时间新的在前，没有发布时间的排在最后，再按名字。
+ * 平台的模型列表混着向量、图片、语音模型。拉取面板要全部列出并按类型分组（MOD-06），
+ * 所以 {@link #models} 保留全部模型、保持接口返回顺序，只把 lib_ai 的类型映射过来。
+ * {@link #chatModels} 是旧口径（只要对话模型、按发布时间排序），留给旧调用。
  */
 final class LibAiModels {
 
@@ -26,24 +27,30 @@ final class LibAiModels {
     private LibAiModels() {
     }
 
-    static List<AiModel> chatModels(List<YoModelInfo> infos) {
-        List<YoModelInfo> chat = new ArrayList<>();
-        for (YoModelInfo info : infos) {
-            if (info.kind().chatCapable()) {
-                chat.add(info);
-            }
-        }
-        chat.sort(Comparator.comparingLong(LibAiModels::recency).reversed()
-                .thenComparing(info -> info.displayName().toLowerCase(Locale.ROOT)));
+    /** 全部模型，接口返回顺序，带类型。同一 ID 只取第一次出现。 */
+    static List<AiModel> models(List<YoModelInfo> infos) {
         List<AiModel> models = new ArrayList<>();
-        for (YoModelInfo info : chat) {
-            models.add(toModel(info));
+        Set<String> seen = new HashSet<>();
+        for (YoModelInfo info : infos) {
+            if (seen.add(info.id())) {
+                models.add(toModel(info));
+            }
         }
         return models;
     }
 
-    private static long recency(YoModelInfo info) {
-        return info.createdAtMillis() > 0 ? info.createdAtMillis() : Long.MIN_VALUE;
+    static AiModelKind kind(com.yovo.lib_ai.models.YoModelKind kind) {
+        if (kind == null) {
+            return AiModelKind.CHAT;
+        }
+        return switch (kind) {
+            case CHAT -> AiModelKind.CHAT;
+            case EMBEDDING -> AiModelKind.EMBEDDING;
+            case IMAGE -> AiModelKind.IMAGE;
+            case AUDIO -> AiModelKind.AUDIO;
+            case MODERATION -> AiModelKind.MODERATION;
+            case OTHER -> AiModelKind.OTHER;
+        };
     }
 
     private static AiModel toModel(YoModelInfo info) {
@@ -56,7 +63,7 @@ final class LibAiModels {
             features = declaredFeatures(known);
         }
         return new AiModel(info.id(), info.displayName(), info.contextWindow(), info.maxOutputTokens(),
-                features, false);
+                features, false, kind(info.kind()), false);
     }
 
     private static Set<AiModelFeature> providerFeatures(YoModelInfo info) {

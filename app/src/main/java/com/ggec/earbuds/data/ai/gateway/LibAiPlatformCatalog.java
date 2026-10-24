@@ -47,12 +47,21 @@ public final class LibAiPlatformCatalog implements AiPlatformCatalog {
         return mapped;
     }
 
+    /** 模板名就是新平台的默认名（PLT-03）；两个自定义模板在 lib_ai 里是英文名，这里换成界面用的中文名。 */
+    static String displayName(YoPlatformDescriptor descriptor) {
+        return switch (descriptor.templateId()) {
+            case "openai-compatible" -> "自定义 OpenAI 兼容";
+            case "anthropic-compatible" -> "自定义 Anthropic 兼容";
+            default -> descriptor.displayName();
+        };
+    }
+
     private static AiPlatformTemplate toTemplate(YoPlatformDescriptor descriptor) {
         List<AiProtocol> protocols = new ArrayList<>();
         for (YoProtocol protocol : descriptor.protocols()) {
             protocols.add(protocol(protocol));
         }
-        return new AiPlatformTemplate(descriptor.templateId(), descriptor.displayName(),
+        return new AiPlatformTemplate(descriptor.templateId(), displayName(descriptor),
                 descriptor.defaultBaseUrl(), protocols, descriptor.custom(), descriptor.apiKeyHint(),
                 descriptor.consoleUrl());
     }

@@ -5,7 +5,8 @@ import androidx.annotation.Nullable;
 import java.util.Objects;
 
 /**
- * 一次测速的结果，随平台配置保存，方便下次打开设置页直接看到。
+ * 平台页测速的结果：只关心首字。{@code fingerprint} 是测速时的配置摘要（接口地址、协议、API Key），
+ * 为空表示旧数据（不判过期）。
  */
 public record AiSpeedResult(
         String modelId,
@@ -15,8 +16,8 @@ public record AiSpeedResult(
         @Nullable AiFailureKind failureKind,
         @Nullable String message,
         long testedAtMillis,
-        /** 平台回报的输出 token 数；未回报为 -1。用来算 tok/s 而不是拿总时长充数。 */
-        int outputTokens) {
+        int outputTokens,
+        @Nullable String fingerprint) {
 
     public enum Status {
         OK,
@@ -24,26 +25,46 @@ public record AiSpeedResult(
         TIMEOUT
     }
 
-    /** 旧调用方（测试与历史数据）不关心 token 数。 */
     public AiSpeedResult(String modelId, Status status, long firstTokenMillis, long totalMillis,
                          @Nullable AiFailureKind failureKind, @Nullable String message,
                          long testedAtMillis) {
-        this(modelId, status, firstTokenMillis, totalMillis, failureKind, message, testedAtMillis, -1);
+        this(modelId, status, firstTokenMillis, totalMillis, failureKind, message, testedAtMillis, -1, null);
+    }
+
+    public AiSpeedResult(String modelId, Status status, long firstTokenMillis, long totalMillis,
+                         @Nullable AiFailureKind failureKind, @Nullable String message,
+                         long testedAtMillis, int outputTokens) {
+        this(modelId, status, firstTokenMillis, totalMillis, failureKind, message, testedAtMillis, outputTokens,
+                null);
     }
 
     public AiSpeedResult {
         Objects.requireNonNull(modelId, "modelId");
         Objects.requireNonNull(status, "status");
+        fingerprint = fingerprint == null || fingerprint.isEmpty() ? null : fingerprint;
     }
 
     public boolean ok() {
         return status == Status.OK;
     }
 
-    /**
-     * 生成阶段的吞吐（tok/s）。算不出来时返回 -1：
-     * 没有 usage、或首字时间就是总时长（只有一段输出）时，除数为零或没有意义。
-     */
+    /** 失败分类；超时统一归为 {@link AiFailureKind#TIMEOUT}。成功时为空。 */
+    @Nullable
+    public AiFailureKind effectiveFailure() {
+        if (ok()) {
+            return null;
+        }
+        if (status == Status.TIMEOUT) {
+            return AiFailureKind.TIMEOUT;
+        }
+        return failureKind == null ? AiFailureKind.UNKNOWN : failureKind;
+    }
+
+    public AiSpeedResult stamped(long testedAt, @Nullable String newFingerprint) {
+        return new AiSpeedResult(modelId, status, firstTokenMillis, totalMillis, failureKind, message, testedAt,
+                outputTokens, newFingerprint);
+    }
+
     public int tokensPerSecond() {
         if (!ok() || outputTokens <= 0 || totalMillis <= firstTokenMillis) {
             return -1;

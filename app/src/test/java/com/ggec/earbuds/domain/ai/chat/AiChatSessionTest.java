@@ -124,6 +124,61 @@ public class AiChatSessionTest {
     }
 
     @Test
+    public void firstTokenAndThinkingTimeAreMeasuredFromTheSend() {
+        session.start();
+        session.send("你好");
+        AiChatListener listener = gateway.lastListener();
+
+        clock.advance(800);
+        listener.onReasoning("想");
+        assertEquals(800L, assistant().firstTokenMillis());
+        clock.advance(400);
+        listener.onReasoning("一下");
+        assertEquals("首字只记一次", 800L, assistant().firstTokenMillis());
+        clock.advance(800);
+        listener.onText("答");
+        assertEquals("思考到第一个正文片段为止", 1_200L, assistant().reasoningMillis());
+        clock.advance(1_000);
+        listener.onComplete(new AiChatResult("答", "想一下", AiFinishReason.STOP, AiUsage.ofTokens(3, 5)));
+
+        AiMessage done = assistant();
+        assertEquals(800L, done.firstTokenMillis());
+        assertEquals(1_200L, done.reasoningMillis());
+        assertEquals(3_000L, done.elapsedMillis());
+        assertEquals("deepseek", done.platformId());
+        assertEquals("deepseek-chat", done.modelId());
+        assertEquals("一次发送只发 1 个请求", 1, gateway.requests.size());
+    }
+
+    @Test
+    public void thinkingThatNeverReachesTextIsClosedWhenTheAnswerEnds() {
+        session.start();
+        session.send("你好");
+        clock.advance(500);
+        gateway.lastListener().onReasoning("想");
+        clock.advance(700);
+        session.stop();
+        assertEquals(AiMessageStatus.STOPPED, assistant().status());
+        assertEquals(700L, assistant().reasoningMillis());
+    }
+
+    @Test
+    public void losingTheNetworkFailsTheRunningAnswer() {
+        session.start();
+        session.send("你好");
+        gateway.lastListener().onText("半句");
+        session.networkLost();
+
+        assertEquals(AiMessageStatus.ERROR, assistant().status());
+        assertEquals(AiFailureKind.NETWORK, assistant().failure().kind());
+        assertEquals("半句", assistant().text());
+        assertTrue(gateway.lastHandle().cancelled);
+        assertFalse(session.state().generating());
+        session.networkLost();
+        assertEquals(AiMessageStatus.ERROR, assistant().status());
+    }
+
+    @Test
     public void everyRequestLeavesOneUsageRecord() {
         session.start();
         clock.advance(1_000);
@@ -310,7 +365,7 @@ public class AiChatSessionTest {
 
     @Test
     public void preferencesShapeTheRequestAndTheContextWindow() {
-        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", 0.5, null, 100, 3, true)));
+        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", 0.5, null, 100, 3, true, true)));
         session.start();
         for (String question : new String[] {"q1", "q2"}) {
             session.send(question);
@@ -364,9 +419,9 @@ public class AiChatSessionTest {
 
         assertEquals("recent", session.state().conversation().id());
         AiMessage restored = session.state().conversation().messages().get(1);
-        assertEquals(AiMessageStatus.STOPPED, restored.status());
+        assertEquals(AiMessageStatus.INTERRUPTED, restored.status());
         assertEquals("half", restored.text());
-        assertEquals(AiMessageStatus.STOPPED, conversations.stored.get("recent").messages().get(1).status());
+        assertEquals(AiMessageStatus.INTERRUPTED, conversations.stored.get("recent").messages().get(1).status());
     }
 
     @Test

@@ -108,6 +108,12 @@
     <string name="ai_error_prompt_too_long">系统提示词太长了</string>
     <string name="ai_error_voice_realtime_model">全双工模式需要先选一个实时语音模型</string>
     <string name="ai_error_voice_transcription_model">级联模式需要先选一个转写模型</string>
+    <string name="ai_error_model_duplicate">已有这个模型</string>
+    <string name="ai_error_model_not_chat">这个模型不能用来对话</string>
+    <string name="ai_error_context_invalid">上下文请输入正整数</string>
+    <string name="ai_error_param_out_of_range">超出可用范围</string>
+    <string name="ai_error_name_too_long">最多 32 个字</string>
+    <string name="ai_error_name_duplicate">已有同名平台</string>
     <string name="ai_history_loading">正在读取对话…</string>
     <string name="ai_history_load_failed_title">没能读取对话记录</string>
     <string name="ai_history_load_failed_action">重试</string>

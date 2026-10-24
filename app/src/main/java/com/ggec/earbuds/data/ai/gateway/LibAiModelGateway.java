@@ -18,7 +18,7 @@ public final class LibAiModelGateway implements AiModelGateway {
     @Override
     public List<AiModel> fetch(AiPlatformConfig platform) {
         try (LibAiClientPool.Lease lease = pool.acquire(platform)) {
-            return LibAiModels.chatModels(lease.client().models(platform.id()).list());
+            return LibAiModels.models(lease.client().models(platform.id()).list());
         } catch (RuntimeException error) {
             throw LibAiFailures.map(error, platform.apiKey());
         }

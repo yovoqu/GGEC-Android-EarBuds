@@ -12,6 +12,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
+import com.ggec.earbuds.domain.ai.model.AiModelKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiRole;
@@ -33,6 +34,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -63,7 +65,7 @@ public class LibAiGatewayTest {
     }
 
     @Test
-    public void fetchKeepsChatModelsNewestFirstAndMapsMetadata() throws Exception {
+    public void fetchKeepsEveryModelInListingOrderWithItsKind() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[
                   {"id":"text-embedding-3-small","created":1705948997},
@@ -77,11 +79,15 @@ public class LibAiGatewayTest {
 
         List<AiModel> models = new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
 
-        assertEquals(List.of("gpt-new", "o3-mini", "gpt-old", "no-date-a", "no-date-b"),
-                models.stream().map(AiModel::id).toList());
-        assertEquals(Integer.valueOf(128_000), models.get(0).contextWindow());
-        assertTrue(models.get(0).features().contains(AiModelFeature.VISION));
-        assertTrue(models.get(1).reasoning());
+        assertEquals(List.of("text-embedding-3-small", "gpt-old", "gpt-new", "no-date-b", "no-date-a",
+                "whisper-1", "o3-mini"), models.stream().map(AiModel::id).toList());
+        assertEquals(List.of(AiModelKind.EMBEDDING, AiModelKind.CHAT, AiModelKind.CHAT, AiModelKind.CHAT,
+                AiModelKind.CHAT, AiModelKind.AUDIO, AiModelKind.CHAT),
+                models.stream().map(AiModel::kind).toList());
+        AiModel newest = models.get(2);
+        assertEquals(Integer.valueOf(128_000), newest.contextWindow());
+        assertTrue(newest.features().contains(AiModelFeature.VISION));
+        assertTrue(models.get(6).reasoning());
         assertTrue(models.stream().noneMatch(AiModel::manual));
         RecordedRequest request = server.takeRequest();
         assertEquals("/v1/models", request.getPath());
@@ -311,6 +317,27 @@ public class LibAiGatewayTest {
         assertTrue(catalog.find("openai-compatible").orElseThrow().custom());
         assertTrue(catalog.find("nobody").isEmpty());
         assertEquals("https://x.example.com", catalog.normalizeBaseUrl("https://x.example.com/v1/"));
+        assertEquals("自定义 OpenAI 兼容", catalog.find("openai-compatible").orElseThrow().name());
+        assertEquals("自定义 Anthropic 兼容", catalog.find("anthropic-compatible").orElseThrow().name());
+    }
+
+    @Test
+    public void eachTemplateOffersExactlyItsProtocols() {
+        LibAiPlatformCatalog catalog = new LibAiPlatformCatalog();
+        AiProtocol chat = AiProtocol.CHAT_COMPLETIONS;
+        AiProtocol responses = AiProtocol.RESPONSES;
+        AiProtocol messages = AiProtocol.MESSAGES;
+
+        assertEquals(Set.of(chat, responses), protocols(catalog, "openai"));
+        assertEquals(Set.of(messages), protocols(catalog, "anthropic"));
+        assertEquals(Set.of(chat, messages), protocols(catalog, "deepseek"));
+        assertEquals(Set.of(chat, responses, messages), protocols(catalog, "sensenova"));
+        assertEquals(Set.of(chat, responses), protocols(catalog, "openai-compatible"));
+        assertEquals(Set.of(messages), protocols(catalog, "anthropic-compatible"));
+    }
+
+    private static Set<AiProtocol> protocols(LibAiPlatformCatalog catalog, String templateId) {
+        return Set.copyOf(catalog.find(templateId).orElseThrow().protocols());
     }
 
     @Test

@@ -4,6 +4,7 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiUsage;
 import com.ggec.earbuds.domain.ai.model.AiUsageRecord;
+import com.ggec.earbuds.domain.ai.model.AiUsageSource;
 import com.ggec.earbuds.domain.ai.model.AiUsageStatus;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.usage.AiUsageStore;
@@ -24,13 +25,29 @@ public final class RecordUsage {
 
     private final AiUsageStore store;
     private final AiClock clock;
+    /** 这份记账器记下的请求算哪一类来源（USE-05）：对话、语音通话、连接测试、测速。 */
+    private final AiUsageSource source;
 
     @Nullable
     private volatile String lastWriteFailure;
 
     public RecordUsage(AiUsageStore store, AiClock clock) {
+        this(store, clock, AiUsageSource.CHAT);
+    }
+
+    public RecordUsage(AiUsageStore store, AiClock clock, AiUsageSource source) {
         this.store = Objects.requireNonNull(store, "store");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.source = source == null ? AiUsageSource.CHAT : source;
+    }
+
+    /** 同一个账本、另一种来源。 */
+    public RecordUsage withSource(AiUsageSource newSource) {
+        return new RecordUsage(store, clock, newSource);
+    }
+
+    public AiUsageSource source() {
+        return source;
     }
 
     /**
@@ -44,7 +61,7 @@ public final class RecordUsage {
             @Nullable AiUsage usage,
             long startedAtMillis) {
         append(AiUsageRecord.request(clock.now(), conversationId, platformId, modelId, usage,
-                elapsedSince(startedAtMillis), AiUsageStatus.SUCCESS, null));
+                elapsedSince(startedAtMillis), AiUsageStatus.SUCCESS, null).withSource(source));
     }
 
     /**
@@ -58,7 +75,7 @@ public final class RecordUsage {
             long startedAtMillis,
             @Nullable String reason) {
         append(AiUsageRecord.request(clock.now(), conversationId, platformId, modelId, usage,
-                elapsedSince(startedAtMillis), AiUsageStatus.FAILED, reason));
+                elapsedSince(startedAtMillis), AiUsageStatus.FAILED, reason).withSource(source));
     }
 
     /**
@@ -71,7 +88,7 @@ public final class RecordUsage {
             @Nullable AiUsage usage,
             long startedAtMillis) {
         append(AiUsageRecord.request(clock.now(), conversationId, platformId, modelId, usage,
-                elapsedSince(startedAtMillis), AiUsageStatus.CANCELLED, null));
+                elapsedSince(startedAtMillis), AiUsageStatus.CANCELLED, null).withSource(source));
     }
 
     /**

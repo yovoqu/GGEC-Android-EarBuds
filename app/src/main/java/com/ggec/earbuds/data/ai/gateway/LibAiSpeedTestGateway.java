@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.gateway;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
+import com.ggec.earbuds.domain.ai.policy.AiBatchSpeedPolicy;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestGateway;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
@@ -16,13 +17,18 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 测速交给 lib_ai 的探针：它不重试、按完成顺序回调，应用只负责把结果翻译成领域类型，
+ * 测速与连接测试都交给 lib_ai 的探针：它不重试、按完成顺序回调，应用只负责把结果翻译成领域类型，
  * 并保证租约在探针结束（含被取消）时归还。
+ *
+ * <p>请求体固定为最小流式请求（CON-02、SPD-B-01）：用户消息 {@code Hi}、最大输出 16、
+ * 不带系统提示词与生成参数；收到第一个输出片段即记首字并断开，15 s 无片段判超时。</p>
  */
 public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
 
-    static final int CONCURRENCY = 3;
-    static final long TIMEOUT_MILLIS = 25_000L;
+    static final int CONCURRENCY = AiBatchSpeedPolicy.CONCURRENCY;
+    static final long TIMEOUT_MILLIS = AiBatchSpeedPolicy.TIMEOUT_MILLIS;
+    static final String PROMPT = "Hi";
+    static final int MAX_OUTPUT_TOKENS = 16;
 
     private final LibAiClientPool pool;
 
@@ -41,6 +47,9 @@ public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
                     .models(modelIds)
                     .concurrency(CONCURRENCY)
                     .timeoutMillis(TIMEOUT_MILLIS)
+                    .prompt(PROMPT)
+                    .maxOutputTokens(MAX_OUTPUT_TOKENS)
+                    .firstTokenOnly(true)
                     .build();
             YoAiCall call = lease.client().latencyProbe(platform.id()).run(plan, new YoProbeListener() {
                 @Override

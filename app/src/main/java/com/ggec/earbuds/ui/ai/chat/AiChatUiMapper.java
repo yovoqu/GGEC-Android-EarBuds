@@ -81,7 +81,7 @@ public final class AiChatUiMapper {
         return switch (message.status()) {
             case STREAMING -> AiMessageUi.Notice.NONE;
             case ERROR -> AiMessageUi.Notice.ERROR;
-            case STOPPED -> AiMessageUi.Notice.STOPPED;
+            case STOPPED, INTERRUPTED -> AiMessageUi.Notice.STOPPED;
             case COMPLETE -> {
                 if (message.finishReason() == AiFinishReason.LENGTH) {
                     yield AiMessageUi.Notice.TRUNCATED;

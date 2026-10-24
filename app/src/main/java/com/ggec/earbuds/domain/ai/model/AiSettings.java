@@ -55,6 +55,24 @@ public record AiSettings(
                 .map(model -> new AiActiveModel(platform.get(), model));
     }
 
+    /** 当前模型（不看平台有没有 API Key）：对话页据此区分"先选择模型"和"当前平台没有 API Key"。 */
+    public Optional<AiActiveModel> selectedModel() {
+        if (selection == null) {
+            return Optional.empty();
+        }
+        Optional<AiPlatformConfig> platform = platform(selection.platformId());
+        if (platform.isEmpty()) {
+            return Optional.empty();
+        }
+        return platform.get().model(selection.modelId())
+                .map(model -> new AiActiveModel(platform.get(), model));
+    }
+
+    public boolean isCurrent(String platformId, String modelId) {
+        return selection != null && selection.platformId().equals(platformId)
+                && selection.modelId().equals(modelId);
+    }
+
     public AiSettings withPlatform(AiPlatformConfig config) {
         List<AiPlatformConfig> next = new ArrayList<>(platforms);
         for (int i = 0; i < next.size(); i++) {
