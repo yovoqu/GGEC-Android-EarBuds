@@ -6,6 +6,7 @@ import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +31,8 @@ public final class AiFixtures {
     }
 
     public static AiSettings settings(AiSelection selection, AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), selection, AiChatPreferences.DEFAULT);
+        return new AiSettings(List.of(platforms), selection, AiChatPreferences.DEFAULT,
+                AiVoiceSettings.defaults());
     }
 
     /** 一个已配置密钥、选中了 {@code deepseek-chat} 的设置：对话页处于可发送状态。 */

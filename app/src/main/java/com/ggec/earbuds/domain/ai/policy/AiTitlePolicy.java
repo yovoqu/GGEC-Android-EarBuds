@@ -1,15 +1,22 @@
 package com.ggec.earbuds.domain.ai.policy;
 
+import com.ggec.earbuds.domain.ai.model.AiPlainText;
+
 /**
  * 用第一条用户消息给对话起标题：压缩空白，超长截断加省略号。内容为空返回空串，由界面显示默认名。
  */
 public final class AiTitlePolicy {
 
-    static final int MAX_CODE_POINTS = 24;
+    /**
+     * 列表行的标题必须在一行内放得下：行首有勾/图标、行尾有时刻和「更多」，
+     * 留给标题的宽度不到整行的八成。24 个码点时中文标题会折成两行，
+     * 把居中的勾和右尾巴一起顶歪——所以收到 16。
+     */
+    static final int MAX_CODE_POINTS = 16;
     static final int MAX_RENAMED_CODE_POINTS = 40;
 
     public String titleFor(String firstUserText) {
-        String collapsed = collapse(firstUserText);
+        String collapsed = AiPlainText.of(firstUserText);
         if (collapsed.isEmpty()) {
             return "";
         }
@@ -32,6 +39,6 @@ public final class AiTitlePolicy {
     }
 
     private static String collapse(String text) {
-        return text == null ? "" : text.replaceAll("\\s+", " ").strip();
+        return AiPlainText.of(text);
     }
 }

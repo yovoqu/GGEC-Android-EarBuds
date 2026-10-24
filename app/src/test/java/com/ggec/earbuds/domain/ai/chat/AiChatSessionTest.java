@@ -13,6 +13,11 @@ import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
+import com.ggec.earbuds.domain.ai.model.AiUsage;
+import com.ggec.earbuds.domain.ai.model.AiUsageRecord;
+import com.ggec.earbuds.domain.ai.model.AiUsageStatus;
+import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
+import com.ggec.earbuds.testing.ai.MemoryUsageStore;
 import com.ggec.earbuds.domain.ai.model.AiRole;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
@@ -39,11 +44,13 @@ public class AiChatSessionTest {
     private final ScriptedChatGateway gateway = new ScriptedChatGateway();
     private final ManualClock clock = new ManualClock();
     private final List<AiChatState> published = new ArrayList<>();
+    private final MemoryUsageStore usageStore = new MemoryUsageStore();
     private AiChatSession session;
 
     @Before
     public void setUp() {
-        session = new AiChatSession(settings, conversations, gateway, clock, clock, Runnable::run);
+        session = new AiChatSession(settings, conversations, gateway, clock, clock,
+                new RecordUsage(usageStore, clock), Runnable::run);
         session.observe(published::add);
     }
 
@@ -106,7 +113,7 @@ public class AiChatSessionTest {
         assertTrue(session.state().generating());
 
         clock.advance(1_500);
-        listener.onComplete(new AiChatResult("你好！", "想一下", AiFinishReason.STOP, new AiUsage(3, 5)));
+        listener.onComplete(new AiChatResult("你好！", "想一下", AiFinishReason.STOP, AiUsage.ofTokens(3, 5)));
 
         AiMessage done = assistant();
         assertEquals(AiMessageStatus.COMPLETE, done.status());
@@ -114,6 +121,45 @@ public class AiChatSessionTest {
         assertEquals(8, done.usage().totalTokens());
         assertFalse(session.state().generating());
         assertEquals(AiMessageStatus.COMPLETE, conversations.stored.values().iterator().next().messages().get(1).status());
+    }
+
+    @Test
+    public void everyRequestLeavesOneUsageRecord() {
+        session.start();
+        clock.advance(1_000);
+
+        session.send("hi");
+        gateway.lastListener().onComplete(new AiChatResult("answer", null, AiFinishReason.STOP,
+                new AiUsage(120, 40, 160, new java.math.BigDecimal("0.0021"), null, null)));
+
+        assertEquals(1, usageStore.size());
+        AiUsageRecord record = usageStore.last();
+        assertEquals(AiUsageStatus.SUCCESS, record.status());
+        assertEquals(120, record.inputTokens());
+        assertEquals(40, record.outputTokens());
+        assertEquals(new java.math.BigDecimal("0.0021"), record.cost());
+        assertEquals("deepseek", record.platformId());
+        assertEquals("deepseek-chat", record.modelId());
+        assertEquals(session.state().conversation().id(), record.conversationId());
+
+        // 用户停止算"取消"，不算失败：否则错误率会被用户自己按的停止污染。
+        session.send("again");
+        gateway.lastListener().onText("部分");
+        clock.advance(500);
+        session.stop();
+        assertEquals(2, usageStore.size());
+        assertEquals(AiUsageStatus.CANCELLED, usageStore.last().status());
+    }
+
+    @Test
+    public void failedRequestIsRecordedWithItsKind() {
+        session.start();
+        session.send("hi");
+        gateway.lastListener().onFailure(new AiFailure(AiFailureKind.AUTHENTICATION, "bad key"));
+
+        assertEquals(1, usageStore.size());
+        assertEquals(AiUsageStatus.FAILED, usageStore.last().status());
+        assertEquals("AUTHENTICATION", usageStore.last().failureReason());
     }
 
     @Test
@@ -264,7 +310,7 @@ public class AiChatSessionTest {
 
     @Test
     public void preferencesShapeTheRequestAndTheContextWindow() {
-        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", 0.5, 100, 3, true)));
+        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", 0.5, null, 100, 3, true)));
         session.start();
         for (String question : new String[] {"q1", "q2"}) {
             session.send(question);

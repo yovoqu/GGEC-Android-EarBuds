@@ -115,7 +115,7 @@ public class AiSettingsModelTest {
         assertEquals("thinking", streaming.reasoning());
         assertEquals("Hello", streaming.text());
 
-        AiMessage done = streaming.complete(AiFinishReason.LENGTH, new AiUsage(5, 7), 321);
+        AiMessage done = streaming.complete(AiFinishReason.LENGTH, AiUsage.ofTokens(5, 7), 321);
         assertEquals(AiMessageStatus.COMPLETE, done.status());
         assertEquals(AiFinishReason.LENGTH, done.finishReason());
         assertEquals(12, done.usage().totalTokens());

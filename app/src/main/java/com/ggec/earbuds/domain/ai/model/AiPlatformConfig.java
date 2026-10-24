@@ -1,5 +1,6 @@
 package com.ggec.earbuds.domain.ai.model;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.Collections;
@@ -22,7 +23,9 @@ public record AiPlatformConfig(
         AiProtocol protocol,
         List<AiModel> models,
         long modelsFetchedAtMillis,
-        Map<String, AiSpeedResult> speedResults) {
+        Map<String, AiSpeedResult> speedResults,
+        /** 按模型覆盖的生成参数；没有覆盖的模型不在表里。 */
+        Map<String, AiModelParams> modelParams) {
 
     public AiPlatformConfig {
         Objects.requireNonNull(id, "id");
@@ -32,10 +35,21 @@ public record AiPlatformConfig(
         Objects.requireNonNull(protocol, "protocol");
         models = List.copyOf(models);
         speedResults = Collections.unmodifiableMap(new LinkedHashMap<>(speedResults));
+        modelParams = modelParams == null ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(modelParams));
+    }
+
+    /** 兼容旧调用方：没有按模型的参数覆盖时不必显式传空表。 */
+    public AiPlatformConfig(String id, String templateId, String name, String baseUrl, String apiKey,
+                            AiProtocol protocol, List<AiModel> models, long modelsFetchedAtMillis,
+                            Map<String, AiSpeedResult> speedResults) {
+        this(id, templateId, name, baseUrl, apiKey, protocol, models, modelsFetchedAtMillis,
+                speedResults, Map.of());
     }
 
     public static AiPlatformConfig create(String id, String templateId, String name, AiProtocol protocol) {
-        return new AiPlatformConfig(id, templateId, name, null, "", protocol, List.of(), 0L, Map.of());
+        return new AiPlatformConfig(id, templateId, name, null, "", protocol, List.of(), 0L,
+                Map.of(), Map.of());
     }
 
     /**
@@ -62,7 +76,8 @@ public record AiPlatformConfig(
         return new AiPlatformConfig(id, templateId, name, baseUrl, apiKey, protocol,
                 sameHost ? models : List.of(),
                 sameHost ? modelsFetchedAtMillis : 0L,
-                sameHost ? speedResults : Map.of());
+                sameHost ? speedResults : Map.of(),
+                sameHost ? modelParams : Map.of());
     }
 
     public AiPlatformConfig withModels(List<AiModel> models, long fetchedAtMillis) {
@@ -73,14 +88,28 @@ public record AiPlatformConfig(
                 kept.put(model.id(), result);
             }
         }
-        return new AiPlatformConfig(id, templateId, name, baseUrl, apiKey, protocol, models, fetchedAtMillis, kept);
+        return new AiPlatformConfig(id, templateId, name, baseUrl, apiKey, protocol, models,
+                fetchedAtMillis, kept, modelParams);
+    }
+
+    /** 写入/清除某个模型的参数覆盖。传 {@code EMPTY} 等于恢复跟随全局。 */
+    @NonNull
+    public AiPlatformConfig withModelParams(@NonNull String modelId, @NonNull AiModelParams params) {
+        Map<String, AiModelParams> next = new LinkedHashMap<>(modelParams);
+        if (params.isEmpty()) {
+            next.remove(modelId);
+        } else {
+            next.put(modelId, params);
+        }
+        return new AiPlatformConfig(id, templateId, name, baseUrl, apiKey, protocol, models,
+                modelsFetchedAtMillis, speedResults, next);
     }
 
     public AiPlatformConfig withSpeedResult(AiSpeedResult result) {
         Map<String, AiSpeedResult> next = new LinkedHashMap<>(speedResults);
         next.put(result.modelId(), result);
         return new AiPlatformConfig(id, templateId, name, baseUrl, apiKey, protocol, models,
-                modelsFetchedAtMillis, next);
+                modelsFetchedAtMillis, next, modelParams);
     }
 
     public AiPlatformConfig withoutKey() {

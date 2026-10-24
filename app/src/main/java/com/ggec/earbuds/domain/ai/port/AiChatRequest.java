@@ -16,6 +16,7 @@ public record AiChatRequest(
         @Nullable String systemPrompt,
         List<AiChatTurn> turns,
         @Nullable Double temperature,
+        @Nullable Double topP,
         @Nullable Integer maxOutputTokens) {
 
     public AiChatRequest {

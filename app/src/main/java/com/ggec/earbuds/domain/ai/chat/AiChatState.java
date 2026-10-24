@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiConversation;
+import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 
 import java.util.Objects;
 
@@ -21,6 +22,7 @@ public record AiChatState(
         Readiness readiness,
         @Nullable AiActiveModel model,
         AiChatPreferences preferences,
+        AiVoiceSettings voice,
         boolean storageFailed,
         int historyRevision) {
 
@@ -36,11 +38,12 @@ public record AiChatState(
         Objects.requireNonNull(conversation, "conversation");
         Objects.requireNonNull(readiness, "readiness");
         Objects.requireNonNull(preferences, "preferences");
+        voice = voice == null ? AiVoiceSettings.defaults() : voice;
     }
 
     public static AiChatState initial(AiConversation conversation) {
         return new AiChatState(false, conversation, false, Readiness.NO_PLATFORM, null,
-                AiChatPreferences.DEFAULT, false, 0);
+                AiChatPreferences.DEFAULT, AiVoiceSettings.defaults(), false, 0);
     }
 
     public boolean ready() {

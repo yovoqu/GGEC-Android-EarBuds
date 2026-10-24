@@ -13,6 +13,8 @@ public enum AiFailureKind {
     NETWORK,
     TIMEOUT,
     CANCELLED,
+    /** 平台里没有具备该能力的模型（例如要求看图，但当前平台只支持文本）。 */
+    UNSUPPORTED_CAPABILITY,
     PROTOCOL,
     STORAGE,
     UNKNOWN;
