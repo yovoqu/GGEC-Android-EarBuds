@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AI 设置总览页与平台详情页的文案。单独一个文件，避免和 strings.xml 并行冲突；
+  键名统一带 ai_settings_ 前缀，上线前要合并时直接搬进去即可。
+-->
+<resources>
+
+    <!-- 页头 -->
+    <string name="ai_settings_title">AI 设置</string>
+    <string name="ai_settings_back">返回</string>
+
+    <!-- 分区标题：12sp，只在分组上方出现一次 -->
+    <string name="ai_settings_section_platform">平台</string>
+    <string name="ai_settings_section_mode">说话方式</string>
+    <string name="ai_settings_section_usage">用量</string>
+
+    <!-- 平台行：有 Key 说清"几个模型 + 连的是哪台主机"，没 Key 直接说没填 -->
+    <string name="ai_settings_platform_no_key">未填 Key</string>
+    <string name="ai_settings_platform_models">%1$s 个模型</string>
+    <string name="ai_settings_platform_summary">%1$s 个模型 · %2$s</string>
+    <string name="ai_settings_platform_current">当前</string>
+    <string name="ai_settings_platform_removed">平台已删除</string>
+    <string name="ai_settings_add_platform">添加平台</string>
+    <string name="ai_settings_add_platform_title">添加平台</string>
+    <string name="ai_settings_add_platform_pick">选择平台</string>
+    <string name="ai_settings_add_platform_custom">自定义服务地址</string>
+    <string name="ai_settings_add_platform_empty">没有可以添加的平台</string>
+
+    <!-- AI 模式：标题复用通话页的显示名，两处文字永远一致 -->
+    <string name="ai_settings_mode_cascaded_hint">转写 → 对话 → 朗读，任何对话模型都能用</string>
+    <string name="ai_settings_mode_omni_hint">边说边答，可以随时打断</string>
+    <string name="ai_settings_mode_omni_needs_model">先在平台里添加一个实时语音模型</string>
+
+    <!-- 对话参数 -->
+    <string name="ai_settings_param_prompt">系统提示词</string>
+    <string name="ai_settings_param_temperature">温度</string>
+    <string name="ai_settings_param_top_p">核采样 top_p</string>
+    <string name="ai_settings_param_max_output">最大输出</string>
+    <string name="ai_settings_param_context">上下文条数</string>
+    <string name="ai_settings_prompt_default">默认提示词</string>
+    <string name="ai_settings_prompt_empty">还没写提示词，模型会用平台默认设定回答</string>
+    <string name="ai_settings_prompt_dialog_title">系统提示词</string>
+    <string name="ai_settings_prompt_dialog_hint">写给模型的角色设定与回答要求</string>
+
+    <!-- 尾部取值：空值一律说"平台默认"，不编一个数字 -->
+    <string name="ai_settings_value_platform_default">平台默认</string>
+    <string name="ai_settings_value_plain_url">%1$s（不加密传输）</string>
+    <string name="ai_settings_value_number">%1$s</string>
+    <string name="ai_settings_value_context">%1$s 条</string>
+    <string name="ai_settings_value_context_all">全部历史</string>
+    <string name="ai_settings_value_not_set">未填写</string>
+    <string name="ai_settings_value_template_url">%1$s（官方地址）</string>
+    <string name="ai_settings_value_invalid">这个值不合法，已保持原样</string>
+    <string name="ai_settings_saved">已保存</string>
+    <string name="ai_settings_save">保存</string>
+
+    <!-- 用量：没有记录就说没有记录，0.00 会被读成"免费" -->
+    <string name="ai_settings_usage_dash">—</string>
+    <string name="ai_settings_usage_requests">请求次数</string>
+    <string name="ai_settings_usage_requests_value">%1$s 次</string>
+    <string name="ai_settings_usage_tokens">令牌</string>
+    <string name="ai_settings_usage_tokens_value">%1$s in / %2$s out</string>
+    <string name="ai_settings_usage_cost">费用</string>
+    <string name="ai_settings_usage_cost_value">$%1$s（%2$s 次上报）</string>
+    <string name="ai_settings_usage_cost_unknown">未上报</string>
+
+    <!-- 平台详情：字段 -->
+    <string name="ai_settings_platform_title">平台设置</string>
+    <string name="ai_settings_field_name">名称</string>
+    <string name="ai_settings_field_base_url">接口地址</string>
+    <string name="ai_settings_field_key">API Key</string>
+    <string name="ai_settings_field_protocol">协议</string>
+    <string name="ai_settings_key_empty">未填 Key</string>
+    <string name="ai_settings_key_show">显示</string>
+    <string name="ai_settings_key_hide">隐藏</string>
+    <string name="ai_settings_key_paste">粘贴</string>
+    <string name="ai_settings_key_dialog_hint">粘贴密钥</string>
+    <string name="ai_settings_name_dialog_hint">显示在平台列表里的名字</string>
+    <string name="ai_settings_url_dialog_hint">https://api.example.com/v1</string>
+
+    <!-- 平台详情：模型 -->
+    <string name="ai_settings_models_section">模型</string>
+    <string name="ai_settings_models_empty">还没有模型</string>
+    <string name="ai_settings_models_fetch">拉取模型</string>
+    <string name="ai_settings_fetching">正在拉取…</string>
+    <string name="ai_settings_add_model">手动添加模型</string>
+    <string name="ai_settings_add_model_hint">例如 deepseek-chat</string>
+    <string name="ai_settings_model_manual">手动添加</string>
+    <string name="ai_settings_model_added">已添加 %1$s</string>
+    <string name="ai_settings_model_removed">已删除 %1$s</string>
+    <string name="ai_settings_model_selected">已切换到 %1$s</string>
+    <string name="ai_settings_model_more">更多操作</string>
+    <string name="ai_settings_model_menu_test">测这一条</string>
+    <string name="ai_settings_model_menu_select">设为当前模型</string>
+    <string name="ai_settings_model_menu_apply_all">批量：应用到全部模型</string>
+    <string name="ai_settings_models_search_hint">搜索模型</string>
+    <string name="ai_settings_models_no_match">没有匹配的模型</string>
+
+    <!-- 平台详情：测速 -->
+    <string name="ai_settings_speed_test">测速</string>
+    <string name="ai_settings_speed_start">开始</string>
+    <string name="ai_settings_speed_running">测速中…</string>
+    <string name="ai_settings_speed_first_token">首字 %1$s</string>
+    <string name="ai_settings_speed_timeout">测速超时</string>
+    <string name="ai_settings_speed_failed">测速失败</string>
+    <string name="ai_settings_speed_testing">测速中…</string>
+    <string name="ai_settings_speed_first">首字 %1$s</string>
+    <string name="ai_settings_speed_tps">%1$s tok/s</string>
+    <string name="ai_settings_speed_all">全部测速</string>
+    <string name="ai_settings_connection_test">测试连接</string>
+    <string name="ai_settings_connection_start">测试</string>
+    <string name="ai_settings_connection_ok">连接正常 · 首字 %1$s</string>
+    <string name="ai_settings_connection_failed">连接失败</string>
+    <string name="ai_settings_connection_timeout">连接超时</string>
+    <string name="ai_settings_connection_testing">测试中…</string>
+    <string name="ai_settings_add_model_entry">添加模型</string>
+    <string name="ai_settings_models_empty_hint">拉取列表或手动填一个模型 id</string>
+    <string name="ai_settings_speed_fact">首字 %1$s · 总 %2$s</string>
+    <string name="ai_settings_speed_done">测速完成</string>
+    <string name="ai_settings_speed_cancelled">已停止测速</string>
+
+    <!-- 平台详情：删除与新建 -->
+    <string name="ai_settings_delete_platform">删除平台</string>
+    <string name="ai_settings_delete_title">删除这个平台？</string>
+    <string name="ai_settings_delete_message">平台、它的模型列表和 Key 都会删掉，无法恢复。</string>
+    <string name="ai_settings_create">添加</string>
+    <string name="ai_settings_create_hint">填好 API Key 才能添加</string>
+
+    <!-- 取值编辑：滑块与预设 -->
+    <string name="ai_settings_identity_empty_hint">接入后这里显示正在用的平台与模型</string>
+    <string name="ai_settings_section_style">回答风格</string>
+    <string name="ai_settings_global_params">使用全局参数</string>
+    <string name="ai_settings_global_params_hint">关闭时所有模型都用各自的平台默认值</string>
+
+    <!-- 作用范围：这一版没有可写的范围字段，只说"哪些模型不再跟随这套值" -->
+    <string name="ai_settings_scope_title">作用范围</string>
+    <string name="ai_settings_scope_disabled">未启用</string>
+    <string name="ai_settings_scope_hint_disabled">全局参数不会发给任何模型</string>
+    <string name="ai_settings_scope_all">所有模型</string>
+    <string name="ai_settings_scope_hint_all">没有模型单独设置，全部用这套值</string>
+    <string name="ai_settings_scope_one">仅 %1$s</string>
+    <string name="ai_settings_scope_hint_one">只有它用自己的值，其余用这套值</string>
+    <string name="ai_settings_scope_platform">当前平台</string>
+    <string name="ai_settings_scope_hint_platform">%1$s 的 %2$s 个模型用自己的值，别的平台用这套值</string>
+    <string name="ai_settings_scope_hint_platform_plain">本平台的 %1$s 个模型用自己的值，别的平台用这套值</string>
+    <string name="ai_settings_scope_partial">%1$s 个模型</string>
+    <string name="ai_settings_scope_hint_partial">这 %1$s 个模型用自己的值，其余用这套值</string>
+    <string name="ai_settings_scope_hint_partial_named">%1$s 这 %2$s 个模型用自己的值，其余用这套值</string>
+    <string name="ai_settings_apply_all">应用到全部模型</string>
+    <string name="ai_settings_apply_all_hint">把当前生效的值写进本机 %1$s 个模型；之后它们不随全局变化</string>
+    <string name="ai_settings_apply_all_done">已写入 %1$s 个模型</string>
+    <string name="ai_settings_apply_all_none">还没有可应用的生成参数</string>
+    <string name="ai_settings_apply_all_platform_done">已写入本平台 %1$s 个模型</string>
+    <string name="ai_settings_loading">正在读取设置…</string>
+    <string name="ai_settings_identity_empty">还没有接入平台</string>
+    <string name="ai_settings_platform_change">更换</string>
+    <string name="ai_settings_connection_section">连接</string>
+    <string name="ai_settings_advanced_section">高级</string>
+    <string name="ai_settings_params_section">生成参数</string>
+    <string name="ai_settings_connection_title">连接信息</string>
+</resources>
