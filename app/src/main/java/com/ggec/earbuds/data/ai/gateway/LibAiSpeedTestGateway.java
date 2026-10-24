@@ -76,6 +76,6 @@ public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
         };
         AiFailureKind kind = result.errorKind() == null ? null : LibAiFailures.kind(result.errorKind());
         return new AiSpeedResult(result.model(), status, result.firstTokenMillis(), result.totalMillis(),
-                kind, result.message(), 0L);
+                kind, result.message(), 0L, result.outputTokens());
     }
 }

@@ -23,6 +23,7 @@ import com.ggec.earbuds.domain.ai.port.AiChatResult;
 import com.ggec.earbuds.domain.ai.port.AiChatTurn;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
 import com.yovo.lib_ai.api.YoAiClient;
+import com.yovo.lib_ai.completion.YoCompletionRequest;
 
 import org.json.JSONObject;
 import org.junit.After;
@@ -190,6 +191,18 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void samplingParamsReachTheLibraryRequest() {
+        AiChatRequest request = new AiChatRequest(config(AiProtocol.CHAT_COMPLETIONS), "gpt-test", null,
+                List.of(new AiChatTurn(AiRole.USER, "hi")), 0.4, 0.9, 512);
+
+        YoCompletionRequest lib = LibAiChatGateway.toRequest(request);
+
+        assertEquals(0.4, lib.temperature(), 1e-9);
+        assertEquals(0.9, lib.topP(), 1e-9);
+        assertEquals(Integer.valueOf(512), lib.maxOutputTokens());
+    }
+
+    @Test
     public void speedTestMapsResultsAndReleasesTheLeaseWhenDone() throws Exception {
         server.setDispatcher(new Dispatcher() {
             @Override
@@ -331,7 +344,7 @@ public class LibAiGatewayTest {
     private AiChatRequest chatRequest(AiProtocol protocol) {
         return new AiChatRequest(config(protocol), "gpt-test", "be brief",
                 List.of(new AiChatTurn(AiRole.USER, "hi"), new AiChatTurn(AiRole.ASSISTANT, "hello"),
-                        new AiChatTurn(AiRole.USER, "again")), null, null);
+                        new AiChatTurn(AiRole.USER, "again")), null, null, null);
     }
 
     private static MockResponse sse(String body) {

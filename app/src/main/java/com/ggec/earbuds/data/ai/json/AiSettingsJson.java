@@ -3,12 +3,17 @@ package com.ggec.earbuds.data.ai.json;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelParams;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
+import com.ggec.earbuds.domain.ai.model.AiMode;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
+
+import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -44,6 +49,7 @@ public final class AiSettingsJson {
             platforms.put(encodePlatform(platform));
         }
         JsonValues.put(root, "platforms", platforms);
+        JsonValues.put(root, "voice", encodeVoice(settings.voice()));
         return root.toString();
     }
 
@@ -70,16 +76,45 @@ public final class AiSettingsJson {
                 selection = new AiSelection(platformId, modelId);
             }
         }
-        return new AiSettings(platforms, selection, decodePreferences(root.optJSONObject("preferences")));
+        return new AiSettings(platforms, selection, decodePreferences(root.optJSONObject("preferences")),
+                decodeVoice(root.optJSONObject("voice")));
+    }
+
+    private static JSONObject encodeVoice(AiVoiceSettings voice) {
+        JSONObject json = new JSONObject();
+        JsonValues.put(json, "mode", voice.mode().name());
+        JsonValues.put(json, "transcriptionModel", voice.transcriptionModel());
+        JsonValues.put(json, "synthesisVoice", voice.synthesisVoice());
+        JsonValues.put(json, "realtimeModel", voice.realtimeModel());
+        JsonValues.put(json, "silenceTimeoutMillis", voice.silenceTimeoutMillis());
+        return json;
+    }
+
+    /**
+     * 旧文档没有这个节点：整段取默认值。字段缺一个只缺那一个，不连累其它。
+     */
+    private static AiVoiceSettings decodeVoice(@Nullable JSONObject json) {
+        if (json == null) {
+            return AiVoiceSettings.defaults();
+        }
+        Integer silence = JsonValues.integer(json, "silenceTimeoutMillis");
+        return new AiVoiceSettings(
+                AiMode.fromName(JsonValues.string(json, "mode")),
+                JsonValues.string(json, "transcriptionModel"),
+                JsonValues.string(json, "synthesisVoice"),
+                JsonValues.string(json, "realtimeModel"),
+                silence == null ? AiVoiceSettings.DEFAULT_SILENCE_TIMEOUT_MILLIS : silence);
     }
 
     private static JSONObject encodePreferences(AiChatPreferences preferences) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "systemPrompt", preferences.systemPrompt());
         JsonValues.put(json, "temperature", preferences.temperature());
+        JsonValues.put(json, "topP", preferences.topP());
         JsonValues.put(json, "maxOutputTokens", preferences.maxOutputTokens());
         JsonValues.put(json, "contextMessages", preferences.contextMessages());
         JsonValues.put(json, "showReasoning", preferences.showReasoning());
+        JsonValues.put(json, "globalParams", preferences.globalParamsEnabled());
         return json;
     }
 
@@ -92,12 +127,47 @@ public final class AiSettingsJson {
             return new AiChatPreferences(
                     JsonValues.string(json, "systemPrompt", AiChatPreferences.DEFAULT_SYSTEM_PROMPT),
                     JsonValues.decimal(json, "temperature"),
+                    JsonValues.decimal(json, "topP"),
                     JsonValues.integer(json, "maxOutputTokens"),
                     contextMessages == null ? AiChatPreferences.DEFAULT_CONTEXT_MESSAGES : contextMessages,
-                    JsonValues.flag(json, "showReasoning", true));
+                    JsonValues.flag(json, "showReasoning", true),
+                    JsonValues.flag(json, "globalParams", false));
         } catch (IllegalArgumentException invalid) {
             return AiChatPreferences.DEFAULT;
         }
+    }
+
+    private static JSONObject encodeModelParams(Map<String, AiModelParams> params) {
+        JSONObject json = new JSONObject();
+        for (Map.Entry<String, AiModelParams> entry : params.entrySet()) {
+            AiModelParams value = entry.getValue();
+            JSONObject item = new JSONObject();
+            JsonValues.put(item, "temperature", value.temperature());
+            JsonValues.put(item, "topP", value.topP());
+            JsonValues.put(item, "maxOutputTokens", value.maxOutputTokens());
+            JsonValues.put(json, entry.getKey(), item);
+        }
+        return json;
+    }
+
+    private static Map<String, AiModelParams> decodeModelParams(JSONObject json) {
+        Map<String, AiModelParams> params = new LinkedHashMap<>();
+        if (json == null) {
+            return params;
+        }
+        java.util.Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String modelId = keys.next();
+            JSONObject item = json.optJSONObject(modelId);
+            if (item == null) {
+                continue;
+            }
+            params.put(modelId, new AiModelParams(
+                    JsonValues.decimal(item, "temperature"),
+                    JsonValues.decimal(item, "topP"),
+                    JsonValues.integer(item, "maxOutputTokens")));
+        }
+        return params;
     }
 
     private static JSONObject encodePlatform(AiPlatformConfig platform) {
@@ -113,6 +183,7 @@ public final class AiSettingsJson {
             models.put(encodeModel(model));
         }
         JsonValues.put(json, "models", models);
+        JsonValues.put(json, "modelParams", encodeModelParams(platform.modelParams()));
         JSONArray speed = new JSONArray();
         for (AiSpeedResult result : platform.speedResults().values()) {
             speed.put(encodeSpeed(result));
@@ -154,7 +225,8 @@ public final class AiSettingsJson {
                 AiProtocol.fromId(JsonValues.string(json, "protocol"), AiProtocol.CHAT_COMPLETIONS),
                 models,
                 JsonValues.number(json, "fetchedAt", 0L),
-                speed);
+                speed,
+                decodeModelParams(json.optJSONObject("modelParams")));
     }
 
     private static JSONObject encodeModel(AiModel model) {
