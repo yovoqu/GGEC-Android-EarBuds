@@ -14,13 +14,15 @@ import java.util.Optional;
 public record AiSettings(
         List<AiPlatformConfig> platforms,
         @Nullable AiSelection selection,
-        AiChatPreferences preferences) {
+        AiChatPreferences preferences,
+        AiVoiceSettings voice) {
 
-    public static final AiSettings EMPTY = new AiSettings(List.of(), null, AiChatPreferences.DEFAULT);
-
+    public static final AiSettings EMPTY = new AiSettings(List.of(), null, AiChatPreferences.DEFAULT,
+            AiVoiceSettings.defaults());
     public AiSettings {
         platforms = List.copyOf(platforms);
         Objects.requireNonNull(preferences, "preferences");
+        voice = voice == null ? AiVoiceSettings.defaults() : voice;
     }
 
     public Optional<AiPlatformConfig> platform(String id) {
@@ -58,11 +60,11 @@ public record AiSettings(
         for (int i = 0; i < next.size(); i++) {
             if (next.get(i).id().equals(config.id())) {
                 next.set(i, config);
-                return new AiSettings(next, selection, preferences);
+                return new AiSettings(next, selection, preferences, voice);
             }
         }
         next.add(config);
-        return new AiSettings(next, selection, preferences);
+        return new AiSettings(next, selection, preferences, voice);
     }
 
     /**
@@ -72,11 +74,11 @@ public record AiSettings(
         List<AiPlatformConfig> next = new ArrayList<>(platforms);
         next.removeIf(platform -> platform.id().equals(id));
         AiSelection kept = selection != null && selection.platformId().equals(id) ? null : selection;
-        return new AiSettings(next, kept, preferences);
+        return new AiSettings(next, kept, preferences, voice);
     }
 
     public AiSettings withSelection(@Nullable AiSelection selection) {
-        return new AiSettings(platforms, selection, preferences);
+        return new AiSettings(platforms, selection, preferences, voice);
     }
 
     /**
@@ -90,10 +92,14 @@ public record AiSettings(
         if (platform.isPresent() && platform.get().model(selection.modelId()).isPresent()) {
             return this;
         }
-        return new AiSettings(platforms, null, preferences);
+        return new AiSettings(platforms, null, preferences, voice);
+    }
+
+    public AiSettings withVoice(AiVoiceSettings voice) {
+        return new AiSettings(platforms, selection, preferences, voice);
     }
 
     public AiSettings withPreferences(AiChatPreferences preferences) {
-        return new AiSettings(platforms, selection, preferences);
+        return new AiSettings(platforms, selection, preferences, voice);
     }
 }

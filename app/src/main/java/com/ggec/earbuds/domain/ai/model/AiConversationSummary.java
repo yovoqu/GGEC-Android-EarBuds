@@ -12,7 +12,7 @@ public record AiConversationSummary(
         int messageCount,
         String preview) {
 
-    private static final int PREVIEW_LENGTH = 80;
+    private static final int PREVIEW_CODE_POINTS = 60;
 
     public AiConversationSummary {
         Objects.requireNonNull(id, "id");
@@ -23,9 +23,11 @@ public record AiConversationSummary(
     public static AiConversationSummary of(AiConversation conversation) {
         String preview = "";
         for (int i = conversation.messages().size() - 1; i >= 0; i--) {
-            String text = conversation.messages().get(i).text().replaceAll("\\s+", " ").strip();
+            // 摘要只有一行位置：先把 Markdown 记号去掉，再截断。
+            // 直接截原文会出现「## 标题 **加粗…」这种半截记号。
+            String text = AiPlainText.of(conversation.messages().get(i).text());
             if (!text.isEmpty()) {
-                preview = text.length() > PREVIEW_LENGTH ? text.substring(0, PREVIEW_LENGTH) : text;
+                preview = AiPlainText.truncate(text, PREVIEW_CODE_POINTS);
                 break;
             }
         }
