@@ -51,3 +51,12 @@ output-metadata.json
 *.jks
 *.keystore
 google-services.json
+
+# 本机界面对照：截图、裁切脚本、备份和候选对比不入库。
+/ui-review/
+/ui-work/
+/manifest.json
+
+# 重写过程的草稿，以及交给模型接手用的 prompt，只留在本机。
+/app/doc/rewrite-drafts/
+/app/doc/*prompt*.md
