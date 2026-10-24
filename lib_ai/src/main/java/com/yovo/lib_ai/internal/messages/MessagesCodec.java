@@ -4,6 +4,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.error.YoAiProtocolException;
 import com.yovo.lib_ai.internal.json.Jsons;
+import com.yovo.lib_ai.internal.protocol.UsageFields;
 import com.yovo.lib_ai.messages.YoMessage;
 import com.yovo.lib_ai.messages.YoMessageContent;
 import com.yovo.lib_ai.messages.YoMessageRequest;
@@ -268,11 +269,20 @@ public final class MessagesCodec {
         }
     }
 
+    /**
+     * Anthropic 的用量。协议不返回合计，所以不硬凑；提示缓存的两项分开保留，
+     * 读缓存和写缓存的单价不同，合成一个数字会算错钱。
+     */
     @Nullable
     private static YoMessageUsage decodeUsage(@Nullable JSONObject usage) {
         if (usage == null) {
             return null;
         }
-        return new YoMessageUsage(usage.optInt("input_tokens", 0), usage.optInt("output_tokens", 0));
+        return new YoMessageUsage(
+                UsageFields.intOrZero(usage, "input_tokens"),
+                UsageFields.intOrZero(usage, "output_tokens"),
+                UsageFields.cachedTokens(usage),
+                UsageFields.cacheCreationTokens(usage),
+                UsageFields.cost(usage));
     }
 }

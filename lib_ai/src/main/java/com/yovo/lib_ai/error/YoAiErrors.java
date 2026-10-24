@@ -3,6 +3,8 @@ package com.yovo.lib_ai.error;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.models.YoCapabilityException;
+
 import java.io.InterruptedIOException;
 import java.util.Locale;
 
@@ -26,6 +28,9 @@ public final class YoAiErrors {
             }
             if (current instanceof YoAiProtocolException) {
                 return YoAiErrorKind.PROTOCOL;
+            }
+            if (current instanceof YoCapabilityException capability) {
+                return capability.kind();
             }
             if (current instanceof IllegalArgumentException) {
                 return YoAiErrorKind.BAD_REQUEST;

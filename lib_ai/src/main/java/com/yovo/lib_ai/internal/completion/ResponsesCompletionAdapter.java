@@ -111,7 +111,8 @@ final class ResponsesCompletionAdapter implements CompletionAdapter {
                 reasoning,
                 YoFinishReason.fromResponses(response.status(), incompleteReason(response)),
                 usage == null ? null : new YoCompletionUsage(
-                        usage.inputTokens(), usage.outputTokens(), usage.totalTokens()),
+                        usage.inputTokens(), usage.outputTokens(), usage.totalTokens(),
+                        usage.cachedInputTokens(), usage.cacheCreationInputTokens(), usage.cost()),
                 response.model(),
                 response.id());
     }

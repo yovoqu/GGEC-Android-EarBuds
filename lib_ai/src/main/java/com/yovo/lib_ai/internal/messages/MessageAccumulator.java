@@ -13,6 +13,11 @@ import java.util.Map;
 
 public final class MessageAccumulator {
 
+    /** message_delta 里可能出现的用量字段，逐个搬运，其余原样保留在 message_start 的结果里。 */
+    private static final String[] USAGE_KEYS = {
+            "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"
+    };
+
     private JSONObject message = new JSONObject();
     private final JSONArray content = new JSONArray();
     private final Map<Integer, StringBuilder> partialJson = new HashMap<>();
@@ -113,11 +118,12 @@ public final class MessageAccumulator {
             if (current == null) {
                 current = new JSONObject();
             }
-            if (usage.has("output_tokens")) {
-                current.put("output_tokens", usage.get("output_tokens"));
-            }
-            if (usage.has("input_tokens")) {
-                current.put("input_tokens", usage.get("input_tokens"));
+            // message_delta 的 usage 是增量，只带它自己知道的字段：
+            // 缓存读写在 message_start 里，不在这里抄一遍就会在合并时丢掉。
+            for (String key : USAGE_KEYS) {
+                if (usage.has(key) && !usage.isNull(key)) {
+                    current.put(key, usage.get(key));
+                }
             }
             message.put("usage", current);
         }

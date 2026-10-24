@@ -26,5 +26,10 @@ public enum YoAiErrorKind {
     CANCELLED,
     /** 响应不符合协议，通常是地址不是该协议的端点。 */
     PROTOCOL,
+    /**
+     * 这台平台给不出所需能力（没有对应的服务，或列出的模型都不具备该能力）。
+     * 与 {@link #BAD_REQUEST} 分开：这不是参数写错了，换参数重发也不会成。
+     */
+    UNSUPPORTED_CAPABILITY,
     UNKNOWN
 }

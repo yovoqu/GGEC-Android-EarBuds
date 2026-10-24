@@ -3,6 +3,7 @@ package com.yovo.lib_ai.internal.responses;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.internal.json.Jsons;
+import com.yovo.lib_ai.internal.protocol.UsageFields;
 import com.yovo.lib_ai.responses.YoResponseContentPart;
 import com.yovo.lib_ai.responses.YoResponseInput;
 import com.yovo.lib_ai.responses.YoResponseObject;
@@ -279,14 +280,21 @@ public final class ResponsesCodec {
                 item.toString());
     }
 
+    /**
+     * Responses 的用量。协议自带合计就照抄，没有（0）时才自己相加；
+     * 缓存命中的令牌在 {@code input_tokens_details} 里，单独取出来。
+     */
     @Nullable
     private static YoResponseUsage decodeUsage(@Nullable JSONObject usage) {
         if (usage == null) {
             return null;
         }
-        int input = usage.optInt("input_tokens", 0);
-        int output = usage.optInt("output_tokens", 0);
-        int total = usage.has("total_tokens") ? usage.optInt("total_tokens") : input + output;
-        return new YoResponseUsage(input, output, total);
+        int input = UsageFields.intOrZero(usage, "input_tokens");
+        int output = UsageFields.intOrZero(usage, "output_tokens");
+        int total = UsageFields.intOrZero(usage, "total_tokens");
+        return new YoResponseUsage(input, output, total,
+                UsageFields.cachedTokens(usage),
+                UsageFields.cacheCreationTokens(usage),
+                UsageFields.cost(usage));
     }
 }
