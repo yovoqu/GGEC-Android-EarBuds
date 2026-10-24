@@ -8,26 +8,31 @@ import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.yohu.youi.api.platform.YoSystemBar;
 
 import java.util.List;
 
 /**
- * 对话页底部留白：悬浮标签栏和输入法谁高让谁。
+ * 对话页唯一的窗口留白消费者：页面根只吃状态栏高度，输入区让给悬浮标签栏和输入法。
  *
- * <p>标签栏高度来自 {@code YoTabs.getContentInsetPx()}；输入法高度来自窗口 inset 与动画进度。
- * 只负责给底部输入栏垫 padding，不碰其它视图。</p>
+ * <p>去掉嵌套的 {@code YoPage} 之后顶部留白归页内，这里一并拿住；一个 View 只挂一个
+ * listener，避免两层各补一遍。左右由 {@code YoTabs} 负责，这里不碰。</p>
  */
-final class AiChatBottomInset {
+final class AiChatInsets {
+
+    private static final float COMPOSER_BOTTOM_GAP_DP = 10f;
 
     private final AiTheme theme;
-    private final View target;
+    private final View composer;
 
+    private View root;
+    private int statusBarTop;
     private int tabsInset;
     private int imeInset;
 
-    AiChatBottomInset(@NonNull AiTheme theme, @NonNull View target) {
+    AiChatInsets(@NonNull AiTheme theme, @NonNull View composer) {
         this.theme = theme;
-        this.target = target;
+        this.composer = composer;
     }
 
     void setTabsInset(int px) {
@@ -37,9 +42,10 @@ final class AiChatBottomInset {
         }
     }
 
-    /** 在页面内容根上订阅 IME inset 与动画进度。 */
     void install(@NonNull View root) {
+        this.root = root;
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            statusBarTop = YoSystemBar.systemBarsAndCutout(insets).top;
             imeInset = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             apply();
             return insets;
@@ -55,10 +61,17 @@ final class AiChatBottomInset {
                 return insets;
             }
         });
+        ViewCompat.requestApplyInsets(root);
     }
 
     private void apply() {
-        int bottom = Math.max(imeInset, tabsInset);
-        target.setPadding(theme.dp(8), 0, theme.dp(8), bottom + theme.dp(4));
+        if (root != null) {
+            root.setPadding(0, statusBarTop, 0, 0);
+        }
+        int bottom = Math.max(imeInset, tabsInset) + theme.dp(COMPOSER_BOTTOM_GAP_DP);
+        if (composer.getPaddingBottom() != bottom) {
+            composer.setPadding(composer.getPaddingLeft(), composer.getPaddingTop(),
+                    composer.getPaddingRight(), bottom);
+        }
     }
 }

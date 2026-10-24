@@ -99,11 +99,11 @@ public final class MarkdownView extends LinearLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         if (index > 0) {
             float top = switch (block.type()) {
-                case HEADING -> 14f;
-                case CODE, TABLE, QUOTE -> 10f;
+                case HEADING -> 18f;
+                case CODE, TABLE, QUOTE -> 12f;
                 case RULE -> 12f;
-                case LIST -> 6f;
-                case PARAGRAPH -> 8f;
+                case LIST -> 8f;
+                case PARAGRAPH -> 14f;
             };
             params.topMargin = theme.dp(top);
         }

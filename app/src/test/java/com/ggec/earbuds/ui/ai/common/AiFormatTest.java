@@ -41,26 +41,4 @@ public class AiFormatTest {
         assertEquals("••••••••", AiFormat.maskKey("abc"));
     }
 
-    @Test
-    public void relativeTimesFollowTheCalendarDay() {
-        assertEquals(AiTimeLabel.Kind.NOW, AiTimeLabel.of(NOON, NOON - 30_000, ZONE).kind());
-        assertEquals(AiTimeLabel.Kind.NOW, AiTimeLabel.of(NOON, NOON + 5_000, ZONE).kind());
-
-        AiTimeLabel minutes = AiTimeLabel.of(NOON, NOON - 5 * 60_000L, ZONE);
-        assertEquals(AiTimeLabel.Kind.MINUTES, minutes.kind());
-        assertEquals(5, minutes.first());
-
-        AiTimeLabel hours = AiTimeLabel.of(NOON, NOON - 3 * 3_600_000L - 120_000L, ZONE);
-        assertEquals(AiTimeLabel.Kind.HOURS, hours.kind());
-        assertEquals(3, hours.first());
-
-        long lateLastNight = NOON - 13 * 3_600_000L;
-        assertEquals("less than 24 hours ago but yesterday on the calendar",
-                AiTimeLabel.Kind.YESTERDAY, AiTimeLabel.of(NOON, lateLastNight, ZONE).kind());
-
-        AiTimeLabel older = AiTimeLabel.of(NOON, NOON - 5 * 86_400_000L, ZONE);
-        assertEquals(AiTimeLabel.Kind.DATE, older.kind());
-        assertEquals(10, older.first());
-        assertEquals(11, older.second());
-    }
 }

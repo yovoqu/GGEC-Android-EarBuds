@@ -30,7 +30,6 @@ public final class AiChatUiMapper {
         String label = model == null ? "" : model.platform().name() + " · " + model.model().name();
         return new AiChatUiState(
                 state.loaded(),
-                label,
                 items,
                 welcome(state),
                 new AiChatUiState.Composer(state.ready(), state.generating(), model == null ? null : label),
