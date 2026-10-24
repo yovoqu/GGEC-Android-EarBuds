@@ -98,7 +98,12 @@ public final class AiConversationRepositoryImpl implements AiConversationReposit
         String text = documents.read(INDEX);
         if (text != null && !text.isBlank()) {
             try {
-                return sorted(json.decodeIndex(text));
+                List<AiConversationSummary> decoded = sorted(json.decodeIndex(text));
+                // 解出来是空的未必真的没有会话：索引可能是旧版本（摘要格式改过）、
+                // 也可能被外部清空。这种情况按会话文件重建，否则列表会凭空变空。
+                if (!decoded.isEmpty()) {
+                    return decoded;
+                }
             } catch (JSONException corrupt) {
                 // 索引坏了不影响数据，下面重建。
             }

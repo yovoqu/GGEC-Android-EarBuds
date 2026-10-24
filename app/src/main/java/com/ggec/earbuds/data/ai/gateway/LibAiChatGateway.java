@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.gateway;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiRole;
+import com.ggec.earbuds.domain.ai.model.AiContentPart;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
 import com.ggec.earbuds.domain.ai.port.AiChatGateway;
@@ -10,6 +11,8 @@ import com.ggec.earbuds.domain.ai.port.AiChatListener;
 import com.ggec.earbuds.domain.ai.port.AiChatRequest;
 import com.ggec.earbuds.domain.ai.port.AiChatResult;
 import com.ggec.earbuds.domain.ai.port.AiChatTurn;
+
+import java.util.List;
 import com.yovo.lib_ai.api.YoAiCall;
 import com.yovo.lib_ai.completion.YoCompletionEvent;
 import com.yovo.lib_ai.completion.YoCompletionListener;
@@ -81,11 +84,16 @@ public final class LibAiChatGateway implements AiChatGateway {
                 .protocol(LibAiPlatformCatalog.protocol(request.platform().protocol()))
                 .system(request.systemPrompt())
                 .temperature(request.temperature())
+                .topP(request.topP())
                 .maxOutputTokens(request.maxOutputTokens());
         for (AiChatTurn turn : request.turns()) {
+            // 出站内容一律先表达成"部件列表"，再压平成平台要的纯文本。
+            // 现在只会有一个 Text 部件（相册还没开放），将来的图片/音频只需要在这里多塞一个部件，
+            // 上层与端口都不用动——这就是留这个抽象的全部意义。
+            List<AiContentPart> parts = List.of(new AiContentPart.Text(turn.text()));
             builder.addTurn(YoCompletionTurn.of(
                     turn.role() == AiRole.USER ? YoCompletionTurn.Role.USER : YoCompletionTurn.Role.ASSISTANT,
-                    turn.text()));
+                    AiContentPart.flatten(parts)));
         }
         return builder.build();
     }
@@ -99,6 +107,12 @@ public final class LibAiChatGateway implements AiChatGateway {
             case OTHER -> AiFinishReason.OTHER;
         };
         return new AiChatResult(result.text(), result.reasoning(), finish,
-                usage == null ? null : new AiUsage(usage.inputTokens(), usage.outputTokens()));
+                usage == null ? null : new AiUsage(
+                        usage.inputTokens(),
+                        usage.outputTokens(),
+                        usage.totalTokens(),
+                        usage.cost(),
+                        usage.cachedInputTokens(),
+                        usage.cacheCreationInputTokens()));
     }
 }

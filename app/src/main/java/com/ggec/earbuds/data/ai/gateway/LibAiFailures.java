@@ -41,6 +41,7 @@ final class LibAiFailures {
             case NETWORK -> AiFailureKind.NETWORK;
             case TIMEOUT -> AiFailureKind.TIMEOUT;
             case CANCELLED -> AiFailureKind.CANCELLED;
+            case UNSUPPORTED_CAPABILITY -> AiFailureKind.UNSUPPORTED_CAPABILITY;
             case PROTOCOL -> AiFailureKind.PROTOCOL;
             case UNKNOWN -> AiFailureKind.UNKNOWN;
         };

@@ -2,6 +2,9 @@ package com.ggec.earbuds.data.ai.gateway;
 
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
+import com.yovo.lib_ai.models.YoModelCapability;
+import com.yovo.lib_ai.models.YoModelCatalog;
+import com.yovo.lib_ai.models.YoModelDescriptor;
 import com.yovo.lib_ai.models.YoModelFeature;
 import com.yovo.lib_ai.models.YoModelInfo;
 
@@ -17,6 +20,8 @@ import java.util.Set;
  * 排序：发布时间新的在前，没有发布时间的排在最后，再按名字。
  */
 final class LibAiModels {
+
+    private static final YoModelCatalog CATALOG = YoModelCatalog.standard();
 
     private LibAiModels() {
     }
@@ -42,11 +47,34 @@ final class LibAiModels {
     }
 
     private static AiModel toModel(YoModelInfo info) {
+        Set<AiModelFeature> features = providerFeatures(info);
+        YoModelDescriptor known = CATALOG.describe(info.id());
+        // 有明确出处（内置表 / 用户手写）的能力优先：那是按模型家族声明的，
+        // 比"平台自己报的 feature 位"更可靠——同一份 id 在网关镜像上经常少报一位。
+        // 只有推断结果时才回退到平台报的 feature，免得把平台知道的事也推断掉。
+        if (known.source().trusted()) {
+            features = declaredFeatures(known);
+        }
+        return new AiModel(info.id(), info.displayName(), info.contextWindow(), info.maxOutputTokens(),
+                features, false);
+    }
+
+    private static Set<AiModelFeature> providerFeatures(YoModelInfo info) {
         Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
         for (YoModelFeature feature : info.features()) {
             features.add(feature == YoModelFeature.VISION ? AiModelFeature.VISION : AiModelFeature.REASONING);
         }
-        return new AiModel(info.id(), info.displayName(), info.contextWindow(), info.maxOutputTokens(),
-                features, false);
+        return features;
+    }
+
+    private static Set<AiModelFeature> declaredFeatures(YoModelDescriptor descriptor) {
+        Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
+        if (descriptor.supports(YoModelCapability.CHAT_VISION)) {
+            features.add(AiModelFeature.VISION);
+        }
+        if (descriptor.supports(YoModelCapability.REASONING)) {
+            features.add(AiModelFeature.REASONING);
+        }
+        return features;
     }
 }
