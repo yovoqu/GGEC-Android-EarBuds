@@ -151,7 +151,7 @@ public final class LatencyProbeResource implements YoLatencyProbe {
                     listener.onStarted(model);
                 }
             });
-            Flight flight = new Flight(System.nanoTime());
+            Flight flight = new Flight(System.nanoTime(), plan.firstTokenOnly());
             active.add(flight);
             try {
                 if (token.isCancelled()) {
@@ -165,6 +165,10 @@ public final class LatencyProbeResource implements YoLatencyProbe {
                 }
                 if (token.isCancelled()) {
                     flight.abort();
+                }
+                if (flight.stoppedEarly) {
+                    // 首个片段在 call 赋值之前就到了：那时没法断开，这里补上。
+                    flight.call.cancel();
                 }
                 boolean finished = flight.done.await(plan.timeoutMillis(), TimeUnit.MILLISECONDS);
                 if (flight.aborted) {
@@ -229,17 +233,21 @@ public final class LatencyProbeResource implements YoLatencyProbe {
     /** 一个模型的一次在途请求：既是流式监听器，也是等待它结束的闩。 */
     private static final class Flight implements YoCompletionListener {
         final long startNanos;
+        final boolean firstTokenOnly;
         final CountDownLatch done = new CountDownLatch(1);
         volatile YoAiCall call;
         volatile boolean aborted;
+        /** 只测首字时，收到首个片段后主动断开；之后底层回调的完成或取消失败都不再算数。 */
+        volatile boolean stoppedEarly;
         volatile long firstNanos = -1L;
         volatile long endNanos = -1L;
         volatile YoCompletionResult result;
         volatile YoAiException error;
         private final StringBuilder sample = new StringBuilder();
 
-        Flight(long startNanos) {
+        Flight(long startNanos, boolean firstTokenOnly) {
             this.startNanos = startNanos;
+            this.firstTokenOnly = firstTokenOnly;
         }
 
         long millisAt(long nanos) {
@@ -272,8 +280,21 @@ public final class LatencyProbeResource implements YoLatencyProbe {
 
         @Override
         public void onEvent(@NonNull YoCompletionEvent event) {
+            if (stoppedEarly) {
+                return;
+            }
             if (firstNanos < 0) {
                 firstNanos = System.nanoTime();
+                if (firstTokenOnly) {
+                    endNanos = firstNanos;
+                    stoppedEarly = true;
+                    YoAiCall current = call;
+                    if (current != null) {
+                        current.cancel();
+                    }
+                    done.countDown();
+                    return;
+                }
             }
             if (event.type() == YoCompletionEvent.Type.TEXT) {
                 synchronized (this) {
@@ -286,6 +307,9 @@ public final class LatencyProbeResource implements YoLatencyProbe {
 
         @Override
         public void onComplete(@NonNull YoCompletionResult completion) {
+            if (stoppedEarly) {
+                return;
+            }
             result = completion;
             endNanos = System.nanoTime();
             done.countDown();
@@ -293,6 +317,9 @@ public final class LatencyProbeResource implements YoLatencyProbe {
 
         @Override
         public void onFailure(@NonNull YoAiException failure) {
+            if (stoppedEarly) {
+                return;
+            }
             error = failure;
             endNanos = System.nanoTime();
             done.countDown();
