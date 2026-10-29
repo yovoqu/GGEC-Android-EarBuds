@@ -31,6 +31,7 @@ public final class YoServiceEndpointsTest {
             assertEquals(base, "https://api.openai.com/v1/audio/transcriptions",
                     YoServiceEndpoints.transcriptions(base));
             assertEquals(base, "https://api.openai.com/v1/audio/speech", YoServiceEndpoints.speech(base));
+            assertEquals(base, "https://api.openai.com/v1/embeddings", YoServiceEndpoints.embeddings(base));
             assertFalse(base, YoServiceEndpoints.chatCompletions(base).contains(V1 + V1));
         }
     }
@@ -77,6 +78,8 @@ public final class YoServiceEndpointsTest {
                 YoServiceEndpoints.endpoint(baseUrl, YoServiceKind.AUDIO_TRANSCRIBE, "whisper-1"));
         assertEquals("https://api.openai.com/v1/audio/speech",
                 YoServiceEndpoints.endpoint(baseUrl, YoServiceKind.AUDIO_SPEECH, "tts-1"));
+        assertEquals("https://api.openai.com/v1/embeddings",
+                YoServiceEndpoints.endpoint(baseUrl, YoServiceKind.EMBEDDINGS, "text-embedding-3-small"));
         assertTrue(YoServiceEndpoints
                 .endpoint(baseUrl, YoServiceKind.REALTIME, "gpt-4o-realtime-preview")
                 .startsWith("wss://"));
@@ -90,8 +93,10 @@ public final class YoServiceEndpointsTest {
         assertEquals(com.yovo.lib_ai.api.YoProtocol.RESPONSES, YoServiceKind.RESPONSES.asProtocol());
         org.junit.Assert.assertNull(YoServiceKind.AUDIO_TRANSCRIBE.asProtocol());
         org.junit.Assert.assertNull(YoServiceKind.AUDIO_SPEECH.asProtocol());
+        org.junit.Assert.assertNull(YoServiceKind.EMBEDDINGS.asProtocol());
         org.junit.Assert.assertNull(YoServiceKind.REALTIME.asProtocol());
         assertTrue(YoServiceKind.CHAT_COMPLETIONS.conversational());
         assertFalse(YoServiceKind.REALTIME.conversational());
+        assertFalse(YoServiceKind.EMBEDDINGS.conversational());
     }
 }

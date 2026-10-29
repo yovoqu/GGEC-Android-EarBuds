@@ -3,38 +3,46 @@ package com.yovo.lib_ai.models;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.models.spec.YoModelSpec;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 
 /**
- * 能力的第 3 级来源：把"内置表 → 推断 → 用户覆盖"三层按优先级合并成一个答复。
+ * 把三层来源按优先级合成一个答复：<b>推断 → 平台上报 → 用户覆盖</b>，后者逐项盖过前者。
  *
- * <p>不可变：{@link #withUserCapabilities(String, Set)} 返回新的目录，旧目录不受影响——
- * 设置页在改动过程中随时可以回滚，也不用担心某个 ViewModel 手里攥着半更新的状态。
+ * <p>两个入口对应两种手里有什么的情形：
+ * <ul>
+ *   <li>{@link #resolve(YoModelInfo)}：拉过平台列表，规格里已经有平台上报的内容；</li>
+ *   <li>{@link #describe(String)}：只有一个 id（用户手填的模型名、或者上次存下来的 id），
+ *       没有平台上报，只能推断。</li>
+ * </ul>
+ * 两者都会再叠加用户覆盖，连"一个能力都不勾"也算数。</p>
  *
- * <p>用户覆盖这轮不接界面，只留方法；接界面时把 {@link #userCapabilities(String)} 读出来勾选即可。
+ * <p>不可变：{@link #withOverride} 返回新的目录，旧目录不受影响——
+ * 设置页在改动过程中随时可以回滚，也不用担心某个 ViewModel 手里攥着半更新的状态。</p>
  */
 public final class YoModelCatalog {
 
     private static final YoModelCatalog STANDARD = new YoModelCatalog(Map.of());
 
-    private final Map<String, Set<YoModelCapability>> userOverrides;
+    private final Map<String, YoModelOverride> overrides;
 
     public YoModelCatalog() {
         this(Map.of());
     }
 
-    private YoModelCatalog(@NonNull Map<String, Set<YoModelCapability>> userOverrides) {
-        this.userOverrides = Map.copyOf(userOverrides);
+    private YoModelCatalog(@NonNull Map<String, YoModelOverride> overrides) {
+        this.overrides = Map.copyOf(overrides);
     }
 
     /**
-     * 只有内置表 + 推断的目录。
+     * 没有任何用户覆盖的目录。
      */
     @NonNull
     public static YoModelCatalog standard() {
@@ -42,90 +50,107 @@ public final class YoModelCatalog {
     }
 
     /**
-     * 查一个模型的能力。两层合并，后者覆盖前者：
-     * <ol>
-     *   <li>{@link YoModelInference} 名称推断 → {@link YoCapabilitySource#INFERRED}；</li>
-     *   <li>用户覆盖 → {@link YoCapabilitySource#USER}，连"一个能力都不勾"也算数。</li>
-     * </ol>
+     * 只凭 id 查一个模型的规格：推断，再叠加用户覆盖。
      *
      * @throws IllegalArgumentException id 为空
      */
     @NonNull
-    public YoModelDescriptor describe(@Nullable String id) {
+    public YoModelSpec describe(@Nullable String id) {
         String requested = normalize(id);
-        YoModelDescriptor base = YoModelInference.infer(requested);
-        Set<YoModelCapability> override = userOverrides.get(key(requested));
-        if (override == null) {
-            return base;
-        }
-        return base.withCapabilities(override, YoCapabilitySource.USER);
+        return withOverride(YoModelInference.infer(requested));
     }
 
     /**
-     * 按输入顺序批量查。平台模型列表动辄上百条，逐条 {@link #describe(String)} 会重复查表；
-     * 这里没有额外缓存，因为查表本身是 O(家族数)，缓存的失效成本更高。
+     * 拿到了平台列表里的一项：它的规格已含平台上报，再叠加用户覆盖。
      */
     @NonNull
-    public List<YoModelDescriptor> describeAll(@Nullable Collection<String> ids) {
-        List<YoModelDescriptor> descriptors = new ArrayList<>();
+    public YoModelSpec resolve(@NonNull YoModelInfo info) {
+        return withOverride(info.spec());
+    }
+
+    /**
+     * 按输入顺序批量按 id 查，跳过空白项。
+     */
+    @NonNull
+    public List<YoModelSpec> describeAll(@Nullable Collection<String> ids) {
+        List<YoModelSpec> specs = new ArrayList<>();
         if (ids == null) {
-            return descriptors;
+            return specs;
         }
         for (String id : ids) {
             if (id == null || id.isBlank()) {
                 continue;
             }
-            descriptors.add(describe(id));
+            specs.add(describe(id));
         }
-        return descriptors;
+        return specs;
     }
 
     /**
-     * 给某个模型写一份用户勾选的能力。返回新目录，{@code source} 变成 {@link YoCapabilitySource#USER}，
-     * 从此永久压过内置表和推断。
-     *
-     * @param capabilities 允许为空集合，表示用户明确说"这些都不支持"
+     * 按输入顺序批量解析平台列表。
      */
     @NonNull
-    public YoModelCatalog withUserCapabilities(@Nullable String id,
-                                               @Nullable Set<YoModelCapability> capabilities) {
+    public List<YoModelSpec> resolveAll(@Nullable Collection<YoModelInfo> infos) {
+        List<YoModelSpec> specs = new ArrayList<>();
+        if (infos == null) {
+            return specs;
+        }
+        for (YoModelInfo info : infos) {
+            specs.add(resolve(info));
+        }
+        return specs;
+    }
+
+    /**
+     * 记下用户对某个模型的表态。返回新目录，该模型的相关说法此后永久压过推断和平台上报。
+     * 匹配按 id 原文（忽略大小写），故意不做家族前缀匹配：
+     * 用户确认的是那个具体模型，不该被将来某个同家族新版本继承。
+     */
+    @NonNull
+    public YoModelCatalog withOverride(@Nullable String id, @NonNull YoModelOverride override) {
         String requested = normalize(id);
-        Map<String, Set<YoModelCapability>> merged = new LinkedHashMap<>(userOverrides);
-        merged.put(key(requested), capabilities == null ? Set.of() : Set.copyOf(capabilities));
+        Map<String, YoModelOverride> merged = new LinkedHashMap<>(overrides);
+        merged.put(key(requested), Objects.requireNonNull(override, "override"));
         return new YoModelCatalog(merged);
     }
 
     /**
-     * 去掉某个模型的用户覆盖，回到按 id 推断。
+     * 撤掉某个模型的用户覆盖，回到推断与平台上报。
      */
     @NonNull
-    public YoModelCatalog withoutUserCapabilities(@Nullable String id) {
+    public YoModelCatalog withoutOverride(@Nullable String id) {
         String requested = normalize(id);
         String key = key(requested);
-        if (!userOverrides.containsKey(key)) {
+        if (!overrides.containsKey(key)) {
             return this;
         }
-        Map<String, Set<YoModelCapability>> merged = new LinkedHashMap<>(userOverrides);
+        Map<String, YoModelOverride> merged = new LinkedHashMap<>(overrides);
         merged.remove(key);
         return new YoModelCatalog(merged);
     }
 
     /**
-     * 用户给这个模型勾过的能力；没勾过返回 {@code null}（用来区分"没动过"和"勾了一个都不支持"）。
+     * 用户对这个模型的表态；没动过返回 {@code null}（用来区分"没动过"和"勾了一个都不支持"）。
      */
     @Nullable
-    public Set<YoModelCapability> userCapabilities(@Nullable String id) {
+    public YoModelOverride override(@Nullable String id) {
         if (id == null || id.isBlank()) {
             return null;
         }
-        return userOverrides.get(key(id.trim()));
+        return overrides.get(key(id.trim()));
     }
 
     /**
      * 有没有用户覆盖。设置页据此显示"已手动指定"。
      */
-    public boolean hasUserCapabilities(@Nullable String id) {
-        return userCapabilities(id) != null;
+    public boolean hasOverride(@Nullable String id) {
+        return override(id) != null;
+    }
+
+    @NonNull
+    private YoModelSpec withOverride(@NonNull YoModelSpec base) {
+        YoModelOverride override = overrides.get(key(base.id()));
+        return override == null ? base : override.applyTo(base);
     }
 
     @NonNull
@@ -136,10 +161,6 @@ public final class YoModelCatalog {
         return id.trim();
     }
 
-    /**
-     * 用户覆盖按 id 原文（忽略大小写）匹配。故意不做家族前缀匹配：
-     * 用户勾的是那个具体模型，不该被将来某个同家族新版本继承。
-     */
     @NonNull
     private static String key(@NonNull String id) {
         return id.toLowerCase(Locale.ROOT);
