@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
+import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -191,15 +192,12 @@ public class LibAiGatewayTest {
     }
 
     @Test
-    public void samplingParamsReachTheLibraryRequest() {
-        AiChatRequest request = new AiChatRequest(config(AiProtocol.CHAT_COMPLETIONS), "gpt-test", null,
-                List.of(new AiChatTurn(AiRole.USER, "hi")), 0.4, 0.9, 512);
+    public void theAppDefaultsReachTheLibraryRequest() {
+        YoCompletionRequest lib = LibAiChatGateway.toRequest(chatRequest(AiProtocol.CHAT_COMPLETIONS));
 
-        YoCompletionRequest lib = LibAiChatGateway.toRequest(request);
-
-        assertEquals(0.4, lib.temperature(), 1e-9);
-        assertEquals(0.9, lib.topP(), 1e-9);
-        assertEquals(Integer.valueOf(512), lib.maxOutputTokens());
+        assertEquals(AiGenerationDefaults.TEMPERATURE, lib.temperature(), 1e-9);
+        assertEquals(AiGenerationDefaults.TOP_P, lib.topP(), 1e-9);
+        assertEquals(Integer.valueOf(AiGenerationDefaults.MAX_OUTPUT_TOKENS), lib.maxOutputTokens());
     }
 
     @Test
@@ -344,7 +342,7 @@ public class LibAiGatewayTest {
     private AiChatRequest chatRequest(AiProtocol protocol) {
         return new AiChatRequest(config(protocol), "gpt-test", "be brief",
                 List.of(new AiChatTurn(AiRole.USER, "hi"), new AiChatTurn(AiRole.ASSISTANT, "hello"),
-                        new AiChatTurn(AiRole.USER, "again")), null, null, null);
+                        new AiChatTurn(AiRole.USER, "again")));
     }
 
     private static MockResponse sse(String body) {

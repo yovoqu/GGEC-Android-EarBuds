@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
-import com.ggec.earbuds.data.ai.usage.FileAiUsageStore;
 import com.ggec.earbuds.data.ai.gateway.LibAiChatGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiModelGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiPlatformCatalog;
@@ -37,12 +36,10 @@ import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
-import com.ggec.earbuds.domain.ai.usecase.ApplyModelParams;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
-import com.ggec.earbuds.domain.ai.usecase.LoadUsageSummary;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.RemoveModel;
 import com.ggec.earbuds.domain.ai.usecase.RemovePlatform;
@@ -53,7 +50,6 @@ import com.ggec.earbuds.domain.ai.usecase.SaveVoiceSettings;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.domain.ai.port.AiSpeechRecognizer;
 import com.ggec.earbuds.domain.ai.port.AiSpeechSynthesizer;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
@@ -117,7 +113,6 @@ public final class AiGraph {
     private final LibAiClientPool clients;
     private final LibAiPlatformCatalog catalog = new LibAiPlatformCatalog();
     private final AiIdGenerator ids;
-    private final FileAiUsageStore usageStore;
     private final ViewModelProvider.Factory factory = new Factory();
 
     private AiGraph(Context context) {
@@ -136,10 +131,8 @@ public final class AiGraph {
         // 网关回调用单线程，保证同一次调用的增量按顺序送达；会话自己再投回它的串行执行器处理。
         clients = new LibAiClientPool(pool("ai-callbacks", 1));
         ids = () -> UUID.randomUUID().toString();
-        // 账本和对话共用同一个存储根，但各自一个文档：一次对话写坏不该连带账本。
-        usageStore = new FileAiUsageStore(documents);
         session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients), clock, ids,
-                new RecordUsage(usageStore, clock), pool("ai-chat", 1));
+                pool("ai-chat", 1));
         synthesizer = new SystemTtsSynthesizer(context);
         recognizer = new WhisperSpeechRecognizer(settings);
     }
@@ -213,9 +206,8 @@ public final class AiGraph {
                 return modelClass.cast(new AiSettingsViewModel(
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new SaveChatPreferences(settings), new SaveVoiceSettings(settings),
-                        new LoadUsageSummary(usageStore), new LoadPlatformTemplates(catalog),
-                        new ApplyModelParams(settings),
-                        pool("ai-settings", 2), new AiSettingsUiMapper()));
+                        new LoadPlatformTemplates(catalog),
+                        new AiSettingsUiMapper()));
             }
             if (AiPlatformViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiPlatformViewModel(
@@ -227,7 +219,7 @@ public final class AiGraph {
                         new AddManualModel(settings, new AiModelIdPolicy()),
                         new RemoveModel(settings), new SelectModel(settings),
                         new RunSpeedTest(settings, new LibAiSpeedTestGateway(clients), clock),
-                        new RemovePlatform(settings), new ApplyModelParams(settings),
+                        new RemovePlatform(settings),
                         pool("ai-settings", 2), new AiPlatformUiMapper()));
             }
             throw new IllegalArgumentException("Unknown model: " + modelClass.getName());

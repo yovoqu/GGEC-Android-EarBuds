@@ -13,12 +13,10 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.port.AiConversationRepository;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemoryConversationRepository;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
-import com.ggec.earbuds.testing.ai.MemoryUsageStore;
 import com.ggec.earbuds.testing.ai.ScriptedChatGateway;
 
 import org.junit.Before;
@@ -46,7 +44,6 @@ public class AiHistoryViewModelTest {
 
     private final MemorySettingsRepository settings = new MemorySettingsRepository(AiFixtures.readySettings());
     private final MemoryConversationRepository conversations = new MemoryConversationRepository();
-    private final MemoryUsageStore usageStore = new MemoryUsageStore();
     private final ScriptedChatGateway gateway = new ScriptedChatGateway();
     private final ManualClock clock = new ManualClock();
     private final List<AiHistoryEvent> events = new ArrayList<>();
@@ -57,8 +54,7 @@ public class AiHistoryViewModelTest {
     @Before
     public void setUp() {
         clock.now = at(2026, 10, 22, 15, 0);
-        session = new AiChatSession(settings, conversations, gateway, clock, clock,
-                new RecordUsage(usageStore, clock), Runnable::run);
+        session = new AiChatSession(settings, conversations, gateway, clock, clock, Runnable::run);
         seed("c1", "耳机连不上", clock.now - 2 * 60_000L, "耳机连不上手机怎么办？");
         seed("c2", "", clock.now - 3 * 24 * 60 * 60_000L, "怎么延长耳机的续航时间？");
         viewModel = new AiHistoryViewModel(session, new ListConversations(conversations),

@@ -1,6 +1,7 @@
 package com.ggec.earbuds.data.ai.gateway;
 
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
+import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiRole;
 import com.ggec.earbuds.domain.ai.model.AiContentPart;
@@ -83,9 +84,10 @@ public final class LibAiChatGateway implements AiChatGateway {
                 .model(request.modelId())
                 .protocol(LibAiPlatformCatalog.protocol(request.platform().protocol()))
                 .system(request.systemPrompt())
-                .temperature(request.temperature())
-                .topP(request.topP())
-                .maxOutputTokens(request.maxOutputTokens());
+                // 采样参数不再由用户设置：统一填 APP 定的默认值，换平台、换模型时风格才一致。
+                .temperature(AiGenerationDefaults.TEMPERATURE)
+                .topP(AiGenerationDefaults.TOP_P)
+                .maxOutputTokens(AiGenerationDefaults.MAX_OUTPUT_TOKENS);
         for (AiChatTurn turn : request.turns()) {
             // 出站内容一律先表达成"部件列表"，再压平成平台要的纯文本。
             // 现在只会有一个 Text 部件（相册还没开放），将来的图片/音频只需要在这里多塞一个部件，

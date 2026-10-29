@@ -13,7 +13,6 @@ import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
 import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.port.AiChatResult;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeAudioCapture;
@@ -23,7 +22,6 @@ import com.ggec.earbuds.testing.ai.FakeSpeechSynthesizer;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemoryConversationRepository;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
-import com.ggec.earbuds.testing.ai.MemoryUsageStore;
 import com.ggec.earbuds.testing.ai.ScriptedChatGateway;
 
 import org.junit.Before;
@@ -71,7 +69,6 @@ public class CascadedVoiceStrategyTest {
     private final MemorySettingsRepository settings = new MemorySettingsRepository(AiFixtures.readySettings());
     private final MemoryConversationRepository conversations = new MemoryConversationRepository();
     private final ScriptedChatGateway gateway = new ScriptedChatGateway();
-    private final MemoryUsageStore usage = new MemoryUsageStore();
     private final FakeAudioCapture capture = new FakeAudioCapture();
     private final FakeAudioPlayback playback = new FakeAudioPlayback();
     private final FakeSpeechRecognizer recognizer = new FakeSpeechRecognizer();
@@ -83,8 +80,7 @@ public class CascadedVoiceStrategyTest {
 
     @Before
     public void setUp() {
-        chat = new AiChatSession(settings, conversations, gateway, clock, clock,
-                new RecordUsage(usage, clock), Runnable::run);
+        chat = new AiChatSession(settings, conversations, gateway, clock, clock, Runnable::run);
         strategy = new CascadedVoiceStrategy(settings, chat, capture, playback, recognizer, synthesizer,
                 clock, Runnable::run, Runnable::run);
         strategy.start(AiVoiceSettings.defaults(), "deepseek", snapshots::add);

@@ -8,6 +8,7 @@ import com.ggec.earbuds.domain.ai.model.AiConversation;
 import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.policy.AiContextPolicy;
@@ -24,7 +25,6 @@ import com.ggec.earbuds.domain.ai.port.AiConversationRepository;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.port.Subscription;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +52,6 @@ public final class AiChatSession {
     private final AiChatGateway gateway;
     private final AiClock clock;
     private final AiIdGenerator ids;
-    private final RecordUsage recordUsage;
     private final Executor executor;
     private final AiContextPolicy contextPolicy = new AiContextPolicy();
     private final AiTitlePolicy titlePolicy = new AiTitlePolicy();
@@ -70,9 +69,6 @@ public final class AiChatSession {
     private long generation;
     private long activeToken;
     private long runStartedAt;
-    /** 这一轮实际用的是哪个平台和模型：记录的是"回答这条消息的模型"，不是"当前选中的模型"。 */
-    private String runPlatformId = "";
-    private String runModelId = "";
     @Nullable
     private AiCancellable running;
 
@@ -82,14 +78,12 @@ public final class AiChatSession {
             AiChatGateway gateway,
             AiClock clock,
             AiIdGenerator ids,
-            RecordUsage recordUsage,
             Executor executor) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.conversations = Objects.requireNonNull(conversations, "conversations");
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.ids = Objects.requireNonNull(ids, "ids");
-        this.recordUsage = Objects.requireNonNull(recordUsage, "recordUsage");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.conversation = AiConversation.empty(ids.next(), clock.now());
         this.state = AiChatState.initial(conversation);
@@ -270,11 +264,11 @@ public final class AiChatSession {
         String messageId = all.get(all.size() - 1).id();
         AiChatRequest request;
         try {
+            // 上下文条数不再由用户设置，统一用 APP 定的默认值。
             List<AiChatTurn> turns = contextPolicy.window(all.subList(0, all.size() - 1),
-                    preferences.contextMessages());
+                    AiGenerationDefaults.CONTEXT_MESSAGES);
             String system = preferences.systemPrompt().isBlank() ? null : preferences.systemPrompt();
-            request = new AiChatRequest(active.platform(), active.model().id(), system, turns,
-                    preferences.temperature(), preferences.topP(), preferences.maxOutputTokens());
+            request = new AiChatRequest(active.platform(), active.model().id(), system, turns);
         } catch (IllegalStateException unusable) {
             failRun(messageId, AiFailureKind.UNKNOWN, unusable.getMessage());
             return;
@@ -282,8 +276,6 @@ public final class AiChatSession {
         long token = ++generation;
         activeToken = token;
         runStartedAt = clock.now();
-        runPlatformId = active.platform().id();
-        runModelId = active.model().id();
         AiCancellable handle;
         try {
             handle = gateway.stream(request, new AiChatListener() {
@@ -353,8 +345,6 @@ public final class AiChatSession {
             }
             return merged.complete(result.finishReason(), result.usage(), elapsed);
         });
-        // 记账放在消息收尾之后：账本写不进去，不该影响这条回答的状态。
-        recordUsage.success(conversation.id(), runPlatformId, runModelId, result.usage(), runStartedAt);
         touch();
         persist();
         publish();
@@ -368,8 +358,6 @@ public final class AiChatSession {
         running = null;
         long elapsed = clock.now() - runStartedAt;
         replace(messageId, message -> message.fail(failure.kind(), failure.getMessage(), elapsed));
-        recordUsage.failed(conversation.id(), runPlatformId, runModelId, null, runStartedAt,
-                failure.kind().name());
         touch();
         persist();
         publish();
@@ -398,8 +386,6 @@ public final class AiChatSession {
             handle.cancel();
         }
         long elapsed = clock.now() - runStartedAt;
-        // 取消也占一次请求额度：不记的话"用量"会比平台账单少一截。
-        recordUsage.cancelled(conversation.id(), runPlatformId, runModelId, null, runStartedAt);
         List<AiMessage> next = new ArrayList<>();
         for (AiMessage message : conversation.messages()) {
             if (!message.streaming()) {
