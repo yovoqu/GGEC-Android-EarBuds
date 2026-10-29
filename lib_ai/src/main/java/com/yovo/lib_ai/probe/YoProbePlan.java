@@ -27,6 +27,7 @@ public final class YoProbePlan {
     private final long timeoutMillis;
     private final String prompt;
     private final int maxOutputTokens;
+    private final boolean firstTokenOnly;
 
     private YoProbePlan(Builder builder) {
         this.protocol = builder.protocol;
@@ -35,6 +36,7 @@ public final class YoProbePlan {
         this.timeoutMillis = builder.timeoutMillis;
         this.prompt = builder.prompt;
         this.maxOutputTokens = builder.maxOutputTokens;
+        this.firstTokenOnly = builder.firstTokenOnly;
     }
 
     @NonNull
@@ -72,6 +74,14 @@ public final class YoProbePlan {
         return maxOutputTokens;
     }
 
+    /**
+     * 只测首字：收到第一个输出片段（正文或思考过程）就记结果并主动断开，不等回答说完。
+     * 此时结果的总耗时等于首字耗时，也没有输出 token 数。
+     */
+    public boolean firstTokenOnly() {
+        return firstTokenOnly;
+    }
+
     public static final class Builder {
         private YoProtocol protocol;
         private final Set<String> models = new LinkedHashSet<>();
@@ -79,6 +89,7 @@ public final class YoProbePlan {
         private long timeoutMillis = 20_000L;
         private String prompt = DEFAULT_PROMPT;
         private int maxOutputTokens = 16;
+        private boolean firstTokenOnly;
 
         @NonNull
         public Builder protocol(@Nullable YoProtocol protocol) {
@@ -138,6 +149,12 @@ public final class YoProbePlan {
                 throw new IllegalArgumentException("maxOutputTokens must be positive");
             }
             this.maxOutputTokens = maxOutputTokens;
+            return this;
+        }
+
+        @NonNull
+        public Builder firstTokenOnly(boolean firstTokenOnly) {
+            this.firstTokenOnly = firstTokenOnly;
             return this;
         }
 
