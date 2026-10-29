@@ -56,15 +56,16 @@ public record AiPlatformConfig(
     }
 
     /**
-     * 这个平台在某一种接入形态下可选的模型。
+     * 这个平台上可用于文本对话的模型。
      *
-     * <p>文本模式排除实时模型：它们走不了 Chat Completions，列出来只会让人选中后收到 404。
-     * 语音模式只留实时模型：级联链路已经下线，普通对话模型接不上语音连接。</p>
+     * <p>实时模型排除在外：它们走不了 Chat Completions，列出来只会让人选中后收到 404。
+     * 语音模型也不从这里选——那是 APP 预设的一张独立表（{@code AiVoiceModel}），
+     * 与平台上的模型列表无关。</p>
      */
-    public List<AiModel> modelsFor(AiInteractionMode mode) {
+    public List<AiModel> chatModels() {
         List<AiModel> filtered = new ArrayList<>(models.size());
         for (AiModel model : models) {
-            if (mode == AiInteractionMode.VOICE ? model.realtime() : !model.realtime()) {
+            if (!model.realtime()) {
                 filtered.add(model);
             }
         }

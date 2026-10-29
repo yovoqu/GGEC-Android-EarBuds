@@ -18,7 +18,6 @@ import androidx.annotation.StringRes;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.wiring.AiGraph;
@@ -45,7 +44,6 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
 
     private static final String EXTRA_PLATFORM_ID = "platformId";
     private static final String EXTRA_TEMPLATE_ID = "templateId";
-    private static final String EXTRA_MODE = "mode";
     private static final int MENU_TEST = 31;
     private static final int MENU_SELECT = 32;
     private static final int MENU_DELETE = 33;
@@ -58,8 +56,6 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
     private TextView titleView;
     private TextView badgeView;
     private boolean createdOnce;
-    /** 这一趟是在配文本模型还是实时模型；决定列表过滤与空态文案。 */
-    private AiInteractionMode mode = AiInteractionMode.defaultMode();
 
     /** 搜索框只建一次：重建页面时重新挂上去，输入的内容与焦点都还在。 */
     @Nullable
@@ -68,19 +64,15 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
     private final List<YoList> lists = new ArrayList<>();
 
     @NonNull
-    public static Intent intent(@NonNull Context context, @NonNull String platformId,
-                                @NonNull AiInteractionMode mode) {
+    public static Intent intent(@NonNull Context context, @NonNull String platformId) {
         return new Intent(context, AiPlatformActivity.class)
-                .putExtra(EXTRA_PLATFORM_ID, platformId)
-                .putExtra(EXTRA_MODE, mode.name());
+                .putExtra(EXTRA_PLATFORM_ID, platformId);
     }
 
     @NonNull
-    public static Intent createIntent(@NonNull Context context, @NonNull String templateId,
-                                      @NonNull AiInteractionMode mode) {
+    public static Intent createIntent(@NonNull Context context, @NonNull String templateId) {
         return new Intent(context, AiPlatformActivity.class)
-                .putExtra(EXTRA_TEMPLATE_ID, templateId)
-                .putExtra(EXTRA_MODE, mode.name());
+                .putExtra(EXTRA_TEMPLATE_ID, templateId);
     }
 
     @Override
@@ -91,13 +83,12 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
                 .get(AiPlatformViewModel.class);
         setContentView(buildRoot());
 
-        mode = AiInteractionMode.fromName(getIntent().getStringExtra(EXTRA_MODE));
         String platformId = getIntent().getStringExtra(EXTRA_PLATFORM_ID);
         String templateId = getIntent().getStringExtra(EXTRA_TEMPLATE_ID);
         if (platformId != null) {
-            viewModel.open(platformId, mode);
+            viewModel.open(platformId);
         } else if (templateId != null) {
-            viewModel.create(templateId, mode);
+            viewModel.create(templateId);
         }
         viewModel.state().observe(this, this::render);
         viewModel.events().observe(this, this::showEvent);
@@ -245,9 +236,7 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
             actions.add(this::showAddMenu);
             list.addItem(theme.listPrefix(R.drawable.ic_ai_plus, theme.text2),
                     ListTextSpec.of(getString(R.string.ai_settings_models_empty),
-                            getString(mode == AiInteractionMode.VOICE
-                                    ? R.string.ai_settings_models_empty_hint_voice
-                                    : R.string.ai_settings_models_empty_hint)),
+                            getString(R.string.ai_settings_models_empty_hint)),
                     ListSuffixSpec.arrow());
         } else if (models.rows().isEmpty()) {
             // 平台有模型，只是这一次搜索没命中：不能写成"还没有模型"，那是另一件事。
@@ -347,9 +336,7 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
      */
     private void showManualAdd() {
         YoTextInput field = YoTextInput.create(this)
-                .setPlaceholder(getString(mode == AiInteractionMode.VOICE
-                        ? R.string.ai_settings_add_model_hint_voice
-                        : R.string.ai_settings_add_model_hint))
+                .setPlaceholder(getString(R.string.ai_settings_add_model_hint))
                 .setMaxLength(128)
                 .setShowErrorEnabled(true)
                 .build();

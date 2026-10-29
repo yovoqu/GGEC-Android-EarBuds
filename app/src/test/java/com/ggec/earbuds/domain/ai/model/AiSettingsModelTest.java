@@ -57,38 +57,64 @@ public class AiSettingsModelTest {
         AiSettings valid = AiFixtures.readySettings();
         assertSame(valid, valid.withValidSelections());
 
-        AiSettings staleModel = valid.withSelection(AiInteractionMode.TEXT, new AiSelection("deepseek", "gone"));
+        AiSettings staleModel = valid.withTextSelection(new AiSelection("deepseek", "gone"));
         assertNull(staleModel.withValidSelections().textSelection());
-        AiSettings stalePlatform = valid.withSelection(AiInteractionMode.TEXT, new AiSelection("gone", "deepseek-chat"));
+        AiSettings stalePlatform = valid.withTextSelection(new AiSelection("gone", "deepseek-chat"));
         assertNull(stalePlatform.withValidSelections().textSelection());
     }
 
     @Test
-    public void textAndVoiceSelectionsAreIndependent() {
+    public void textSelectionAndVoiceModelAreIndependent() {
         AiSettings settings = AiFixtures.settings(new AiSelection("openai", "gpt-4o"),
-                new AiSelection("openai", "gpt-4o-realtime-preview"),
-                platform("openai", "k", "gpt-4o", "gpt-4o-realtime-preview"));
+                AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen"),
+                platform("openai", "k", "gpt-4o"));
 
         assertTrue(settings.textModel().isPresent());
-        assertTrue(settings.voiceModel().isPresent());
+        assertTrue(settings.voiceReady());
         assertEquals("gpt-4o", settings.textSelection().modelId());
-        assertEquals("gpt-4o-realtime-preview", settings.voiceSelection().modelId());
+        assertEquals(AiVoiceModel.QWEN, settings.voice().model());
 
-        AiSettings voiceOnly = settings.withSelection(AiInteractionMode.TEXT, null);
+        AiSettings voiceOnly = settings.withTextSelection(null);
         assertTrue(voiceOnly.textModel().isEmpty());
-        assertTrue("改文本选择不该动语音选择", voiceOnly.voiceModel().isPresent());
+        assertTrue("改文本选择不该动语音模型", voiceOnly.voiceReady());
     }
 
     @Test
-    public void staleVoiceSelectionDoesNotDropAValidTextSelection() {
+    public void eachVoiceModelKeepsItsOwnKeyWhenSwitching() {
+        AiVoiceConfig config = new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of())
+                .withApiKey("sk-gpt")
+                .withModel(AiVoiceModel.QWEN)
+                .withApiKey("sk-qwen");
+
+        assertEquals("sk-qwen", config.apiKey());
+        assertTrue(config.configured());
+        assertEquals("sk-gpt", config.withModel(AiVoiceModel.CHATGPT).apiKey());
+
+        AiVoiceConfig cleared = config.withApiKey("");
+        assertFalse(cleared.configured());
+        assertEquals("清掉 Qwen 的 Key 不该动 ChatGPT 的",
+                "sk-gpt", cleared.withModel(AiVoiceModel.CHATGPT).apiKey());
+    }
+
+    @Test
+    public void voiceIsOnlyReadyWhenItsOwnKeyIsFilled() {
+        assertFalse(AiVoiceConfig.DEFAULT.configured());
+        assertTrue(new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of(AiVoiceModel.CHATGPT, "k")).configured());
+        assertFalse("没有 Key 的模型不算配好",
+                new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.CHATGPT, "k")).configured());
+    }
+
+    @Test
+    public void removingAPlatformDoesNotTouchTheVoiceModel() {
         AiSettings settings = AiFixtures.settings(new AiSelection("deepseek", "deepseek-chat"),
-                new AiSelection("deepseek", "gone"),
+                AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-voice"),
                 platform("deepseek", "k", "deepseek-chat"));
 
-        AiSettings cleaned = settings.withValidSelections();
+        AiSettings cleaned = settings.withoutPlatform("deepseek");
 
-        assertTrue(cleaned.textModel().isPresent());
-        assertNull(cleaned.voiceSelection());
+        assertNull(cleaned.textSelection());
+        assertTrue("语音模型与平台无关，删平台不该把它一起清掉", cleaned.voiceReady());
+        assertEquals(AiVoiceModel.CHATGPT, cleaned.voice().model());
     }
 
     @Test

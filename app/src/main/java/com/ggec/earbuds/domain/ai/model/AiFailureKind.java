@@ -3,6 +3,8 @@ package com.ggec.earbuds.domain.ai.model;
 public enum AiFailureKind {
     NO_PLATFORM,
     NO_MODEL,
+    /** 语音模型选好了，但这一家的 API Key 还没填。 */
+    VOICE_NOT_CONFIGURED,
     AUTHENTICATION,
     PERMISSION,
     QUOTA,

@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 
@@ -50,10 +49,10 @@ public final class AiCallViewModel extends ViewModel {
      * <p>这里在主线程上调用会话，会话契约要求实现方自己把采集与网络的初始化投到 IO 执行器；
      * 页面不等它，先画"正在连接"。</p>
      *
-     * @param selection 用哪个平台的哪个实时模型；配置为空时交给会话去报 {@code NO_PLATFORM}，
-     *                  页面不替它猜
+     * <p>用哪个语音模型由会话自己去设置里读：页面不传模型，也就不会出现
+     * "界面记的选择和设置里已经变了"这种两份状态。缺 Key 时会话会报失败快照。</p>
      */
-    public void start(@NonNull AiSelection selection) {
+    public void start() {
         if (session != null) {
             return;
         }
@@ -62,7 +61,7 @@ public final class AiCallViewModel extends ViewModel {
         AiVoiceSession created = factory.create();
         session = created;
         try {
-            created.start(selection, snapshot::postValue);
+            created.start(snapshot::postValue);
         } catch (RuntimeException error) {
             // 契约上失败应该走快照；这里兜住实现方漏掉的异常，页面至少能看到"断了"，而不是停在连接中。
             snapshot.postValue(new AiVoiceSnapshot(AiVoiceSnapshot.State.FAILED,

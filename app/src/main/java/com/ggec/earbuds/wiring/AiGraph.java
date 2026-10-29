@@ -23,8 +23,6 @@ import com.ggec.earbuds.data.ai.store.SecretStore;
 import com.ggec.earbuds.data.ai.voice.RealtimeLinkAdapter;
 import com.ggec.earbuds.data.ai.voice.RealtimeVoiceSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
-import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
-import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.AiConversationRepository;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
@@ -43,8 +41,10 @@ import com.ggec.earbuds.domain.ai.usecase.RemovePlatform;
 import com.ggec.earbuds.domain.ai.usecase.RunSpeedTest;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
 import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
+import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
@@ -184,6 +184,7 @@ public final class AiGraph {
                 return modelClass.cast(new AiSettingsViewModel(
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new SaveChatPreferences(settings), new SelectInteractionMode(settings),
+                        new SelectVoiceModel(settings), new SaveVoiceApiKey(settings),
                         new LoadPlatformTemplates(catalog),
                         new AiSettingsUiMapper()));
             }

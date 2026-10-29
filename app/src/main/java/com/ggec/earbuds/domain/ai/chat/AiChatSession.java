@@ -503,7 +503,7 @@ public final class AiChatSession {
                 ? AiChatState.Readiness.READY
                 : snapshot.hasConfiguredPlatform() ? AiChatState.Readiness.NO_MODEL : AiChatState.Readiness.NO_PLATFORM;
         AiChatState next = new AiChatState(started, conversation, activeToken != 0, readiness,
-                active.orElse(null), snapshot.preferences(), snapshot.voiceModel().orElse(null),
+                active.orElse(null), snapshot.preferences(), snapshot.voiceReady(),
                 storageFailed, historyRevision);
         state = next;
         for (Observer observer : observers) {

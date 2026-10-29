@@ -33,7 +33,6 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
@@ -57,9 +56,6 @@ import com.yohu.youi.api.platform.YoSystemBar;
  * 两个都给等于让用户猜该点哪个。</p>
  */
 public final class AiCallActivity extends AppCompatActivity {
-
-    private static final String EXTRA_PLATFORM_ID = "extra_platform_id";
-    private static final String EXTRA_MODEL_ID = "extra_model_id";
 
     private static final String STATE_SPEAKER = "ai_call_speaker";
 
@@ -88,7 +84,6 @@ public final class AiCallActivity extends AppCompatActivity {
 
     private AiTheme theme;
     private AiCallViewModel viewModel;
-    private AiSelection selection;
 
     private VoiceOrbView orb;
     private TextView statusTitle;
@@ -114,21 +109,18 @@ public final class AiCallActivity extends AppCompatActivity {
     /**
      * 组装拉起这一页的 Intent。
      *
-     * <p>{@link AiSelection} 是领域 record，不做 Parcelable：这里摊平成两个 extra，
-     * 页面自己就能重建选择，不必从界面层去读设置仓库（那条路在分层检查里是禁止的）。</p>
+     * <p>不带任何模型参数：语音模型由会话从设置里的语音配置读，页面不需要知道
+     * 端点和密钥，也就不会出现"传进来的选择已经过期"这种问题。</p>
      */
     @NonNull
-    public static Intent intent(@NonNull Context context, @NonNull AiSelection selection) {
-        return new Intent(context, AiCallActivity.class)
-                .putExtra(EXTRA_PLATFORM_ID, selection.platformId())
-                .putExtra(EXTRA_MODEL_ID, selection.modelId());
+    public static Intent intent(@NonNull Context context) {
+        return new Intent(context, AiCallActivity.class);
     }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         theme = AiTheme.of(this);
-        selection = readSelection(getIntent());
         if (savedInstanceState != null) {
             speakerOn = savedInstanceState.getBoolean(STATE_SPEAKER, true);
         }
@@ -432,7 +424,7 @@ public final class AiCallActivity extends AppCompatActivity {
     private void retryCall() {
         viewModel.hangUp();
         setActionMode(ACTION_NONE);
-        viewModel.start(selection);
+        viewModel.start();
     }
 
     private void setControlsLive(boolean live) {
@@ -513,7 +505,7 @@ public final class AiCallActivity extends AppCompatActivity {
 
     private void startCall() {
         denied = false;
-        viewModel.start(selection);
+        viewModel.start();
         viewModel.setSpeakerphone(speakerOn);
         setControlsLive(true);
     }
@@ -624,16 +616,5 @@ public final class AiCallActivity extends AppCompatActivity {
                 theme.dp(CONTROL_SIZE), theme.dp(CONTROL_SIZE));
         params.setMarginStart(theme.dp(gapDp));
         row.addView(button, params);
-    }
-
-    /**
-     * 缺字段时给空串而不是 null：让会话按"没有平台/没有模型"失败，
-     * 而不是让页面替它挑一个。空串在 planFor 里会得到一条说清缺什么的失败原因。
-     */
-    @NonNull
-    private static AiSelection readSelection(@Nullable Intent intent) {
-        String platformId = intent == null ? null : intent.getStringExtra(EXTRA_PLATFORM_ID);
-        String modelId = intent == null ? null : intent.getStringExtra(EXTRA_MODEL_ID);
-        return new AiSelection(platformId == null ? "" : platformId, modelId == null ? "" : modelId);
     }
 }

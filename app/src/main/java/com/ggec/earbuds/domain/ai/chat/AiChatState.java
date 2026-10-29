@@ -15,7 +15,7 @@ import java.util.Objects;
  * 打开着历史面板的界面据此重新读取列表。
  *
  * @param model 文本模式当前可用的平台与模型
- * @param voice 语音交流模式选中的实时模型；为空表示通话入口不可用
+ * @param voiceReady 语音交流模式是否已经选好预设模型并填了 Key；为假时通话入口不可用
  */
 public record AiChatState(
         boolean loaded,
@@ -24,7 +24,7 @@ public record AiChatState(
         Readiness readiness,
         @Nullable AiActiveModel model,
         AiChatPreferences preferences,
-        @Nullable AiActiveModel voice,
+        boolean voiceReady,
         boolean storageFailed,
         int historyRevision) {
 
@@ -44,7 +44,7 @@ public record AiChatState(
 
     public static AiChatState initial(AiConversation conversation) {
         return new AiChatState(false, conversation, false, Readiness.NO_PLATFORM, null,
-                AiChatPreferences.DEFAULT, null, false, 0);
+                AiChatPreferences.DEFAULT, false, false, 0);
     }
 
     public boolean ready() {

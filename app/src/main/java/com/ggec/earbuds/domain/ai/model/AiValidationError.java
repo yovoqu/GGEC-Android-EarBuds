@@ -15,5 +15,5 @@ public enum AiValidationError {
     MODEL_UNKNOWN,
     PROMPT_TOO_LONG,
     /** 语音交流模式只能选实时模型；选到普通对话模型时给这句。 */
-    VOICE_NEEDS_REALTIME_MODEL
+    REALTIME_MODEL_NOT_CHAT
 }

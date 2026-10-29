@@ -145,8 +145,7 @@ public class AiChatSessionTest {
 
     @Test
     public void sendingWithoutAUsableModelDoesNothing() {
-        settings.update(s -> s.withSelection(
-                com.ggec.earbuds.domain.ai.model.AiInteractionMode.TEXT, null));
+        settings.update(s -> s.withTextSelection(null));
         session.start();
 
         session.send("hello");

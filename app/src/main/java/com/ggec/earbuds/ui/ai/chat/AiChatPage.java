@@ -16,7 +16,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -26,7 +25,6 @@ import com.ggec.earbuds.R;
 import androidx.annotation.StringRes;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.ui.ai.AiTheme;
-import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.ui.ai.call.AiCallActivity;
 import com.ggec.earbuds.ui.ai.history.AiHistorySheet;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsActivity;
@@ -284,15 +282,11 @@ public final class AiChatPage implements AiMessageActions {
     // ---- 渲染 ----
 
     /**
-     * 进通话页。平台 id 为空的兜底在这里就返回：按钮只在有可用模型时可见，
-     * 走到这行说明状态刚刚被清掉，不值得为它弹一句错误。
+     * 进通话页。入口是常驻的：能不能拨通由通话页自己判定，
+     * 没配好语音模型时它会把失败原因和「去设置」摆出来，而不是让用户在对话页找不到入口。
      */
     private void openCall() {
-        AiSelection selection = viewModel.voiceSelection();
-        if (selection == null) {
-            return;
-        }
-        activity.startActivity(AiCallActivity.intent(activity, selection));
+        activity.startActivity(AiCallActivity.intent(activity));
     }
 
     /**
@@ -328,7 +322,8 @@ public final class AiChatPage implements AiMessageActions {
      * 打开历史面板。列表、改名、删除、清空都由面板自己转交 {@code AiChatSession}，
      * 页面不再重复调一遍会话方法——那样同一次删除会走两遍。
      */
-    private void openHistory() {        AiGraph graph = AiGraph.get(activity);
+    private void openHistory() {
+        AiGraph graph = AiGraph.get(activity);
         AiHistorySheet.show(activity, graph.chatSession(), graph.listConversations(), null);
     }
 
@@ -336,13 +331,13 @@ public final class AiChatPage implements AiMessageActions {
         List<AiMessageUi> list = state.messages();
         boolean showEmpty = state.welcome() != AiChatUiState.Welcome.NONE;
         emptyState.setMode(state.welcome(),
-                viewModel.voiceSelection() != null);
+                viewModel.voiceReady());
         setVisible(emptyState, showEmpty);
         setVisible(messages, !showEmpty);
         setVisible(storageBanner, state.storageFailed());
-        // 通话要能真的拨出去才有意义：文本没就绪、或语音模式还没配好实时模型时都不摆入口，
-        // 而不是点进去看一句失败，或点了完全没反应。
-        setVisible(call, state.composer().enabled() && viewModel.voiceSelection() != null);
+        // 通话入口常驻：它是"去语音交流"的入口，不是"拨号"按钮。
+        // 语音没配好时由通话页给出失败原因与「去设置」，不在这里把入口藏掉。
+        setVisible(call, true);
         composer.setState(state.composer().enabled(), state.composer().generating(), state.composer().modelChip());
 
         String firstId = list.isEmpty() ? "" : list.get(0).id();
