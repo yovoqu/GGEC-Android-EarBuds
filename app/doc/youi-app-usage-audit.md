@@ -493,6 +493,8 @@
 
 ### R5（中）`AiDialogs.slider` 的 `YoSlider` 未销毁
 
+> 已失效：生成参数不再开放调整，相关滑杆与 `AiDialogs.slider` 已在后续重构中删除（2026-10-29 收尾）。
+
 - **事实**：`YoSlider.create(...).build()`（`:281-290`）放进 `LinearLayout content`，通过 `YoDialog.setContentView(content)` 呈现（`:302-308`）。
 - **库契约**：只有 `hosted(...)` 的组件会被 `DialogPresets.ownHosted` 托管，`dialog.destroy()` 时统一销毁（`DialogPresets.java:100-113`、`DialogImpl.java:442-455`）；`setContentView` 不托管。
 - **后果**：每次打开温度滑块对话框泄漏一个 `YoSlider`（含其主题监听）。对比 `AiDialogs.input` 用 `hosted(field)` 是正确写法（`:153-155`）。

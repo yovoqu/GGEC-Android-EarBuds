@@ -30,7 +30,7 @@
 | 按会话聚合 | 无 | `AiUsageSummary`（纯函数，可单测） |
 | 上下文管理 | 按条数裁剪 `AiContextPolicy` | 保留；补"系统提示词 + 历史 + 当前消息"的统一组装点 |
 | 流式/取消/超时/重试 | 有（`YoAiClient` 三档超时 + 退避） | 保留；把重试次数与超时暴露到设置页 |
-| 模型参数 | 温度 / 最大输出 / 上下文条数 | 补 `top_p`、`max_tokens`、`presence/frequency` 位 |
+| 模型参数 | 温度 / 最大输出 / 上下文条数 | **不做界面**：全部由 `AiGenerationDefaults` 在发请求时给定（2026-10-29） |
 | 多模态消息 | 纯文本 | `AiContentPart`（TEXT/IMAGE/AUDIO）+ 旧文档兼容 |
 | 平台/模型配置 | 领域用例齐全，**无界面** | 设置页与平台页回到界面 |
 | AI 模式 | 无 | `AiMode`：`CASCADED` / `OMNI`，存设置、可切换 |
@@ -187,6 +187,11 @@ app 要回答的是"用哪个模型"，不是"这条平台用什么协议"。协
 ## 4. 领域模型扩展
 
 ### 4.1 用量与费用（`domain/ai/model` + `data/ai/usage`）
+
+> **2026-10-29 起，本节描述的账本与聚合已整体删除。** 设置页不再展示用量，
+> `RecordUsage` / `AiUsageSummary` / `AiUsageRecord` / `FileAiUsageStore` / `LoadUsageSummary` 均已移除。
+> 保留下来的只有单条响应的 `AiUsage`（token 与可空 cost），用于对话气泡的元信息。
+> 以下内容作为设计记录保留。
 
 ```java
 // 平台给什么就记什么，缺的就是"未知"
@@ -398,8 +403,7 @@ ui/ai/
 对话页 ──[标题 ⌄]──▶ 历史面板 ──▶ 切换/重命名/删除/清空/新对话
        ──[齿轮]────▶ 设置总览 ──▶ 平台列表 ──▶ 平台详情（地址/Key/模型/测速）
        │                        └▶ AI 模式（分段控件：级联 / 全双工）
-       │                        └▶ 对话参数（温度 / top_p / 最大输出 / 上下文条数）
-       │                        └▶ 用量（只读，来自 AiUsageSummary）
+       │                        └▶ 回答风格（系统提示词，唯一可改的生成项）
        ──[通话]────▶ 通话页 ──▶ 模式徽标 + 光晕 + 静音/扬声器/拍照占位/挂断
 ```
 
@@ -653,4 +657,48 @@ P0 是硬门槛：P0 设计不对，后面每一层都会把错误放大一次�
 - **308 个单测全绿**（新增 `AiParamsPolicy` 全局开关语义 2 条、作用范围 6 条、搜索 4 条、历史分组 6 条等）。
 - 「作用范围」目前是**反推显示**而非可选：数据里没有 scope 字段，界面显示的是事实（所有模型 / 仅某模型 / 当前平台 / N 个模型 / 未启用），改变它的唯一动作是「应用到全部模型」——语义是写模型覆盖，写完不再跟随全局。若要真正的"仅本平台跟随全局"，需要新增 domain 字段，尚未做。
 - 并行施工期间出现过一次相互踩踏（settings 与 call 同时改、构建红、设备被两个 agent 抢焦点），已用"包级写域 + 设备令牌"的方式收口。
+
+### 14.11 参数区与用量区整体下线（2026-10-29）
+
+这一轮不是改控件，而是**把"让用户调生成参数"和"看用量"这两件事本身删掉**。设置页只保留系统提示词，
+其余参数由 APP 在调用时给定默认值；用量不再记录、不再展示。
+
+#### 删了什么
+
+| 位置 | 删除内容 |
+| --- | --- |
+| 设置页 | 全局参数开关、作用范围、应用到全部模型、温度 / top_p / 最大输出 / 上下文条数四个滑杆 |
+| 设置页 | 用量分区（请求次数 / 令牌 / 费用） |
+| 平台页 | ⋯ 菜单的「批量：应用到全部模型」、高级区的「生成参数」行 |
+| 领域层 | `AiModelParams`、`AiParamsPolicy`、`ApplyModelParams`、`AiPlatformConfig.modelParams` |
+| 用量 | `RecordUsage`、`LoadUsageSummary`、`AiUsageSummary`、`AiUsageRecord`、`AiUsageStore`、`FileAiUsageStore`、`AiUsageRecordJson` |
+| 请求链 | `AiChatRequest` 的三个采样字段；`AiChatPreferences` 只剩 `systemPrompt` + `showReasoning` |
+| 持久化 | 设置 JSON 不再写 `temperature/topP/maxOutputTokens/contextMessages/globalParams/modelParams`；不再写 `usage/requests.jsonl` |
+| UI 组件 | `AiSliderRow`（唯一使用者是设置页）、设置页的用量卡与 `AiSettingsUiState.Usage` |
+
+#### 默认值放哪
+
+新增 `domain/ai/model/AiGenerationDefaults`：温度 0.7、top_p 1.0、最大输出 4096、上下文 20 条。
+
+- 采样参数在 `LibAiChatGateway.toRequest()` 填入——这是 APP 真正调用 lib_ai 的地方；
+- 上下文条数在 `AiChatSession.beginRun()` 使用。
+
+#### 为什么
+
+- 这些是产品参数，不是用户偏好：摆出滑杆会让人以为必须调，实际几乎没人动；
+- "留空交给平台"会让同一句话在不同模型上风格不一致，出问题无法归因；
+- 上一轮为了表达"这套值对谁生效"引入了作用范围反推、来源标注、批量应用——解释成本已经超过收益；
+- 用量账本只有设置页一个读者，页面撤掉后它就成了只写不读的死数据，连同写入路径一起删。
+  单条消息的 token 元信息仍来自响应里的 `usage`，与账本无关。
+
+#### 兼容与验证
+
+- 旧设置文档仍可读：多余键被忽略，下次保存时自然清掉；`AiChatPreferences` 解码只需 `systemPrompt` 与 `showReasoning`。
+- 单测同步：删除 `AiParamsPolicyTest`，设置页 / 平台页 / 会话 / JSON / 网关测试改为断言"只剩提示词"与"默认值确实发出"。
+- `:app:compileDebugJavaWithJavac`、`:app:testDebugUnitTest` 全绿（300+ 用例）。
+
+#### 已知取舍
+
+- 默认温度 0.7 会随每次请求发出。若接入只接受默认温度的推理模型（如 OpenAI o 系列），需要在 `AiGenerationDefaults`
+  或网关按模型能力跳过——改一处即可。
 
