@@ -1,5 +1,13 @@
 # AI 模块 v2 架构设计
 
+> **2026-10-29 架构变更（优先于下文）**：语音交流只保留实时全/多模态一条链路，
+> APP 侧删除 ASR → LLM → TTS 级联。`AiMode(CASCADED/OMNI)` 已由
+> `AiInteractionMode(TEXT/VOICE)` 取代，`AiVoiceSettings` 删除，文本与语音各自保存
+> `AiSelection`。同日移除 `YoKnownModels` 内置厂商模型表：模型只来自平台 `/models`
+> 的真实返回或用户手填，能力只按 id 推断 + 用户覆盖。
+> 下文 §4.3、§4.4、§5、§6、§8 中涉及级联、转写、合成、内置表的内容属于历史设计记录，
+> 现状以 `ai-module-page-spec.md` 与本文件 §4.3 为准。
+
 > 状态：**待评审**。定稿后才进入实现，实现严格按本文的分层与文件树落地，不在旧代码上叠补丁。
 > 前置文档：`ai-architecture.md`（v1，对话页与多平台配置）、`ui-design.md`（视觉规范）。
 
@@ -90,7 +98,7 @@ enum YoModelCapability {
     EMBEDDING                                // 只占位，本轮不做
 }
 
-enum YoCapabilitySource { DECLARED, INFERRED, USER }   // 能力从哪来，决定界面敢不敢这么说
+enum YoCapabilitySource { INFERRED, USER }   // 能力从哪来，决定界面敢不敢这么说
 
 record YoModelDescriptor(
         String id, String displayName,
@@ -107,8 +115,8 @@ record YoModelDescriptor(
 
 | 级别 | 来源 | 做法 |
 | --- | --- | --- |
-| 1 | `YoKnownModels` 内置表 | 按 family + id 精确声明。本轮至少覆盖：`gpt-4o*`、`gpt-4.1*`、`o3`/`o4-mini*`、`claude-3-5`/`3-7`、`deepseek-chat`/`reasoner`、`whisper-1`、`tts-1`/`gpt-4o-mini-tts`、`text-embedding-3-*`、`gpt-4o-realtime-preview` |
-| 2 | `YoModelInference` 名称推断 | 内置表没有时按模式给 `INFERRED`：`*-realtime*`→REALTIME_AUDIO，`whisper*`/`*transcri*`→TRANSCRIPTION，`tts*`/`*speech*`→SPEECH_SYNTHESIS，`embed*`→EMBEDDING，其余默认 CHAT_TEXT |
+| 1 | `YoModelInference` 名称推断 | 按 id 词元给 `INFERRED`：`*-realtime*`→REALTIME_AUDIO，`whisper*`/`*transcri*`→TRANSCRIPTION，`tts*`/`*speech*`→SPEECH_SYNTHESIS，`embed*`→EMBEDDING，其余默认 CHAT_TEXT |
+| 2 | 用户覆盖 | 用户在设置页勾选后为 `USER`，压过推断。**没有内置厂商模型表**：模型是否存在以平台 `/models` 或手填为准 |
 | 3 | 用户覆盖 | 设置页可给某个模型手动勾选能力，`source=USER`，永久优先 |
 
 `YoModelKinds` 保留，降级为第 2 级的实现，公开签名不变（兼容）。
@@ -239,29 +247,31 @@ sealed interface AiContentPart permits AiContentPart.Text, AiContentPart.Image, 
 - `AiMessage.parts()` 新增；旧文档反序列化时自动生成单个 TEXT part。
 - 本轮**只**在通话页与消息模型里用到 `Audio`；`Image` 只有类型，没有上传路径。
 
-### 4.3 模式与语音配置
+### 4.3 接入形态与选择（2026-10-29 现状）
 
 ```java
-enum AiMode { CASCADED, OMNI }        // 显示名在界面层，领域不写中文
+enum AiInteractionMode { TEXT, VOICE }   // 显示名在界面层，领域不写中文
 
-record AiVoiceSettings(
-    AiMode mode,
-    String asrPlatformId,             // CASCADED：语音识别用哪个平台（可为空=跟对话同一个）
-    String ttsPlatformId,             // CASCADED：合成用哪个平台（可为空=系统 TTS）
-    String omniModelId,               // OMNI：全双工模型
-    int silenceTimeoutMillis)         // 判定"说完了"的静音阈值
+record AiSettings(
+    List<AiPlatformConfig> platforms,
+    AiInteractionMode mode,              // 设置页停在哪一段，只影响展示
+    @Nullable AiSelection textSelection, // 文本模式：对话模型
+    @Nullable AiSelection voiceSelection,// 语音模式：实时模型
+    AiChatPreferences preferences) {}
 ```
 
-`AiSettings` 增加 `AiVoiceSettings voice`，`AiChatPreferences` 增加 `topP`、`maxTokens`（与现有 `temperature`/`maxOutputTokens` 合并去重，保留旧字段名做兼容读）。
+- 两种模式各自保存选中项：文本模式接 DeepSeek 这类对话模型，语音模式接实时全/多模态模型。
+- `AiVoiceSettings`、转写模型、音色、静音阈值全部删除：语音交流不做本地 ASR/TTS，断句由服务端 VAD 负责。
+- 模型按 `AiModelFeature.REALTIME_AUDIO` 分流：平台页在文本模式只列对话模型，在语音模式只列实时模型。
 
-### 4.4 语音状态（两种模式共用）
+### 4.4 语音状态（单一实时链路）
 
 ```java
 enum AiVoiceState { CONNECTING, LISTENING, THINKING, SPEAKING, MUTED, ENDED, FAILED }
 
 record AiVoiceTurn(String id, boolean user, String text, boolean finalTranscript, long atMillis) {}
 
-record AiVoiceSnapshot(AiVoiceState state, AiMode mode,
+record AiVoiceSnapshot(AiVoiceState state,
                        List<AiVoiceTurn> turns, float inputLevel,  // 0..1，页面画光晕用
                        @Nullable AiFailure failure) {}
 ```
@@ -446,7 +456,7 @@ ui/ai/
 | --- | --- | --- |
 | **P0 领域与端口** | 4.1–4.4 的模型、6 的用例、5 的端口接口 | 纯 Java 单测通过，`checkAiLayerImports` 通过 |
 | **P1 用量落地** | lib_ai usage/cost 采集 → gateway 折成记录 → `FileAiUsageStore` | JSONL 有真实记录；聚合正确 |
-| **P2 模型能力层** | §3 的 `YoModelCapability` / `YoModelDescriptor` / `YoKnownModels` / `YoCapabilityRouter`，`YoChatRequest` 统一请求 | 路由单测：缺能力时报 `UNSUPPORTED_CAPABILITY`；三家方言组装正确 |
+| **P2 模型能力层** | §3 的 `YoModelCapability` / `YoModelDescriptor` / `YoModelInference` / `YoCapabilityRouter`，`YoChatRequest` 统一请求 | 路由单测：缺能力时报 `UNSUPPORTED_CAPABILITY`；三家方言组装正确 |
 | **P3 会话管理** | 历史面板重建 + 对话页标题行入口 | 真机：新建/切换/重命名/删除/清空 |
 | **P4 设置页** | 设置总览 + 平台详情 + 模型能力标注 + 模式 + 参数 + 用量 | 真机：配平台 → 选模型 → 切模式 → 对话页徽标变化 |
 | **P5 语音** | 采集/播放/转写/合成/两个 strategy/通话页 | 真机：两种模式都能起一路完整对话；静音、扬声器、权限拒绝、拍照占位 |
@@ -460,7 +470,7 @@ P0 与 P2 是硬门槛：模型能力层不对，后面每个平台都要在 app
 
 | 层 | 内容 |
 | --- | --- |
-| `lib_ai` | 三家协议 usage 统一读法（prompt/input 别名、`cached_tokens`、`cache_read/creation`、`cost`/`total_cost`，流式末块透出）；`speech/` 转写（Whisper 兼容，wav 封装 + 重试 + 错误分类）；`realtime/` 全双工 WebSocket；`models/` 能力层（`YoModelCapability`/`YoModelDescriptor`/`YoKnownModels`/`YoModelInference`/`YoModelCatalog`/`YoServiceKind`/`YoModelRoute`/`DefaultCapabilityRouter`/`YoServiceEndpoints`） |
+| `lib_ai` | 三家协议 usage 统一读法（prompt/input 别名、`cached_tokens`、`cache_read/creation`、`cost`/`total_cost`，流式末块透出）；`speech/` 转写（Whisper 兼容，wav 封装 + 重试 + 错误分类）；`realtime/` 全双工 WebSocket；`models/` 能力层（`YoModelCapability`/`YoModelDescriptor`/`YoModelInference`/`YoModelCatalog`/`YoServiceKind`/`YoModelRoute`/`DefaultCapabilityRouter`/`YoServiceEndpoints`） |
 | `domain/ai` | 用量（`AiUsage`/`AiUsageRecord`/`AiUsageStatus`/`AiUsageSummary`/`AiUsageStore`/`RecordUsage`/`LoadUsageSummary`）；语音（`AiMode`/`AiVoiceSettings`/`AiVoiceSession`/`AiVoiceSnapshot`/`AiVoiceException` + 5 个端口）；`AiChatPreferences.topP`；`AiSettings.voice`；`AiContentPart`；`SaveVoiceSettings` |
 | `data/ai` | `usage/` JSONL 账本；`voice/` 五个实现（`WhisperSpeechRecognizer`、`CascadedVoiceStrategy`、`OmniVoiceStrategy`、`RealtimeLinkAdapter`、`PcmResampler`） |
 | `platform/ai` | `voice/` 三个（`AndroidAudioCapture`、`AndroidAudioPlayback`、`SystemTtsSynthesizer`） |
@@ -585,7 +595,7 @@ P0 与 P2 是硬门槛：模型能力层不对，后面每个平台都要在 app
 
 ```
 adb shell am start -n com.ggec.earbuds/.debug.AiSeedActivity \
-  --es platform deepseek --es model deepseek-chat \
+  --es platform deepseek --es model <platform-model-id> \
   --ez conversations true --es mode OMNI --es realtime gpt-4o-realtime-preview
 ```
 
