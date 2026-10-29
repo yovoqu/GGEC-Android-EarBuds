@@ -11,6 +11,9 @@ import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.error.YoAiErrors;
 import com.yovo.lib_ai.error.YoAiHttpException;
 import com.yovo.lib_ai.error.YoAiProtocolException;
+import com.yovo.lib_ai.models.spec.YoModality;
+import com.yovo.lib_ai.models.spec.YoModelCategory;
+import com.yovo.lib_ai.models.spec.YoSpecSource;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.platform.anthropic.AnthropicPlatform;
 import com.yovo.lib_ai.platform.deepseek.DeepSeekPlatform;
@@ -53,21 +56,27 @@ public final class ModelDirectoryTest {
         assertEquals("gpt-4o", gpt.displayName());
         assertEquals("system", gpt.ownedBy());
         assertEquals(1715367049000L, gpt.createdAtMillis());
-        assertEquals(YoModelKind.CHAT, gpt.kind());
-        assertNull(gpt.contextWindow());
+        assertEquals(YoModelCategory.TEXT, gpt.spec().category());
+        assertEquals("平台只给了 id，类别只能是推断", YoSpecSource.INFERRED, gpt.spec().categorySource());
+        assertNull(gpt.spec().limits().contextWindow());
 
-        assertEquals(YoModelKind.EMBEDDING, models.get(1).kind());
-        assertEquals(YoModelKind.AUDIO, models.get(2).kind());
-        assertTrue(models.get(3).features().contains(YoModelFeature.REASONING));
+        assertEquals(YoModelCategory.EMBEDDING, models.get(1).spec().category());
+        assertEquals(YoModelCategory.SPEECH_RECOGNITION, models.get(2).spec().category());
+        assertTrue(models.get(3).spec().reasons());
+        assertEquals("o3-mini 的推理只是名字上的提示", YoSpecSource.INFERRED,
+                models.get(3).spec().reasoning().source());
 
         YoModelInfo sense = models.get(4);
-        assertEquals(Integer.valueOf(131072), sense.contextWindow());
-        assertEquals(Integer.valueOf(8192), sense.maxOutputTokens());
-        assertTrue(sense.features().contains(YoModelFeature.VISION));
-        assertTrue(sense.features().contains(YoModelFeature.REASONING));
-        assertEquals(YoModelKind.CHAT, sense.kind());
+        assertEquals(Integer.valueOf(131072), sense.spec().limits().contextWindow());
+        assertEquals(Integer.valueOf(8192), sense.spec().limits().maxOutputTokens());
+        assertTrue(sense.spec().input(YoModality.IMAGE).confirmed());
+        assertTrue("平台说输入只有文本和图片，其余就是不支持", sense.spec().input(YoModality.AUDIO).no());
+        assertTrue(sense.spec().reasoning().confirmed());
+        assertEquals("平台报了能收图片，类别随之升到视觉", YoModelCategory.VISION, sense.spec().category());
+        assertEquals(YoSpecSource.REPORTED, sense.spec().categorySource());
 
-        assertEquals(YoModelKind.IMAGE, models.get(5).kind());
+        assertEquals(YoModelCategory.IMAGE_GENERATION, models.get(5).spec().category());
+        assertEquals(YoSpecSource.REPORTED, models.get(5).spec().categorySource());
         assertTrue(models.get(0).rawJson().contains("owned_by"));
     }
 
@@ -108,14 +117,18 @@ public final class ModelDirectoryTest {
         assertEquals("claude-haiku-5-5", first.nextCursor());
         YoModelInfo opus = first.models().get(0);
         assertEquals("Claude Opus 5.5", opus.displayName());
-        assertEquals(Integer.valueOf(200000), opus.contextWindow());
-        assertEquals(Integer.valueOf(64000), opus.maxOutputTokens());
+        assertEquals(Integer.valueOf(200000), opus.spec().limits().contextWindow());
+        assertEquals(Integer.valueOf(64000), opus.spec().limits().maxOutputTokens());
         assertTrue(opus.createdAtMillis() > 0);
-        assertTrue(opus.features().contains(YoModelFeature.VISION));
-        assertTrue(opus.features().contains(YoModelFeature.REASONING));
+        assertTrue(opus.spec().input(YoModality.IMAGE).confirmed());
+        assertTrue(opus.spec().reasoning().confirmed());
+        assertEquals(YoModelCategory.VISION, opus.spec().category());
         YoModelInfo haiku = first.models().get(1);
-        assertNull(haiku.contextWindow());
-        assertFalse(haiku.features().contains(YoModelFeature.VISION));
+        assertNull(haiku.spec().limits().contextWindow());
+        assertFalse(haiku.spec().accepts(YoModality.IMAGE));
+        assertTrue("平台明确说不支持，不是没说", haiku.spec().input(YoModality.IMAGE).no());
+        assertEquals("Messages 列表里的全是对话模型，这一点是平台给的", YoModelCategory.TEXT, haiku.spec().category());
+        assertEquals(YoSpecSource.REPORTED, haiku.spec().categorySource());
 
         assertEquals("/v1/models?limit=1000", listing.path(null));
         assertEquals("/v1/models?limit=1000&after_id=a%2Fb+c", listing.path("a/b c"));
@@ -136,7 +149,7 @@ public final class ModelDirectoryTest {
             try {
                 List<YoModelInfo> models = client.models().list();
                 assertEquals(2, models.size());
-                assertTrue(models.get(1).features().contains(YoModelFeature.REASONING));
+                assertTrue(models.get(1).spec().reasons());
                 RecordedRequest request = server.takeRequest();
                 assertEquals("GET", request.getMethod());
                 assertEquals("/v1/models", request.getPath());
