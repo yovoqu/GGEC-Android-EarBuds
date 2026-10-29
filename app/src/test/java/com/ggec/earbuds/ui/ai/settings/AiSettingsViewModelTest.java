@@ -6,11 +6,14 @@ import static org.junit.Assert.assertTrue;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
+import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
@@ -38,6 +41,8 @@ public class AiSettingsViewModelTest {
                 new ObserveAiSettings(settings),
                 new SaveChatPreferences(settings),
                 new SelectInteractionMode(settings),
+                new SelectVoiceModel(settings),
+                new SaveVoiceApiKey(settings),
                 new LoadPlatformTemplates(catalog),
                 new AiSettingsUiMapper());
         viewModel.start();
@@ -72,11 +77,31 @@ public class AiSettingsViewModelTest {
     }
 
     @Test
+    public void switchingTheVoiceModelAndSavingItsKeyGoThroughUseCases() {
+        viewModel.selectMode(AiInteractionMode.VOICE);
+        viewModel.selectVoiceModel(AiVoiceModel.QWEN.id());
+        viewModel.saveVoiceApiKey("sk-qwen");
+
+        assertEquals(AiVoiceModel.QWEN, settings.load().voice().model());
+        assertEquals("sk-qwen", settings.load().voice().apiKey());
+        AiSettingsUiState.Voice voice = viewModel.uiState().getValue().voice();
+        assertEquals("Qwen", voice.modelName());
+        assertTrue(voice.configured());
+    }
+
+    @Test
+    public void anUnknownVoiceModelIsIgnoredInsteadOfGuessed() {
+        viewModel.selectVoiceModel("not-a-preset");
+
+        assertEquals(AiVoiceModel.CHATGPT, settings.load().voice().model());
+    }
+
+    @Test
     public void clearedViewModelsStopListeningToTheRepository() {
         AiSettingsUiState before = viewModel.uiState().getValue();
 
         viewModel.onCleared();
-        settings.update(current -> current.withSelection(AiInteractionMode.TEXT, null));
+        settings.update(current -> current.withTextSelection(null));
 
         assertEquals(before, viewModel.uiState().getValue());
     }

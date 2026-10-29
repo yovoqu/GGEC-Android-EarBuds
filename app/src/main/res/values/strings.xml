@@ -58,6 +58,7 @@
     <!-- 失败提示 -->
     <string name="ai_failure_no_platform">还没有配置 AI 平台。</string>
     <string name="ai_failure_no_model">还没有选择模型。</string>
+    <string name="ai_failure_voice_not_configured">语音模型还没有填 API Key。</string>
     <string name="ai_failure_authentication">API Key 无效或已过期，请到设置里检查。</string>
     <string name="ai_failure_permission">这个 API Key 没有权限使用该模型。</string>
     <string name="ai_failure_quota">账户余额或额度不足，请到平台充值后重试。</string>
@@ -105,7 +106,7 @@
     <string name="ai_error_platform_not_configured">请先设置这个平台的 API Key</string>
     <string name="ai_error_model_unknown">找不到这个模型，请先拉取模型列表</string>
     <string name="ai_error_prompt_too_long">系统提示词太长了</string>
-    <string name="ai_error_voice_realtime_model">语音交流模式需要选一个实时模型</string>
+    <string name="ai_error_realtime_model_not_chat">这是实时模型，不能用于文本对话</string>
     <string name="ai_history_loading">正在读取对话…</string>
     <string name="ai_history_load_failed_title">没能读取对话记录</string>
     <string name="ai_history_load_failed_action">重试</string>

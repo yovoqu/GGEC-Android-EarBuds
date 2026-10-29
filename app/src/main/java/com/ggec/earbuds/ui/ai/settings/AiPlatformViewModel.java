@@ -9,7 +9,6 @@ import androidx.lifecycle.ViewModel;
 import com.ggec.earbuds.R;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
@@ -72,8 +71,6 @@ public final class AiPlatformViewModel extends ViewModel {
     private String platformId;
     @Nullable
     private String creatingTemplateId;
-    /** 从设置页带进来：决定模型列表里哪些模型可选，以及选中项写到哪一份。 */
-    private AiInteractionMode mode = AiInteractionMode.defaultMode();
     private AiSettings settings = AiSettings.EMPTY;
     private List<AiPlatformTemplate> templates = List.of();
     private boolean advancedExpanded;
@@ -123,19 +120,17 @@ public final class AiPlatformViewModel extends ViewModel {
         return events;
     }
 
-    /** 绑定一个已有平台，并在指定模式下配置它的模型。 */
-    public void open(@NonNull String platformId, @NonNull AiInteractionMode mode) {
+    /** 绑定一个已有平台。 */
+    public void open(@NonNull String platformId) {
         this.platformId = platformId;
         this.creatingTemplateId = null;
-        this.mode = mode;
         start();
     }
 
     /** 新建：还没落盘，只有模板与一份空配置。 */
-    public void create(@NonNull String templateId, @NonNull AiInteractionMode mode) {
+    public void create(@NonNull String templateId) {
         this.creatingTemplateId = templateId;
         this.platformId = null;
-        this.mode = mode;
         start();
     }
 
@@ -162,7 +157,7 @@ public final class AiPlatformViewModel extends ViewModel {
             state.postValue(AiPlatformUiState.empty());
             return;
         }
-        AiPlatformUiState next = mapper.map(settings, platform, template(), mode,
+        AiPlatformUiState next = mapper.map(settings, platform, template(),
                 testing, speedRunning, advancedExpanded, searchQuery);
         state.postValue(next);
     }
@@ -196,7 +191,7 @@ public final class AiPlatformViewModel extends ViewModel {
     /** 测试连接 = 只测当前选中模型，等价于一次真实的最小请求。 */
     @androidx.annotation.Nullable
     private String selectedModelOf(@NonNull AiPlatformConfig platform) {
-        com.ggec.earbuds.domain.ai.model.AiSelection selection = settings.selection(mode);
+        com.ggec.earbuds.domain.ai.model.AiSelection selection = settings.textSelection();
         return selection != null && platform.id().equals(selection.platformId())
                 ? selection.modelId() : null;
     }
@@ -232,7 +227,7 @@ public final class AiPlatformViewModel extends ViewModel {
             return;
         }
         io.execute(() -> {
-            selectModel.execute(mode, platform.id(), modelId);
+            selectModel.execute(platform.id(), modelId);
             publish();
         });
     }
@@ -259,8 +254,8 @@ public final class AiPlatformViewModel extends ViewModel {
         if (platform == null) {
             return;
         }
-        // 只测这一模式能选的模型：语音模式不必去测一堆对话模型的延迟。
-        List<String> ids = platform.modelsFor(mode).stream().map(AiModel::id).toList();
+        // 只测能用于文本对话的模型：实时模型不在这条链路上，测了也没有意义。
+        List<String> ids = platform.chatModels().stream().map(AiModel::id).toList();
         if (ids.isEmpty()) {
             events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_models_empty));
             return;
@@ -315,11 +310,8 @@ public final class AiPlatformViewModel extends ViewModel {
         io.execute(() -> {
             try {
                 AiModel added = addManualModel.execute(platform.id(), rawId);
-                // 手填的模型也要和当前模式对得上，否则用户加完却在列表里看不到它。
-                if (mode == AiInteractionMode.VOICE && !added.realtime()) {
-                    events.postValue(AiPlatformEvent.toast(AiMessages.validation(
-                            com.ggec.earbuds.domain.ai.model.AiValidationError.VOICE_NEEDS_REALTIME_MODEL)));
-                } else if (mode == AiInteractionMode.TEXT && added.realtime()) {
+                // 实时模型接不上文本对话，加进来也选不到；直接说清楚，而不是让它悄悄消失。
+                if (added.realtime()) {
                     events.postValue(AiPlatformEvent.toast(R.string.ai_settings_model_realtime_only));
                 }
             } catch (AiValidationException invalid) {

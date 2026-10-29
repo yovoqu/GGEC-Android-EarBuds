@@ -1,8 +1,8 @@
 package com.ggec.earbuds.domain.ai.model;
 
 /**
- * 模型具备的能力。设置页按它把模型分给两种接入形态：
- * 文本模式要能对话，语音模式要能直接收发实时音频。
+ * 模型具备的能力。平台页据此把实时模型从文本对话列表里排除：
+ * 它们走不了 Chat Completions，列出来只会让人选中后收到 404。
  */
 public enum AiModelFeature {
 

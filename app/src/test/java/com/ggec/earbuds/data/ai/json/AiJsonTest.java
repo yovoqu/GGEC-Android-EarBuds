@@ -22,6 +22,8 @@ import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 
 import org.json.JSONException;
 import org.junit.Test;
@@ -50,19 +52,21 @@ public class AiJsonTest {
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
         AiSettings settings = new AiSettings(List.of(platform), AiInteractionMode.VOICE,
                 new AiSelection("custom-1a2b3c4d", "mine"),
-                new AiSelection("custom-1a2b3c4d", "gpt-4o-realtime-preview"),
+                new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.QWEN, "sk-voice-secret")),
                 new AiChatPreferences("sys \"quoted\"\nline", false));
 
         String text = settingsJson.encode(settings);
         AiSettings decoded = settingsJson.decode(text);
 
         assertFalse("keys never reach the settings document", text.contains("sk-secret-value"));
+        assertFalse("voice keys never reach the settings document", text.contains("sk-voice-secret"));
         AiPlatformConfig round = decoded.platforms().get(0);
         assertEquals("", round.apiKey());
         assertEquals(platform.withoutKey(), round);
         assertEquals(settings.mode(), decoded.mode());
         assertEquals(settings.textSelection(), decoded.textSelection());
-        assertEquals(settings.voiceSelection(), decoded.voiceSelection());
+        assertEquals(settings.voice().model(), decoded.voice().model());
+        assertEquals("语音 Key 只走加密存储，文档解出来是空的", "", decoded.voice().apiKey());
         assertEquals(settings.preferences(), decoded.preferences());
         assertEquals("sys \"quoted\"\nline", decoded.preferences().systemPrompt());
         assertEquals(failed, round.speedResults().get("deepseek-reasoner"));
@@ -86,7 +90,8 @@ public class AiJsonTest {
                 """);
 
         assertNull("a selection without a model is no selection", decoded.textSelection());
-        assertNull(decoded.voiceSelection());
+        assertEquals("没有语音配置时回到默认预设", AiVoiceModel.CHATGPT, decoded.voice().model());
+        assertFalse(decoded.voiceReady());
         assertEquals("preferences 不是对象时整段取默认值", AiChatPreferences.DEFAULT, decoded.preferences());
         assertEquals(1, decoded.platforms().size());
         AiPlatformConfig platform = decoded.platforms().get(0);
@@ -98,22 +103,13 @@ public class AiJsonTest {
     }
 
     @Test
-    public void legacyDocumentSplitsTheOldSelectionIntoTextAndVoice() throws Exception {
+    public void unknownVoiceModelFallsBackToTheDefaultPreset() throws Exception {
         AiSettings decoded = settingsJson.decode("""
-                {"v":1,
-                 "selection":{"platformId":"openai","modelId":"gpt-4o"},
-                 "voice":{"mode":"OMNI","realtimeModel":"gpt-4o-realtime-preview",
-                          "transcriptionModel":"whisper-1","synthesisVoice":"alloy"},
-                 "platforms":[{"id":"openai","templateId":"openai","protocol":"CHAT_COMPLETIONS",
-                               "models":[{"id":"gpt-4o"},{"id":"gpt-4o-realtime-preview"}]}]}
+                {"v":3,"voice":{"model":"some-other-vendor"}}
                 """);
 
-        assertEquals("旧文档没有根级 mode，默认停在文本模式", AiInteractionMode.TEXT, decoded.mode());
-        assertEquals(new AiSelection("openai", "gpt-4o"), decoded.textSelection());
-        assertEquals("旧语音实时模型挂到当时的对话平台上",
-                new AiSelection("openai", "gpt-4o-realtime-preview"), decoded.voiceSelection());
-        assertTrue("旧文档的实时模型要补上能力位，否则语音模式仍然选不到它",
-                decoded.platforms().get(0).model("gpt-4o-realtime-preview").orElseThrow().realtime());
+        assertEquals(AiVoiceModel.CHATGPT, decoded.voice().model());
+        assertFalse("未知预设不该被当成已配置", decoded.voiceReady());
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.ggec.earbuds.ui.ai.settings;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.R;
@@ -14,6 +13,9 @@ import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.testing.ai.AiFixtures;
 
 import org.junit.Test;
 
@@ -90,17 +92,22 @@ public class AiSettingsUiMapperTest {
     }
 
     @Test
-    public void voiceModeShowsTheRealtimeModelEvenWhenTextHasAnotherOne() {
+    public void voiceModeShowsThePresetVoiceModelAndItsKeyState() {
         AiSettings settings = voiceSettings(new AiSelection("openai", "gpt-4o"),
-                new AiSelection("openai", "gpt-4o-realtime-preview"),
-                platform("openai", "sk-live", null, "gpt-4o", "gpt-4o-realtime-preview"));
+                AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen"),
+                platform("openai", "sk-live", null, "gpt-4o"));
 
         AiSettingsUiState state = mapper.map(settings);
 
         assertEquals(AiInteractionMode.VOICE, state.mode());
         assertEquals(AiText.of(R.string.ai_settings_mode_voice_hint), state.modeHint());
-        assertEquals("gpt-4o-realtime-preview", state.identity().modelName());
-        assertTrue("平台行按语音选择标当前", state.platforms().get(0).current());
+        assertEquals("Qwen", state.voice().modelName());
+        assertTrue(state.voice().configured());
+        assertEquals(2, state.voice().options().size());
+        assertEquals("ChatGPT", state.voice().options().get(0).name());
+        assertFalse("没选中的预设不该标成当前", state.voice().options().get(0).current());
+        assertTrue(state.voice().options().get(1).current());
+        assertEquals("另一家没填 Key", false, state.voice().options().get(0).configured());
     }
 
     @Test
@@ -115,16 +122,15 @@ public class AiSettingsUiMapperTest {
     }
 
     @Test
-    public void anEmptyVoiceModeSaysTheVoiceModelIsMissing() {
-        AiSettings settings = voiceSettings(new AiSelection("openai", "gpt-4o"), null,
+    public void anUnconfiguredVoiceModelIsStillSelectedButNotReady() {
+        AiSettings settings = voiceSettings(null, AiVoiceConfig.DEFAULT,
                 platform("openai", "sk-live", null, "gpt-4o"));
 
-        AiSettingsUiState.Identity identity = mapper.map(settings).identity();
+        AiSettingsUiState.Voice voice = mapper.map(settings).voice();
 
-        assertTrue(identity.empty());
-        assertEquals(R.string.ai_settings_voice_empty, identity.emptyTitle());
-        assertEquals(R.string.ai_settings_voice_empty_hint, identity.emptyHint());
-        assertNull(identity.modelName());
+        assertEquals("ChatGPT", voice.modelName());
+        assertFalse("只选了模型、没填 Key 时不算可用", voice.configured());
+        assertTrue(voice.options().get(0).current());
     }
 
     @Test
@@ -136,7 +142,7 @@ public class AiSettingsUiMapperTest {
 
         assertEquals(AiInteractionMode.VOICE, voice.mode());
         assertTrue(voice.textModel().isPresent());
-        assertTrue("语音还没选模型，身份卡应为空", mapper.map(voice).identity().empty());
+        assertEquals("语音默认预设仍在，但没 Key 不可用", false, mapper.map(voice).voice().configured());
         assertEquals(new AiSelection("deepseek", "chat"), voice.textSelection());
     }
 
@@ -146,7 +152,7 @@ public class AiSettingsUiMapperTest {
     public void theStyleSectionCarriesTheStoredPrompt() {
         AiChatPreferences preferences = AiChatPreferences.DEFAULT.withSystemPrompt("只回答一句话");
         AiSettings settings = new AiSettings(List.of(platform("deepseek", "sk-live", null, "chat")),
-                AiInteractionMode.TEXT, null, null, preferences);
+                AiInteractionMode.TEXT, null, AiVoiceConfig.DEFAULT, preferences);
 
         AiSettingsUiState.Style style = mapper.map(settings).style();
 
@@ -177,13 +183,13 @@ public class AiSettingsUiMapperTest {
     // ---- 夹具 ----
 
     private static AiSettings settings(AiSelection textSelection, AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection, null,
-                AiChatPreferences.DEFAULT);
+        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection,
+                AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
     }
 
-    private static AiSettings voiceSettings(AiSelection textSelection, AiSelection voiceSelection,
+    private static AiSettings voiceSettings(AiSelection textSelection, AiVoiceConfig voice,
                                             AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.VOICE, textSelection, voiceSelection,
+        return new AiSettings(List.of(platforms), AiInteractionMode.VOICE, textSelection, voice,
                 AiChatPreferences.DEFAULT);
     }
 

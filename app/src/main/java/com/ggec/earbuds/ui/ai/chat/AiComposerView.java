@@ -212,7 +212,8 @@ public final class AiComposerView extends LinearLayout {
         }
     }
 
-    private void refreshSendButton() {        boolean hasText = !input.getText().toString().isBlank();
+    private void refreshSendButton() {
+        boolean hasText = !input.getText().toString().isBlank();
         int look = generating ? LOOK_STOP : enabled && hasText ? LOOK_SEND : LOOK_IDLE;
         sendButton.setEnabled(look != LOOK_IDLE);
         if (look == sendLook) {

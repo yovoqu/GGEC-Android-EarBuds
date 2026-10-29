@@ -9,9 +9,8 @@ import java.util.Set;
 /**
  * 平台上一个可选的模型。{@code manual} 为真表示用户手动添加，重新拉取列表时保留。
  *
- * <p>实时模型很少出现在平台的 {@code /models} 列表里，用户只能手写 id；
- * 所以 {@link #manual(String)} 会按 id 判断它是不是实时模型——否则手写进来的
- * {@code gpt-4o-realtime-preview} 会被文本模式当成对话模型，语音模式又找不到它。</p>
+ * <p>实时模型很少出现在平台的 {@code /models} 列表里；用户手写一个实时 id 时也要认出来，
+ * 否则它会被当成对话模型列进文本列表，选中后请求必然 404。</p>
  */
 public record AiModel(
         String id,

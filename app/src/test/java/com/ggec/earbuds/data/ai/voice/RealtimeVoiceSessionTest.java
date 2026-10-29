@@ -5,13 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
-import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
-import com.ggec.earbuds.domain.ai.model.AiProtocol;
-import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeAudioCapture;
@@ -35,21 +31,15 @@ import java.util.List;
  */
 public class RealtimeVoiceSessionTest {
 
-    private static final String PLATFORM_ID = "deepseek";
     private static final String API_KEY = "sk-test-key-1234";
-    private static final String REALTIME_MODEL = "gpt-4o-realtime-preview";
+    private static final AiVoiceModel VOICE_MODEL = AiVoiceModel.QWEN;
 
     /** 16kHz/16bit 的 20ms 一帧。 */
     private static final int FRAME_BYTES = 640;
 
     private final ManualClock clock = new ManualClock();
-    private final AiSelection selection = new AiSelection(PLATFORM_ID, REALTIME_MODEL);
-    private final AiPlatformConfig platform = AiFixtures
-            .platformOf(PLATFORM_ID, API_KEY, AiFixtures.realtimeModel(REALTIME_MODEL))
-            .withCredentials(PLATFORM_ID, API_KEY, "https://api.example.com", AiProtocol.CHAT_COMPLETIONS);
     private final MemorySettingsRepository settings = new MemorySettingsRepository(
-            new AiSettings(List.of(platform), AiInteractionMode.VOICE, null, selection,
-                    AiChatPreferences.DEFAULT));
+            AiFixtures.settings(null, AiFixtures.voice(VOICE_MODEL, API_KEY)));
     private final FakeAudioCapture capture = new FakeAudioCapture();
     private final FakeAudioPlayback playback = new FakeAudioPlayback();
     private final FakeRealtimeLink link = new FakeRealtimeLink();
@@ -60,7 +50,7 @@ public class RealtimeVoiceSessionTest {
     @Before
     public void setUp() {
         session = new RealtimeVoiceSession(settings, capture, playback, link, clock, Runnable::run);
-        session.start(selection, snapshots::add);
+        session.start(snapshots::add);
     }
 
     @Test
@@ -68,10 +58,10 @@ public class RealtimeVoiceSessionTest {
         assertEquals("start 之后先是连接中", AiVoiceSnapshot.State.CONNECTING, last().state());
         assertEquals(1, link.opens);
         assertNotNull(link.lastConfig);
-        // 端口收的是平台主机基址；wss 与 /v1/realtime 的拼法留在 lib_ai，不在这里重复一次。
-        assertEquals("https://api.example.com", link.lastConfig.baseUrl());
+        // 端口收的是预设模型的主机基址；wss 与 /v1/realtime 的拼法留在 lib_ai，不在这里重复一次。
+        assertEquals(VOICE_MODEL.baseUrl(), link.lastConfig.baseUrl());
         assertEquals(API_KEY, link.lastConfig.apiKey());
-        assertEquals(REALTIME_MODEL, link.lastConfig.model());
+        assertEquals(VOICE_MODEL.realtimeModel(), link.lastConfig.model());
         assertEquals(16_000, link.lastConfig.inputSampleRateHz());
         assertEquals(24_000, link.lastConfig.outputSampleRateHz());
 
@@ -187,34 +177,36 @@ public class RealtimeVoiceSessionTest {
     }
 
     @Test
-    public void withoutAModelItFailsBeforeTouchingTheNetwork() {
+    public void withoutAKeyItFailsBeforeTouchingTheNetwork() {
         FakeRealtimeLink untouched = new FakeRealtimeLink();
         List<AiVoiceSnapshot> events = new ArrayList<>();
+        MemorySettingsRepository noKey = new MemorySettingsRepository(AiSettings.EMPTY);
 
-        new RealtimeVoiceSession(settings, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
+        new RealtimeVoiceSession(noKey, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
                 clock, Runnable::run)
-                .start(new AiSelection(PLATFORM_ID, ""), events::add);
+                .start(events::add);
 
         AiVoiceSnapshot last = events.get(events.size() - 1);
         assertEquals(AiVoiceSnapshot.State.FAILED, last.state());
         assertNotNull(last.failure());
-        assertEquals(AiFailureKind.NO_MODEL, last.failure().kind());
-        assertEquals("缺模型就不该去连一条注定被拒的连接", 0, untouched.opens);
+        assertEquals(AiFailureKind.VOICE_NOT_CONFIGURED, last.failure().kind());
+        assertEquals("缺 Key 就不该去连一条注定被拒的连接", 0, untouched.opens);
     }
 
     @Test
-    public void aDeletedPlatformFailsWithNoPlatform() {
-        FakeRealtimeLink untouched = new FakeRealtimeLink();
+    public void switchingThePresetChangesTheConnectionTarget() {
+        FakeRealtimeLink other = new FakeRealtimeLink();
         List<AiVoiceSnapshot> events = new ArrayList<>();
+        MemorySettingsRepository gpt = new MemorySettingsRepository(
+                AiFixtures.settings(null, AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
 
-        new RealtimeVoiceSession(settings, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
+        new RealtimeVoiceSession(gpt, new FakeAudioCapture(), new FakeAudioPlayback(), other,
                 clock, Runnable::run)
-                .start(new AiSelection("gone", REALTIME_MODEL), events::add);
+                .start(events::add);
 
-        AiVoiceSnapshot last = events.get(events.size() - 1);
-        assertEquals(AiVoiceSnapshot.State.FAILED, last.state());
-        assertEquals(AiFailureKind.NO_PLATFORM, last.failure().kind());
-        assertEquals(0, untouched.opens);
+        assertEquals(AiVoiceModel.CHATGPT.baseUrl(), other.lastConfig.baseUrl());
+        assertEquals("sk-gpt", other.lastConfig.apiKey());
+        assertEquals(AiVoiceModel.CHATGPT.realtimeModel(), other.lastConfig.model());
     }
 
     /**

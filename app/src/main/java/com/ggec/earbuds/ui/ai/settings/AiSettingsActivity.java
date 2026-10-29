@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -52,6 +53,8 @@ public final class AiSettingsActivity extends AppCompatActivity {
     /** 分段按钮的段 id；两段正好等于下标，读选中态时不必再换算。 */
     private static final int SEGMENT_TEXT = 0;
     private static final int SEGMENT_VOICE = 1;
+    /** 语音 Key 的长度上限：只防手滑粘进一整段报文，不做格式校验。 */
+    private static final int MAX_VOICE_KEY_LENGTH = 256;
 
     private AiTheme theme;
     private AiSettingsViewModel viewModel;
@@ -67,8 +70,9 @@ public final class AiSettingsActivity extends AppCompatActivity {
     private TextView identityAction;
     private TextView styleTitle;
     private LinearLayout styleCard;
-    private TextView voiceTitle;
     private LinearLayout voiceCard;
+    private TextView voiceModelValue;
+    private TextView voiceKeyValue;
     private TextView promptValue;
     private TextView loadingHint;
 
@@ -158,16 +162,17 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
         column.addView(identityView(), cardParams(AiTheme.SPACE_L));
 
+        // 语音模型卡和身份卡占同一个位置：两种模式各画各的，谁也不复用谁的数据。
+        voiceCard = voiceView();
+        // 首帧默认是文本模式；先收起来，等第一份状态到了再由 render 决定画哪张卡。
+        voiceCard.setVisibility(View.GONE);
+        column.addView(voiceCard, cardParams(AiTheme.SPACE_L));
+
         styleTitle = sectionTitle(R.string.ai_settings_section_style);
         column.addView(styleTitle, titleParams());
         styleCard = card();
         styleCard.addView(promptRow(), rowParams());
         column.addView(styleCard, cardParams(0));
-
-        voiceTitle = sectionTitle(R.string.ai_settings_section_voice);
-        column.addView(voiceTitle, titleParams());
-        voiceCard = voiceCard();
-        column.addView(voiceCard, cardParams(0));
 
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         loadingHint.setText(R.string.ai_settings_loading);
@@ -231,49 +236,91 @@ public final class AiSettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * 语音模式唯一的分区：说清这条链路是什么。
+     * 语音模式的模型卡：选哪家预设、这家的 Key 填没填。
      *
-     * <p>不摆转写模型、音色、静音阈值：这些都由实时模型在服务端处理，
-     * 摆出来只会让人以为 APP 还在做 ASR → LLM → TTS。</p>
+     * <p>它不是文本身份卡的变体：文本卡背后是"平台 + 模型列表"，这里背后是 APP 预设的
+     * 固定几项（{@code AiVoiceModel}），所以没有平台名、没有模型数量，也没有"添加平台"。</p>
      */
     @NonNull
-    private LinearLayout voiceCard() {
+    private LinearLayout voiceView() {
         LinearLayout card = card();
-        card.addView(voiceLinkRow(), rowParams());
-
-        TextView note = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        note.setText(R.string.ai_settings_voice_note);
-        note.setLineSpacing(theme.dpf(3), 1f);
-        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        noteParams.leftMargin = theme.dp(AiTheme.SPACE_L);
-        noteParams.rightMargin = theme.dp(AiTheme.SPACE_L);
-        noteParams.topMargin = theme.dp(AiTheme.SPACE_S);
-        noteParams.bottomMargin = theme.dp(AiTheme.SPACE_L);
-        card.addView(note, noteParams);
+        card.addView(voiceModelRow(), rowParams());
+        card.addView(rowDivider(), dividerParams());
+        card.addView(voiceKeyRow(), rowParams());
         return card;
     }
 
     @NonNull
-    private View voiceLinkRow() {
+    private View voiceModelRow() {
+        LinearLayout row = rowShell();
+        row.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
+
+        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
+        label.setText(R.string.ai_settings_voice_model);
+        row.addView(label, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        voiceModelValue = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
+        voiceModelValue.setGravity(Gravity.END);
+        row.addView(voiceModelValue, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        ImageView chevron = theme.icon(R.drawable.ic_ai_chevron_down, theme.text3);
+        int pad = theme.dp(2);
+        chevron.setPadding(pad, pad, pad, pad);
+        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
+                theme.dp(16), theme.dp(16));
+        chevronParams.leftMargin = theme.dp(AiTheme.SPACE_XS);
+        row.addView(chevron, chevronParams);
+
+        row.setOnClickListener(view -> openVoiceMenu());
+        return row;
+    }
+
+    @NonNull
+    private View voiceKeyRow() {
+        LinearLayout row = rowShell();
+        row.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
+
+        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
+        label.setText(R.string.ai_settings_voice_key);
+        row.addView(label, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        voiceKeyValue = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
+        voiceKeyValue.setGravity(Gravity.END);
+        row.addView(voiceKeyValue, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        row.setOnClickListener(view -> editVoiceKey());
+        return row;
+    }
+
+    /** 卡片里的两行共用同一套高度与内边距；分隔线只在行与行之间，不贴卡片边缘。 */
+    @NonNull
+    private LinearLayout rowShell() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(theme.dp(AiTheme.ROW_HEIGHT));
         row.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_M),
                 theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_M));
-
-        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
-        label.setText(R.string.ai_settings_voice_link);
-        row.addView(label, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView value = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
-        value.setText(R.string.ai_settings_voice_link_value);
-        value.setGravity(Gravity.END);
-        row.addView(value, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         return row;
+    }
+
+    @NonNull
+    private View rowDivider() {
+        View rule = new View(this);
+        rule.setBackgroundColor(theme.divider);
+        return rule;
+    }
+
+    @NonNull
+    private LinearLayout.LayoutParams dividerParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, theme.dp(1)));
+        params.leftMargin = theme.dp(AiTheme.SPACE_L);
+        return params;
     }
 
     private TextView sectionTitle(@StringRes int res) {
@@ -361,10 +408,10 @@ public final class AiSettingsActivity extends AppCompatActivity {
         }
         modeHint.setText(state.modeHint().resolve(this));
 
-        // 只留下当前模式的分区：另一模式的配置不是"不可用"，而是不属于这一屏。
+        // 只留下当前模式的分区：文本画平台身份卡与回答风格，语音只画语音模型卡。
+        setVisible(identityCard, !voice);
         setVisible(styleTitle, !voice);
         setVisible(styleCard, !voice);
-        setVisible(voiceTitle, voice);
         setVisible(voiceCard, voice);
 
         AiSettingsUiState.Identity identity = state.identity();
@@ -384,6 +431,13 @@ public final class AiSettingsActivity extends AppCompatActivity {
             identityModel.setText(identity.modelName());
             identityAction.setText(R.string.ai_settings_platform_change);
         }
+
+        AiSettingsUiState.Voice voiceState = state.voice();
+        voiceModelValue.setText(voiceState.modelName());
+        voiceKeyValue.setText(voiceState.configured()
+                ? R.string.ai_settings_voice_key_set
+                : R.string.ai_settings_voice_key_empty);
+        voiceKeyValue.setTextColor(voiceState.configured() ? theme.text2 : theme.brand);
 
         promptValue.setText(state.style().promptPreview().resolve(this));
     }
@@ -444,11 +498,66 @@ public final class AiSettingsActivity extends AppCompatActivity {
             if (id == MENU_ADD_PLATFORM) {
                 showAddPlatform();
             } else if (id >= 0 && id < platforms.size()) {
-                startActivity(AiPlatformActivity.intent(this, platforms.get(id).platformId(),
-                        current.mode()));
+                startActivity(AiPlatformActivity.intent(this, platforms.get(id).platformId()));
             }
         });
         builder.build().show();
+    }
+
+    /**
+     * 语音模型下拉。候选来自预设表，锚在整张卡上：选中的是"用哪家"，不是某个平台的某条模型。
+     */
+    private void openVoiceMenu() {
+        if (current == null) {
+            return;
+        }
+        List<AiSettingsUiState.VoiceOption> options = current.voice().options();
+        YoMenu.Builder builder = YoMenu.create(this).setAnchorView(voiceCard);
+        for (int i = 0; i < options.size(); i++) {
+            AiSettingsUiState.VoiceOption option = options.get(i);
+            builder.addItem(i, option.current()
+                    ? option.name() + " · " + getString(R.string.ai_settings_voice_current)
+                    : option.name());
+        }
+        builder.setOnItemClickListener(id -> {
+            if (id >= 0 && id < options.size()) {
+                viewModel.selectVoiceModel(options.get(id).id());
+            }
+        });
+        builder.build().show();
+    }
+
+    /**
+     * 语音模型的 Key。对话框只写不读：存过的 Key 不回显，想换就粘一份新的。
+     * 已经存过 Key 时多给一个「清除」——输入框为空时「保存」是禁用的，
+     * 没有这个出口，用户就换不掉一个填错的 Key。
+     */
+    private void editVoiceKey() {
+        if (current == null) {
+            return;
+        }
+        AiSettingsUiState.Voice voice = current.voice();
+        YoTextInput field = YoTextInput.create(this)
+                .setPlaceholder(getString(R.string.ai_settings_voice_key_dialog_hint))
+                .setMaxLength(MAX_VOICE_KEY_LENGTH)
+                .build();
+        YoDialog.Action cancel = YoDialog.Action.negative(getString(R.string.ai_cancel), null);
+        YoDialog.Action clear = YoDialog.Action.neutral(
+                getString(R.string.ai_settings_voice_key_clear),
+                () -> viewModel.saveVoiceApiKey(""));
+        YoDialog.Action save = YoDialog.Action.positive(getString(R.string.ai_settings_save),
+                () -> viewModel.saveVoiceApiKey(String.valueOf(field.getText())));
+        YoDialog.Builder dialog = YoDialog.create(this)
+                .kind(YoDialog.Kind.INPUT)
+                .hosted(field)
+                .setButtonDirection(YoDialog.ButtonDirection.HORIZONTAL)
+                .setTitle(getString(R.string.ai_settings_voice_key_dialog_title, voice.modelName()));
+        if (voice.configured()) {
+            dialog.setActions(cancel, clear, save);
+        } else {
+            dialog.setActions(cancel, save);
+        }
+        dialog.show();
     }
 
     private void showAddPlatform() {
@@ -457,9 +566,8 @@ public final class AiSettingsActivity extends AppCompatActivity {
             YoToast.show(this, getString(R.string.ai_settings_add_platform_empty));
             return;
         }
-        AiInteractionMode mode = current == null ? AiInteractionMode.defaultMode() : current.mode();
         AiAddPlatformDialog.show(this, templates,
-                template -> startActivity(AiPlatformActivity.createIntent(this, template.id(), mode)));
+                template -> startActivity(AiPlatformActivity.createIntent(this, template.id())));
     }
 
     private void editSystemPrompt() {

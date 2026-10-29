@@ -5,9 +5,8 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
-import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
@@ -15,8 +14,6 @@ import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
-import com.yovo.lib_ai.catalog.YoPlatformCatalog;
-import com.yovo.lib_ai.catalog.YoPlatformDescriptor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,7 +74,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
     // ---- 以下字段只在 executor 线程上读写 ----
 
-    private AiSelection selection;
     @Nullable
     private Listener listener;
     /** 已经发过 ENDED，之后的任何事件都不再往外发快照。 */
@@ -163,10 +159,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     // ---- AiVoiceSession ----
 
     @Override
-    public void start(@NonNull AiSelection next, @NonNull Listener target) {
-        Objects.requireNonNull(next, "selection");
+    public void start(@NonNull Listener target) {
         Objects.requireNonNull(target, "listener");
-        executor.execute(() -> doStart(next, target));
+        executor.execute(() -> doStart(target));
     }
 
     @Override
@@ -192,11 +187,10 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
     // ---- 生命周期 ----
 
-    private void doStart(AiSelection next, Listener target) {
+    private void doStart(Listener target) {
         if (stopRequested || listener != null) {
             return;
         }
-        selection = next;
         listener = target;
         publish();                       // CONNECTING
 
@@ -496,9 +490,12 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     /**
      * 找到这次通话该连哪台主机、用哪个模型。
      *
+     * <p>目标完全来自语音模式自己的配置：预设模型给端点与模型 id，加密存储给这一家的 Key。
+     * 它不查文本平台——语音模型与平台目录是两套东西，混在一起就会出现"删了平台顺带把语音弄坏"。</p>
+     *
      * <p>为什么模型必须在开连接之前就确定：Realtime 的模型是端点地址的一部分
      * （{@code /v1/realtime?model=…}，由 lib_ai 拼），没有"连上再换模型"这回事。
-     * 所以缺模型时宁可当场失败，也不要先连一条注定会被服务端拒掉的连接。</p>
+     * 所以缺 Key 时宁可当场失败，也不要先连一条注定会被服务端拒掉的连接。</p>
      */
     @NonNull
     private RealtimePlan planFor() {
@@ -508,39 +505,12 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         } catch (RuntimeException unreadable) {
             throw new AiFailure(AiFailureKind.STORAGE, "读取 AI 设置失败，通话无法开始。", unreadable);
         }
-        String model = selection.modelId();
-        if (model.isBlank()) {
-            throw new AiFailure(AiFailureKind.NO_MODEL, "语音交流要先选一个实时模型。");
+        AiVoiceConfig voice = current.voice();
+        if (!voice.configured()) {
+            throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED,
+                    "语音模型「" + voice.model().displayName() + "」还没有填 API Key。");
         }
-        AiPlatformConfig platform = current.platform(selection.platformId()).orElseThrow(() ->
-                new AiFailure(AiFailureKind.NO_PLATFORM,
-                        "语音设置里指定的平台已经不在配置中（可能被删除了）。"));
-        if (!platform.configured()) {
-            throw new AiFailure(AiFailureKind.NO_PLATFORM,
-                    "平台「" + platform.name() + "」还没有填 API Key。");
-        }
-        String raw = platform.baseUrl();
-        if (raw == null || raw.isBlank()) {
-            raw = defaultBaseUrl(platform.templateId());
-        }
-        if (raw == null || raw.isBlank()) {
-            throw new AiFailure(AiFailureKind.BAD_REQUEST,
-                    "平台「" + platform.name() + "」还没有填写主机地址。");
-        }
-        String baseUrl;
-        try {
-            // 用户可能把 /v1 甚至整条 /chat/completions 粘进来，先按平台规则收成主机基址。
-            baseUrl = YoPlatformCatalog.normalizeBaseUrl(raw);
-        } catch (IllegalArgumentException malformed) {
-            throw new AiFailure(AiFailureKind.BAD_REQUEST, detailOf(malformed), malformed);
-        }
-        return new RealtimePlan(baseUrl, platform.apiKey(), model);
-    }
-
-    @Nullable
-    private static String defaultBaseUrl(String templateId) {
-        YoPlatformDescriptor descriptor = YoPlatformCatalog.standard().find(templateId);
-        return descriptor == null ? null : descriptor.defaultBaseUrl();
+        return new RealtimePlan(voice.model().baseUrl(), voice.apiKey(), voice.model().realtimeModel());
     }
 
     /**

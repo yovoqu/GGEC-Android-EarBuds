@@ -2,14 +2,16 @@ package com.ggec.earbuds.ui.ai.settings;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
+import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,9 +20,10 @@ import java.util.Optional;
 /**
  * 领域设置 → 设置总览页的界面状态。纯函数：不碰视图、不碰资源、不读时钟。
  *
- * <p>核心取舍只有一条：<b>所有"当前用哪个模型"的判断都按模式取</b>。文本模式看
- * {@link AiSettings#textModel()}，语音模式看 {@link AiSettings#voiceModel()}；
- * 两边的选择互不影响，所以切分段只是换一份数据，不需要任何"这个模型支不支持"的补救逻辑。</p>
+ * <p>核心取舍只有一条：<b>文本与语音各用各的数据源</b>。文本模式看
+ * {@link AiSettings#textModel()}（平台上的对话模型），语音模式看
+ * {@link AiSettings#voice()}（代码里预设的语音模型）。语音不经过平台，
+ * 所以这里没有任何"把实时模型从平台列表里挑出来"的逻辑。</p>
  */
 public final class AiSettingsUiMapper {
 
@@ -30,8 +33,8 @@ public final class AiSettingsUiMapper {
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings) {
         AiInteractionMode mode = settings.mode();
-        return new AiSettingsUiState(true, mode, hint(mode), platforms(settings, mode),
-                identity(settings, mode), style(settings));
+        return new AiSettingsUiState(true, mode, hint(mode), platforms(settings),
+                identity(settings), voice(settings.voice()), style(settings));
     }
 
     @NonNull
@@ -43,11 +46,9 @@ public final class AiSettingsUiMapper {
 
     // ---- 平台 ----
 
-    private static List<AiSettingsUiState.PlatformRow> platforms(AiSettings settings,
-                                                                 @NonNull AiInteractionMode mode) {
-        String activePlatformId = active(settings, mode)
-                .map(model -> model.platform().id())
-                .orElse(null);
+    private static List<AiSettingsUiState.PlatformRow> platforms(AiSettings settings) {
+        AiSelection selection = settings.textSelection();
+        String activePlatformId = selection == null ? null : selection.platformId();
         List<AiSettingsUiState.PlatformRow> rows = new ArrayList<>(settings.platforms().size());
         for (AiPlatformConfig platform : settings.platforms()) {
             rows.add(new AiSettingsUiState.PlatformRow(platform.id(), platform.name(),
@@ -89,35 +90,35 @@ public final class AiSettingsUiMapper {
         return value;
     }
 
-    // ---- 身份卡 ----
+    // ---- 文本身份卡 ----
 
     @NonNull
-    private static AiSettingsUiState.Identity identity(AiSettings settings, @NonNull AiInteractionMode mode) {
-        Optional<AiActiveModel> active = active(settings, mode);
+    private static AiSettingsUiState.Identity identity(AiSettings settings) {
+        Optional<AiActiveModel> active = settings.textModel();
         if (active.isEmpty()) {
-            return new AiSettingsUiState.Identity(null, null, emptyTitle(mode), emptyHint(mode));
+            return new AiSettingsUiState.Identity(null, null,
+                    R.string.ai_settings_text_empty, R.string.ai_settings_text_empty_hint);
         }
         return new AiSettingsUiState.Identity(active.get().platform().name(),
                 active.get().model().name(), 0, 0);
     }
 
+    // ---- 语音模型 ----
+
+    /**
+     * 语音卡只回答两件事：选的是哪家、这家有没有 Key。
+     * 候选来自 {@link AiVoiceModel} 的预设顺序，界面不自己排序、也不自己补默认值。
+     */
     @NonNull
-    private static Optional<AiActiveModel> active(AiSettings settings, @NonNull AiInteractionMode mode) {
-        return mode == AiInteractionMode.VOICE ? settings.voiceModel() : settings.textModel();
-    }
-
-    @StringRes
-    private static int emptyTitle(@NonNull AiInteractionMode mode) {
-        return mode == AiInteractionMode.VOICE
-                ? R.string.ai_settings_voice_empty
-                : R.string.ai_settings_text_empty;
-    }
-
-    @StringRes
-    private static int emptyHint(@NonNull AiInteractionMode mode) {
-        return mode == AiInteractionMode.VOICE
-                ? R.string.ai_settings_voice_empty_hint
-                : R.string.ai_settings_text_empty_hint;
+    private static AiSettingsUiState.Voice voice(@NonNull AiVoiceConfig config) {
+        List<AiSettingsUiState.VoiceOption> options = new ArrayList<>(AiVoiceModel.values().length);
+        for (AiVoiceModel model : AiVoiceModel.values()) {
+            options.add(new AiSettingsUiState.VoiceOption(model.id(), model.displayName(),
+                    model == config.model(),
+                    !config.apiKeys().getOrDefault(model, "").isBlank()));
+        }
+        return new AiSettingsUiState.Voice(config.model().id(), config.model().displayName(),
+                config.configured(), options);
     }
 
     // ---- 回答风格 ----
