@@ -12,7 +12,6 @@
     <!-- 分区标题：12sp，只在分组上方出现一次 -->
     <string name="ai_settings_section_platform">平台</string>
     <string name="ai_settings_section_mode">说话方式</string>
-    <string name="ai_settings_section_usage">用量</string>
 
     <!-- 平台行：有 Key 说清"几个模型 + 连的是哪台主机"，没 Key 直接说没填 -->
     <string name="ai_settings_platform_no_key">未填 Key</string>
@@ -31,38 +30,20 @@
     <string name="ai_settings_mode_omni_hint">边说边答，可以随时打断</string>
     <string name="ai_settings_mode_omni_needs_model">先在平台里添加一个实时语音模型</string>
 
-    <!-- 对话参数 -->
+    <!-- 对话参数：只剩系统提示词；采样参数已收进代码，不再出现在界面上 -->
     <string name="ai_settings_param_prompt">系统提示词</string>
-    <string name="ai_settings_param_temperature">温度</string>
-    <string name="ai_settings_param_top_p">核采样 top_p</string>
-    <string name="ai_settings_param_max_output">最大输出</string>
-    <string name="ai_settings_param_context">上下文条数</string>
     <string name="ai_settings_prompt_default">默认提示词</string>
     <string name="ai_settings_prompt_empty">还没写提示词，模型会用平台默认设定回答</string>
     <string name="ai_settings_prompt_dialog_title">系统提示词</string>
     <string name="ai_settings_prompt_dialog_hint">写给模型的角色设定与回答要求</string>
 
-    <!-- 尾部取值：空值一律说"平台默认"，不编一个数字 -->
-    <string name="ai_settings_value_platform_default">平台默认</string>
+    <!-- 尾部取值 -->
     <string name="ai_settings_value_plain_url">%1$s（不加密传输）</string>
-    <string name="ai_settings_value_number">%1$s</string>
-    <string name="ai_settings_value_context">%1$s 条</string>
-    <string name="ai_settings_value_context_all">全部历史</string>
     <string name="ai_settings_value_not_set">未填写</string>
     <string name="ai_settings_value_template_url">%1$s（官方地址）</string>
     <string name="ai_settings_value_invalid">这个值不合法，已保持原样</string>
     <string name="ai_settings_saved">已保存</string>
     <string name="ai_settings_save">保存</string>
-
-    <!-- 用量：没有记录就说没有记录，0.00 会被读成"免费" -->
-    <string name="ai_settings_usage_dash">—</string>
-    <string name="ai_settings_usage_requests">请求次数</string>
-    <string name="ai_settings_usage_requests_value">%1$s 次</string>
-    <string name="ai_settings_usage_tokens">令牌</string>
-    <string name="ai_settings_usage_tokens_value">%1$s in / %2$s out</string>
-    <string name="ai_settings_usage_cost">费用</string>
-    <string name="ai_settings_usage_cost_value">$%1$s（%2$s 次上报）</string>
-    <string name="ai_settings_usage_cost_unknown">未上报</string>
 
     <!-- 平台详情：字段 -->
     <string name="ai_settings_platform_title">平台设置</string>
@@ -92,7 +73,6 @@
     <string name="ai_settings_model_more">更多操作</string>
     <string name="ai_settings_model_menu_test">测这一条</string>
     <string name="ai_settings_model_menu_select">设为当前模型</string>
-    <string name="ai_settings_model_menu_apply_all">批量：应用到全部模型</string>
     <string name="ai_settings_models_search_hint">搜索模型</string>
     <string name="ai_settings_models_no_match">没有匹配的模型</string>
 
@@ -126,36 +106,14 @@
     <string name="ai_settings_create">添加</string>
     <string name="ai_settings_create_hint">填好 API Key 才能添加</string>
 
-    <!-- 取值编辑：滑块与预设 -->
+    <!-- 回答风格：只有系统提示词一项 -->
     <string name="ai_settings_identity_empty_hint">接入后这里显示正在用的平台与模型</string>
     <string name="ai_settings_section_style">回答风格</string>
-    <string name="ai_settings_global_params">使用全局参数</string>
-    <string name="ai_settings_global_params_hint">关闭时所有模型都用各自的平台默认值</string>
 
-    <!-- 作用范围：这一版没有可写的范围字段，只说"哪些模型不再跟随这套值" -->
-    <string name="ai_settings_scope_title">作用范围</string>
-    <string name="ai_settings_scope_disabled">未启用</string>
-    <string name="ai_settings_scope_hint_disabled">全局参数不会发给任何模型</string>
-    <string name="ai_settings_scope_all">所有模型</string>
-    <string name="ai_settings_scope_hint_all">没有模型单独设置，全部用这套值</string>
-    <string name="ai_settings_scope_one">仅 %1$s</string>
-    <string name="ai_settings_scope_hint_one">只有它用自己的值，其余用这套值</string>
-    <string name="ai_settings_scope_platform">当前平台</string>
-    <string name="ai_settings_scope_hint_platform">%1$s 的 %2$s 个模型用自己的值，别的平台用这套值</string>
-    <string name="ai_settings_scope_hint_platform_plain">本平台的 %1$s 个模型用自己的值，别的平台用这套值</string>
-    <string name="ai_settings_scope_partial">%1$s 个模型</string>
-    <string name="ai_settings_scope_hint_partial">这 %1$s 个模型用自己的值，其余用这套值</string>
-    <string name="ai_settings_scope_hint_partial_named">%1$s 这 %2$s 个模型用自己的值，其余用这套值</string>
-    <string name="ai_settings_apply_all">应用到全部模型</string>
-    <string name="ai_settings_apply_all_hint">把当前生效的值写进本机 %1$s 个模型；之后它们不随全局变化</string>
-    <string name="ai_settings_apply_all_done">已写入 %1$s 个模型</string>
-    <string name="ai_settings_apply_all_none">还没有可应用的生成参数</string>
-    <string name="ai_settings_apply_all_platform_done">已写入本平台 %1$s 个模型</string>
     <string name="ai_settings_loading">正在读取设置…</string>
     <string name="ai_settings_identity_empty">还没有接入平台</string>
     <string name="ai_settings_platform_change">更换</string>
     <string name="ai_settings_connection_section">连接</string>
     <string name="ai_settings_advanced_section">高级</string>
-    <string name="ai_settings_params_section">生成参数</string>
     <string name="ai_settings_connection_title">连接信息</string>
 </resources>

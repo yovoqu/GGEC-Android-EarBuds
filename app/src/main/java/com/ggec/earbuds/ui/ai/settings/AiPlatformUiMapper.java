@@ -46,7 +46,7 @@ public final class AiPlatformUiMapper {
                 badge(template),
                 connection(platform, selectedModelId),
                 models(platform, selectedModelId, testing, speedRunning, query),
-                advanced(platform, template, settings, selectedModelId),
+                advanced(platform, template),
                 advancedExpanded,
                 true);
     }
@@ -182,60 +182,15 @@ public final class AiPlatformUiMapper {
         return fastest == null ? null : "最快：" + fastest;
     }
 
-    /**
-     * 参数的来源必须写出来：用户改了全局却没生效时，这一行是唯一能解释原因的地方。
-     */
-    @NonNull
-    static String params(@NonNull AiPlatformConfig platform, @NonNull AiSettings settings,
-                         @Nullable String selectedModelId) {
-        if (selectedModelId == null) {
-            return "先选一个模型";
-        }
-        com.ggec.earbuds.domain.ai.model.AiModel model = platform.model(selectedModelId).orElse(null);
-        if (model == null) {
-            return "";
-        }
-        com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.Resolved resolved =
-                com.ggec.earbuds.domain.ai.policy.AiParamsPolicy.resolve(
-                        model, platform, settings.preferences());
-        String source = switch (resolved.source()) {
-            case MODEL -> "此模型";
-            case GLOBAL -> "全局";
-            case DEFAULT -> null;
-        };
-        String temperature = resolved.temperature() == null
-                ? "平台默认" : trim(resolved.temperature()) + (source == null ? "" : "（" + source + "）");
-        String topP = resolved.topP() == null
-                ? "平台默认" : trim(resolved.topP()) + (source == null ? "" : "（" + source + "）");
-        return "温度 " + temperature + " · top_p " + topP;
-    }
-
-    /**
-     * 参数值最多两位小数，且去掉无意义的零。
-     *
-     * <p>存储里是 float，宽成 double 会带出 1.2999999523162842 这种尾巴——
-     * 直接把 double 打出来，用户会以为参数被改坏了。</p>
-     */
-    @NonNull
-    static String trim(double value) {
-        java.math.BigDecimal rounded = java.math.BigDecimal.valueOf(value)
-                .setScale(2, java.math.RoundingMode.HALF_UP)
-                .stripTrailingZeros();
-        return rounded.toPlainString();
-    }
-
     @NonNull
     static AiPlatformUiState.Advanced advanced(@NonNull AiPlatformConfig platform,
-                                               @Nullable AiPlatformTemplate template,
-                                               @NonNull AiSettings settings,
-                                               @Nullable String selectedModelId) {
+                                               @Nullable AiPlatformTemplate template) {
         String url = platform.baseUrl() == null || platform.baseUrl().isBlank()
                 ? (template == null ? "未设置" : template.defaultBaseUrl())
                 : platform.baseUrl();
         return new AiPlatformUiState.Advanced(platform.name(),
                 template != null && template.custom(), url,
                 com.ggec.earbuds.ui.ai.common.AiMessages.protocol(platform.protocol()),
-                template != null && template.protocols().size() > 1,
-                params(platform, settings, selectedModelId));
+                template != null && template.protocols().size() > 1);
     }
 }
