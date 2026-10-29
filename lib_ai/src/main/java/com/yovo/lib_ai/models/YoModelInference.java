@@ -29,7 +29,7 @@ public final class YoModelInference {
     }
 
     /**
-     * 推断一个模型的能力。永不返回 {@code null}，永不返回 {@code DECLARED}/{@code USER}。
+     * 推断一个模型的能力。永不返回 {@code null}，来源永远是 {@code INFERRED}。
      */
     @NonNull
     public static YoModelDescriptor infer(@Nullable String id) {
