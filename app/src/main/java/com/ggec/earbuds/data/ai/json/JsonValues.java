@@ -36,14 +36,6 @@ final class JsonValues {
         return json.opt(key) instanceof Number number ? number.intValue() : null;
     }
 
-    @Nullable
-    static Double decimal(JSONObject json, String key) {
-        if (!json.has(key) || json.isNull(key)) {
-            return null;
-        }
-        return json.opt(key) instanceof Number number ? number.doubleValue() : null;
-    }
-
     static long number(JSONObject json, String key, long fallback) {
         if (!json.has(key) || json.isNull(key)) {
             return fallback;

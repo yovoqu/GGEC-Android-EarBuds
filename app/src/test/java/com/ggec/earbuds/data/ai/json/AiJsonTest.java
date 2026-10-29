@@ -2,12 +2,10 @@ package com.ggec.earbuds.data.ai.json;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import com.ggec.earbuds.data.ai.usage.FileAiUsageStore;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiConversation;
 import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
@@ -24,11 +22,6 @@ import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
-import com.ggec.earbuds.domain.ai.model.AiUsageRecord;
-import com.ggec.earbuds.domain.ai.model.AiUsageStatus;
-import com.ggec.earbuds.domain.ai.model.AiUsageSummary;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
-import com.ggec.earbuds.testing.ai.MemoryDocumentStore;
 
 import org.json.JSONException;
 import org.junit.Test;
@@ -36,7 +29,6 @@ import org.junit.Test;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Set;
 
 public class AiJsonTest {
@@ -57,7 +49,7 @@ public class AiJsonTest {
                         reasoning, AiModel.manual("mine")),
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
         AiSettings settings = new AiSettings(List.of(platform), new AiSelection("custom-1a2b3c4d", "mine"),
-                new AiChatPreferences("sys \"quoted\"\nline", 0.7, 0.9, 2048, 10, false),
+                new AiChatPreferences("sys \"quoted\"\nline", false),
                 AiVoiceSettings.defaults());
 
         String text = settingsJson.encode(settings);
@@ -80,7 +72,7 @@ public class AiJsonTest {
         AiSettings decoded = settingsJson.decode("""
                 {"v":1,
                  "selection":{"platformId":"p"},
-                 "preferences":{"temperature":9,"contextMessages":-1},
+                 "preferences":5,
                  "platforms":[
                    {"id":"p","templateId":"deepseek","protocol":"warp_drive",
                     "models":[{"id":"ok"},{"name":"no id"},{"id":" "},5],
@@ -91,7 +83,7 @@ public class AiJsonTest {
                 """);
 
         assertNull("a selection without a model is no selection", decoded.selection());
-        assertEquals("invalid preferences fall back to the defaults", AiChatPreferences.DEFAULT, decoded.preferences());
+        assertEquals("preferences 不是对象时整段取默认值", AiChatPreferences.DEFAULT, decoded.preferences());
         assertEquals(1, decoded.platforms().size());
         AiPlatformConfig platform = decoded.platforms().get(0);
         assertEquals(AiProtocol.CHAT_COMPLETIONS, platform.protocol());
@@ -198,117 +190,5 @@ public class AiJsonTest {
         assertNull(legacy.cachedTokens());
         // 手工数据里成本可能是 JSON 数字，也要读得动。
         assertEquals(0, new BigDecimal("0.25").compareTo(decoded.messages().get(1).usage().cost()));
-    }
-
-    @Test
-    public void usageStoreAppendsJsonLinesAndSkipsDamagedOnes() {
-        MemoryDocumentStore documents = new MemoryDocumentStore();
-        FileAiUsageStore store = new FileAiUsageStore(documents);
-        store.append(AiUsageRecord.request(1000L, "c1", "openai", "gpt-4o",
-                AiUsage.ofTokens(10, 5), 800L, AiUsageStatus.SUCCESS, null));
-        store.append(AiUsageRecord.request(2000L, null, "anthropic", "claude",
-                new AiUsage(7, 3, 0, new BigDecimal("0.02"), 6, 2), 500L,
-                AiUsageStatus.FAILED, "rate limited"));
-
-        List<AiUsageRecord> records = store.readAll();
-
-        assertEquals(2, records.size());
-        assertEquals(15, records.get(0).totalTokens());
-        assertNull(records.get(0).failureReason());
-        assertEquals(AiUsageStatus.FAILED, records.get(1).status());
-        assertEquals("rate limited", records.get(1).failureReason());
-        assertNull("后台请求不属于任何会话", records.get(1).conversationId());
-        assertEquals(0, new BigDecimal("0.02").compareTo(records.get(1).cost()));
-        assertTrue("行尾要换行，否则下一次追加会粘行",
-                documents.documents.get(FileAiUsageStore.DOCUMENT).endsWith("\n"));
-
-        documents.documents.put(FileAiUsageStore.DOCUMENT,
-                "{\"ts\":1,\"status\":\"SUCCESS\"}\nnot json\n{\"ts\":2}\n"
-                        + "{\"ts\":3,\"status\":\"BOGUS\"}\n");
-        assertEquals("坏行只丢自己那一行", 1, store.readAll().size());
-
-        store.clear();
-        assertEquals(List.of(), store.readAll());
-    }
-
-    @Test
-    public void usageSummaryAggregatesByPlatformConversationAndPeriod() {
-        long hour = 3_600_000L;
-        List<AiUsageRecord> records = List.of(
-                AiUsageRecord.request(0L, "c1", "openai", "gpt-4o",
-                        AiUsage.ofTokens(10, 5), 100L, AiUsageStatus.SUCCESS, null),
-                AiUsageRecord.request(hour + 10L, "c1", "openai", "gpt-4o",
-                        new AiUsage(20, 5, 0, new BigDecimal("0.5"), null, null), 200L,
-                        AiUsageStatus.FAILED, "boom"),
-                AiUsageRecord.request(2 * hour, "c2", "anthropic", "claude",
-                        AiUsage.ofTokens(40, 10), 300L, AiUsageStatus.CANCELLED, null),
-                AiUsageRecord.request(3 * hour, null, "openai", "gpt-4o",
-                        AiUsage.ofTokens(1, 1), 400L, AiUsageStatus.SUCCESS, null));
-
-        AiUsageSummary total = AiUsageSummary.summarize(records);
-
-        assertEquals("失败和取消也各占一次请求", 4, total.requests());
-        assertEquals(92, total.totalTokens());
-        assertEquals("只有一条报了钱，那就只计这一笔", 1, total.pricedRequests());
-        assertEquals(0, new BigDecimal("0.5").compareTo(total.cost()));
-
-        Map<String, AiUsageSummary> byPlatform = AiUsageSummary.byPlatform(records);
-        assertEquals(Set.of("anthropic", "openai"), byPlatform.keySet());
-        assertEquals(3, byPlatform.get("openai").requests());
-        assertEquals(0, new BigDecimal("0.5").compareTo(byPlatform.get("openai").cost()));
-        AiUsageSummary anthropic = byPlatform.get("anthropic");
-        assertEquals("这条平台从没报过费用：金额 0，但有费用笔数是 0", 0, anthropic.pricedRequests());
-        assertFalse(anthropic.hasPricedRequests());
-        assertEquals(BigDecimal.ZERO, anthropic.cost());
-
-        Map<String, AiUsageSummary> byConversation = AiUsageSummary.byConversation(records);
-        assertEquals(Set.of("c1", "c2"), byConversation.keySet());
-        assertEquals(2, byConversation.get("c1").requests());
-
-        NavigableMap<Long, AiUsageSummary> byPeriod = AiUsageSummary.byPeriod(records, hour);
-        assertEquals(Set.of(0L, hour, 2 * hour, 3 * hour), byPeriod.keySet());
-        assertEquals(15, byPeriod.get(0L).totalTokens());
-
-        AiUsageSummary firstHalf = AiUsageSummary.summarize(records, 0L, 2 * hour);
-        assertEquals("左闭右开，相邻区间不重复计数", 2, firstHalf.requests());
-    }
-
-    @Test
-    public void usageSummaryWithoutReportedCostKeepsPricedRequestsAtZero() {
-        AiUsageSummary summary = AiUsageSummary.summarize(List.of(
-                AiUsageRecord.request(0L, "c", "p", "m", null, 5L, AiUsageStatus.FAILED, "down")));
-
-        assertEquals("没有用量也要占一行，否则失败率统计不出来", 1, summary.requests());
-        assertEquals(0, summary.pricedRequests());
-        assertFalse(summary.hasPricedRequests());
-        assertEquals(BigDecimal.ZERO, summary.cost());
-    }
-
-    @Test
-    public void recordUsageSwallowsStoreFailuresButKeepsTheReason() {
-        MemoryDocumentStore documents = new MemoryDocumentStore();
-        FileAiUsageStore store = new FileAiUsageStore(documents);
-        RecordUsage recordUsage = new RecordUsage(store, () -> 5_000L);
-
-        recordUsage.success("c1", "openai", "gpt-4o", AiUsage.ofTokens(10, 5), 4_400L);
-
-        AiUsageRecord recorded = store.readAll().get(0);
-        assertEquals(AiUsageStatus.SUCCESS, recorded.status());
-        assertEquals("耗时由时钟算，不让调用方各减一次", 600L, recorded.elapsedMillis());
-        assertNull(recordUsage.lastWriteFailure());
-
-        documents.failWrites = true;
-        recordUsage.failed("c1", "openai", "gpt-4o", null, 4_900L, "boom");
-
-        assertNotNull("磁盘满也不能让对话框弹出错误", recordUsage.lastWriteFailure());
-        assertTrue(recordUsage.lastWriteFailure().contains("disk is full"));
-        assertEquals("失败的那笔没落盘，账还是原来一条", 1, store.readAll().size());
-
-        documents.failWrites = false;
-        recordUsage.clearLastWriteFailure();
-        recordUsage.cancelled(null, "anthropic", "claude", null, 4_000L);
-
-        assertNull(recordUsage.lastWriteFailure());
-        assertEquals(AiUsageStatus.CANCELLED, store.readAll().get(1).status());
     }
 }

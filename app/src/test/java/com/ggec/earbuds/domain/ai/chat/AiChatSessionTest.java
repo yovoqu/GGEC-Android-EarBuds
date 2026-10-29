@@ -11,13 +11,10 @@ import com.ggec.earbuds.domain.ai.model.AiConversation;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
+import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
-import com.ggec.earbuds.domain.ai.model.AiUsageRecord;
-import com.ggec.earbuds.domain.ai.model.AiUsageStatus;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
-import com.ggec.earbuds.testing.ai.MemoryUsageStore;
 import com.ggec.earbuds.domain.ai.model.AiRole;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
@@ -44,13 +41,11 @@ public class AiChatSessionTest {
     private final ScriptedChatGateway gateway = new ScriptedChatGateway();
     private final ManualClock clock = new ManualClock();
     private final List<AiChatState> published = new ArrayList<>();
-    private final MemoryUsageStore usageStore = new MemoryUsageStore();
     private AiChatSession session;
 
     @Before
     public void setUp() {
-        session = new AiChatSession(settings, conversations, gateway, clock, clock,
-                new RecordUsage(usageStore, clock), Runnable::run);
+        session = new AiChatSession(settings, conversations, gateway, clock, clock, Runnable::run);
         session.observe(published::add);
     }
 
@@ -121,45 +116,6 @@ public class AiChatSessionTest {
         assertEquals(8, done.usage().totalTokens());
         assertFalse(session.state().generating());
         assertEquals(AiMessageStatus.COMPLETE, conversations.stored.values().iterator().next().messages().get(1).status());
-    }
-
-    @Test
-    public void everyRequestLeavesOneUsageRecord() {
-        session.start();
-        clock.advance(1_000);
-
-        session.send("hi");
-        gateway.lastListener().onComplete(new AiChatResult("answer", null, AiFinishReason.STOP,
-                new AiUsage(120, 40, 160, new java.math.BigDecimal("0.0021"), null, null)));
-
-        assertEquals(1, usageStore.size());
-        AiUsageRecord record = usageStore.last();
-        assertEquals(AiUsageStatus.SUCCESS, record.status());
-        assertEquals(120, record.inputTokens());
-        assertEquals(40, record.outputTokens());
-        assertEquals(new java.math.BigDecimal("0.0021"), record.cost());
-        assertEquals("deepseek", record.platformId());
-        assertEquals("deepseek-chat", record.modelId());
-        assertEquals(session.state().conversation().id(), record.conversationId());
-
-        // 用户停止算"取消"，不算失败：否则错误率会被用户自己按的停止污染。
-        session.send("again");
-        gateway.lastListener().onText("部分");
-        clock.advance(500);
-        session.stop();
-        assertEquals(2, usageStore.size());
-        assertEquals(AiUsageStatus.CANCELLED, usageStore.last().status());
-    }
-
-    @Test
-    public void failedRequestIsRecordedWithItsKind() {
-        session.start();
-        session.send("hi");
-        gateway.lastListener().onFailure(new AiFailure(AiFailureKind.AUTHENTICATION, "bad key"));
-
-        assertEquals(1, usageStore.size());
-        assertEquals(AiUsageStatus.FAILED, usageStore.last().status());
-        assertEquals("AUTHENTICATION", usageStore.last().failureReason());
     }
 
     @Test
@@ -309,21 +265,31 @@ public class AiChatSessionTest {
     }
 
     @Test
-    public void preferencesShapeTheRequestAndTheContextWindow() {
-        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", 0.5, null, 100, 3, true)));
+    public void theSystemPromptIsTheOnlyPreferenceLeftInTheRequest() {
+        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", true)));
         session.start();
-        for (String question : new String[] {"q1", "q2"}) {
-            session.send(question);
-            gateway.lastListener().onComplete(new AiChatResult("a-" + question, null, AiFinishReason.STOP, null));
+        session.send("q");
+
+        assertEquals("sys", gateway.lastRequest().systemPrompt());
+        assertEquals(List.of(new AiChatTurn(AiRole.USER, "q")), gateway.lastRequest().turns());
+    }
+
+    @Test
+    public void theContextWindowDropsTheOldestMessages() {
+        session.start();
+        for (int i = 0; i < AiGenerationDefaults.CONTEXT_MESSAGES; i++) {
+            session.send("q" + i);
+            gateway.lastListener().onComplete(new AiChatResult("a" + i, null, AiFinishReason.STOP, null));
         }
 
-        session.send("q3");
+        session.send("last");
 
-        var request = gateway.lastRequest();
-        assertEquals("sys", request.systemPrompt());
-        assertEquals(Double.valueOf(0.5), request.temperature());
-        assertEquals(Integer.valueOf(100), request.maxOutputTokens());
-        assertEquals(List.of("q2", "a-q2", "q3"), request.turns().stream().map(AiChatTurn::text).toList());
+        List<AiChatTurn> turns = gateway.lastRequest().turns();
+        assertTrue("窗口不能无限增长", turns.size() <= AiGenerationDefaults.CONTEXT_MESSAGES);
+        assertEquals("最后一条永远是刚发出的问题", "last", turns.get(turns.size() - 1).text());
+        assertEquals(AiRole.USER, turns.get(0).role());
+        assertFalse("最早的问题已经被挤出窗口",
+                turns.stream().anyMatch(turn -> turn.text().equals("q0")));
     }
 
     @Test

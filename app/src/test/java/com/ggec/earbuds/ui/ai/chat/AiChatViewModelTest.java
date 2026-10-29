@@ -16,9 +16,7 @@ import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.port.AiChatResult;
-import com.ggec.earbuds.domain.ai.usecase.RecordUsage;
 import com.ggec.earbuds.testing.ai.AiFixtures;
-import com.ggec.earbuds.testing.ai.MemoryUsageStore;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemoryConversationRepository;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
@@ -48,7 +46,7 @@ public class AiChatViewModelTest {
 
     private AiChatViewModel newViewModel() {
         AiChatSession session = new AiChatSession(settings, conversations, gateway, clock, clock,
-                new RecordUsage(new MemoryUsageStore(), clock), Runnable::run);
+                Runnable::run);
         return new AiChatViewModel(session, new AiChatUiMapper());
     }
 
