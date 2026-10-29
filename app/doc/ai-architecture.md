@@ -54,7 +54,9 @@
 | 服务 | 入口 | 职责 |
 | --- | --- | --- |
 | 平台目录 | `YoPlatformCatalog.standard()` | 内置平台（OpenAI、Anthropic、DeepSeek、SenseNova）和两类自定义兼容平台的描述：默认地址、支持的协议、密钥提示、控制台地址；统一的地址整理规则 `normalizeBaseUrl` |
-| 模型目录 | `YoModels` | 拉取模型列表。`YoModelListing` 描述一个平台"怎么列模型"（`OpenAiModelListing` 单页，`AnthropicModelListing` 游标翻页）；`YoModelKinds` 把模型 id 归类（对话、向量、图片、语音……），只留对话模型；平台不支持列表时明确报错而不是猜 |
+| 模型目录 | `YoModels` | 拉取模型列表。`YoModelListing` 描述一个平台"怎么列模型"（`OpenAiModelListing` 单页，`AnthropicModelListing` 游标翻页）；每一项带一份 `YoModelSpec` 规格——平台在列表里报的类别、模态、上下文与输出长度、函数调用等能力、推理方式逐项记为上报，没报的不猜；平台不支持列表时明确报错而不是猜 |
+| 模型规格 | `YoModelSpec` / `YoModelCatalog` | 模型的完整规格：类别（文本、视觉、全模态、语音识别、语音合成、向量、实时……）、输入输出模态、限额（上下文、输入、输出、思维链……）、服务端能力（函数调用、结构化输出、联网搜索、前缀续写、上下文缓存、批量推理）、推理方式；每条说法带出处（推断 / 平台上报 / 用户），详见 `ai-model-spec.md` |
+| 能力路由 | `YoModelRequirement` / `YoCapabilityRouter` | 调用方说"要什么样的模型"（类别 + 附加条件），路由选服务、选模型、拼端点，并告诉你这个选择是确认过的还是只是推断；选不出时抛 `UNSUPPORTED_CAPABILITY`，不是一个语焉不详的 400 |
 | 统一补全 | `YoCompletions` | 一次请求、一种事件流，背后按协议适配（`Chat/Messages/ResponsesCompletionAdapter`）。思考内容从原始 JSON 里拆出来：`reasoning_content`、`reasoning`、`thinking_delta`、`response.reasoning_summary_text.delta` |
 | 延迟探测 | `YoLatencyProbe` | 对一批模型并发发一句极短的话，记录首字延迟和总耗时。走**不重试**的传输，结果才反映真实延迟 |
 | 错误分类 | `YoAiErrors.kindOf` | 把 HTTP 状态、传输异常、协议异常折成 `YoAiErrorKind`（鉴权、权限、额度、限流、未找到、参数、服务端、网络、超时、取消、协议……） |
@@ -172,7 +174,7 @@ AI 的界面只剩对话页，挂在 AI 页签里——应用一共三个主页�
 
 | 范围 | 内容 |
 | --- | --- |
-| `lib_ai`（63 个） | 目录与归类、翻页、补全三协议的事件拆分、延迟探测、错误分类、地址整理、传输取消标记 |
+| `lib_ai` | 模型规格（类别、模态、限额、能力、推理，出处覆盖与现算类别）、推断词表、平台上报的各种写法、要求匹配与路由、翻页、补全三协议的事件拆分、延迟探测、错误分类、地址整理、传输取消标记 |
 | `app` 领域（策略、用例、会话） | 输入规则、各用例的边界、`AiChatSession` 的状态机时序（停止后的迟到回调、恢复被中断的消息等） |
 | `app` 数据 | JSON 往返和容错、仓库的原子更新与失败时不通知、对话索引重建、网关（MockWebServer 做端到端） |
 | `app` 界面（ViewModel、Mapper、Markdown 解析） | 对话 ViewModel 与 Mapper、Markdown 解析、字符串资源格式 |
