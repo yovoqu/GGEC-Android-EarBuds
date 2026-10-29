@@ -42,9 +42,8 @@ public final class YoModelCatalog {
     }
 
     /**
-     * 查一个模型的能力。三级合并，后者覆盖前者：
+     * 查一个模型的能力。两层合并，后者覆盖前者：
      * <ol>
-     *   <li>{@link YoKnownModels} 内置表 → {@link YoCapabilitySource#DECLARED}；</li>
      *   <li>{@link YoModelInference} 名称推断 → {@link YoCapabilitySource#INFERRED}；</li>
      *   <li>用户覆盖 → {@link YoCapabilitySource#USER}，连"一个能力都不勾"也算数。</li>
      * </ol>
@@ -54,10 +53,7 @@ public final class YoModelCatalog {
     @NonNull
     public YoModelDescriptor describe(@Nullable String id) {
         String requested = normalize(id);
-        YoModelDescriptor declared = YoKnownModels.find(requested);
-        YoModelDescriptor base = declared == null
-                ? YoModelInference.infer(requested)
-                : declared.withId(requested);
+        YoModelDescriptor base = YoModelInference.infer(requested);
         Set<YoModelCapability> override = userOverrides.get(key(requested));
         if (override == null) {
             return base;
@@ -100,7 +96,7 @@ public final class YoModelCatalog {
     }
 
     /**
-     * 去掉某个模型的用户覆盖，回到内置表/推断。
+     * 去掉某个模型的用户覆盖，回到按 id 推断。
      */
     @NonNull
     public YoModelCatalog withoutUserCapabilities(@Nullable String id) {

@@ -23,8 +23,12 @@ public final class YoCapabilityRouterTest {
     private static final String OPENAI = "https://api.openai.com";
 
     @Test
-    public void chatVisionRoutesToTheDeclaredChatProtocol() {
-        YoCapabilityRouter router = new DefaultCapabilityRouter(OPENAI);
+    public void chatVisionRoutesToTheUserDeclaredChatProtocol() {
+        // 视觉能力不再由内置厂商表声明；用户勾过之后才可信。
+        YoModelCatalog catalog = YoModelCatalog.standard()
+                .withUserCapabilities("gpt-4o",
+                        Set.of(YoModelCapability.CHAT_TEXT, YoModelCapability.CHAT_VISION));
+        YoCapabilityRouter router = new DefaultCapabilityRouter(OPENAI, catalog);
         YoModelRoute route = router.route(YoModelCapability.CHAT_VISION,
                 Set.of(YoServiceKind.CHAT_COMPLETIONS), List.of("gpt-4o"));
 
@@ -34,6 +38,7 @@ public final class YoCapabilityRouterTest {
         assertEquals(YoProtocol.CHAT_COMPLETIONS, route.protocol());
         assertEquals(OPENAI + "/v1/chat/completions", route.endpoint());
         assertTrue(route.conversational());
+        assertEquals(YoCapabilitySource.USER, route.model().source());
     }
 
     @Test
@@ -120,14 +125,16 @@ public final class YoCapabilityRouterTest {
     }
 
     @Test
-    public void declaredModelsWinOverInferredOnes() {
-        // 第一条是推断出来的（无内置表条目，但看起来能看图？并不是），先确认出处优先：
-        // acme-vision-pro 只能推断成 CHAT_TEXT，不具备 CHAT_VISION，所以应当选后面的 gpt-4o。
-        YoModelRoute route = new DefaultCapabilityRouter(OPENAI)
+    public void userDeclaredModelsWinOverInferredOnes() {
+        // 两个 id 都只能推断成 CHAT_TEXT；用户给 acme-vision-pro 勾了视觉，才轮得到它。
+        YoModelCatalog catalog = YoModelCatalog.standard()
+                .withUserCapabilities("acme-vision-pro",
+                        Set.of(YoModelCapability.CHAT_TEXT, YoModelCapability.CHAT_VISION));
+        YoModelRoute route = new DefaultCapabilityRouter(OPENAI, catalog)
                 .route(YoModelCapability.CHAT_VISION, Set.of(YoServiceKind.CHAT_COMPLETIONS),
                         List.of("acme-vision-pro", "gpt-4o"));
-        assertEquals("gpt-4o", route.model().id());
-        assertEquals(YoCapabilitySource.DECLARED, route.model().source());
+        assertEquals("acme-vision-pro", route.model().id());
+        assertEquals(YoCapabilitySource.USER, route.model().source());
     }
 
     @Test
