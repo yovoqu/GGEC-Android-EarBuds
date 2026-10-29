@@ -8,18 +8,15 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiModel;
-import com.ggec.earbuds.domain.ai.model.AiModelParams;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
-import com.ggec.earbuds.domain.ai.policy.AiParamsPolicy;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
-import com.ggec.earbuds.domain.ai.usecase.ApplyModelParams;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
@@ -60,7 +57,6 @@ public final class AiPlatformViewModel extends ViewModel {
     private final SelectModel selectModel;
     private final RunSpeedTest runSpeedTest;
     private final RemovePlatform removePlatform;
-    private final ApplyModelParams applyModelParams;
     private final Executor io;
     private final AiPlatformUiMapper mapper;
 
@@ -96,7 +92,6 @@ public final class AiPlatformViewModel extends ViewModel {
                                @NonNull SelectModel selectModel,
                                @NonNull RunSpeedTest runSpeedTest,
                                @NonNull RemovePlatform removePlatform,
-                               @NonNull ApplyModelParams applyModelParams,
                                @NonNull Executor io,
                                @NonNull AiPlatformUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
@@ -109,7 +104,6 @@ public final class AiPlatformViewModel extends ViewModel {
         this.selectModel = Objects.requireNonNull(selectModel, "selectModel");
         this.runSpeedTest = Objects.requireNonNull(runSpeedTest, "runSpeedTest");
         this.removePlatform = Objects.requireNonNull(removePlatform, "removePlatform");
-        this.applyModelParams = Objects.requireNonNull(applyModelParams, "applyModelParams");
         this.io = Objects.requireNonNull(io, "io");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -251,33 +245,6 @@ public final class AiPlatformViewModel extends ViewModel {
         }
         searchQuery = next;
         publish();
-    }
-
-    /**
-     * 批量：把这个模型当前生效的生成参数写进本平台的全部模型。
-     *
-     * <p>写的是覆盖表——写完后每个模型各自固定，不再跟随全局；没有可写的值就不写，
-     * 直接告诉用户"没有可应用的生成参数"，而不是弹一句成功。</p>
-     */
-    public void applyParamsToAllModels(@NonNull String modelId) {
-        AiPlatformConfig platform = platform();
-        if (platform == null) {
-            return;
-        }
-        AiModelParams params = AiParamsPolicy.snapshot(
-                platform.model(modelId).orElse(null), platform, settings.preferences());
-        if (params.isEmpty()) {
-            events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_apply_all_none));
-            return;
-        }
-        io.execute(() -> {
-            int written = applyModelParams.execute(params, platform.id());
-            events.postValue(AiPlatformEvent.toast(written > 0
-                    ? com.ggec.earbuds.R.string.ai_settings_apply_all_platform_done
-                    : com.ggec.earbuds.R.string.ai_settings_apply_all_none,
-                    written > 0 ? String.valueOf(written) : null));
-            publish();
-        });
     }
 
     public void runAllSpeed() {

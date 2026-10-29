@@ -72,9 +72,7 @@ public record AiPlatformUiState(
     /** 高级区：收起时只显示一行摘要。 */
     public record Advanced(@NonNull String name, boolean nameEditable, @NonNull String baseUrl,
                            @androidx.annotation.StringRes int protocolRes,
-                           boolean protocolChoosable,
-                           /** 当前模型的生成参数与来源，如「温度 0.7（此模型）· top_p 平台默认」。 */
-                           @NonNull String params) {
+                           boolean protocolChoosable) {
     }
 
     @NonNull
@@ -82,7 +80,7 @@ public record AiPlatformUiState(
         return new AiPlatformUiState(false, "", null,
                 new Connection(new Key(false, ""), null, false, null),
                 new Models(0, List.of(), "", false, null, false, ""),
-                new Advanced("", false, "", 0, false, ""),
+                new Advanced("", false, "", 0, false),
                 false, false);
     }
 }

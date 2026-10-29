@@ -47,7 +47,6 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
     private static final int MENU_TEST = 31;
     private static final int MENU_SELECT = 32;
     private static final int MENU_DELETE = 33;
-    private static final int MENU_APPLY_ALL = 34;
     /** 添加菜单里的"手动填一个模型 id"，与拉取并列。 */
     private static final int MENU_MANUAL = 35;
 
@@ -361,13 +360,10 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         button.setOnClickListener(anchor -> {
             YoMenu menu = YoMenu.create(this)
                     .addItem(MENU_TEST, getString(R.string.ai_settings_model_menu_test))
-                    .addItem(MENU_APPLY_ALL, getString(R.string.ai_settings_model_menu_apply_all))
                     .setAnchorView(anchor)
                     .setOnItemClickListener(id -> {
                         if (id == MENU_TEST) {
                             viewModel.testModel(modelId);
-                        } else if (id == MENU_APPLY_ALL) {
-                            viewModel.applyParamsToAllModels(modelId);
                         } else if (id == MENU_DELETE) {
                             viewModel.deleteModel(modelId);
                         }
@@ -405,12 +401,6 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
                 ListTextSpec.of(getString(R.string.ai_settings_field_protocol),
                         getString(advanced.protocolRes())),
                 ListSuffixSpec.none());
-        if (!advanced.params().isEmpty()) {
-            actions.add(NO_OP);
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_settings, theme.text2),
-                    ListTextSpec.of(getString(R.string.ai_settings_params_section), advanced.params()),
-                    ListSuffixSpec.none());
-        }
         addSection(R.string.ai_settings_advanced_section, list);
     }
 
@@ -495,10 +485,7 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
     }
 
     private void showEvent(@NonNull AiPlatformEvent event) {
-        String text = event.argument() == null
-                ? getString(event.message())
-                : getString(event.message(), event.argument());
-        YoToast.show(this, text);
+        YoToast.show(this, getString(event.message()));
         if (event.closed()) {
             finish();
         }

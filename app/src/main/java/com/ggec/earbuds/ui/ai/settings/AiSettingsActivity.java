@@ -36,13 +36,12 @@ import java.util.List;
 /**
  * AI 设置：按"要做的决定"分组，能一步改完的都不进第二层。
  *
- * <p>这一版换的是结构，不是皮肤。上一版是一张目录：每个参数占一行，点开弹窗、输入、保存，
- * 模式和平台靠勾选表达——最常改的两件事（换模式、调温度）都要四次点击，
- * 而"我现在用哪个平台哪个模型"散在列表里根本看不出来。</p>
+ * <p>顶部一张身份卡回答"我在用什么"，点它就是换平台/换模型的入口；模式是分段控件，
+ * 一步切换、立刻生效；回答风格只剩系统提示词一项，点开弹窗写。</p>
  *
- * <p>现在：顶部一张身份卡回答"我在用什么"，点它就是换平台/换模型的入口；
- * 模式是分段控件，一步切换、立刻生效；四个参数是内联滑杆，拖动即生效、右侧实时显示值，
- * 点数值可退回平台默认；只有提示词需要打字，才开弹窗。用量保持三行 k-v。</p>
+ * <p>温度、top_p、最大输出、上下文条数不在这页：它们由 APP 在发请求时统一给定
+ * （{@link com.ggec.earbuds.domain.ai.model.AiGenerationDefaults}）。
+ * 这些参数调对了收益很小、调错了没人看得出原因，摆在这里只会让人以为必须调。</p>
  */
 public final class AiSettingsActivity extends AppCompatActivity {
 
@@ -61,17 +60,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
     private TextView identityAction;
     private AiSegmentedControl modes;
     private TextView promptValue;
-    private androidx.appcompat.widget.SwitchCompat globalSwitch;
-    private boolean syncingGlobal;
-    private TextView scopeValue;
-    private TextView scopeHint;
-    private LinearLayout applyRow;
-    private TextView applyHint;
-    private AiSliderRow temperature;
-    private AiSliderRow topP;
-    private AiSliderRow maxOutput;
-    private AiSliderRow context;
-    private LinearLayout usageCard;
     private TextView loadingHint;
 
     @Nullable
@@ -134,97 +122,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
         return root;
     }
 
-    /**
-     * 全局参数开关。关着时下面的滑杆仍显示用户调过的值，但界面写明"未启用"——
-     * 直接把控件藏起来会让人以为自己没设过。
-     */
-    private View globalParamsRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(0, theme.dp(AiTheme.SPACE_S), 0, theme.dp(AiTheme.SPACE_S));
-
-        LinearLayout line = new LinearLayout(this);
-        line.setOrientation(LinearLayout.HORIZONTAL);
-        line.setGravity(android.view.Gravity.CENTER_VERTICAL);
-
-        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
-        label.setText(R.string.ai_settings_global_params);
-        line.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        globalSwitch = new androidx.appcompat.widget.SwitchCompat(this);
-        // SwitchCompat 的默认强调色是主题色（这台设备上是紫），与设计里的品牌蓝不一致，直接指定。
-        globalSwitch.setThumbTintList(android.content.res.ColorStateList.valueOf(theme.brand));
-        globalSwitch.setTrackTintList(android.content.res.ColorStateList.valueOf(theme.brandSoft));
-        globalSwitch.setShowText(false);
-        globalSwitch.setOnCheckedChangeListener((button, checked) -> {
-            if (!syncingGlobal) {
-                viewModel.saveGlobalParamsEnabled(checked);
-            }
-        });
-        line.addView(globalSwitch, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        row.addView(line);
-
-        TextView hint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        hint.setText(R.string.ai_settings_global_params_hint);
-        row.addView(hint);
-        return row;
-    }
-
-    /**
-     * 作用范围：只说事实——"哪些模型不再跟随这套值"。
-     *
-     * <p>这一版没有可写的范围字段（也不打算加半成品），所以这里不是三选一控件，
-     * 而是从参数覆盖表反推出来的一句话；想改变它就用下面那行"应用到全部模型"。</p>
-     */
-    private View scopeRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S),
-                theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S));
-
-        LinearLayout line = new LinearLayout(this);
-        line.setOrientation(LinearLayout.HORIZONTAL);
-        line.setGravity(Gravity.CENTER_VERTICAL);
-        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
-        label.setText(R.string.ai_settings_scope_title);
-        line.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        scopeValue = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
-        scopeValue.setGravity(Gravity.END);
-        line.addView(scopeValue, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        row.addView(line);
-
-        scopeHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        scopeHint.setPadding(0, theme.dp(2), 0, 0);
-        row.addView(scopeHint);
-        return row;
-    }
-
-    /** 把当前这套值写进每个模型。写完后它们各自固定，不再跟随全局——副行里说清这一点。 */
-    private View applyAllRow() {
-        applyRow = new LinearLayout(this);
-        applyRow.setOrientation(LinearLayout.VERTICAL);
-        applyRow.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S),
-                theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S));
-        applyRow.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
-        applyRow.setOnClickListener(view -> viewModel.applyParamsToAllModels());
-
-        LinearLayout line = new LinearLayout(this);
-        line.setOrientation(LinearLayout.HORIZONTAL);
-        line.setGravity(Gravity.CENTER_VERTICAL);
-        TextView label = theme.text(AiTheme.TEXT_BODY, theme.brand, AiTheme.Weight.MEDIUM);
-        label.setText(R.string.ai_settings_apply_all);
-        line.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        applyRow.addView(line);
-
-        applyHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        applyHint.setPadding(0, theme.dp(2), 0, 0);
-        applyRow.addView(applyHint);
-        return applyRow;
-    }
-
     private void buildSections() {
         column.addView(identityView(), cardParams(AiTheme.SPACE_L));
 
@@ -238,28 +135,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
         column.addView(sectionTitle(R.string.ai_settings_section_style), titleParams());
         LinearLayout styleCard = card();
         styleCard.addView(promptRow(), rowParams());
-        styleCard.addView(globalParamsRow(), rowParams());
-        styleCard.addView(scopeRow(), rowParams());
-        styleCard.addView(applyAllRow(), rowParams());
-        temperature = AiSliderRow.decimal(theme, R.string.ai_settings_param_temperature, 0f, 2f, 20);
-        temperature.setListener(value -> viewModel.saveTemperature(value));
-        styleCard.addView(temperature, rowParams());
-        topP = AiSliderRow.decimal(theme, R.string.ai_settings_param_top_p, 0f, 1f, 10);
-        topP.setListener(value -> viewModel.saveTopP(value));
-        styleCard.addView(topP, rowParams());
-        maxOutput = AiSliderRow.integer(theme, R.string.ai_settings_param_max_output, 256, 8192, 256);
-        maxOutput.setListener(value -> viewModel.saveMaxOutputTokens(
-                value == null ? null : (int) Math.round(value)));
-        styleCard.addView(maxOutput, rowParams());
-        context = AiSliderRow.integer(theme, R.string.ai_settings_param_context, 2, 40, 1);
-        context.setListener(value -> viewModel.saveContextMessages(
-                value == null ? AiChatPreferences.DEFAULT_CONTEXT_MESSAGES : (int) Math.round(value)));
-        styleCard.addView(context, rowParams());
         column.addView(styleCard, cardParams(0));
-
-        column.addView(sectionTitle(R.string.ai_settings_section_usage), titleParams());
-        usageCard = card();
-        column.addView(usageCard, cardParams(0));
 
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         loadingHint.setText(R.string.ai_settings_loading);
@@ -286,7 +162,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 一枚首字母方块：这一页四张卡同宽同圆角，没有它就没有主角。
+        // 一枚首字母方块：这一页三张卡同宽同圆角，没有它就没有主角。
         // 它不是一个装饰图标，而是"我在用哪一家"的标识。
         identityAvatar = theme.text(AiTheme.TEXT_HEADLINE - 4, theme.brand, AiTheme.Weight.MEDIUM);
         identityAvatar.setGravity(Gravity.CENTER);
@@ -381,7 +257,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
         promptValue.setSingleLine(true);
         promptValue.setGravity(Gravity.END);
         promptValue.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        // 值固定贴右，和下面四条滑杆的数值同一条竖线。
+        // 值贴右，和这一页其他行的取值保持同一条竖线。
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         valueParams.leftMargin = theme.dp(AiTheme.SPACE_M);
@@ -392,23 +268,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
     // ---- 渲染 ----
 
-    /**
-     * 开关只影响"是否生效"，不隐藏控件：用户调过的值还在，关掉时界面上说明它没被使用。
-     */
-    private void applyGlobalParams(boolean enabled) {
-        if (globalSwitch != null && globalSwitch.isChecked() != enabled) {
-            // 程序化同步不能回写成用户操作，否则会再触发一次保存。
-            syncingGlobal = true;
-            globalSwitch.setChecked(enabled);
-            syncingGlobal = false;
-        }
-        for (AiSliderRow row : new AiSliderRow[]{temperature, topP, maxOutput}) {
-            if (row != null) {
-                row.setAlpha(enabled ? 1f : 0.45f);
-            }
-        }
-    }
-
     private void render(@NonNull AiSettingsUiState state) {
         if (!state.loaded()) {
             return;
@@ -416,8 +275,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
         rendered = true;
         current = state;
         loadingHint.setVisibility(View.GONE);
-        applyGlobalParams(state.params().globalParamsEnabled());
-        bindScope(state.params());
 
         AiSettingsUiState.PlatformRow active = null;
         for (AiSettingsUiState.PlatformRow row : state.platforms()) {
@@ -450,101 +307,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
                     omni.subtitle().resolve(this));
         }
 
-        AiSettingsUiState.Params params = state.params();
-        promptValue.setText(params.promptPreview().resolve(this));
-        CharSequence defaultValue = getString(R.string.ai_settings_value_platform_default);
-        temperature.bind(params.temperature(), defaultValue);
-        topP.bind(params.topP(), defaultValue);
-        maxOutput.bind(params.maxOutputTokens() == null ? null : params.maxOutputTokens().doubleValue(),
-                defaultValue);
-        context.bind((double) params.contextMessages(), params.contextText().resolve(this));
-
-        bindUsage(state.usage());
-    }
-
-    /** 作用范围只说事实；能不能批量应用由 {@code canApply} 决定，与这里的文案分开。 */
-    private void bindScope(@NonNull AiSettingsUiState.Params params) {
-        AiSettingsUiState.Scope scope = params.scope();
-        switch (scope.kind()) {
-            case DISABLED -> {
-                scopeValue.setText(R.string.ai_settings_scope_disabled);
-                scopeHint.setText(R.string.ai_settings_scope_hint_disabled);
-            }
-            case ALL -> {
-                scopeValue.setText(R.string.ai_settings_scope_all);
-                scopeHint.setText(R.string.ai_settings_scope_hint_all);
-            }
-            case ONE_MODEL -> {
-                scopeValue.setText(getString(R.string.ai_settings_scope_one,
-                        scope.subject() == null ? "" : scope.subject()));
-                scopeHint.setText(R.string.ai_settings_scope_hint_one);
-            }
-            case PLATFORM -> {
-                scopeValue.setText(R.string.ai_settings_scope_platform);
-                scopeHint.setText(scope.subject() == null
-                        ? getString(R.string.ai_settings_scope_hint_platform_plain,
-                                String.valueOf(scope.pinned()))
-                        : getString(R.string.ai_settings_scope_hint_platform,
-                                scope.subject(), String.valueOf(scope.pinned())));
-            }
-            case PARTIAL -> {
-                String count = String.valueOf(scope.pinned());
-                scopeValue.setText(getString(R.string.ai_settings_scope_partial, count));
-                scopeHint.setText(scope.subject() == null
-                        ? getString(R.string.ai_settings_scope_hint_partial, count)
-                        : getString(R.string.ai_settings_scope_hint_partial_named,
-                                scope.subject(), count));
-            }
-        }
-        applyRow.setVisibility(params.canApply() ? View.VISIBLE : View.GONE);
-        if (params.canApply()) {
-            applyHint.setText(getString(R.string.ai_settings_apply_all_hint,
-                    String.valueOf(params.totalModels())));
-        }
-    }
-
-    private void bindUsage(@NonNull AiSettingsUiState.Usage usage) {
-        usageCard.removeAllViews();
-        String dash = getString(R.string.ai_settings_usage_dash);
-        String unknown = getString(R.string.ai_settings_usage_cost_unknown);
-        usageCard.addView(usageRow(getString(R.string.ai_settings_usage_requests),
-                usage.requests() == null ? dash : usage.requests().resolve(this), true));
-        usageCard.addView(usageRow(getString(R.string.ai_settings_usage_tokens),
-                usage.tokens() == null ? dash : usage.tokens().resolve(this), false));
-        // 费用单独一格：一条都没上报时写「未上报」，0.00 会被读成"免费"。
-        usageCard.addView(usageRow(getString(R.string.ai_settings_usage_cost),
-                usage.cost() == null ? unknown : usage.cost().resolve(this), false));
-    }
-
-    @NonNull
-    private View usageRow(@NonNull CharSequence label, @NonNull CharSequence value, boolean first) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(theme.dp(AiTheme.ROW_HEIGHT));
-        row.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S),
-                theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_S));
-
-        TextView name = theme.text(AiTheme.TEXT_BODY, theme.text1);
-        name.setText(label);
-        row.addView(name, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView amount = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
-        amount.setText(value);
-        row.addView(amount, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        if (first) {
-            return row;
-        }
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        View line = new View(this);
-        line.setBackgroundColor(theme.divider);
-        wrap.addView(line, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, theme.dp(1))));
-        wrap.addView(row);
-        return wrap;
+        promptValue.setText(state.style().promptPreview().resolve(this));
     }
 
     /** 平台名首字：中文取第一个字，拉丁取首字母大写。空名返回空串。 */
@@ -581,10 +344,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
         if (!rendered) {
             return;
         }
-        String text = event.argument() == null
-                ? getString(event.message())
-                : getString(event.message(), event.argument());
-        YoToast.show(this, text);
+        YoToast.show(this, getString(event.message()));
     }
 
     /** 换平台/换模型的入口就在身份卡上：用户问"我在用什么"的地方，也是他想换的地方。 */
@@ -626,7 +386,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
             return;
         }
         YoTextInput field = YoTextInput.create(this)
-                .setText(current.params().systemPrompt())
+                .setText(current.style().systemPrompt())
                 .setPlaceholder(getString(R.string.ai_settings_prompt_dialog_hint))
                 .setMaxLength(AiChatPreferences.MAX_SYSTEM_PROMPT_LENGTH)
                 .setShowCounter(true)
