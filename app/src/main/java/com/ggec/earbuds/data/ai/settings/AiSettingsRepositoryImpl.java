@@ -107,7 +107,8 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
                     ? platform
                     : platform.withCredentials(platform.name(), key, platform.baseUrl(), platform.protocol()));
         }
-        return new AiSettings(platforms, stored.selection(), stored.preferences(), stored.voice());
+        return new AiSettings(platforms, stored.mode(), stored.textSelection(), stored.voiceSelection(),
+                stored.preferences());
     }
 
     private void persist(AiSettings before, AiSettings next) {

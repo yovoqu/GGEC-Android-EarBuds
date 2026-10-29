@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -136,7 +137,7 @@ public class PlatformUseCasesTest {
 
         new FetchPlatformModels(repository, gateway(List.of(model("deepseek-reasoner"))), clock).execute("deepseek");
 
-        assertNull(repository.load().selection());
+        assertNull(repository.load().textSelection());
     }
 
     @Test
@@ -145,7 +146,7 @@ public class PlatformUseCasesTest {
 
         new FetchPlatformModels(repository, gateway(List.of(model("deepseek-chat"))), clock).execute("deepseek");
 
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
     }
 
     @Test
@@ -202,7 +203,7 @@ public class PlatformUseCasesTest {
         AiSettings settings = repository.load();
         assertEquals(List.of("deepseek-reasoner"),
                 settings.platform("deepseek").orElseThrow().models().stream().map(AiModel::id).toList());
-        assertNull(settings.selection());
+        assertNull(settings.textSelection());
     }
 
     @Test
@@ -212,11 +213,28 @@ public class PlatformUseCasesTest {
                 .withPlatform(platform("openai", "", "gpt-4o")));
         SelectModel select = new SelectModel(repository);
 
-        select.execute("deepseek", "deepseek-chat");
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
-        assertValidation(() -> select.execute("deepseek", "nope"), AiValidationError.MODEL_UNKNOWN);
-        assertValidation(() -> select.execute("openai", "gpt-4o"), AiValidationError.PLATFORM_NOT_CONFIGURED);
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
+        select.execute(AiInteractionMode.TEXT, "deepseek", "deepseek-chat");
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
+        assertValidation(() -> select.execute(AiInteractionMode.TEXT, "deepseek", "nope"), AiValidationError.MODEL_UNKNOWN);
+        assertValidation(() -> select.execute(AiInteractionMode.TEXT, "openai", "gpt-4o"), AiValidationError.PLATFORM_NOT_CONFIGURED);
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
+    }
+
+    @Test
+    public void voiceModeOnlyAcceptsRealtimeModels() {
+        repository.update(settings -> settings
+                .withPlatform(platform("openai", "k", "gpt-4o"))
+                .withPlatform(AiFixtures.platformOf("realtime", "k",
+                        AiFixtures.realtimeModel("gpt-4o-realtime-preview"))));
+        SelectModel select = new SelectModel(repository);
+
+        select.execute(AiInteractionMode.VOICE, "realtime", "gpt-4o-realtime-preview");
+        assertEquals(new AiSelection("realtime", "gpt-4o-realtime-preview"),
+                repository.load().voiceSelection());
+        assertNull("语音选择不该写进文本选择", repository.load().textSelection());
+
+        assertValidation(() -> select.execute(AiInteractionMode.VOICE, "openai", "gpt-4o"),
+                AiValidationError.VOICE_NEEDS_REALTIME_MODEL);
     }
 
     @Test
@@ -226,7 +244,7 @@ public class PlatformUseCasesTest {
         new RemovePlatform(repository).execute("deepseek");
 
         assertTrue(repository.load().platforms().isEmpty());
-        assertNull(repository.load().selection());
+        assertNull(repository.load().textSelection());
     }
 
     @Test

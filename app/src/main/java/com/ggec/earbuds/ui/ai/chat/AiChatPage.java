@@ -26,6 +26,7 @@ import com.ggec.earbuds.R;
 import androidx.annotation.StringRes;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.ui.ai.call.AiCallActivity;
 import com.ggec.earbuds.ui.ai.history.AiHistorySheet;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsActivity;
@@ -287,11 +288,11 @@ public final class AiChatPage implements AiMessageActions {
      * 走到这行说明状态刚刚被清掉，不值得为它弹一句错误。
      */
     private void openCall() {
-        String platformId = viewModel.activePlatformId();
-        if (platformId == null) {
+        AiSelection selection = viewModel.voiceSelection();
+        if (selection == null) {
             return;
         }
-        activity.startActivity(AiCallActivity.intent(activity, viewModel.voiceSettings(), platformId));
+        activity.startActivity(AiCallActivity.intent(activity, selection));
     }
 
     /**
@@ -335,12 +336,13 @@ public final class AiChatPage implements AiMessageActions {
         List<AiMessageUi> list = state.messages();
         boolean showEmpty = state.welcome() != AiChatUiState.Welcome.NONE;
         emptyState.setMode(state.welcome(),
-                viewModel.voiceSettings().realtimeModel() != null);
+                viewModel.voiceSelection() != null);
         setVisible(emptyState, showEmpty);
         setVisible(messages, !showEmpty);
         setVisible(storageBanner, state.storageFailed());
-        // 通话要能真的拨出去才有意义：没有可用模型时不出现，而不是点进去看一句失败。
-        setVisible(call, state.composer().enabled());
+        // 通话要能真的拨出去才有意义：文本没就绪、或语音模式还没配好实时模型时都不摆入口，
+        // 而不是点进去看一句失败，或点了完全没反应。
+        setVisible(call, state.composer().enabled() && viewModel.voiceSelection() != null);
         composer.setState(state.composer().enabled(), state.composer().generating(), state.composer().modelChip());
 
         String firstId = list.isEmpty() ? "" : list.get(0).id();

@@ -11,7 +11,6 @@
 
     <!-- 分区标题：12sp，只在分组上方出现一次 -->
     <string name="ai_settings_section_platform">平台</string>
-    <string name="ai_settings_section_mode">说话方式</string>
 
     <!-- 平台行：有 Key 说清"几个模型 + 连的是哪台主机"，没 Key 直接说没填 -->
     <string name="ai_settings_platform_no_key">未填 Key</string>
@@ -25,10 +24,17 @@
     <string name="ai_settings_add_platform_custom">自定义服务地址</string>
     <string name="ai_settings_add_platform_empty">没有可以添加的平台</string>
 
-    <!-- AI 模式：标题复用通话页的显示名，两处文字永远一致 -->
-    <string name="ai_settings_mode_cascaded_hint">转写 → 对话 → 朗读，任何对话模型都能用</string>
-    <string name="ai_settings_mode_omni_hint">边说边答，可以随时打断</string>
-    <string name="ai_settings_mode_omni_needs_model">先在平台里添加一个实时语音模型</string>
+    <!-- 接入形态：页面顶部的分段按钮，决定下面配哪一类模型 -->
+    <string name="ai_settings_mode_text">文本模式</string>
+    <string name="ai_settings_mode_voice">语音交流模式</string>
+    <string name="ai_settings_mode_text_hint">接入 DeepSeek 这类对话模型，用文字提问</string>
+    <string name="ai_settings_mode_voice_hint">接入实时全/多模态模型，直接说话交流</string>
+
+    <!-- 两种模式各自的空态：说清"缺哪一类模型"，而不是笼统地说没接入 -->
+    <string name="ai_settings_text_empty">还没有接入文本模型</string>
+    <string name="ai_settings_text_empty_hint">添加平台，选一个对话模型</string>
+    <string name="ai_settings_voice_empty">还没有接入语音模型</string>
+    <string name="ai_settings_voice_empty_hint">添加平台，选一个实时模型</string>
 
     <!-- 对话参数：只剩系统提示词；采样参数已收进代码，不再出现在界面上 -->
     <string name="ai_settings_param_prompt">系统提示词</string>
@@ -65,8 +71,10 @@
     <string name="ai_settings_models_fetch">拉取模型</string>
     <string name="ai_settings_fetching">正在拉取…</string>
     <string name="ai_settings_add_model">手动添加模型</string>
-    <string name="ai_settings_add_model_hint">例如 deepseek-chat</string>
+    <string name="ai_settings_add_model_hint">填写平台返回的模型 id</string>
+    <string name="ai_settings_add_model_hint_voice">填写实时模型 id</string>
     <string name="ai_settings_model_manual">手动添加</string>
+    <string name="ai_settings_model_realtime_only">这是实时模型，请到语音交流模式选择</string>
     <string name="ai_settings_model_added">已添加 %1$s</string>
     <string name="ai_settings_model_removed">已删除 %1$s</string>
     <string name="ai_settings_model_selected">已切换到 %1$s</string>
@@ -95,6 +103,7 @@
     <string name="ai_settings_connection_testing">测试中…</string>
     <string name="ai_settings_add_model_entry">添加模型</string>
     <string name="ai_settings_models_empty_hint">拉取列表或手动填一个模型 id</string>
+    <string name="ai_settings_models_empty_hint_voice">实时模型通常不在列表里，手动填一个 id</string>
     <string name="ai_settings_speed_fact">首字 %1$s · 总 %2$s</string>
     <string name="ai_settings_speed_done">测速完成</string>
     <string name="ai_settings_speed_cancelled">已停止测速</string>
@@ -107,11 +116,15 @@
     <string name="ai_settings_create_hint">填好 API Key 才能添加</string>
 
     <!-- 回答风格：只有系统提示词一项 -->
-    <string name="ai_settings_identity_empty_hint">接入后这里显示正在用的平台与模型</string>
     <string name="ai_settings_section_style">回答风格</string>
 
+    <!-- 语音交流：APP 侧不做转写与合成，只有一条实时链路 -->
+    <string name="ai_settings_section_voice">语音链路</string>
+    <string name="ai_settings_voice_link">接入方式</string>
+    <string name="ai_settings_voice_link_value">实时语音 · 一条连接直连</string>
+    <string name="ai_settings_voice_note">不在手机侧做转写与朗读：转写、回答、发声都由实时模型完成，断句也由服务端判断。</string>
+
     <string name="ai_settings_loading">正在读取设置…</string>
-    <string name="ai_settings_identity_empty">还没有接入平台</string>
     <string name="ai_settings_platform_change">更换</string>
     <string name="ai_settings_connection_section">连接</string>
     <string name="ai_settings_advanced_section">高级</string>

@@ -12,7 +12,7 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
@@ -48,9 +48,10 @@ public class AiJsonTest {
                 List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false),
                         reasoning, AiModel.manual("mine")),
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
-        AiSettings settings = new AiSettings(List.of(platform), new AiSelection("custom-1a2b3c4d", "mine"),
-                new AiChatPreferences("sys \"quoted\"\nline", false),
-                AiVoiceSettings.defaults());
+        AiSettings settings = new AiSettings(List.of(platform), AiInteractionMode.VOICE,
+                new AiSelection("custom-1a2b3c4d", "mine"),
+                new AiSelection("custom-1a2b3c4d", "gpt-4o-realtime-preview"),
+                new AiChatPreferences("sys \"quoted\"\nline", false));
 
         String text = settingsJson.encode(settings);
         AiSettings decoded = settingsJson.decode(text);
@@ -59,7 +60,9 @@ public class AiJsonTest {
         AiPlatformConfig round = decoded.platforms().get(0);
         assertEquals("", round.apiKey());
         assertEquals(platform.withoutKey(), round);
-        assertEquals(settings.selection(), decoded.selection());
+        assertEquals(settings.mode(), decoded.mode());
+        assertEquals(settings.textSelection(), decoded.textSelection());
+        assertEquals(settings.voiceSelection(), decoded.voiceSelection());
         assertEquals(settings.preferences(), decoded.preferences());
         assertEquals("sys \"quoted\"\nline", decoded.preferences().systemPrompt());
         assertEquals(failed, round.speedResults().get("deepseek-reasoner"));
@@ -82,7 +85,8 @@ public class AiJsonTest {
                  ]}
                 """);
 
-        assertNull("a selection without a model is no selection", decoded.selection());
+        assertNull("a selection without a model is no selection", decoded.textSelection());
+        assertNull(decoded.voiceSelection());
         assertEquals("preferences 不是对象时整段取默认值", AiChatPreferences.DEFAULT, decoded.preferences());
         assertEquals(1, decoded.platforms().size());
         AiPlatformConfig platform = decoded.platforms().get(0);
@@ -91,6 +95,25 @@ public class AiJsonTest {
         assertEquals(List.of("ok"), platform.models().stream().map(AiModel::id).toList());
         assertEquals(1, platform.speedResults().size());
         assertEquals(AiSpeedResult.Status.OK, platform.speedResults().get("ok").status());
+    }
+
+    @Test
+    public void legacyDocumentSplitsTheOldSelectionIntoTextAndVoice() throws Exception {
+        AiSettings decoded = settingsJson.decode("""
+                {"v":1,
+                 "selection":{"platformId":"openai","modelId":"gpt-4o"},
+                 "voice":{"mode":"OMNI","realtimeModel":"gpt-4o-realtime-preview",
+                          "transcriptionModel":"whisper-1","synthesisVoice":"alloy"},
+                 "platforms":[{"id":"openai","templateId":"openai","protocol":"CHAT_COMPLETIONS",
+                               "models":[{"id":"gpt-4o"},{"id":"gpt-4o-realtime-preview"}]}]}
+                """);
+
+        assertEquals("旧文档没有根级 mode，默认停在文本模式", AiInteractionMode.TEXT, decoded.mode());
+        assertEquals(new AiSelection("openai", "gpt-4o"), decoded.textSelection());
+        assertEquals("旧语音实时模型挂到当时的对话平台上",
+                new AiSelection("openai", "gpt-4o-realtime-preview"), decoded.voiceSelection());
+        assertTrue("旧文档的实时模型要补上能力位，否则语音模式仍然选不到它",
+                decoded.platforms().get(0).model("gpt-4o-realtime-preview").orElseThrow().realtime());
     }
 
     @Test

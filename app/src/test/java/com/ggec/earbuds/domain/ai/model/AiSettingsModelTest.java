@@ -21,12 +21,12 @@ public class AiSettingsModelTest {
     public void activeModelNeedsAConfiguredPlatformAndAListedModel() {
         AiSelection selection = new AiSelection("deepseek", "deepseek-chat");
 
-        assertTrue(AiFixtures.settings(selection, platform("deepseek", "k", "deepseek-chat")).activeModel().isPresent());
+        assertTrue(AiFixtures.settings(selection, platform("deepseek", "k", "deepseek-chat")).textModel().isPresent());
         assertTrue("an unset key is a placeholder, not a usable platform",
-                AiFixtures.settings(selection, platform("deepseek", "", "deepseek-chat")).activeModel().isEmpty());
-        assertTrue(AiFixtures.settings(selection, platform("deepseek", "k", "deepseek-reasoner")).activeModel().isEmpty());
-        assertTrue(AiFixtures.settings(selection, platform("openai", "k", "deepseek-chat")).activeModel().isEmpty());
-        assertTrue(AiFixtures.settings(null, platform("deepseek", "k", "deepseek-chat")).activeModel().isEmpty());
+                AiFixtures.settings(selection, platform("deepseek", "", "deepseek-chat")).textModel().isEmpty());
+        assertTrue(AiFixtures.settings(selection, platform("deepseek", "k", "deepseek-reasoner")).textModel().isEmpty());
+        assertTrue(AiFixtures.settings(selection, platform("openai", "k", "deepseek-chat")).textModel().isEmpty());
+        assertTrue(AiFixtures.settings(null, platform("deepseek", "k", "deepseek-chat")).textModel().isEmpty());
     }
 
     @Test
@@ -36,8 +36,8 @@ public class AiSettingsModelTest {
 
         AiSettings withoutOther = settings.withoutPlatform("openai");
         assertEquals(List.of("deepseek"), withoutOther.platforms().stream().map(AiPlatformConfig::id).toList());
-        assertEquals(settings.selection(), withoutOther.selection());
-        assertNull(settings.withoutPlatform("deepseek").selection());
+        assertEquals(settings.textSelection(), withoutOther.textSelection());
+        assertNull(settings.withoutPlatform("deepseek").textSelection());
     }
 
     @Test
@@ -55,12 +55,40 @@ public class AiSettingsModelTest {
     @Test
     public void staleSelectionsAreDroppedButValidOnesAreKept() {
         AiSettings valid = AiFixtures.readySettings();
-        assertSame(valid, valid.withValidSelection());
+        assertSame(valid, valid.withValidSelections());
 
-        AiSettings staleModel = valid.withSelection(new AiSelection("deepseek", "gone"));
-        assertNull(staleModel.withValidSelection().selection());
-        AiSettings stalePlatform = valid.withSelection(new AiSelection("gone", "deepseek-chat"));
-        assertNull(stalePlatform.withValidSelection().selection());
+        AiSettings staleModel = valid.withSelection(AiInteractionMode.TEXT, new AiSelection("deepseek", "gone"));
+        assertNull(staleModel.withValidSelections().textSelection());
+        AiSettings stalePlatform = valid.withSelection(AiInteractionMode.TEXT, new AiSelection("gone", "deepseek-chat"));
+        assertNull(stalePlatform.withValidSelections().textSelection());
+    }
+
+    @Test
+    public void textAndVoiceSelectionsAreIndependent() {
+        AiSettings settings = AiFixtures.settings(new AiSelection("openai", "gpt-4o"),
+                new AiSelection("openai", "gpt-4o-realtime-preview"),
+                platform("openai", "k", "gpt-4o", "gpt-4o-realtime-preview"));
+
+        assertTrue(settings.textModel().isPresent());
+        assertTrue(settings.voiceModel().isPresent());
+        assertEquals("gpt-4o", settings.textSelection().modelId());
+        assertEquals("gpt-4o-realtime-preview", settings.voiceSelection().modelId());
+
+        AiSettings voiceOnly = settings.withSelection(AiInteractionMode.TEXT, null);
+        assertTrue(voiceOnly.textModel().isEmpty());
+        assertTrue("改文本选择不该动语音选择", voiceOnly.voiceModel().isPresent());
+    }
+
+    @Test
+    public void staleVoiceSelectionDoesNotDropAValidTextSelection() {
+        AiSettings settings = AiFixtures.settings(new AiSelection("deepseek", "deepseek-chat"),
+                new AiSelection("deepseek", "gone"),
+                platform("deepseek", "k", "deepseek-chat"));
+
+        AiSettings cleaned = settings.withValidSelections();
+
+        assertTrue(cleaned.textModel().isPresent());
+        assertNull(cleaned.voiceSelection());
     }
 
     @Test

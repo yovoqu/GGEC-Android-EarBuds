@@ -7,12 +7,11 @@ import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeAudioCapture;
@@ -29,12 +28,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 全双工链路的演练：连上 → 开麦 → 上行重采样 → 下行文字/音频 → 打断 → 挂断。
+ * 实时语音链路的演练：连上 → 开麦 → 上行重采样 → 下行文字/音频 → 打断 → 挂断。
  *
  * <p>执行器一律用 {@code Runnable::run}：整条链路退化成一段确定的顺序代码，
  * "第几个事件之后是哪个状态"才能写成确定值，而不是靠 sleep 去赌。</p>
  */
-public class OmniVoiceStrategyTest {
+public class RealtimeVoiceSessionTest {
 
     private static final String PLATFORM_ID = "deepseek";
     private static final String API_KEY = "sk-test-key-1234";
@@ -44,25 +43,24 @@ public class OmniVoiceStrategyTest {
     private static final int FRAME_BYTES = 640;
 
     private final ManualClock clock = new ManualClock();
-    private final AiVoiceSettings voice = AiVoiceSettings.defaults()
-            .withMode(AiMode.OMNI)
-            .withRealtimeModel(REALTIME_MODEL);
-    private final AiPlatformConfig platform = AiFixtures.platform(PLATFORM_ID, API_KEY, "deepseek-chat")
+    private final AiSelection selection = new AiSelection(PLATFORM_ID, REALTIME_MODEL);
+    private final AiPlatformConfig platform = AiFixtures
+            .platformOf(PLATFORM_ID, API_KEY, AiFixtures.realtimeModel(REALTIME_MODEL))
             .withCredentials(PLATFORM_ID, API_KEY, "https://api.example.com", AiProtocol.CHAT_COMPLETIONS);
     private final MemorySettingsRepository settings = new MemorySettingsRepository(
-            new AiSettings(List.of(platform), new AiSelection(PLATFORM_ID, "deepseek-chat"),
-                    AiChatPreferences.DEFAULT, voice));
+            new AiSettings(List.of(platform), AiInteractionMode.VOICE, null, selection,
+                    AiChatPreferences.DEFAULT));
     private final FakeAudioCapture capture = new FakeAudioCapture();
     private final FakeAudioPlayback playback = new FakeAudioPlayback();
     private final FakeRealtimeLink link = new FakeRealtimeLink();
     private final List<AiVoiceSnapshot> snapshots = new ArrayList<>();
 
-    private OmniVoiceStrategy strategy;
+    private RealtimeVoiceSession session;
 
     @Before
     public void setUp() {
-        strategy = new OmniVoiceStrategy(settings, capture, playback, link, clock, Runnable::run);
-        strategy.start(voice, PLATFORM_ID, snapshots::add);
+        session = new RealtimeVoiceSession(settings, capture, playback, link, clock, Runnable::run);
+        session.start(selection, snapshots::add);
     }
 
     @Test
@@ -123,7 +121,7 @@ public class OmniVoiceStrategyTest {
         link.opened();
         link.audio(FakeAudioCapture.pcm(480));
 
-        strategy.interrupt();
+        session.interrupt();
 
         assertEquals(1, link.cancels);
         assertEquals(1, playback.flushes);
@@ -150,7 +148,7 @@ public class OmniVoiceStrategyTest {
         link.opened();
         int before = snapshots.size();
 
-        strategy.stop();
+        session.stop();
 
         assertEquals(AiVoiceSnapshot.State.ENDED, last().state());
         assertEquals("挂断只多出这一条快照", before + 1, snapshots.size());
@@ -159,7 +157,7 @@ public class OmniVoiceStrategyTest {
         assertEquals(1, link.closes);
 
         int ended = snapshots.size();
-        strategy.stop();                                    // 幂等
+        session.stop();                                     // 幂等
         link.audio(FakeAudioCapture.pcm(480));              // 迟到的下行音频
         link.text("迟到的增量");
         link.speechStarted();
@@ -189,13 +187,13 @@ public class OmniVoiceStrategyTest {
     }
 
     @Test
-    public void withoutRealtimeModelItFailsBeforeTouchingTheNetwork() {
+    public void withoutAModelItFailsBeforeTouchingTheNetwork() {
         FakeRealtimeLink untouched = new FakeRealtimeLink();
         List<AiVoiceSnapshot> events = new ArrayList<>();
 
-        new OmniVoiceStrategy(settings, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
+        new RealtimeVoiceSession(settings, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
                 clock, Runnable::run)
-                .start(AiVoiceSettings.defaults().withMode(AiMode.OMNI), PLATFORM_ID, events::add);
+                .start(new AiSelection(PLATFORM_ID, ""), events::add);
 
         AiVoiceSnapshot last = events.get(events.size() - 1);
         assertEquals(AiVoiceSnapshot.State.FAILED, last.state());
@@ -204,10 +202,24 @@ public class OmniVoiceStrategyTest {
         assertEquals("缺模型就不该去连一条注定被拒的连接", 0, untouched.opens);
     }
 
+    @Test
+    public void aDeletedPlatformFailsWithNoPlatform() {
+        FakeRealtimeLink untouched = new FakeRealtimeLink();
+        List<AiVoiceSnapshot> events = new ArrayList<>();
+
+        new RealtimeVoiceSession(settings, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
+                clock, Runnable::run)
+                .start(new AiSelection("gone", REALTIME_MODEL), events::add);
+
+        AiVoiceSnapshot last = events.get(events.size() - 1);
+        assertEquals(AiVoiceSnapshot.State.FAILED, last.state());
+        assertEquals(AiFailureKind.NO_PLATFORM, last.failure().kind());
+        assertEquals(0, untouched.opens);
+    }
+
     /**
-     * 适配器的错误分类翻译。放在这里是因为本轮只允许新增这两个测试文件，
-     * 而这段映射是 lib_ai 的分类与领域分类之间唯一的翻译点：翻错一格，
-     * 界面就会把"密钥错了"显示成"服务端故障，请稍后重试"。
+     * 适配器的错误分类翻译。放在这里是因为这段映射是 lib_ai 的分类与领域分类之间唯一的翻译点：
+     * 翻错一格，界面就会把"密钥错了"显示成"服务端故障，请稍后重试"。
      */
     @Test
     public void adapterTranslatesLibAiErrorKinds() {

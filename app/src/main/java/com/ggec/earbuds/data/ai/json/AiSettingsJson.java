@@ -2,14 +2,13 @@ package com.ggec.earbuds.data.ai.json;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
-import com.ggec.earbuds.domain.ai.model.AiMode;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 
 import androidx.annotation.Nullable;
@@ -27,28 +26,27 @@ import java.util.Set;
 
 /**
  * 设置文档的编解码。密钥不在这里：文档里只有平台的连接参数和模型缓存，密钥走加密存储。
- * 解码尽量宽容：未知的枚举取默认值，坏掉的单条模型或测速结果直接跳过，不连累整份设置。
+ *
+ * <p>v2 把"选中的模型"拆成文本、语音两份：两种模式接的是两类模型，共用一个选中项
+ * 会让切换模式变成"发现模型不支持再改一次"。解码尽量宽容：未知的枚举取默认值，
+ * 坏掉的单条模型或测速结果直接跳过，不连累整份设置。</p>
  */
 public final class AiSettingsJson {
 
-    static final int VERSION = 1;
+    static final int VERSION = 2;
 
     public String encode(AiSettings settings) {
         JSONObject root = new JSONObject();
         JsonValues.put(root, "v", VERSION);
+        JsonValues.put(root, "mode", settings.mode().name());
         JsonValues.put(root, "preferences", encodePreferences(settings.preferences()));
-        if (settings.selection() != null) {
-            JSONObject selection = new JSONObject();
-            JsonValues.put(selection, "platformId", settings.selection().platformId());
-            JsonValues.put(selection, "modelId", settings.selection().modelId());
-            JsonValues.put(root, "selection", selection);
-        }
+        putSelection(root, "textSelection", settings.textSelection());
+        putSelection(root, "voiceSelection", settings.voiceSelection());
         JSONArray platforms = new JSONArray();
         for (AiPlatformConfig platform : settings.platforms()) {
             platforms.put(encodePlatform(platform));
         }
         JsonValues.put(root, "platforms", platforms);
-        JsonValues.put(root, "voice", encodeVoice(settings.voice()));
         return root.toString();
     }
 
@@ -66,43 +64,104 @@ public final class AiSettingsJson {
                 platforms.add(platform);
             }
         }
-        AiSelection selection = null;
-        JSONObject selected = root.optJSONObject("selection");
-        if (selected != null) {
-            String platformId = JsonValues.string(selected, "platformId");
-            String modelId = JsonValues.string(selected, "modelId");
-            if (platformId != null && modelId != null) {
-                selection = new AiSelection(platformId, modelId);
+        AiSelection textSelection = readSelection(root.optJSONObject("textSelection"));
+        if (textSelection == null) {
+            // v1 只有一份 selection，它当时就是对话模型的选择。
+            textSelection = readSelection(root.optJSONObject("selection"));
+        }
+        AiSelection voiceSelection = readSelection(root.optJSONObject("voiceSelection"));
+        if (voiceSelection == null) {
+            voiceSelection = migrateVoiceSelection(root.optJSONObject("voice"), textSelection);
+            if (voiceSelection != null) {
+                // v1 的实时模型是手写 id，不在平台的模型列表里；补进列表，迁移后的选择才解析得出来。
+                platforms = withModel(platforms, voiceSelection);
             }
         }
-        return new AiSettings(platforms, selection, decodePreferences(root.optJSONObject("preferences")),
-                decodeVoice(root.optJSONObject("voice")));
+        return new AiSettings(platforms,
+                AiInteractionMode.fromName(JsonValues.string(root, "mode")),
+                textSelection, voiceSelection,
+                decodePreferences(root.optJSONObject("preferences")));
     }
 
-    private static JSONObject encodeVoice(AiVoiceSettings voice) {
+    private static void putSelection(JSONObject root, String key, @Nullable AiSelection selection) {
+        if (selection == null) {
+            return;
+        }
         JSONObject json = new JSONObject();
-        JsonValues.put(json, "mode", voice.mode().name());
-        JsonValues.put(json, "transcriptionModel", voice.transcriptionModel());
-        JsonValues.put(json, "synthesisVoice", voice.synthesisVoice());
-        JsonValues.put(json, "realtimeModel", voice.realtimeModel());
-        JsonValues.put(json, "silenceTimeoutMillis", voice.silenceTimeoutMillis());
-        return json;
+        JsonValues.put(json, "platformId", selection.platformId());
+        JsonValues.put(json, "modelId", selection.modelId());
+        JsonValues.put(root, key, json);
+    }
+
+    @Nullable
+    private static AiSelection readSelection(@Nullable JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        String platformId = JsonValues.string(json, "platformId");
+        String modelId = JsonValues.string(json, "modelId");
+        return platformId != null && modelId != null ? new AiSelection(platformId, modelId) : null;
     }
 
     /**
-     * 旧文档没有这个节点：整段取默认值。字段缺一个只缺那一个，不连累其它。
+     * 把旧文档里的实时模型补进对应平台的模型列表。已经存在时原样返回。
      */
-    private static AiVoiceSettings decodeVoice(@Nullable JSONObject json) {
-        if (json == null) {
-            return AiVoiceSettings.defaults();
+    private static List<AiPlatformConfig> withModel(List<AiPlatformConfig> platforms,
+                                                    AiSelection selection) {
+        List<AiPlatformConfig> next = new ArrayList<>(platforms.size());
+        for (AiPlatformConfig platform : platforms) {
+            if (!platform.id().equals(selection.platformId())) {
+                next.add(platform);
+                continue;
+            }
+            List<AiModel> models = new ArrayList<>(platform.models().size() + 1);
+            boolean found = false;
+            for (AiModel model : platform.models()) {
+                if (model.id().equals(selection.modelId())) {
+                    found = true;
+                    models.add(asRealtime(model));
+                } else {
+                    models.add(model);
+                }
+            }
+            if (!found) {
+                models.add(AiModel.manual(selection.modelId()));
+            }
+            next.add(platform.withModels(models, platform.modelsFetchedAtMillis()));
         }
-        Integer silence = JsonValues.integer(json, "silenceTimeoutMillis");
-        return new AiVoiceSettings(
-                AiMode.fromName(JsonValues.string(json, "mode")),
-                JsonValues.string(json, "transcriptionModel"),
-                JsonValues.string(json, "synthesisVoice"),
-                JsonValues.string(json, "realtimeModel"),
-                silence == null ? AiVoiceSettings.DEFAULT_SILENCE_TIMEOUT_MILLIS : silence);
+        return next;
+    }
+
+    /**
+     * 旧文档里的实时模型可能只是一个普通条目（没带能力位）。v1 把它单独记在 voice 节点里，
+     * 这个记录本身就证明它是实时模型，迁移时补上能力位，否则语音模式仍然选不到它。
+     */
+    private static AiModel asRealtime(AiModel model) {
+        if (model.realtime()) {
+            return model;
+        }
+        Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
+        features.addAll(model.features());
+        features.add(AiModelFeature.REALTIME_AUDIO);
+        return new AiModel(model.id(), model.name(), model.contextWindow(), model.maxOutputTokens(),
+                features, model.manual());
+    }
+
+    /**
+     * v1 的语音配置里只存了实时模型的 id，没有平台；当时的语义就是"用当前对话平台"。
+     * 迁移时把它挂到文本选择所在的平台上，正好还原当时的意图。
+     */
+    @Nullable
+    private static AiSelection migrateVoiceSelection(@Nullable JSONObject voice,
+                                                     @Nullable AiSelection textSelection) {
+        if (voice == null || textSelection == null) {
+            return null;
+        }
+        String realtimeModel = JsonValues.string(voice, "realtimeModel");
+        if (realtimeModel == null || realtimeModel.isBlank()) {
+            return null;
+        }
+        return new AiSelection(textSelection.platformId(), realtimeModel);
     }
 
     private static JSONObject encodePreferences(AiChatPreferences preferences) {

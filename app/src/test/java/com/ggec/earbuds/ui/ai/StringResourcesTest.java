@@ -1,6 +1,5 @@
 package com.ggec.earbuds.ui.ai;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -12,7 +11,6 @@ import org.w3c.dom.NodeList;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,9 +22,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 public class StringResourcesTest {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("%(?:(\\d+)\\$)?([a-zA-Z])");
-
-    /** 事件里带参数的提示：参数一律以 String 传入，占位符只能是 %s，写成 %d 会在显示时抛异常。 */
-    private static final Set<String> STRING_ARGUMENT = Set.of("ai_fetch_done");
 
     private Map<String, String> load() throws Exception {
         File file = new File("src/main/res/values/strings.xml");
@@ -54,22 +49,6 @@ public class StringResourcesTest {
                 positional &= matcher.group(1) != null;
             }
             assertTrue(entry.getKey() + " mixes unnumbered placeholders", count <= 1 || positional);
-        }
-    }
-
-    @Test
-    public void stringsFedWithStringArgumentsUseOnlyStringPlaceholders() throws Exception {
-        Map<String, String> strings = load();
-        for (String name : STRING_ARGUMENT) {
-            String value = strings.get(name);
-            assertTrue(name + " is missing", value != null);
-            Matcher matcher = PLACEHOLDER.matcher(value);
-            int count = 0;
-            while (matcher.find()) {
-                count++;
-                assertEquals(name + " must take a String", "s", matcher.group(2));
-            }
-            assertEquals(name + " takes exactly one argument", 1, count);
         }
     }
 

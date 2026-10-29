@@ -9,8 +9,7 @@
     <string name="ai_call_failed_action">去设置</string>
     <!-- 页头 -->
     <string name="ai_call_title">语音通话</string>
-    <string name="ai_call_mode_cascaded">识别 → 回答 → 朗读</string>
-    <string name="ai_call_mode_omni">全双工实时对话</string>
+    <string name="ai_call_mode_realtime">实时语音对话</string>
 
     <!-- 状态：一行只说明"它现在在做什么"，不写"请稍候"这类空话 -->
     <string name="ai_call_phase_connecting">正在接通</string>

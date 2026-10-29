@@ -6,13 +6,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 
 import org.junit.Test;
 
@@ -33,7 +33,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformConfig config = config("", List.of(model("chat", null)));
 
         AiPlatformUiState.Connection connection = mapper.map(
-                settings(config, null), config, null, Set.of(), false, false, "").connection();
+                settings(config, null), config, null, AiInteractionMode.TEXT, Set.of(), false, false, "").connection();
 
         assertEquals("先填 API Key", connection.blockedReason());
         assertNull(connection.result());
@@ -44,7 +44,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformConfig config = config("sk-abc", List.of(model("chat", null)));
 
         AiPlatformUiState.Connection connection = mapper.map(
-                settings(config, null), config, null, Set.of(), false, false, "").connection();
+                settings(config, null), config, null, AiInteractionMode.TEXT, Set.of(), false, false, "").connection();
 
         assertEquals("先选一个模型", connection.blockedReason());
     }
@@ -56,7 +56,7 @@ public final class AiPlatformUiMapperTest {
                         829L, 1500L, null, null, 1L));
 
         AiPlatformUiState.Connection connection = mapper.map(
-                settings(config, "chat"), config, null, Set.of(), false, false, "").connection();
+                settings(config, "chat"), config, null, AiInteractionMode.TEXT, Set.of(), false, false, "").connection();
 
         assertNull(connection.blockedReason());
         assertEquals("连接正常 · 首字 829 ms", connection.result());
@@ -71,7 +71,7 @@ public final class AiPlatformUiMapperTest {
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.OK,
                         645L, 2000L, null, null, 1L));
 
-        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
+        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").models().rows().get(0);
 
         assertEquals(List.of("首字 645 ms", "128K 上下文"), row.facts());
@@ -85,7 +85,7 @@ public final class AiPlatformUiMapperTest {
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.OK,
                         300L, 900L, null, null, 1L));
 
-        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
+        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null, AiInteractionMode.TEXT,
                 Set.of("chat"), true, false, "").models().rows().get(0);
 
         assertEquals(AiPlatformUiState.RowState.TESTING, row.state());
@@ -98,7 +98,7 @@ public final class AiPlatformUiMapperTest {
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.TIMEOUT,
                         -1L, 25_000L, null, null, 1L));
 
-        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
+        AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").models().rows().get(0);
 
         assertEquals(AiPlatformUiState.RowState.FAILED, row.state());
@@ -110,7 +110,7 @@ public final class AiPlatformUiMapperTest {
         AiModel manual = new AiModel("mine", "mine", null, null, Set.of(), true);
         AiPlatformConfig config = config("sk-abc", List.of(manual));
 
-        AiPlatformUiState.Row row = mapper.map(settings(config, "mine"), config, null,
+        AiPlatformUiState.Row row = mapper.map(settings(config, "mine"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").models().rows().get(0);
 
         assertEquals(List.of("手动添加"), row.facts());
@@ -126,7 +126,7 @@ public final class AiPlatformUiMapperTest {
                 .withSpeedResult(new AiSpeedResult("slow", AiSpeedResult.Status.OK, 1200L, 2000L, null, null, 1L))
                 .withSpeedResult(new AiSpeedResult("fast", AiSpeedResult.Status.OK, 420L, 900L, null, null, 1L));
 
-        AiPlatformUiState.Models models = mapper.map(settings(config, "fast"), config, null,
+        AiPlatformUiState.Models models = mapper.map(settings(config, "fast"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").models();
 
         assertEquals("最快：fast", models.summary());
@@ -137,7 +137,7 @@ public final class AiPlatformUiMapperTest {
     public void whileRunningTheSectionActionAsksToStop() {
         AiPlatformConfig config = config("sk-abc", List.of(model("chat", null)));
 
-        AiPlatformUiState.Models models = mapper.map(settings(config, "chat"), config, null,
+        AiPlatformUiState.Models models = mapper.map(settings(config, "chat"), config, null, AiInteractionMode.TEXT,
                 Set.of("chat"), true, false, "").models();
 
         assertEquals("停止", models.actionLabel());
@@ -149,7 +149,7 @@ public final class AiPlatformUiMapperTest {
     public void fewModelsDoNotGetASearchBox() {
         AiPlatformConfig config = config("sk-abc", models(AiPlatformUiMapper.SEARCH_THRESHOLD));
 
-        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null,
+        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "abc").models();
 
         assertFalse("8 个以内一屏扫得完，不该给搜索框", models.searchable());
@@ -161,7 +161,7 @@ public final class AiPlatformUiMapperTest {
     public void moreThanThresholdTurnsOnTheSearchBox() {
         AiPlatformConfig config = config("sk-abc", models(AiPlatformUiMapper.SEARCH_THRESHOLD + 1));
 
-        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null,
+        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").models();
 
         assertTrue(models.searchable());
@@ -177,11 +177,11 @@ public final class AiPlatformUiMapperTest {
                 model("a", null), model("b", null), model("c", null), model("d", null),
                 model("e", null), model("f", null)));
 
-        AiPlatformUiState.Models byId = mapper.map(settings(config, "a"), config, null,
+        AiPlatformUiState.Models byId = mapper.map(settings(config, "a"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "SD").models();
-        AiPlatformUiState.Models byName = mapper.map(settings(config, "a"), config, null,
+        AiPlatformUiState.Models byName = mapper.map(settings(config, "a"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "画图").models();
-        AiPlatformUiState.Models none = mapper.map(settings(config, "a"), config, null,
+        AiPlatformUiState.Models none = mapper.map(settings(config, "a"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "zzz").models();
 
         assertEquals(1, byId.rows().size());
@@ -199,7 +199,7 @@ public final class AiPlatformUiMapperTest {
                 .withSpeedResult(new AiSpeedResult("m0", AiSpeedResult.Status.OK, 900L, 1200L, null, null, 1L))
                 .withSpeedResult(new AiSpeedResult("m8", AiSpeedResult.Status.OK, 300L, 800L, null, null, 1L));
 
-        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null,
+        AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "m0").models();
 
         assertEquals(1, models.rows().size());
@@ -216,13 +216,45 @@ public final class AiPlatformUiMapperTest {
         assertEquals(2, AiPlatformUiMapper.filter(List.of(upper, lower), "").size());
     }
 
+    // ---- 模式过滤 ----
+
+    @Test
+    public void textModeListsChatModelsOnly() {
+        AiModel chat = model("deepseek-chat", null);
+        AiModel realtime = new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview", null, null,
+                Set.of(com.ggec.earbuds.domain.ai.model.AiModelFeature.REALTIME_AUDIO), false);
+        AiPlatformConfig config = config("sk-abc", List.of(chat, realtime));
+
+        AiPlatformUiState.Models models = mapper.map(settings(config, "deepseek-chat"), config, null,
+                AiInteractionMode.TEXT, Set.of(), false, false, "").models();
+
+        assertEquals(List.of("deepseek-chat"), models.rows().stream().map(AiPlatformUiState.Row::id).toList());
+    }
+
+    @Test
+    public void voiceModeListsRealtimeModelsOnly() {
+        AiModel chat = model("deepseek-chat", null);
+        AiModel realtime = new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview", null, null,
+                Set.of(com.ggec.earbuds.domain.ai.model.AiModelFeature.REALTIME_AUDIO), false);
+        AiPlatformConfig config = config("sk-abc", List.of(chat, realtime));
+        AiSettings settings = new AiSettings(List.of(config), AiInteractionMode.VOICE, null,
+                new AiSelection(config.id(), "gpt-4o-realtime-preview"), AiChatPreferences.DEFAULT);
+
+        AiPlatformUiState.Models models = mapper.map(settings, config, null,
+                AiInteractionMode.VOICE, Set.of(), false, false, "").models();
+
+        assertEquals(List.of("gpt-4o-realtime-preview"),
+                models.rows().stream().map(AiPlatformUiState.Row::id).toList());
+        assertTrue(models.rows().get(0).selected());
+    }
+
     // ---- 高级 ----
 
     @Test
     public void advancedSummaryCarriesProtocolAndUrl() {
         AiPlatformConfig config = config("sk-abc", List.of(model("chat", null)));
 
-        AiPlatformUiState.Advanced advanced = mapper.map(settings(config, "chat"), config, null,
+        AiPlatformUiState.Advanced advanced = mapper.map(settings(config, "chat"), config, null, AiInteractionMode.TEXT,
                 Set.of(), false, false, "").advanced();
 
         assertTrue(advanced.baseUrl().startsWith("https://"));
@@ -260,8 +292,8 @@ public final class AiPlatformUiMapperTest {
     }
 
     private static AiSettings settings(AiPlatformConfig config, String modelId) {
-        return new AiSettings(List.of(config),
-                modelId == null ? null : new AiSelection(config.id(), modelId),
-                AiChatPreferences.DEFAULT, AiVoiceSettings.defaults());
+        return new AiSettings(List.of(config), AiInteractionMode.TEXT,
+                modelId == null ? null : new AiSelection(config.id(), modelId), null,
+                AiChatPreferences.DEFAULT);
     }
 }

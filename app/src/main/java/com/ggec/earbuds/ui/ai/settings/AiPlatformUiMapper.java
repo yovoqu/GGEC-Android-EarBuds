@@ -3,6 +3,7 @@ package com.ggec.earbuds.ui.ai.settings;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
@@ -29,6 +30,7 @@ public final class AiPlatformUiMapper {
     public AiPlatformUiState map(@NonNull AiSettings settings,
                                  @Nullable AiPlatformConfig platform,
                                  @Nullable AiPlatformTemplate template,
+                                 @NonNull AiInteractionMode mode,
                                  @NonNull Set<String> testing,
                                  boolean speedRunning,
                                  boolean advancedExpanded,
@@ -36,7 +38,7 @@ public final class AiPlatformUiMapper {
         if (platform == null) {
             return AiPlatformUiState.empty();
         }
-        AiSelection selection = settings.selection();
+        AiSelection selection = settings.selection(mode);
         boolean selectedHere = selection != null && platform.id().equals(selection.platformId());
         String selectedModelId = selectedHere ? selection.modelId() : null;
 
@@ -45,7 +47,7 @@ public final class AiPlatformUiMapper {
                 title(platform, template),
                 badge(template),
                 connection(platform, selectedModelId),
-                models(platform, selectedModelId, testing, speedRunning, query),
+                models(platform, mode, selectedModelId, testing, speedRunning, query),
                 advanced(platform, template),
                 advancedExpanded,
                 true);
@@ -92,12 +94,15 @@ public final class AiPlatformUiMapper {
 
     @NonNull
     static AiPlatformUiState.Models models(@NonNull AiPlatformConfig platform,
+                                           @NonNull AiInteractionMode mode,
                                            @Nullable String selectedModelId,
                                            @NonNull Set<String> testing,
                                            boolean speedRunning,
                                            @NonNull String query) {
-        List<AiPlatformUiState.Row> all = new ArrayList<>(platform.models().size());
-        for (AiModel model : platform.models()) {
+        // 只列这一模式能用的模型：文本模式不列实时模型，语音模式只列实时模型。
+        List<AiModel> candidates = platform.modelsFor(mode);
+        List<AiPlatformUiState.Row> all = new ArrayList<>(candidates.size());
+        for (AiModel model : candidates) {
             AiSpeedResult speed = platform.speedResults().get(model.id());
             all.add(new AiPlatformUiState.Row(
                     model.id(), model.name(), model.id().equals(selectedModelId),

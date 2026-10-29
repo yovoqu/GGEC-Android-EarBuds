@@ -13,7 +13,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 public interface AiAudioCapture {
 
     /**
-     * @param sampleRateHz 16k：实时链路要求 PCM16 16k，转写链路也用同一份，避免二次重采样
+     * @param sampleRateHz 16k：实时链路要求 PCM16 16k
      */
     void start(int sampleRateHz, @NonNull Listener listener);
 

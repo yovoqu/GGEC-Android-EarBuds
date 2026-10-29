@@ -25,7 +25,7 @@ public final class RemoveModel {
                     List<AiModel> next = new ArrayList<>(platform.models());
                     next.removeIf(model -> model.id().equals(modelId));
                     AiPlatformConfig updated = platform.withModels(next, platform.modelsFetchedAtMillis());
-                    return settings.withPlatform(updated).withValidSelection();
+                    return settings.withPlatform(updated).withValidSelections();
                 })
                 .orElse(settings));
     }
