@@ -118,7 +118,8 @@ AI 的界面只剩对话页，挂在 AI 页签里——应用一共三个主页�
 也就是说界面上没有地方能改 API Key、换模型或清空历史。这些能力留在领域层和数据层：
 `SavePlatform`、`FetchPlatformModels`、`AddManualModel`、`RemoveModel`、`RemovePlatform`、`SelectModel`、
 `RunSpeedTest`、`SaveChatPreferences` 等用例，以及带 Keystore 加密的仓库都还在，只是当前没有入口调用。
-对话参数（系统提示词、温度、最大输出、上下文条数、思考过程）同样只存在设置文档里。
+对话偏好（2026-10-29 起）只剩系统提示词与"是否显示思考过程"；温度、top_p、最大输出、上下文条数
+不再进设置文档，由 `AiGenerationDefaults` 在发请求时给定。
 
 ### UI 基础设施
 
