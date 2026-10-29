@@ -58,6 +58,7 @@ def publicRoots = [
         'src/main/java/com/yovo/lib_ai/models/',
         'src/main/java/com/yovo/lib_ai/completion/',
         'src/main/java/com/yovo/lib_ai/probe/',
+        'src/main/java/com/yovo/lib_ai/params/',
         'src/main/java/com/yovo/lib_ai/usage/'
 ]
 
