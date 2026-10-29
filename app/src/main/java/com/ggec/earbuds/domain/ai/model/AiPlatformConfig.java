@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,6 +53,22 @@ public record AiPlatformConfig(
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * 这个平台在某一种接入形态下可选的模型。
+     *
+     * <p>文本模式排除实时模型：它们走不了 Chat Completions，列出来只会让人选中后收到 404。
+     * 语音模式只留实时模型：级联链路已经下线，普通对话模型接不上语音连接。</p>
+     */
+    public List<AiModel> modelsFor(AiInteractionMode mode) {
+        List<AiModel> filtered = new ArrayList<>(models.size());
+        for (AiModel model : models) {
+            if (mode == AiInteractionMode.VOICE ? model.realtime() : !model.realtime()) {
+                filtered.add(model);
+            }
+        }
+        return filtered;
     }
 
     /**

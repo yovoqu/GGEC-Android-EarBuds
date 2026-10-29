@@ -54,7 +54,6 @@ public final class AiMessages {
             case MODEL_UNKNOWN -> R.string.ai_error_model_unknown;
             case PROMPT_TOO_LONG -> R.string.ai_error_prompt_too_long;
             case VOICE_NEEDS_REALTIME_MODEL -> R.string.ai_error_voice_realtime_model;
-            case VOICE_NEEDS_TRANSCRIPTION_MODEL -> R.string.ai_error_voice_transcription_model;
         };
     }
 

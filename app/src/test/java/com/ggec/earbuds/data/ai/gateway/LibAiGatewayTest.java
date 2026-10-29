@@ -64,6 +64,23 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void fetchKeepsRealtimeModelsForVoiceMode() throws Exception {
+        server.enqueue(new MockResponse().setBody("""
+                {"object":"list","data":[
+                  {"id":"gpt-4o","created":1715367049},
+                  {"id":"gpt-4o-realtime-preview","created":1715367049}
+                ]}
+                """));
+
+        List<AiModel> models = new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
+
+        assertEquals(List.of("gpt-4o", "gpt-4o-realtime-preview"),
+                models.stream().map(AiModel::id).toList());
+        assertTrue("实时模型不能被当成音频模型丢掉",
+                models.get(1).features().contains(AiModelFeature.REALTIME_AUDIO));
+    }
+
+    @Test
     public void fetchKeepsChatModelsNewestFirstAndMapsMetadata() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[

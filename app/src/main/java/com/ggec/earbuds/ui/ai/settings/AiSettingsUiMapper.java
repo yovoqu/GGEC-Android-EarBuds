@@ -2,11 +2,12 @@ package com.ggec.earbuds.ui.ai.settings;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 
@@ -17,13 +18,9 @@ import java.util.Optional;
 /**
  * 领域设置 → 设置总览页的界面状态。纯函数：不碰视图、不碰资源、不读时钟。
  *
- * <p>两处判断值得单独说：</p>
- * <ul>
- *   <li><b>平台行副标题</b>：填了 Key 才谈得上"有几个模型"，没填 Key 时那句「未填 Key」
- *       比「0 个模型」有用——后者会被读成"平台没有模型"。</li>
- *   <li><b>全双工置灰</b>：条件是"有没有实时语音模型"，不是"用户点没点"。没有实时模型时
- *       这一行不能点，副标题直接写缺什么。</li>
- * </ul>
+ * <p>核心取舍只有一条：<b>所有"当前用哪个模型"的判断都按模式取</b>。文本模式看
+ * {@link AiSettings#textModel()}，语音模式看 {@link AiSettings#voiceModel()}；
+ * 两边的选择互不影响，所以切分段只是换一份数据，不需要任何"这个模型支不支持"的补救逻辑。</p>
  */
 public final class AiSettingsUiMapper {
 
@@ -32,15 +29,25 @@ public final class AiSettingsUiMapper {
 
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings) {
-        return new AiSettingsUiState(true, settings.activeModel().map(active -> active.model().name()).orElse(null),
-                platforms(settings), modes(settings), style(settings));
+        AiInteractionMode mode = settings.mode();
+        return new AiSettingsUiState(true, mode, hint(mode), platforms(settings, mode),
+                identity(settings, mode), style(settings));
+    }
+
+    @NonNull
+    private static AiText hint(@NonNull AiInteractionMode mode) {
+        return AiText.of(mode == AiInteractionMode.VOICE
+                ? R.string.ai_settings_mode_voice_hint
+                : R.string.ai_settings_mode_text_hint);
     }
 
     // ---- 平台 ----
 
-    private static List<AiSettingsUiState.PlatformRow> platforms(AiSettings settings) {
-        Optional<AiActiveModel> active = settings.activeModel();
-        String activePlatformId = active.map(model -> model.platform().id()).orElse(null);
+    private static List<AiSettingsUiState.PlatformRow> platforms(AiSettings settings,
+                                                                 @NonNull AiInteractionMode mode) {
+        String activePlatformId = active(settings, mode)
+                .map(model -> model.platform().id())
+                .orElse(null);
         List<AiSettingsUiState.PlatformRow> rows = new ArrayList<>(settings.platforms().size());
         for (AiPlatformConfig platform : settings.platforms()) {
             rows.add(new AiSettingsUiState.PlatformRow(platform.id(), platform.name(),
@@ -82,22 +89,35 @@ public final class AiSettingsUiMapper {
         return value;
     }
 
-    // ---- 模式 ----
+    // ---- 身份卡 ----
 
-    private static List<AiSettingsUiState.ModeRow> modes(AiSettings settings) {
-        AiMode mode = settings.voice().mode();
-        // 真实条件是"当前平台有没有具备 REALTIME_AUDIO 能力的模型"；这一轮先看用户有没有指定实时模型，
-        // 判据只有一处，等能力模型接进设置层时只改这里。
-        String realtimeModel = settings.voice().realtimeModel();
-        boolean realtimeReady = realtimeModel != null && !realtimeModel.isBlank();
-        AiText omniSubtitle = realtimeReady
-                ? AiText.of(R.string.ai_settings_mode_omni_hint)
-                : AiText.of(R.string.ai_settings_mode_omni_needs_model);
-        return List.of(
-                new AiSettingsUiState.ModeRow(AiMode.CASCADED, R.string.ai_call_mode_cascaded,
-                        AiText.of(R.string.ai_settings_mode_cascaded_hint), mode == AiMode.CASCADED, true),
-                new AiSettingsUiState.ModeRow(AiMode.OMNI, R.string.ai_call_mode_omni,
-                        omniSubtitle, mode == AiMode.OMNI, realtimeReady));
+    @NonNull
+    private static AiSettingsUiState.Identity identity(AiSettings settings, @NonNull AiInteractionMode mode) {
+        Optional<AiActiveModel> active = active(settings, mode);
+        if (active.isEmpty()) {
+            return new AiSettingsUiState.Identity(null, null, emptyTitle(mode), emptyHint(mode));
+        }
+        return new AiSettingsUiState.Identity(active.get().platform().name(),
+                active.get().model().name(), 0, 0);
+    }
+
+    @NonNull
+    private static Optional<AiActiveModel> active(AiSettings settings, @NonNull AiInteractionMode mode) {
+        return mode == AiInteractionMode.VOICE ? settings.voiceModel() : settings.textModel();
+    }
+
+    @StringRes
+    private static int emptyTitle(@NonNull AiInteractionMode mode) {
+        return mode == AiInteractionMode.VOICE
+                ? R.string.ai_settings_voice_empty
+                : R.string.ai_settings_text_empty;
+    }
+
+    @StringRes
+    private static int emptyHint(@NonNull AiInteractionMode mode) {
+        return mode == AiInteractionMode.VOICE
+                ? R.string.ai_settings_voice_empty_hint
+                : R.string.ai_settings_text_empty_hint;
     }
 
     // ---- 回答风格 ----

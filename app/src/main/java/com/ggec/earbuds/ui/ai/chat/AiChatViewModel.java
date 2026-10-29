@@ -9,7 +9,7 @@ import androidx.lifecycle.ViewModel;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatState;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
+import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -61,21 +61,13 @@ public final class AiChatViewModel extends ViewModel {
     }
 
     /**
-     * 当前语音配置。通话页要用它决定走哪种模式，所以由对话页传过去，
-     * 通话页自己不去读设置仓库（那会把存储依赖带进界面层）。
-     */
-    @NonNull
-    public AiVoiceSettings voiceSettings() {
-        return latest.voice();
-    }
-
-    /**
-     * 当前选中的平台 id，没有可用模型时为空。通话页拿它做默认平台。
+     * 语音交流模式选中的平台与实时模型；没有配置好时为空，通话入口就该隐藏。
+     * 由对话页传给通话页，通话页自己不去读设置仓库（那会把存储依赖带进界面层）。
      */
     @Nullable
-    public String activePlatformId() {
-        AiActiveModel model = latest.model();
-        return model == null ? null : model.platform().id();
+    public AiSelection voiceSelection() {
+        AiActiveModel voice = latest.voice();
+        return voice == null ? null : new AiSelection(voice.platform().id(), voice.model().id());
     }
 
     public void setDraft(@NonNull String draft) {

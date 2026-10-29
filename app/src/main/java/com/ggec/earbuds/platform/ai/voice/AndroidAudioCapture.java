@@ -25,14 +25,14 @@ import java.util.Objects;
  * {@link #MIN_VISIBLE_LEVEL} 的地板——完全数字静音（麦克风被硬件静音）才允许是 0。</p>
  *
  * <p>为什么静音只停上行、不停读数：端口要求静音期间仍然有电平（用户要看到"我在说话，但没发出去"）。
- * 读数照旧，只是回调里的 {@code pcm16} 换成空数组，上层不会把静音期的声音累积进待转写的语音里。</p>
+ * 读数照旧，只是回调里的 {@code pcm16} 换成空数组，上层不会把静音期的声音送进实时链路。</p>
  *
  * <p>失败一律通过 {@link Listener#onFailure} 上报，不抛异常：没有录音权限是产品里最常见的一种状态
  * （用户点了"不允许"），把它做成异常只会让调用方到处写 try。</p>
  */
 public final class AndroidAudioCapture implements AiAudioCapture {
 
-    /** 16bit：与 {@code ENCODING_PCM_16BIT} 对齐，也是转写与实时链路的要求。 */
+    /** 16bit：与 {@code ENCODING_PCM_16BIT} 对齐，也是实时链路的要求。 */
     private static final int BYTES_PER_SAMPLE = 2;
 
     /** 20ms 一帧：既够短（打断、静音判定的延迟是帧级），又够长（读次数不至于把 CPU 叫醒几百次每秒）。 */

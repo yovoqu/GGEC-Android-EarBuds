@@ -7,7 +7,7 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
@@ -16,7 +16,7 @@ import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
-import com.ggec.earbuds.domain.ai.usecase.SaveVoiceSettings;
+import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -34,7 +34,7 @@ public final class AiSettingsViewModel extends ViewModel {
     private final LoadAiSettings loadSettings;
     private final ObserveAiSettings observeSettings;
     private final SaveChatPreferences savePreferences;
-    private final SaveVoiceSettings saveVoice;
+    private final SelectInteractionMode selectMode;
     private final LoadPlatformTemplates loadTemplates;
     private final AiSettingsUiMapper mapper;
 
@@ -49,13 +49,13 @@ public final class AiSettingsViewModel extends ViewModel {
     public AiSettingsViewModel(@NonNull LoadAiSettings loadSettings,
                                @NonNull ObserveAiSettings observeSettings,
                                @NonNull SaveChatPreferences savePreferences,
-                               @NonNull SaveVoiceSettings saveVoice,
+                               @NonNull SelectInteractionMode selectMode,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
         this.savePreferences = Objects.requireNonNull(savePreferences, "savePreferences");
-        this.saveVoice = Objects.requireNonNull(saveVoice, "saveVoice");
+        this.selectMode = Objects.requireNonNull(selectMode, "selectMode");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -94,8 +94,12 @@ public final class AiSettingsViewModel extends ViewModel {
         subscription = observeSettings.execute(this::onSettings);
     }
 
-    public void selectMode(@NonNull AiMode mode) {
-        guard(() -> saveVoice.withMode(mode));
+    /**
+     * 切换分段只记住"下次进来停在哪个模式"，不要求另一模式已经配好：
+     * 用户可以先切到语音模式，再去添加实时模型。
+     */
+    public void selectMode(@NonNull AiInteractionMode mode) {
+        guard(() -> selectMode.execute(mode));
     }
 
     /** 回答风格现在只有这一项可改：提示词写什么，模型就按什么口径回答。 */

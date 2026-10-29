@@ -5,11 +5,10 @@ import androidx.annotation.NonNull;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 
 /**
- * 全双工实时链路（OMNI 模式）。一条长连接同时承担上行音频、下行音频和文本增量。
+ * 实时语音链路。一条长连接同时承担上行音频、下行音频和文本增量。
  *
- * <p>为什么把它和 {@link AiSpeechRecognizer}/{@link AiSpeechSynthesizer} 分成两套：
- * 它们的时序根本不同——级联是"说完一整段才开始识别"，实时是"边说边收"，
- * 中间还夹着"用户插话要打断正在生成的回答"。硬塞进一个接口只会让两边都别扭。</p>
+ * <p>它不是"识别接口"的一种实现：转写、回答、发声都在模型服务端完成，
+ * 客户端只负责送采集到的音频、播回传的音频、把文字增量交给界面。</p>
  */
 public interface AiRealtimeLink {
 

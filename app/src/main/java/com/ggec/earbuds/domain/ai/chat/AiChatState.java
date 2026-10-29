@@ -5,7 +5,6 @@ import androidx.annotation.Nullable;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiConversation;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 
 import java.util.Objects;
 
@@ -14,6 +13,9 @@ import java.util.Objects;
  * {@code loaded} 为假时历史还没读完，界面先不要判断"空对话"或"未配置"。
  * {@code historyRevision} 在历史列表的内容发生变化（保存、删除、改名、清空）时递增，
  * 打开着历史面板的界面据此重新读取列表。
+ *
+ * @param model 文本模式当前可用的平台与模型
+ * @param voice 语音交流模式选中的实时模型；为空表示通话入口不可用
  */
 public record AiChatState(
         boolean loaded,
@@ -22,7 +24,7 @@ public record AiChatState(
         Readiness readiness,
         @Nullable AiActiveModel model,
         AiChatPreferences preferences,
-        AiVoiceSettings voice,
+        @Nullable AiActiveModel voice,
         boolean storageFailed,
         int historyRevision) {
 
@@ -38,12 +40,11 @@ public record AiChatState(
         Objects.requireNonNull(conversation, "conversation");
         Objects.requireNonNull(readiness, "readiness");
         Objects.requireNonNull(preferences, "preferences");
-        voice = voice == null ? AiVoiceSettings.defaults() : voice;
     }
 
     public static AiChatState initial(AiConversation conversation) {
         return new AiChatState(false, conversation, false, Readiness.NO_PLATFORM, null,
-                AiChatPreferences.DEFAULT, AiVoiceSettings.defaults(), false, 0);
+                AiChatPreferences.DEFAULT, null, false, 0);
     }
 
     public boolean ready() {

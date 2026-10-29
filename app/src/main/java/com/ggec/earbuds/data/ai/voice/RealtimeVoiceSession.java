@@ -3,12 +3,11 @@ package com.ggec.earbuds.data.ai.voice;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
+import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
@@ -22,15 +21,14 @@ import com.yovo.lib_ai.catalog.YoPlatformDescriptor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 
 /**
- * 全双工（OMNI）模式的语音会话：一条 WebSocket 同时送上行音频、收下行音频与文字增量。
+ * 语音交流模式的会话：一条 WebSocket 同时送上行音频、收下行音频与文字增量。
  *
- * <p><b>为什么这条链路不需要"判句"</b>：级联模式得自己看电平、等静音、攒够一句再送转写；
- * 全双工这边断句是服务端做的（{@code turn_detection: server_vad}），它直接告诉我们
- * "人开口了/说完了"。客户端插一脚只会和服务端的判定打架——两边都判，就会出现
+ * <p><b>为什么这条链路不需要"判句"</b>：APP 侧不做转写，也不等静音攒句；断句是服务端做的
+ * （{@code turn_detection: server_vad}），它直接告诉我们"人开口了/说完了"。
+ * 客户端插一脚只会和服务端的判定打架——两边都判，就会出现
  * "服务端觉得还在说、我们却已经切了句"的错位。</p>
  *
  * <p><b>为什么采集从连上一直采到挂断，而不是只在聆听时采</b>：服务端的 VAD 要靠连续音频才能判断
@@ -40,8 +38,7 @@ import java.util.concurrent.Executor;
  *
  * <p><b>为什么用户一开口就要 flush + 取消</b>：服务端报 {@code speech_started} 时，上一轮回答的音频
  * 还可能在路上。只把状态改回 LISTENING 不解决问题——下一块音频到达又会把状态推回 SPEAKING，
- * 用户会觉得"它非要念完"。所以顺序是：丢掉未播数据 → 让服务端停止生成 → 收尾当前这条发言 → 回聆听。
- * 这和级联模式的打断是同一个道理（见 {@code CascadedVoiceStrategy}）。</p>
+ * 用户会觉得"它非要念完"。所以顺序是：丢掉未播数据 → 让服务端停止生成 → 收尾当前这条发言 → 回聆听。</p>
  *
  * <p><b>为什么文字要"累积"而不是覆盖</b>：下行是增量（{@code delta}），每次只有几个字。
  * 直接替换会让界面上的一句话反复被最后一个字覆盖；累积之后 {@code finalTranscript} 才是
@@ -49,12 +46,12 @@ import java.util.concurrent.Executor;
  *
  * <p><b>线程</b>：链路的回调在它自己的线程（lib_ai 那边是一条串行回调线程），采集在采集线程，
  * 挂断与打断来自页面线程。四条线都先投回构造时注入的 {@code executor}
- * （与 {@link CascadedVoiceStrategy} 同构的串行执行器），所有字段只在它上面改，
+ * （一条串行执行器），所有字段只在它上面改，
  * {@link AiVoiceSnapshot} 只从它发出——页面因此不需要任何同步。</p>
  */
-public final class OmniVoiceStrategy implements AiVoiceSession {
+public final class RealtimeVoiceSession implements AiVoiceSession {
 
-    /** 采集统一 16kHz：耳机麦克风和转写链路都按这个档位工作。 */
+    /** 采集统一 16kHz：实时语音的输入按这个档位工作。 */
     public static final int INPUT_SAMPLE_RATE_HZ = PcmResampler.INPUT_RATE_HZ;
 
     /** 下行音频原生 24kHz：直接交给播放器，不再二次重采样。 */
@@ -80,8 +77,7 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
 
     // ---- 以下字段只在 executor 线程上读写 ----
 
-    private AiVoiceSettings voice = AiVoiceSettings.defaults();
-    private String platformId = "";
+    private AiSelection selection;
     @Nullable
     private Listener listener;
     /** 已经发过 ENDED，之后的任何事件都不再往外发快照。 */
@@ -101,7 +97,7 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
     /** 播放通道只开一次：每次音频块都 start 会把刚播的几百毫秒清掉。 */
     private boolean playbackStarted;
 
-    public OmniVoiceStrategy(
+    public RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
             @NonNull AiAudioCapture capture,
             @NonNull AiAudioPlayback playback,
@@ -128,33 +124,33 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
         this.linkListener = new AiRealtimeLink.Listener() {
             @Override
             public void onOpened() {
-                executor.execute(OmniVoiceStrategy.this::onLinkOpened);
+                executor.execute(RealtimeVoiceSession.this::onLinkOpened);
             }
 
             @Override
             public void onAssistantText(@NonNull String delta) {
                 // 必须显式限定到外层：这个匿名类自己也有同名方法，不限定就会调回自己（无限递归）。
-                executor.execute(() -> OmniVoiceStrategy.this.onAssistantText(delta));
+                executor.execute(() -> RealtimeVoiceSession.this.onAssistantText(delta));
             }
 
             @Override
             public void onAssistantAudio(@NonNull byte[] pcm16) {
-                executor.execute(() -> OmniVoiceStrategy.this.onAssistantAudio(pcm16));
+                executor.execute(() -> RealtimeVoiceSession.this.onAssistantAudio(pcm16));
             }
 
             @Override
             public void onUserSpeechStarted() {
-                executor.execute(OmniVoiceStrategy.this::onUserSpeechStarted);
+                executor.execute(RealtimeVoiceSession.this::onUserSpeechStarted);
             }
 
             @Override
             public void onUserSpeechStopped() {
-                executor.execute(OmniVoiceStrategy.this::onUserSpeechStopped);
+                executor.execute(RealtimeVoiceSession.this::onUserSpeechStopped);
             }
 
             @Override
             public void onResponseDone() {
-                executor.execute(OmniVoiceStrategy.this::onResponseDone);
+                executor.execute(RealtimeVoiceSession.this::onResponseDone);
             }
 
             @Override
@@ -167,11 +163,10 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
     // ---- AiVoiceSession ----
 
     @Override
-    public void start(@NonNull AiVoiceSettings next, @NonNull String platform, @NonNull Listener target) {
-        Objects.requireNonNull(next, "settings");
-        Objects.requireNonNull(platform, "platformId");
+    public void start(@NonNull AiSelection next, @NonNull Listener target) {
+        Objects.requireNonNull(next, "selection");
         Objects.requireNonNull(target, "listener");
-        executor.execute(() -> doStart(next, platform, target));
+        executor.execute(() -> doStart(next, target));
     }
 
     @Override
@@ -197,12 +192,11 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
 
     // ---- 生命周期 ----
 
-    private void doStart(AiVoiceSettings next, String platform, Listener target) {
+    private void doStart(AiSelection next, Listener target) {
         if (stopRequested || listener != null) {
             return;
         }
-        voice = next;
-        platformId = platform;
+        selection = next;
         listener = target;
         publish();                       // CONNECTING
 
@@ -352,7 +346,7 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
         } else {
             appendToTurn(assistantTurnId, text);
         }
-        // 先有字、后有声是常态（转写比音频块到得早），此时页面应该显示"在回答"而不是"在听"。
+        // 先有字、后有声是常态（文字增量比音频块到得早），此时页面应该显示"在回答"而不是"在听"。
         if (phase != Phase.SPEAKING) {
             phase = Phase.THINKING;
         }
@@ -435,7 +429,7 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
             return;
         }
         AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
-                stateOf(), voice.mode(), turns, shownLevel(), failure);
+                stateOf(), turns, shownLevel(), failure);
         try {
             target.onSnapshot(snapshot);
         } catch (RuntimeException fromPage) {
@@ -514,12 +508,17 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
         } catch (RuntimeException unreadable) {
             throw new AiFailure(AiFailureKind.STORAGE, "读取 AI 设置失败，通话无法开始。", unreadable);
         }
-        String model = voice.realtimeModel();
-        if (model == null || model.isBlank()) {
-            throw new AiFailure(AiFailureKind.NO_MODEL,
-                    "全双工语音要先选一个支持实时语音的模型。");
+        String model = selection.modelId();
+        if (model.isBlank()) {
+            throw new AiFailure(AiFailureKind.NO_MODEL, "语音交流要先选一个实时模型。");
         }
-        AiPlatformConfig platform = pickPlatform(current);
+        AiPlatformConfig platform = current.platform(selection.platformId()).orElseThrow(() ->
+                new AiFailure(AiFailureKind.NO_PLATFORM,
+                        "语音设置里指定的平台已经不在配置中（可能被删除了）。"));
+        if (!platform.configured()) {
+            throw new AiFailure(AiFailureKind.NO_PLATFORM,
+                    "平台「" + platform.name() + "」还没有填 API Key。");
+        }
         String raw = platform.baseUrl();
         if (raw == null || raw.isBlank()) {
             raw = defaultBaseUrl(platform.templateId());
@@ -536,37 +535,6 @@ public final class OmniVoiceStrategy implements AiVoiceSession {
             throw new AiFailure(AiFailureKind.BAD_REQUEST, detailOf(malformed), malformed);
         }
         return new RealtimePlan(baseUrl, platform.apiKey(), model);
-    }
-
-    /**
-     * 选平台：显式指定 → 当前选中的对话平台 → 第一个配好密钥的平台。
-     * 与 {@code WhisperSpeechRecognizer} 同一套规则，语音的两种模式不该在两处选到不同平台。
-     */
-    @NonNull
-    private AiPlatformConfig pickPlatform(AiSettings current) {
-        if (!platformId.isBlank()) {
-            Optional<AiPlatformConfig> chosen = current.platform(platformId);
-            if (chosen.isEmpty()) {
-                throw new AiFailure(AiFailureKind.NO_PLATFORM,
-                        "语音设置里指定的平台已经不在配置中（可能被删除了）。");
-            }
-            if (!chosen.get().configured()) {
-                throw new AiFailure(AiFailureKind.NO_PLATFORM,
-                        "平台「" + chosen.get().name() + "」还没有填 API Key。");
-            }
-            return chosen.get();
-        }
-        Optional<AiActiveModel> active = current.activeModel();
-        if (active.isPresent()) {
-            return active.get().platform();
-        }
-        for (AiPlatformConfig candidate : current.platforms()) {
-            if (candidate.configured()) {
-                return candidate;
-            }
-        }
-        throw new AiFailure(AiFailureKind.NO_PLATFORM,
-                "还没有配置带 API Key 的 AI 平台，通话无法开始。");
     }
 
     @Nullable

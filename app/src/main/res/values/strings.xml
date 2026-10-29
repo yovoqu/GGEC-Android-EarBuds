@@ -85,7 +85,6 @@
     <string name="ai_protocol_messages">Messages</string>
 
     <!-- 拉取模型 -->
-    <string name="ai_fetch_done">已拉取 %s 个模型</string>
 
     <!-- 模型列表 -->
     <string name="ai_model_context">%s 上下文</string>
@@ -106,8 +105,7 @@
     <string name="ai_error_platform_not_configured">请先设置这个平台的 API Key</string>
     <string name="ai_error_model_unknown">找不到这个模型，请先拉取模型列表</string>
     <string name="ai_error_prompt_too_long">系统提示词太长了</string>
-    <string name="ai_error_voice_realtime_model">全双工模式需要先选一个实时语音模型</string>
-    <string name="ai_error_voice_transcription_model">级联模式需要先选一个转写模型</string>
+    <string name="ai_error_voice_realtime_model">语音交流模式需要选一个实时模型</string>
     <string name="ai_history_loading">正在读取对话…</string>
     <string name="ai_history_load_failed_title">没能读取对话记录</string>
     <string name="ai_history_load_failed_action">重试</string>

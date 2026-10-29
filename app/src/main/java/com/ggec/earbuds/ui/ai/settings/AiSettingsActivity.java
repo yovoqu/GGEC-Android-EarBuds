@@ -20,11 +20,12 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.wiring.AiGraph;
+import com.yohu.youi.api.controls.YoSegmentButton;
 import com.yohu.youi.api.controls.YoTextInput;
 import com.yohu.youi.api.feedback.YoDialog;
 import com.yohu.youi.api.feedback.YoToast;
@@ -34,10 +35,11 @@ import com.yohu.youi.api.platform.YoSystemBar;
 import java.util.List;
 
 /**
- * AI 设置：按"要做的决定"分组，能一步改完的都不进第二层。
+ * AI 设置：顶部先选"接哪一类模型"，下面的内容跟着换。
  *
- * <p>顶部一张身份卡回答"我在用什么"，点它就是换平台/换模型的入口；模式是分段控件，
- * 一步切换、立刻生效；回答风格只剩系统提示词一项，点开弹窗写。</p>
+ * <p>分段按钮放在页面最上方，是因为它决定这一页其余部分的含义：文本模式配的是
+ * DeepSeek 这类对话模型，语音交流模式配的是实时全/多模态模型。两种模式各自记着自己的
+ * 平台与模型，切换只是换视图，不会把对方的选择顶掉。</p>
  *
  * <p>温度、top_p、最大输出、上下文条数不在这页：它们由 APP 在发请求时统一给定
  * （{@link com.ggec.earbuds.domain.ai.model.AiGenerationDefaults}）。
@@ -47,18 +49,26 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
     /** 菜单里"添加平台"占的 id，平台行用 0..n-1。 */
     private static final int MENU_ADD_PLATFORM = -1;
+    /** 分段按钮的段 id；两段正好等于下标，读选中态时不必再换算。 */
+    private static final int SEGMENT_TEXT = 0;
+    private static final int SEGMENT_VOICE = 1;
 
     private AiTheme theme;
     private AiSettingsViewModel viewModel;
     private NestedScrollView scroll;
     private LinearLayout column;
 
+    private YoSegmentButton modes;
+    private TextView modeHint;
     private LinearLayout identityCard;
     private TextView identityAvatar;
     private TextView identityName;
     private TextView identityModel;
     private TextView identityAction;
-    private AiSegmentedControl modes;
+    private TextView styleTitle;
+    private LinearLayout styleCard;
+    private TextView voiceTitle;
+    private LinearLayout voiceCard;
     private TextView promptValue;
     private TextView loadingHint;
 
@@ -123,19 +133,41 @@ public final class AiSettingsActivity extends AppCompatActivity {
     }
 
     private void buildSections() {
+        // 分段按钮是这一页的第一个元素：先选接入形态，再谈配置。控件直接用 Youi Kit 的。
+        modes = YoSegmentButton.create(this)
+                .addSegment(SEGMENT_TEXT, getString(R.string.ai_settings_mode_text))
+                .addSegment(SEGMENT_VOICE, getString(R.string.ai_settings_mode_voice))
+                .setType(YoSegmentButton.SegmentType.SINGLE_CHOICE)
+                .setSize(YoSegmentButton.Size.MEDIUM)
+                .setLayoutMode(YoSegmentButton.LayoutMode.DISTRIBUTE)
+                .setSelectedIndex(SEGMENT_TEXT)
+                .setOnSelectionChangeListener(index -> viewModel.selectMode(
+                        index == SEGMENT_VOICE ? AiInteractionMode.VOICE : AiInteractionMode.TEXT))
+                .build();
+        column.addView(modes.getView(), cardParams(AiTheme.SPACE_L));
+
+        // 分段下方那行说明：模式接什么模型。它不属于分段控件，单独一行更轻。
+        modeHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
+        modeHint.setLineSpacing(theme.dpf(3), 1f);
+        LinearLayout.LayoutParams modeHintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        modeHintParams.topMargin = theme.dp(AiTheme.SPACE_S);
+        modeHintParams.leftMargin = theme.dp(AiTheme.PAGE_INSET);
+        modeHintParams.rightMargin = theme.dp(AiTheme.PAGE_INSET);
+        column.addView(modeHint, modeHintParams);
+
         column.addView(identityView(), cardParams(AiTheme.SPACE_L));
 
-        column.addView(sectionTitle(R.string.ai_settings_section_mode), titleParams());
-        LinearLayout modeCard = card();
-        modes = new AiSegmentedControl(theme);
-        modes.setListener(second -> viewModel.selectMode(second ? AiMode.OMNI : AiMode.CASCADED));
-        modeCard.addView(modes, rowParams());
-        column.addView(modeCard, cardParams(0));
-
-        column.addView(sectionTitle(R.string.ai_settings_section_style), titleParams());
-        LinearLayout styleCard = card();
+        styleTitle = sectionTitle(R.string.ai_settings_section_style);
+        column.addView(styleTitle, titleParams());
+        styleCard = card();
         styleCard.addView(promptRow(), rowParams());
         column.addView(styleCard, cardParams(0));
+
+        voiceTitle = sectionTitle(R.string.ai_settings_section_voice);
+        column.addView(voiceTitle, titleParams());
+        voiceCard = voiceCard();
+        column.addView(voiceCard, cardParams(0));
 
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         loadingHint.setText(R.string.ai_settings_loading);
@@ -196,6 +228,52 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
         identityCard.addView(row);
         return identityCard;
+    }
+
+    /**
+     * 语音模式唯一的分区：说清这条链路是什么。
+     *
+     * <p>不摆转写模型、音色、静音阈值：这些都由实时模型在服务端处理，
+     * 摆出来只会让人以为 APP 还在做 ASR → LLM → TTS。</p>
+     */
+    @NonNull
+    private LinearLayout voiceCard() {
+        LinearLayout card = card();
+        card.addView(voiceLinkRow(), rowParams());
+
+        TextView note = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
+        note.setText(R.string.ai_settings_voice_note);
+        note.setLineSpacing(theme.dpf(3), 1f);
+        LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        noteParams.leftMargin = theme.dp(AiTheme.SPACE_L);
+        noteParams.rightMargin = theme.dp(AiTheme.SPACE_L);
+        noteParams.topMargin = theme.dp(AiTheme.SPACE_S);
+        noteParams.bottomMargin = theme.dp(AiTheme.SPACE_L);
+        card.addView(note, noteParams);
+        return card;
+    }
+
+    @NonNull
+    private View voiceLinkRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(theme.dp(AiTheme.ROW_HEIGHT));
+        row.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_M),
+                theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.SPACE_M));
+
+        TextView label = theme.text(AiTheme.TEXT_BODY, theme.text1);
+        label.setText(R.string.ai_settings_voice_link);
+        row.addView(label, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView value = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
+        value.setText(R.string.ai_settings_voice_link_value);
+        value.setGravity(Gravity.END);
+        row.addView(value, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return row;
     }
 
     private TextView sectionTitle(@StringRes int res) {
@@ -276,43 +354,60 @@ public final class AiSettingsActivity extends AppCompatActivity {
         current = state;
         loadingHint.setVisibility(View.GONE);
 
-        AiSettingsUiState.PlatformRow active = null;
-        for (AiSettingsUiState.PlatformRow row : state.platforms()) {
-            if (row.current()) {
-                active = row;
-            }
+        boolean voice = state.mode() == AiInteractionMode.VOICE;
+        int selected = voice ? SEGMENT_VOICE : SEGMENT_TEXT;
+        if (modes.getSelectedIndex() != selected) {
+            modes.setSelectedIndex(selected);
         }
-        if (active == null) {
+        modeHint.setText(state.modeHint().resolve(this));
+
+        // 只留下当前模式的分区：另一模式的配置不是"不可用"，而是不属于这一屏。
+        setVisible(styleTitle, !voice);
+        setVisible(styleCard, !voice);
+        setVisible(voiceTitle, voice);
+        setVisible(voiceCard, voice);
+
+        AiSettingsUiState.Identity identity = state.identity();
+        if (identity.empty()) {
             identityAvatar.setText("");
-            identityAvatar.setVisibility(View.INVISIBLE);
-            identityName.setText(R.string.ai_settings_identity_empty);
-            identityModel.setText(R.string.ai_settings_identity_empty_hint);
+            // 空态没有平台可标识：把方块收掉，标题才能从卡片左缘开始，而不是留一个空洞。
+            identityAvatar.setVisibility(View.GONE);
+            identityName.setText(identity.emptyTitle());
+            identityModel.setText(identity.emptyHint());
             identityAction.setText(R.string.ai_settings_add_platform);
         } else {
             identityAvatar.setVisibility(View.VISIBLE);
-            identityAvatar.setText(firstLetter(active.name()));
-            identityName.setText(active.name());
+            identityAvatar.setText(firstLetter(identity.platformName()));
+            identityName.setText(identity.platformName());
             // 副标题放"现在用的是哪个模型"，而不是模型数量：
             // 用户在设置页要看的是"我在跟谁说话"，数量是他进平台详情之后才关心的事。
-            String model = state.activeModel();
-            identityModel.setText(model == null || model.isBlank()
-                    ? active.subtitle().resolve(this) : model);
+            identityModel.setText(identity.modelName());
             identityAction.setText(R.string.ai_settings_platform_change);
-        }
-
-        AiSettingsUiState.ModeRow omni = modeRow(state, AiMode.OMNI);
-        AiSettingsUiState.ModeRow cascaded = modeRow(state, AiMode.CASCADED);
-        if (omni != null && cascaded != null) {
-            modes.bind(label(cascaded), label(omni), omni.selected(), omni.enabled(),
-                    omni.subtitle().resolve(this));
         }
 
         promptValue.setText(state.style().promptPreview().resolve(this));
     }
 
+    @Override
+    protected void onDestroy() {
+        if (modes != null) {
+            modes.destroy();
+        }
+        super.onDestroy();
+    }
+
+    private static void setVisible(@Nullable View view, boolean visible) {
+        if (view != null) {
+            view.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
     /** 平台名首字：中文取第一个字，拉丁取首字母大写。空名返回空串。 */
     @NonNull
-    private static String firstLetter(@NonNull String name) {
+    private static String firstLetter(@Nullable String name) {
+        if (name == null) {
+            return "";
+        }
         String trimmed = name.strip();
         if (trimmed.isEmpty()) {
             return "";
@@ -320,22 +415,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
         int end = trimmed.offsetByCodePoints(0, 1);
         String first = trimmed.substring(0, end);
         return first.toUpperCase(java.util.Locale.ROOT);
-    }
-
-    @NonNull
-    private CharSequence label(@Nullable AiSettingsUiState.ModeRow row) {
-        return row == null ? "" : getString(row.title());
-    }
-
-    @Nullable
-    private static AiSettingsUiState.ModeRow modeRow(@NonNull AiSettingsUiState state,
-                                                     @NonNull AiMode mode) {
-        for (AiSettingsUiState.ModeRow row : state.modes()) {
-            if (row.mode() == mode) {
-                return row;
-            }
-        }
-        return null;
     }
 
     // ---- 交互 ----
@@ -365,7 +444,8 @@ public final class AiSettingsActivity extends AppCompatActivity {
             if (id == MENU_ADD_PLATFORM) {
                 showAddPlatform();
             } else if (id >= 0 && id < platforms.size()) {
-                startActivity(AiPlatformActivity.intent(this, platforms.get(id).platformId()));
+                startActivity(AiPlatformActivity.intent(this, platforms.get(id).platformId(),
+                        current.mode()));
             }
         });
         builder.build().show();
@@ -377,8 +457,9 @@ public final class AiSettingsActivity extends AppCompatActivity {
             YoToast.show(this, getString(R.string.ai_settings_add_platform_empty));
             return;
         }
+        AiInteractionMode mode = current == null ? AiInteractionMode.defaultMode() : current.mode();
         AiAddPlatformDialog.show(this, templates,
-                template -> startActivity(AiPlatformActivity.createIntent(this, template.id())));
+                template -> startActivity(AiPlatformActivity.createIntent(this, template.id(), mode)));
     }
 
     private void editSystemPrompt() {
