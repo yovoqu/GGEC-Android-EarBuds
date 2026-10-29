@@ -130,6 +130,42 @@ public final class LatencyProbeTest {
     }
 
     @Test
+    public void firstTokenOnlyStopsAtTheFirstChunk() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            StringBuilder body = new StringBuilder();
+            for (int i = 0; i < 10; i++) {
+                body.append("data: {\"id\":\"c\",\"model\":\"slow\",\"choices\":[{\"index\":0,")
+                        .append("\"delta\":{\"content\":\"p").append(i).append("\"},\"finish_reason\":null}]}\n\n");
+            }
+            body.append("data: [DONE]\n\n");
+            String sse = body.toString();
+            // 每个片段约 120 字节，每 300 ms 放行 128 字节：读完全部约需 3 s。
+            server.setDispatcher(byModel(model -> new MockResponse()
+                    .setHeader("Content-Type", "text/event-stream")
+                    .throttleBody(128, 300, TimeUnit.MILLISECONDS)
+                    .setBody(sse)));
+            server.start();
+            try (YoAiClient client = client(server)) {
+                Collector collector = new Collector();
+                long started = System.nanoTime();
+                client.latencyProbe().run(YoProbePlan.builder()
+                        .models(List.of("slow"))
+                        .firstTokenOnly(true)
+                        .build(), collector);
+                collector.await();
+                long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+                YoProbeResult slow = collector.result("slow");
+                assertTrue(slow.ok());
+                assertEquals(slow.firstTokenMillis(), slow.totalMillis());
+                assertEquals(-1, slow.outputTokens());
+                assertTrue("probe must not wait for the whole answer: " + elapsed, elapsed < 2_000);
+                assertEquals(1, server.getRequestCount());
+            }
+        }
+    }
+
+    @Test
     public void cancelDropsQueuedModelsAndStillCompletesOnce() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             server.setDispatcher(byModel(model -> chat(model, 250)));
