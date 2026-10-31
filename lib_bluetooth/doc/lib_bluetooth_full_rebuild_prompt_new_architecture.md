@@ -4,17 +4,13 @@
 > 目标项目：`lib_bluetooth`  
 > 重点模块：`yocbt` 经典蓝牙  
 > 生成日期：2026-06-16  
-> 输入文档：`lib_bluetooth_full_rebuild_prompt(2).md`  
-> 输入文档读取情况：已完整读取，原文约 3876 行、65631 字符。  
-> 本版目标：在保留原文完整功能要求的基础上，重构为“能力域优先 + 端口/适配器 + 运行时组件”的新架构，重点解决 `common` 与各模块中“为了划分而划分”、单文件目录过多、model 垃圾桶、万能 manager、状态混用等问题。  
+> 本版目标：在保留完整功能要求的基础上，按“能力域优先 + 端口/适配器 + 运行时组件”组织，重点解决 `common` 与各模块中“为了划分而划分”、单文件目录过多、model 垃圾桶、万能 manager、状态混用等问题。  
 
 ---
 
 ## 0. 使用说明
 
-本文档用于替代原重构提示词，作为 `lib_bluetooth` 全量重构的新架构指导文档。
-
-原文档在功能覆盖上较完整：它已经覆盖 Classic discovery、bond、ACL、SDP、Profile、A2DP、Headset/HFP、SPP、Channel、多连接、状态机、错误码、线程、生命周期、测试、验收等内容。本文不简化这些功能要求，而是重写架构组织方式。
+本文档是 `lib_bluetooth` 全量重构的架构指导。功能范围仍覆盖 Classic discovery、bond、ACL、SDP、Profile、A2DP、Headset/HFP、SPP、Channel、多连接、状态机、错误码、线程、生命周期、测试和验收。本文重写的是架构组织方式。
 
 本版主要修正：
 
