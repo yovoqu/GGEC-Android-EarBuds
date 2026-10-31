@@ -18,7 +18,7 @@ import androidx.annotation.NonNull;
  * 要不要重开、要不要告诉用户，是上层（OmniVoiceStrategy）的事——它才知道
  * 这一断是不是用户自己挂的，也才有地方显示「网络不稳，重连中」。</p>
  */
-public interface YoRealtimeLink extends AutoCloseable {
+interface YoRealtimeLink extends AutoCloseable {
 
     /**
      * 建立连接。**非阻塞**：返回时通常还没连上，结果全部走监听器
@@ -30,7 +30,7 @@ public interface YoRealtimeLink extends AutoCloseable {
      * @param listener 事件出口。所有回调在同一条后台线程上顺序发出。
      * @throws IllegalStateException 已经 open 过，或者已经 close
      */
-    void open(@NonNull YoRealtimeConfig config, @NonNull YoRealtimeListener listener);
+    void open(@NonNull YoRealtimeConfig config, @NonNull RealtimeSink listener);
 
     /**
      * 往上送一段采集到的声音。
@@ -46,14 +46,40 @@ public interface YoRealtimeLink extends AutoCloseable {
     void appendAudio(@NonNull byte[] pcm16);
 
     /**
-     * 打断正在生成的回答：用户插话时调。
+     * 打断正在生成的回答：只发 {@code response.cancel}。
      *
-     * <p>只发 {@code response.cancel}，不合成任何事件——服务端会自己用
-     * {@code response.done} 收尾（{@code status} 可能是 {@code cancelled}），
-     * 上层照常等 {@code RESPONSE_DONE} 就行。本地先假装「已结束」会让状态机和
-     * 服务端的真实进度错开一格。</p>
+     * <p>这一层不知道用户听到了哪一毫秒。要连同对话史一起截断，用
+     * {@link YoRealtimeSession}，它会在 cancel 之后补 {@link #truncate}。</p>
      */
     void cancelResponse();
+
+    /**
+     * 客户端认为这一句说完了。只在关掉服务端 VAD（按住说话）时需要。
+     */
+    void commitInput();
+
+    /**
+     * 丢掉还没提交的上行音频。打断之后清掉半句，避免它被算进下一轮。
+     */
+    void clearInput();
+
+    /**
+     * 请模型现在开口。工具结果写回之后要再调一次，否则模型不会把结果说出来。
+     */
+    void createResponse();
+
+    /**
+     * 把一条助手音频截断到用户实际听到的位置。
+     *
+     * @param audioEndMs 从这条音频开头算起、已经播放的毫秒
+     */
+    void truncate(@NonNull String itemId, int contentIndex, int audioEndMs);
+
+    /**
+     * 把函数结果写回对话。不会自动 {@link #createResponse()}，
+     * 调用方可以先写多个结果再开口一次。
+     */
+    void submitToolOutput(@NonNull String callId, @NonNull String output);
 
     /**
      * 结束通话。幂等，可以在任意线程反复调用。

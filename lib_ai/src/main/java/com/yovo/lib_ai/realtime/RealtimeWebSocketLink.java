@@ -50,7 +50,7 @@ import okhttp3.WebSocketListener;
  * 无论走哪条收尾路径（用户 close、握手失败、读失败、对端关闭、协议错），
  * 只有第一条能通过 CAS，后面的全部是空操作，所以 {@code CLOSED} 只会发一次。</p>
  */
-public final class RealtimeWebSocketLink implements YoRealtimeLink {
+final class RealtimeWebSocketLink implements YoRealtimeLink {
 
     /** 建立连接的超时。超过它就是连不上，界面要立刻显示原因，不能一直「连接中」。 */
     private static final long CONNECT_TIMEOUT_MILLIS = 10_000L;
@@ -91,7 +91,7 @@ public final class RealtimeWebSocketLink implements YoRealtimeLink {
     @Nullable
     private volatile YoRealtimeConfig config;
     @Nullable
-    private volatile YoRealtimeListener listener;
+    private volatile RealtimeSink listener;
     @Nullable
     private volatile OkHttpClient client;
 
@@ -137,7 +137,7 @@ public final class RealtimeWebSocketLink implements YoRealtimeLink {
     }
 
     @Override
-    public void open(@NonNull YoRealtimeConfig config, @NonNull YoRealtimeListener listener) {
+    public void open(@NonNull YoRealtimeConfig config, @NonNull RealtimeSink listener) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(listener, "listener");
         if (closed.get()) {
@@ -185,15 +185,63 @@ public final class RealtimeWebSocketLink implements YoRealtimeLink {
 
     @Override
     public void cancelResponse() {
+        sendControl(RealtimeProtocol::encodeResponseCancel, "response.cancel");
+    }
+
+    @Override
+    public void commitInput() {
+        sendControl(RealtimeProtocol::encodeInputCommit, "input_audio_buffer.commit");
+    }
+
+    @Override
+    public void clearInput() {
+        sendControl(RealtimeProtocol::encodeInputClear, "input_audio_buffer.clear");
+    }
+
+    @Override
+    public void createResponse() {
+        sendControl(RealtimeProtocol::encodeResponseCreate, "response.create");
+    }
+
+    @Override
+    public void truncate(@NonNull String itemId, int contentIndex, int audioEndMs) {
+        if (closed.get() || itemId.isBlank()) {
+            return;
+        }
+        try {
+            send(RealtimeProtocol.encodeTruncate(itemId, contentIndex, audioEndMs));
+        } catch (JSONException exception) {
+            terminate(false, YoAiErrorKind.PROTOCOL, "conversation.item.truncate 编码失败：" + messageOf(exception));
+        }
+    }
+
+    @Override
+    public void submitToolOutput(@NonNull String callId, @NonNull String output) {
+        if (closed.get() || callId.isBlank()) {
+            return;
+        }
+        try {
+            send(RealtimeProtocol.encodeToolOutput(callId, output));
+        } catch (JSONException exception) {
+            terminate(false, YoAiErrorKind.PROTOCOL, "function_call_output 编码失败：" + messageOf(exception));
+        }
+    }
+
+    private void sendControl(ControlEncoder encoder, @NonNull String name) {
         if (closed.get()) {
             return;
         }
         try {
-            send(RealtimeProtocol.encodeResponseCancel());
+            send(encoder.encode());
         } catch (JSONException exception) {
-            // 这里的 key 都是常量，不会抛；真抛了也只影响这一次打断，不值得断链。
-            terminate(false, YoAiErrorKind.PROTOCOL, "response.cancel 编码失败：" + messageOf(exception));
+            terminate(false, YoAiErrorKind.PROTOCOL, name + " 编码失败：" + messageOf(exception));
         }
+    }
+
+    @FunctionalInterface
+    private interface ControlEncoder {
+        @NonNull
+        JSONObject encode() throws JSONException;
     }
 
     @Override
@@ -222,9 +270,17 @@ public final class RealtimeWebSocketLink implements YoRealtimeLink {
             return;
         }
         if (event.type() == YoRealtimeEventType.OPENED) {
-            sessionReady.set(true);
-            // 顺序：先声明会话参数，再补发缓存音频。反过来的话，第一批音频会按服务端默认格式解析。
             sendSessionUpdate();
+            // GA 要等 session.updated 再放行：update 还在路上时送出的音频会按服务端默认格式解释。
+            // beta 和通义有的网关不回 updated，干等会把整通电话卡在「已连接但没声音」。
+            YoRealtimeConfig snapshot = config;
+            boolean hold = snapshot != null && snapshot.dialect().holdsAudioUntilConfigured();
+            if (!hold && sessionReady.compareAndSet(false, true)) {
+                flushBufferedAudio();
+            }
+        }
+        if (event.type() == YoRealtimeEventType.SESSION_UPDATED
+                && sessionReady.compareAndSet(false, true)) {
             flushBufferedAudio();
         }
         post(event);
@@ -344,7 +400,7 @@ public final class RealtimeWebSocketLink implements YoRealtimeLink {
     }
 
     private void deliver(@NonNull YoRealtimeEvent event) {
-        YoRealtimeListener target = listener;
+        RealtimeSink target = listener;
         if (target == null) {
             return;
         }

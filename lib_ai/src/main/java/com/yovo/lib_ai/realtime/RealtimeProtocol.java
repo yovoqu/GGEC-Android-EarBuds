@@ -6,12 +6,14 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.error.YoAiProtocolException;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -38,14 +40,36 @@ final class RealtimeProtocol {
     static final String TYPE_SPEECH_STARTED = "input_audio_buffer.speech_started";
     /** 服务端 VAD：人停下来了。 */
     static final String TYPE_SPEECH_STOPPED = "input_audio_buffer.speech_stopped";
-    /** 下行音频增量，{@code delta} 是 base64 的 PCM16。 */
+    /** 下行音频增量，{@code delta} 是 base64 的 PCM16。beta 帧名。 */
     static final String TYPE_AUDIO_DELTA = "response.audio.delta";
-    /** 下行的回答文字增量（音频模态的转写）。 */
+    /** GA 的下行音频增量，载荷和 beta 相同。 */
+    static final String TYPE_OUTPUT_AUDIO_DELTA = "response.output_audio.delta";
+    /** 下行的回答文字增量（音频模态的转写）。beta 帧名。 */
     static final String TYPE_TRANSCRIPT_DELTA = "response.audio_transcript.delta";
-    /** 纯文本模态的回答增量，语义和上面一样，只是模态不同。 */
+    /** GA 的音频转写增量。 */
+    static final String TYPE_OUTPUT_AUDIO_TRANSCRIPT_DELTA = "response.output_audio_transcript.delta";
+    /** 纯文本模态的回答增量。beta 帧名。 */
     static final String TYPE_TEXT_DELTA = "response.text.delta";
+    /** GA 的文本增量。 */
+    static final String TYPE_OUTPUT_TEXT_DELTA = "response.output_text.delta";
     /** 一轮回答结束。 */
     static final String TYPE_RESPONSE_DONE = "response.done";
+    /** 会话配置已被接受。 */
+    static final String TYPE_SESSION_UPDATED = "session.updated";
+    /** 用户音频转写完成。 */
+    static final String TYPE_INPUT_TRANSCRIPT = "conversation.item.input_audio_transcription.completed";
+    /** 函数参数到齐。 */
+    static final String TYPE_FUNCTION_CALL_DONE = "response.function_call_arguments.done";
+    /** 请模型现在生成。 */
+    static final String TYPE_RESPONSE_CREATE = "response.create";
+    /** 提交已缓存的上行音频（手动断句）。 */
+    static final String TYPE_INPUT_COMMIT = "input_audio_buffer.commit";
+    /** 清空未提交的上行音频。 */
+    static final String TYPE_INPUT_CLEAR = "input_audio_buffer.clear";
+    /** 按已播放时长截断一条助手音频。 */
+    static final String TYPE_ITEM_TRUNCATE = "conversation.item.truncate";
+    /** 往对话里追加一条，工具结果走这里。 */
+    static final String TYPE_ITEM_CREATE = "conversation.item.create";
     /** 服务端报错。 */
     static final String TYPE_ERROR = "error";
 
@@ -70,24 +94,18 @@ final class RealtimeProtocol {
     }
 
     /**
-     * {@code session.update}：一次性把音频格式、音色、提示词、断句方式写进会话。
+     * {@code session.update}。三种方言的字段名不同，但表达的是同一份 {@link YoRealtimeConfig}。
      *
-     * <p>为什么要显式下发 {@code pcm16}：服务端的默认输出格式是 {@code pcm16} 但输入格式在各家兼容网关
-     * 上并不统一（有的默认 {@code g711_ulaw}）。不下发就会拿到一堆解不开的字节，听起来是噪声。</p>
+     * <p>为什么要显式下发格式：输入格式在各家网关上并不统一（有的默认 {@code g711_ulaw}）。
+     * 不下发就会拿到一堆解不开的字节，听起来是噪声。</p>
      */
     @NonNull
     static JSONObject encodeSessionUpdate(@NonNull YoRealtimeConfig config) throws JSONException {
-        JSONObject session = new JSONObject();
-        session.put("input_audio_format", INPUT_AUDIO_FORMAT);
-        session.put("output_audio_format", OUTPUT_AUDIO_FORMAT);
-        session.put("turn_detection", new JSONObject().put("type", TURN_DETECTION_TYPE));
-        if (config.voice() != null) {
-            // 不下发就是服务端默认音色，别下发 null：null 会被当成非法音色名。
-            session.put("voice", config.voice());
-        }
-        if (config.instructions() != null) {
-            session.put("instructions", config.instructions());
-        }
+        JSONObject session = switch (config.dialect()) {
+            case OPENAI_BETA -> encodeBetaSession(config);
+            case OPENAI_GA -> encodeGaSession(config);
+            case QWEN -> encodeQwenSession(config);
+        };
         return new JSONObject().put("type", TYPE_SESSION_UPDATE).put("session", session);
     }
 
@@ -112,10 +130,50 @@ final class RealtimeProtocol {
         return new JSONObject().put("type", TYPE_RESPONSE_CANCEL);
     }
 
+    @NonNull
+    static JSONObject encodeResponseCreate() throws JSONException {
+        return new JSONObject().put("type", TYPE_RESPONSE_CREATE);
+    }
+
+    @NonNull
+    static JSONObject encodeInputCommit() throws JSONException {
+        return new JSONObject().put("type", TYPE_INPUT_COMMIT);
+    }
+
+    @NonNull
+    static JSONObject encodeInputClear() throws JSONException {
+        return new JSONObject().put("type", TYPE_INPUT_CLEAR);
+    }
+
+    /**
+     * 截断到用户听到的位置。{@code audioEndMs} 小于 0 时按 0，负值会被服务端当成非法参数。
+     */
+    @NonNull
+    static JSONObject encodeTruncate(@NonNull String itemId, int contentIndex, int audioEndMs) throws JSONException {
+        return new JSONObject()
+                .put("type", TYPE_ITEM_TRUNCATE)
+                .put("item_id", itemId)
+                .put("content_index", Math.max(0, contentIndex))
+                .put("audio_end_ms", Math.max(0, audioEndMs));
+    }
+
+    /**
+     * 工具结果是一条对话项，不是单独的事件类型。写完之后调用方还要 {@code response.create}，
+     * 模型才会把结果说出来。
+     */
+    @NonNull
+    static JSONObject encodeToolOutput(@NonNull String callId, @NonNull String output) throws JSONException {
+        JSONObject item = new JSONObject()
+                .put("type", "function_call_output")
+                .put("call_id", callId)
+                .put("output", output);
+        return new JSONObject().put("type", TYPE_ITEM_CREATE).put("item", item);
+    }
+
     /**
      * 把一帧文本解析成一个事件。
      *
-     * @return 不需要上报的帧（未知类型、{@code session.updated}、{@code conversation.item.*} 等）返回 {@code null}，
+     * @return 不需要上报的帧（未知类型、{@code conversation.item.created}、限流更新等）返回 {@code null}，
      * 调用方直接忽略即可——**未知帧不能当成错误**，协议一直在加新帧，老客户端必须能继续跑。
      * @throws YoAiProtocolException 帧不是 JSON 对象，或者关键字段缺失/编码不对。
      * 这种帧说明对端不是 Realtime 端点，链路已经不可用，由调用方关掉。
@@ -127,20 +185,32 @@ final class RealtimeProtocol {
         switch (type) {
             case TYPE_SESSION_CREATED:
                 return YoRealtimeEvent.opened();
+            case TYPE_SESSION_UPDATED:
+                return YoRealtimeEvent.sessionUpdated();
             case TYPE_SPEECH_STARTED:
                 return YoRealtimeEvent.speechStarted();
             case TYPE_SPEECH_STOPPED:
                 return YoRealtimeEvent.speechStopped();
             case TYPE_AUDIO_DELTA:
-                return YoRealtimeEvent.audioChunk(decodeAudioDelta(frame, text));
+            case TYPE_OUTPUT_AUDIO_DELTA:
+                return YoRealtimeEvent.audioChunk(
+                        decodeAudioDelta(frame, text), itemIdOf(frame), contentIndexOf(frame));
             case TYPE_TRANSCRIPT_DELTA:
-            case TYPE_TEXT_DELTA: {
+            case TYPE_TEXT_DELTA:
+            case TYPE_OUTPUT_AUDIO_TRANSCRIPT_DELTA:
+            case TYPE_OUTPUT_TEXT_DELTA: {
                 String delta = frame.optString("delta", "");
                 // 空增量没有信息量，丢给上层只会让它的拼接逻辑多走一次。
                 return delta.isEmpty() ? null : YoRealtimeEvent.textDelta(delta);
             }
+            case TYPE_INPUT_TRANSCRIPT: {
+                String transcript = frame.optString("transcript", "");
+                return transcript.isEmpty() ? null : YoRealtimeEvent.userTranscript(transcript, itemIdOf(frame));
+            }
+            case TYPE_FUNCTION_CALL_DONE:
+                return toolCallOf(frame);
             case TYPE_RESPONSE_DONE:
-                return YoRealtimeEvent.responseDone();
+                return responseDoneOf(frame);
             case TYPE_ERROR:
                 return errorOf(frame);
             default:
@@ -173,13 +243,16 @@ final class RealtimeProtocol {
     }
 
     /**
-     * 握手头：Bearer 鉴权 + beta 通道标记。
+     * 握手头。beta 必须带 {@code OpenAI-Beta}，否则部分网关按 GA 字段名回帧；
+     * GA 和通义带了这个头会被当成旧接口，直接拒绝。
      */
     @NonNull
     static Map<String, String> handshakeHeaders(@NonNull YoRealtimeConfig config) {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put(HEADER_AUTHORIZATION, "Bearer " + config.apiKey());
-        headers.put(HEADER_OPENAI_BETA, OPENAI_BETA_VALUE);
+        if (config.dialect() == YoRealtimeDialect.OPENAI_BETA) {
+            headers.put(HEADER_OPENAI_BETA, OPENAI_BETA_VALUE);
+        }
         return headers;
     }
 
@@ -313,6 +386,256 @@ final class RealtimeProtocol {
         }
         // 对端明确报了错，但没给出可识别的分类：归到服务端，原文照样交给界面显示。
         return YoAiErrorKind.SERVER;
+    }
+
+    // ---------------------------------------------------------------- 会话编码
+
+    @NonNull
+    private static JSONObject encodeBetaSession(@NonNull YoRealtimeConfig config) throws JSONException {
+        JSONObject session = new JSONObject();
+        session.put("input_audio_format", betaFormatName(config.inputWireFormat()));
+        session.put("output_audio_format", betaFormatName(config.outputWireFormat()));
+        session.put("turn_detection", encodeTurn(config.turnDetection(), false));
+        putIfPresent(session, "voice", config.voice());
+        putIfPresent(session, "instructions", config.instructions());
+        putBetaTranscription(session, config.transcription());
+        putNoise(session, "input_audio_noise_reduction", config.noiseReduction());
+        putModalities(session, "modalities", config.outputModalities());
+        putTools(session, config);
+        return session;
+    }
+
+    @NonNull
+    private static JSONObject encodeGaSession(@NonNull YoRealtimeConfig config) throws JSONException {
+        JSONObject session = new JSONObject();
+        session.put("type", "realtime");
+        session.put("model", config.model());
+        session.put("output_modalities", modalityArray(config.outputModalities(), YoRealtimeOutputModality.AUDIO));
+        putIfPresent(session, "instructions", config.instructions());
+        JSONObject input = new JSONObject();
+        input.put("format", encodeGaFormat(config.inputWireFormat()));
+        input.put("turn_detection", encodeTurn(config.turnDetection(), true));
+        putTranscription(input, config.transcription());
+        putNoise(input, "noise_reduction", config.noiseReduction());
+        JSONObject output = new JSONObject();
+        output.put("format", encodeGaFormat(config.outputWireFormat()));
+        putIfPresent(output, "voice", config.voice());
+        session.put("audio", new JSONObject().put("input", input).put("output", output));
+        putTools(session, config);
+        return session;
+    }
+
+    @NonNull
+    private static JSONObject encodeQwenSession(@NonNull YoRealtimeConfig config) throws JSONException {
+        JSONObject session = new JSONObject();
+        session.put("modalities", modalityArray(
+                config.outputModalities(), YoRealtimeOutputModality.TEXT, YoRealtimeOutputModality.AUDIO));
+        putIfPresent(session, "instructions", config.instructions());
+        // 旧版通义只读 session.voice；新版读 audio.output.voice。两边写同一个值。
+        putIfPresent(session, "voice", config.voice());
+        JSONObject input = new JSONObject();
+        input.put("format", encodeQwenFormat(config.inputWireFormat()));
+        input.put("turn_detection", encodeTurn(config.turnDetection(), false));
+        putTranscription(input, config.transcription());
+        JSONObject output = new JSONObject();
+        output.put("format", encodeQwenFormat(config.outputWireFormat()));
+        putIfPresent(output, "voice", config.voice());
+        session.put("audio", new JSONObject().put("input", input).put("output", output));
+        putTools(session, config);
+        return session;
+    }
+
+    @NonNull
+    private static String betaFormatName(@NonNull YoRealtimeAudioFormat format) {
+        return switch (format.encoding()) {
+            case PCM16 -> INPUT_AUDIO_FORMAT;
+            case PCMU -> "g711_ulaw";
+            case PCMA -> "g711_alaw";
+        };
+    }
+
+    @NonNull
+    private static JSONObject encodeGaFormat(@NonNull YoRealtimeAudioFormat format) throws JSONException {
+        return switch (format.encoding()) {
+            case PCM16 -> new JSONObject().put("type", "audio/pcm").put("rate", format.sampleRateHz());
+            case PCMU -> new JSONObject().put("type", "audio/pcmu");
+            case PCMA -> new JSONObject().put("type", "audio/pcma");
+        };
+    }
+
+    @NonNull
+    private static JSONObject encodeQwenFormat(@NonNull YoRealtimeAudioFormat format) throws JSONException {
+        String type = switch (format.encoding()) {
+            case PCM16 -> "pcm";
+            case PCMU -> "pcmu";
+            case PCMA -> "pcma";
+        };
+        return new JSONObject().put("type", type).put("sample_rate", format.sampleRateHz());
+    }
+
+    /**
+     * @param gaDefaults GA 在调用方没写 create/interrupt 时也要显式打开，
+     *                    否则插话不会停掉正在生成的回答。beta 不写这两个字段，保持旧网关看到的 JSON 不变。
+     */
+    @NonNull
+    private static Object encodeTurn(@Nullable YoRealtimeTurnDetection turn, boolean gaDefaults) throws JSONException {
+        if (turn != null && turn.isDisabled()) {
+            return JSONObject.NULL;
+        }
+        YoRealtimeTurnDetection.Kind kind = turn == null || turn.kind() == null
+                ? YoRealtimeTurnDetection.Kind.SERVER_VAD
+                : turn.kind();
+        JSONObject json = new JSONObject().put("type", kind.wireName());
+        if (turn != null) {
+            if (turn.threshold() != null) {
+                json.put("threshold", turn.threshold());
+            }
+            if (turn.prefixPaddingMs() != null) {
+                json.put("prefix_padding_ms", turn.prefixPaddingMs());
+            }
+            if (turn.silenceDurationMs() != null) {
+                json.put("silence_duration_ms", turn.silenceDurationMs());
+            }
+            if (turn.eagerness() != null) {
+                json.put("eagerness", turn.eagerness());
+            }
+        }
+        Boolean create = turn == null ? null : turn.createResponse();
+        Boolean interrupt = turn == null ? null : turn.interruptResponse();
+        if (gaDefaults) {
+            json.put("create_response", create == null || create);
+            json.put("interrupt_response", interrupt == null || interrupt);
+        } else {
+            if (create != null) {
+                json.put("create_response", create);
+            }
+            if (interrupt != null) {
+                json.put("interrupt_response", interrupt);
+            }
+        }
+        return json;
+    }
+
+    private static void putBetaTranscription(
+            @NonNull JSONObject session,
+            @Nullable YoRealtimeTranscription transcription) throws JSONException {
+        if (transcription == null) {
+            return;
+        }
+        session.put("input_audio_transcription", transcriptionJson(transcription));
+    }
+
+    private static void putTranscription(
+            @NonNull JSONObject input,
+            @Nullable YoRealtimeTranscription transcription) throws JSONException {
+        if (transcription == null) {
+            return;
+        }
+        input.put("transcription", transcriptionJson(transcription));
+    }
+
+    @NonNull
+    private static JSONObject transcriptionJson(@NonNull YoRealtimeTranscription transcription) throws JSONException {
+        JSONObject json = new JSONObject().put("model", transcription.model());
+        putIfPresent(json, "language", transcription.language());
+        putIfPresent(json, "prompt", transcription.prompt());
+        return json;
+    }
+
+    private static void putNoise(
+            @NonNull JSONObject parent,
+            @NonNull String key,
+            @Nullable YoRealtimeNoiseReduction noise) throws JSONException {
+        if (noise == null) {
+            return;
+        }
+        parent.put(key, new JSONObject().put("type", noise.wireName()));
+    }
+
+    private static void putModalities(
+            @NonNull JSONObject session,
+            @NonNull String key,
+            @Nullable List<YoRealtimeOutputModality> modalities) throws JSONException {
+        if (modalities == null || modalities.isEmpty()) {
+            return;
+        }
+        session.put(key, modalityArray(modalities));
+    }
+
+    @NonNull
+    private static JSONArray modalityArray(
+            @Nullable List<YoRealtimeOutputModality> modalities,
+            @NonNull YoRealtimeOutputModality... fallback) {
+        JSONArray array = new JSONArray();
+        if (modalities == null || modalities.isEmpty()) {
+            for (YoRealtimeOutputModality modality : fallback) {
+                array.put(modality.wireName());
+            }
+            return array;
+        }
+        for (YoRealtimeOutputModality modality : modalities) {
+            array.put(modality.wireName());
+        }
+        return array;
+    }
+
+    private static void putTools(@NonNull JSONObject session, @NonNull YoRealtimeConfig config) throws JSONException {
+        if (config.tools().isEmpty()) {
+            return;
+        }
+        JSONArray tools = new JSONArray();
+        for (YoRealtimeTool tool : config.tools()) {
+            JSONObject encoded = new JSONObject().put("type", "function").put("name", tool.name());
+            putIfPresent(encoded, "description", tool.description());
+            encoded.put("parameters", tool.parameters());
+            tools.put(encoded);
+        }
+        session.put("tools", tools);
+    }
+
+    private static void putIfPresent(
+            @NonNull JSONObject json,
+            @NonNull String key,
+            @Nullable String value) throws JSONException {
+        if (value != null) {
+            json.put(key, value);
+        }
+    }
+
+    @Nullable
+    private static String itemIdOf(@NonNull JSONObject frame) {
+        String id = frame.optString("item_id", "");
+        return id.isEmpty() ? null : id;
+    }
+
+    @Nullable
+    private static Integer contentIndexOf(@NonNull JSONObject frame) {
+        if (!frame.has("content_index") || frame.isNull("content_index")) {
+            return null;
+        }
+        return frame.optInt("content_index");
+    }
+
+    @NonNull
+    private static YoRealtimeEvent toolCallOf(@NonNull JSONObject frame) {
+        String callId = frame.optString("call_id", "");
+        if (callId.isEmpty()) {
+            callId = frame.optString("item_id", "");
+        }
+        String name = frame.optString("name", "");
+        String arguments = frame.optString("arguments", "");
+        return YoRealtimeEvent.toolCall(callId, name, arguments);
+    }
+
+    @NonNull
+    private static YoRealtimeEvent responseDoneOf(@NonNull JSONObject frame) {
+        JSONObject response = frame.optJSONObject("response");
+        String status = response == null ? "" : response.optString("status", "");
+        JSONObject usage = response == null ? null : response.optJSONObject("usage");
+        if (usage == null) {
+            usage = frame.optJSONObject("usage");
+        }
+        return YoRealtimeEvent.responseDone(status.isEmpty() ? null : status, YoRealtimeUsage.fromJson(usage));
     }
 
     // ---------------------------------------------------------------- 内部

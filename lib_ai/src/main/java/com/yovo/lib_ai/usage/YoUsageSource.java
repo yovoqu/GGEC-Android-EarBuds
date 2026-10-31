@@ -17,6 +17,8 @@ public enum YoUsageSource {
     COMPLETIONS,
     /** 测速探针。只测首字时没有输出 token，费用只剩首字那一段。 */
     PROBE,
+    /** 实时语音会话。一轮 {@code response.done} 记一笔，不按音频帧记。 */
+    REALTIME,
     /** 其他入口（语音转写等），暂未细分。 */
     OTHER
 }

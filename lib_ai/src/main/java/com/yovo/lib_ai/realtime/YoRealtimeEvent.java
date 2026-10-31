@@ -8,11 +8,11 @@ import com.yovo.lib_ai.error.YoAiErrorKind;
 /**
  * 实时语音链路的一次回调，不可变。
  *
- * <p>用「一个带可空字段的类型」而不是八种子类，是因为上层拿到的用法永远是
+ * <p>用「一个带可空字段的类型」而不是一堆子类，是因为上层拿到的用法永远是
  * {@code switch (event.type())}，字段少、没有继承负担，写假实现也只要一行。
  * 每个事件只填自己那个字段，其余为 {@code null}。</p>
  */
-public final class YoRealtimeEvent {
+final class YoRealtimeEvent {
 
     @NonNull
     private final YoRealtimeEventType type;
@@ -24,26 +24,59 @@ public final class YoRealtimeEvent {
     private final YoAiErrorKind errorKind;
     @Nullable
     private final String message;
+    @Nullable
+    private final String itemId;
+    @Nullable
+    private final Integer contentIndex;
+    @Nullable
+    private final String callId;
+    @Nullable
+    private final String toolName;
+    @Nullable
+    private final String arguments;
+    @Nullable
+    private final String responseStatus;
+    @Nullable
+    private final YoRealtimeUsage usage;
 
     private YoRealtimeEvent(
             @NonNull YoRealtimeEventType type,
             @Nullable String text,
             @Nullable byte[] audioPcm16,
             @Nullable YoAiErrorKind errorKind,
-            @Nullable String message) {
+            @Nullable String message,
+            @Nullable String itemId,
+            @Nullable Integer contentIndex,
+            @Nullable String callId,
+            @Nullable String toolName,
+            @Nullable String arguments,
+            @Nullable String responseStatus,
+            @Nullable YoRealtimeUsage usage) {
         this.type = type;
         this.text = text;
         this.audioPcm16 = audioPcm16;
         this.errorKind = errorKind;
         this.message = message;
+        this.itemId = itemId;
+        this.contentIndex = contentIndex;
+        this.callId = callId;
+        this.toolName = toolName;
+        this.arguments = arguments;
+        this.responseStatus = responseStatus;
+        this.usage = usage;
     }
 
     /**
-     * 会话已建立。给假实现（{@code FakeRealtimeLink}）和单测用。
+     * 会话已建立。给假实现和单测用。
      */
     @NonNull
     public static YoRealtimeEvent opened() {
-        return new YoRealtimeEvent(YoRealtimeEventType.OPENED, null, null, null, null);
+        return bare(YoRealtimeEventType.OPENED);
+    }
+
+    @NonNull
+    public static YoRealtimeEvent sessionUpdated() {
+        return bare(YoRealtimeEventType.SESSION_UPDATED);
     }
 
     /**
@@ -51,7 +84,7 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent speechStarted() {
-        return new YoRealtimeEvent(YoRealtimeEventType.INPUT_SPEECH_STARTED, null, null, null, null);
+        return bare(YoRealtimeEventType.INPUT_SPEECH_STARTED);
     }
 
     /**
@@ -59,7 +92,7 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent speechStopped() {
-        return new YoRealtimeEvent(YoRealtimeEventType.INPUT_SPEECH_STOPPED, null, null, null, null);
+        return bare(YoRealtimeEventType.INPUT_SPEECH_STOPPED);
     }
 
     /**
@@ -67,16 +100,38 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent textDelta(@NonNull String delta) {
-        return new YoRealtimeEvent(YoRealtimeEventType.ASSISTANT_TEXT_DELTA, delta, null, null, null);
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.ASSISTANT_TEXT_DELTA, delta, null, null, null,
+                null, null, null, null, null, null, null);
     }
 
     /**
-     * 回答的一段 PCM16 声音。数组的所有权交给接收方，链路不会再碰它，
-     * 所以这里不复制——每秒三十多 KB 的音频，多复制一次都是白烧 CPU。
+     * 用户那一句的完整转写。
+     */
+    @NonNull
+    public static YoRealtimeEvent userTranscript(@NonNull String transcript, @Nullable String itemId) {
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.USER_TRANSCRIPT, transcript, null, null, null,
+                itemId, null, null, null, null, null, null);
+    }
+
+    /**
+     * 回答的一段 PCM16 声音。数组的所有权交给接收方，链路不会再碰它。
+     * {@code itemId} 用来在打断时定位要截断的那一条；老网关不给 id 时为 {@code null}。
      */
     @NonNull
     public static YoRealtimeEvent audioChunk(@NonNull byte[] pcm16) {
-        return new YoRealtimeEvent(YoRealtimeEventType.ASSISTANT_AUDIO_CHUNK, null, pcm16, null, null);
+        return audioChunk(pcm16, null, null);
+    }
+
+    @NonNull
+    public static YoRealtimeEvent audioChunk(
+            @NonNull byte[] pcm16,
+            @Nullable String itemId,
+            @Nullable Integer contentIndex) {
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.ASSISTANT_AUDIO_CHUNK, null, pcm16, null, null,
+                itemId, contentIndex, null, null, null, null, null);
     }
 
     /**
@@ -84,7 +139,29 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent responseDone() {
-        return new YoRealtimeEvent(YoRealtimeEventType.RESPONSE_DONE, null, null, null, null);
+        return responseDone(null, null);
+    }
+
+    @NonNull
+    public static YoRealtimeEvent responseDone(
+            @Nullable String status,
+            @Nullable YoRealtimeUsage usage) {
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.RESPONSE_DONE, null, null, null, null,
+                null, null, null, null, null, status, usage);
+    }
+
+    /**
+     * 函数参数已经到齐。{@code arguments} 是 JSON 文本，不是已经解析的对象。
+     */
+    @NonNull
+    public static YoRealtimeEvent toolCall(
+            @NonNull String callId,
+            @NonNull String name,
+            @NonNull String arguments) {
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.TOOL_CALL, null, null, null, null,
+                null, null, callId, name, arguments, null, null);
     }
 
     /**
@@ -92,7 +169,9 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent error(@NonNull YoAiErrorKind kind, @NonNull String message) {
-        return new YoRealtimeEvent(YoRealtimeEventType.ERROR, null, null, kind, message);
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.ERROR, null, null, kind, message,
+                null, null, null, null, null, null, null);
     }
 
     /**
@@ -100,7 +179,12 @@ public final class YoRealtimeEvent {
      */
     @NonNull
     public static YoRealtimeEvent closed() {
-        return new YoRealtimeEvent(YoRealtimeEventType.CLOSED, null, null, null, null);
+        return bare(YoRealtimeEventType.CLOSED);
+    }
+
+    @NonNull
+    private static YoRealtimeEvent bare(@NonNull YoRealtimeEventType type) {
+        return new YoRealtimeEvent(type, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @NonNull
@@ -109,7 +193,8 @@ public final class YoRealtimeEvent {
     }
 
     /**
-     * 仅 {@link YoRealtimeEventType#ASSISTANT_TEXT_DELTA} 非空：这一小段新增文字。
+     * {@link YoRealtimeEventType#ASSISTANT_TEXT_DELTA} 时是一小段新增文字；
+     * {@link YoRealtimeEventType#USER_TRANSCRIPT} 时是整句。
      */
     @Nullable
     public String text() {
@@ -140,6 +225,45 @@ public final class YoRealtimeEvent {
         return message;
     }
 
+    /** 音频块或用户转写所属的对话项。没有则无法做截断。 */
+    @Nullable
+    public String itemId() {
+        return itemId;
+    }
+
+    /** 音频在该对话项里的下标。缺省时截断用 0。 */
+    @Nullable
+    public Integer contentIndex() {
+        return contentIndex;
+    }
+
+    @Nullable
+    public String callId() {
+        return callId;
+    }
+
+    @Nullable
+    public String toolName() {
+        return toolName;
+    }
+
+    /** 函数参数的 JSON 文本。 */
+    @Nullable
+    public String arguments() {
+        return arguments;
+    }
+
+    /** {@code response.done} 的 status，例如 {@code completed} 或 {@code cancelled}。 */
+    @Nullable
+    public String responseStatus() {
+        return responseStatus;
+    }
+
+    @Nullable
+    public YoRealtimeUsage usage() {
+        return usage;
+    }
+
     @NonNull
     @Override
     public String toString() {
@@ -148,7 +272,6 @@ public final class YoRealtimeEvent {
             builder.append(", text=").append(text.length() > 40 ? text.substring(0, 40) + "…" : text);
         }
         if (audioPcm16 != null) {
-            // 只打长度：一段音频的 base64 或者十六进制能把日志淹掉。
             builder.append(", audioBytes=").append(audioPcm16.length);
         }
         if (errorKind != null) {
@@ -156,6 +279,18 @@ public final class YoRealtimeEvent {
         }
         if (message != null) {
             builder.append(", message=").append(message);
+        }
+        if (itemId != null) {
+            builder.append(", itemId=").append(itemId);
+        }
+        if (callId != null) {
+            builder.append(", callId=").append(callId);
+        }
+        if (toolName != null) {
+            builder.append(", tool=").append(toolName);
+        }
+        if (responseStatus != null) {
+            builder.append(", status=").append(responseStatus);
         }
         return builder.append('}').toString();
     }
