@@ -37,7 +37,7 @@ public final class FetchPlatformModels {
                 .map(current -> {
                     AiPlatformConfig updated = current.withModels(merge(fetched, current.models()), fetchedAt);
                     saved.set(updated);
-                    return settings.withPlatform(updated).withValidSelection();
+                    return settings.withPlatform(updated).withValidSelections();
                 })
                 .orElse(settings));
         return saved.get();

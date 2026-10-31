@@ -14,6 +14,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.MemoryDocumentStore;
@@ -43,14 +44,14 @@ public class AiSettingsRepositoryImplTest {
     public void updatesPersistAndSurviveARestart() {
         AiSettingsRepositoryImpl first = repository();
         first.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "sk-one", "m1", "m2"))
-                .withSelection(new AiSelection("deepseek", "m2")));
+                .withTextSelection(new AiSelection("deepseek", "m2")));
 
         AiSettings reloaded = repository().load();
 
         assertEquals("sk-one", reloaded.platform("deepseek").orElseThrow().apiKey());
         assertEquals(2, reloaded.platform("deepseek").orElseThrow().models().size());
-        assertEquals(new AiSelection("deepseek", "m2"), reloaded.selection());
-        assertTrue(reloaded.activeModel().isPresent());
+        assertEquals(new AiSelection("deepseek", "m2"), reloaded.textSelection());
+        assertTrue(reloaded.textModel().isPresent());
     }
 
     @Test
@@ -85,6 +86,45 @@ public class AiSettingsRepositoryImplTest {
 
         assertNull(secrets.secrets.get("apikey.a"));
         assertEquals("kb", secrets.secrets.get("apikey.b"));
+    }
+
+    @Test
+    public void voiceKeysLiveOnlyInTheSecretStoreAndSurviveARestart() {
+        AiSettingsRepositoryImpl repository = repository();
+        repository.update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen-secret")));
+
+        assertEquals("sk-qwen-secret", secrets.secrets.get("voicekey.qwen"));
+        assertFalse(documents.documents.get("settings.json").contains("sk-qwen-secret"));
+        assertTrue(repository().load().voiceReady());
+        assertEquals(AiVoiceModel.QWEN, repository().load().voice().model());
+
+        repository.update(s -> s.withVoice(s.voice().withApiKey("")));
+        assertNull(secrets.secrets.get("voicekey.qwen"));
+        assertFalse(repository().load().voiceReady());
+    }
+
+    @Test
+    public void aLostVoiceKeyLeavesTheModelSelectedButUnready() {
+        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
+        secrets.secrets.clear();
+
+        AiSettings reloaded = repository().load();
+
+        assertEquals(AiVoiceModel.CHATGPT, reloaded.voice().model());
+        assertFalse(reloaded.voiceReady());
+    }
+
+    @Test
+    public void removingAPlatformKeepsTheVoiceKey() {
+        AiSettingsRepositoryImpl repository = repository();
+        repository.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "sk-one", "m"))
+                .withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
+
+        repository.update(s -> s.withoutPlatform("deepseek"));
+
+        assertNull(secrets.secrets.get("apikey.deepseek"));
+        assertEquals("sk-gpt", secrets.secrets.get("voicekey.chatgpt"));
+        assertTrue(repository.load().voiceReady());
     }
 
     @Test
@@ -127,12 +167,12 @@ public class AiSettingsRepositoryImplTest {
         Subscription subscription = repository.observe(seen::add);
 
         repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
-        repository.update(s -> s.withSelection(new AiSelection("a", "m")));
+        repository.update(s -> s.withTextSelection(new AiSelection("a", "m")));
         subscription.cancel();
-        repository.update(s -> s.withSelection(null));
+        repository.update(s -> s.withTextSelection(null));
 
         assertEquals(2, seen.size());
-        assertEquals(new AiSelection("a", "m"), seen.get(1).selection());
+        assertEquals(new AiSelection("a", "m"), seen.get(1).textSelection());
     }
 
     @Test
@@ -173,12 +213,12 @@ public class AiSettingsRepositoryImplTest {
         documents.failWrites = true;
 
         try {
-            repository.update(s -> s.withSelection(new AiSelection("a", "m")));
+            repository.update(s -> s.withTextSelection(new AiSelection("a", "m")));
             fail("a storage failure must reach the caller");
         } catch (AiFailure expected) {
             assertEquals(AiFailureKind.STORAGE, expected.kind());
             assertTrue(expected.getCause() instanceof AiStorageException);
-            assertNull(repository.load().selection());
+            assertNull(repository.load().textSelection());
             assertTrue(seen.isEmpty());
         }
     }

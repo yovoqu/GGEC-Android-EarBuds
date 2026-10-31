@@ -20,6 +20,7 @@ public final class AiMessages {
         return switch (kind) {
             case NO_PLATFORM -> R.string.ai_failure_no_platform;
             case NO_MODEL -> R.string.ai_failure_no_model;
+            case VOICE_NOT_CONFIGURED -> R.string.ai_failure_voice_not_configured;
             case AUTHENTICATION -> R.string.ai_failure_authentication;
             case PERMISSION -> R.string.ai_failure_permission;
             case QUOTA -> R.string.ai_failure_quota;
@@ -53,8 +54,7 @@ public final class AiMessages {
             case PLATFORM_NOT_CONFIGURED -> R.string.ai_error_platform_not_configured;
             case MODEL_UNKNOWN -> R.string.ai_error_model_unknown;
             case PROMPT_TOO_LONG -> R.string.ai_error_prompt_too_long;
-            case VOICE_NEEDS_REALTIME_MODEL -> R.string.ai_error_voice_realtime_model;
-            case VOICE_NEEDS_TRANSCRIPTION_MODEL -> R.string.ai_error_voice_transcription_model;
+            case REALTIME_MODEL_NOT_CHAT -> R.string.ai_error_realtime_model_not_chat;
         };
     }
 

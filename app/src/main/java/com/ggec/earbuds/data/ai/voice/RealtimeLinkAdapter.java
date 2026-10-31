@@ -187,9 +187,8 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
     }
 
     /**
-     * lib_ai 的错误分类只有一份（{@code YoAiErrors}/{@code YoAiErrorKind}），这里只做枚举改名，
-     * 与 {@code WhisperSpeechRecognizer} 保持同一套映射：同一条链路上的两种协议，
-     * 不该在界面上给出两套不同的原因名。
+     * lib_ai 的错误分类只有一份（{@code YoAiErrors}/{@code YoAiErrorKind}），这里只做枚举改名：
+     * 领域层不该认识 SDK 的枚举，界面也不该为同一种失败给出两套原因名。
      */
     static AiFailureKind kindOf(@Nullable YoAiErrorKind kind) {
         if (kind == null) {

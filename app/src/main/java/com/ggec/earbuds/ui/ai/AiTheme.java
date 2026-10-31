@@ -7,7 +7,6 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.util.TypedValue;
-import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -17,7 +16,6 @@ import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
 
-import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.theme.YoColors;
 import com.yohu.youi.api.theme.YoFonts;
 
@@ -55,6 +53,11 @@ public final class AiTheme {
 
     // ---- 尺寸 ----
     public static final float PAGE_INSET = 20f;
+    /**
+     * 自有 {@code YoList} 卡片离父级的距离。边距写在库里（16dp），页面不要再叠一层页边距；
+     * 分区标题、搜索和分段跟卡片外沿对齐。
+     */
+    public static final float LIST_EDGE = 16f;
     /** 页内标题行高度；比库的标题栏矮，把高度让给消息。 */
     public static final float HEADER_HEIGHT = 56f;
     /** 建议行的固定行高，与系统列表的两行高度一致。 */
@@ -152,21 +155,6 @@ public final class AiTheme {
         view.setColorFilter(tint, PorterDuff.Mode.SRC_IN);
         view.setScaleType(ImageView.ScaleType.FIT_CENTER);
         return view;
-    }
-
-    /**
-     * 列表行首的图标。
-     *
-     * <p>为什么不用 {@code ListPrefixSpec.iconTinted}：真机实测它的颜色参数不落到像素上
-     * （整页行首图标都是纯黑，与行标题的层级打平甚至更重）。这里自己造一个已经上过色的
-     * {@link ImageView} 交给列表，颜色就由这一处决定，和 {@link #icon} 用同一条路径。</p>
-     */
-    @NonNull
-    public ListPrefixSpec listPrefix(@DrawableRes int resource, @ColorInt int tint) {
-        ImageView view = icon(resource, tint);
-        int size = dp(24);
-        view.setLayoutParams(new ViewGroup.LayoutParams(size, size));
-        return ListPrefixSpec.custom(view);
     }
 
     /** 消息操作行上的小图标按钮：固定触控区 + 圆形水波纹。 */

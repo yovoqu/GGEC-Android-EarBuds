@@ -9,6 +9,7 @@
     <!-- enableOnBackInvokedCallback 必须显式打开：YoUI 的对话框、面板和菜单靠它接管返回键，
          不写时返回键会越过它们直接关掉整个页面。 -->
     <application
+        android:name=".EarbudsApplication"
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"

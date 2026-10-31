@@ -3,49 +3,41 @@ package com.yovo.lib_ai.models;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Set;
+import com.yovo.lib_ai.models.spec.YoModelSpec;
+
+import java.util.Objects;
 
 /**
  * 平台模型列表里的一项。{@link #id()} 就是对话请求里的 {@code model} 字段。
- * 平台没返回的元数据保持为空，不凭 id 猜测数值。
+ *
+ * <p>平台说了什么都在 {@link #spec()} 里：解码时先按 id 推断出底，再把平台上报的类别、模态、
+ * 限额、能力、推理逐项盖上去，所以 {@code spec()} 里<b>上报的</b>项是可信的，没上报的仍是推断或未知。
+ * 平台没返回的元数据保持为空，不凭 id 猜数值。要叠加用户的覆盖，交给
+ * {@link YoModelCatalog#resolve(YoModelInfo)}。</p>
  */
 public final class YoModelInfo {
 
-    private final String id;
-    private final String displayName;
+    private final YoModelSpec spec;
     @Nullable
     private final String ownedBy;
     private final long createdAtMillis;
-    private final YoModelKind kind;
-    @Nullable
-    private final Integer contextWindow;
-    @Nullable
-    private final Integer maxOutputTokens;
-    private final Set<YoModelFeature> features;
     private final String rawJson;
 
     private YoModelInfo(Builder builder) {
-        this.id = builder.id;
-        this.displayName = builder.displayName == null ? builder.id : builder.displayName;
+        this.spec = builder.spec;
         this.ownedBy = builder.ownedBy;
         this.createdAtMillis = builder.createdAtMillis;
-        this.kind = builder.kind;
-        this.contextWindow = builder.contextWindow;
-        this.maxOutputTokens = builder.maxOutputTokens;
-        this.features = Collections.unmodifiableSet(EnumSet.copyOf(builder.features));
         this.rawJson = builder.rawJson;
     }
 
     @NonNull
-    public static Builder builder(@NonNull String id) {
-        return new Builder(id);
+    public static Builder builder(@NonNull YoModelSpec spec) {
+        return new Builder(spec);
     }
 
     @NonNull
     public String id() {
-        return id;
+        return spec.id();
     }
 
     /**
@@ -53,7 +45,15 @@ public final class YoModelInfo {
      */
     @NonNull
     public String displayName() {
-        return displayName;
+        return spec.displayName();
+    }
+
+    /**
+     * 推断加平台上报合成的规格，尚未叠加用户覆盖。
+     */
+    @NonNull
+    public YoModelSpec spec() {
+        return spec;
     }
 
     @Nullable
@@ -69,56 +69,19 @@ public final class YoModelInfo {
     }
 
     @NonNull
-    public YoModelKind kind() {
-        return kind;
-    }
-
-    @Nullable
-    public Integer contextWindow() {
-        return contextWindow;
-    }
-
-    @Nullable
-    public Integer maxOutputTokens() {
-        return maxOutputTokens;
-    }
-
-    @NonNull
-    public Set<YoModelFeature> features() {
-        return features;
-    }
-
-    @NonNull
     public String rawJson() {
         return rawJson;
     }
 
     public static final class Builder {
-        private final String id;
-        @Nullable
-        private String displayName;
+        private final YoModelSpec spec;
         @Nullable
         private String ownedBy;
         private long createdAtMillis = -1L;
-        private YoModelKind kind = YoModelKind.CHAT;
-        @Nullable
-        private Integer contextWindow;
-        @Nullable
-        private Integer maxOutputTokens;
-        private final EnumSet<YoModelFeature> features = EnumSet.noneOf(YoModelFeature.class);
         private String rawJson = "";
 
-        private Builder(String id) {
-            if (id == null || id.isBlank()) {
-                throw new IllegalArgumentException("model id is required");
-            }
-            this.id = id.trim();
-        }
-
-        @NonNull
-        public Builder displayName(@Nullable String displayName) {
-            this.displayName = displayName == null || displayName.isBlank() ? null : displayName.trim();
-            return this;
+        private Builder(YoModelSpec spec) {
+            this.spec = Objects.requireNonNull(spec, "spec");
         }
 
         @NonNull
@@ -130,30 +93,6 @@ public final class YoModelInfo {
         @NonNull
         public Builder createdAtMillis(long createdAtMillis) {
             this.createdAtMillis = createdAtMillis > 0 ? createdAtMillis : -1L;
-            return this;
-        }
-
-        @NonNull
-        public Builder kind(@NonNull YoModelKind kind) {
-            this.kind = kind;
-            return this;
-        }
-
-        @NonNull
-        public Builder contextWindow(@Nullable Integer contextWindow) {
-            this.contextWindow = contextWindow != null && contextWindow > 0 ? contextWindow : null;
-            return this;
-        }
-
-        @NonNull
-        public Builder maxOutputTokens(@Nullable Integer maxOutputTokens) {
-            this.maxOutputTokens = maxOutputTokens != null && maxOutputTokens > 0 ? maxOutputTokens : null;
-            return this;
-        }
-
-        @NonNull
-        public Builder feature(@NonNull YoModelFeature feature) {
-            this.features.add(feature);
             return this;
         }
 

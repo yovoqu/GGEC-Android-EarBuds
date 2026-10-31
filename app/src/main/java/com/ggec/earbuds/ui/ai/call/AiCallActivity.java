@@ -33,8 +33,6 @@ import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiMode;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
@@ -50,23 +48,14 @@ import com.yohu.youi.api.platform.YoSystemBar;
  * <p>这一页不画标题栏、不套 YoUI 的窗口壳（标签栏在外面），系统栏留白由本页自己吃：
  * 一个 View 只挂一个 inset 监听，避免两层各补一遍。竖屏由清单锁死。</p>
  *
- * <p>它只负责画：状态机在语音策略里，页面拿到的每一帧都是 {@link AiVoiceSnapshot} 的投影。
- * 所以 OMNI（一条 WebSocket）与 CASCADED（转写→对话→合成）在这一页长得一模一样，
- * 页面里没有任何按模式分支的代码。</p>
+ * <p>它只负责画：状态机在语音会话里，页面拿到的每一帧都是 {@link AiVoiceSnapshot} 的投影。
+ * 语音交流只有实时一条链路，页面里没有任何按模式分支的代码。</p>
  *
  * <p>失败时只给一个出口，另一个**隐藏而不是并排摆着**：能靠改配置解决的（没模型、鉴权、
  * 接口不存在）去设置，能靠再试一次的（网络、超时、服务端、限流）才给重试。
  * 两个都给等于让用户猜该点哪个。</p>
  */
 public final class AiCallActivity extends AppCompatActivity {
-
-    /** {@link AiMode#name()}；缺省按 {@link AiMode#defaultMode()}。 */
-    private static final String EXTRA_MODE = "extra_mode";
-    private static final String EXTRA_PLATFORM_ID = "extra_platform_id";
-    private static final String EXTRA_TRANSCRIPTION_MODEL = "extra_transcription_model";
-    private static final String EXTRA_SYNTHESIS_VOICE = "extra_synthesis_voice";
-    private static final String EXTRA_REALTIME_MODEL = "extra_realtime_model";
-    private static final String EXTRA_SILENCE_TIMEOUT = "extra_silence_timeout_millis";
 
     private static final String STATE_SPEAKER = "ai_call_speaker";
 
@@ -95,8 +84,6 @@ public final class AiCallActivity extends AppCompatActivity {
 
     private AiTheme theme;
     private AiCallViewModel viewModel;
-    private AiVoiceSettings settings;
-    private String platformId;
 
     private VoiceOrbView orb;
     private TextView statusTitle;
@@ -118,32 +105,22 @@ public final class AiCallActivity extends AppCompatActivity {
     private boolean speakerOn = true;
     private boolean interruptibleShown;
     private int actionMode = ACTION_NONE;
-    private int shownModeRes;
 
     /**
      * 组装拉起这一页的 Intent。
      *
-     * <p>{@link AiVoiceSettings} 是领域 record，不做 Parcelable：这里摊平成几个 extra，
-     * 页面自己就能重建设置，不必从界面层去读设置仓库（那条路在分层检查里是禁止的）。</p>
+     * <p>不带任何模型参数：语音模型由会话从设置里的语音配置读，页面不需要知道
+     * 端点和密钥，也就不会出现"传进来的选择已经过期"这种问题。</p>
      */
     @NonNull
-    public static Intent intent(@NonNull Context context, @NonNull AiVoiceSettings settings,
-                                @NonNull String platformId) {
-        return new Intent(context, AiCallActivity.class)
-                .putExtra(EXTRA_MODE, settings.mode().name())
-                .putExtra(EXTRA_PLATFORM_ID, platformId)
-                .putExtra(EXTRA_TRANSCRIPTION_MODEL, settings.transcriptionModel())
-                .putExtra(EXTRA_SYNTHESIS_VOICE, settings.synthesisVoice())
-                .putExtra(EXTRA_REALTIME_MODEL, settings.realtimeModel())
-                .putExtra(EXTRA_SILENCE_TIMEOUT, settings.silenceTimeoutMillis());
+    public static Intent intent(@NonNull Context context) {
+        return new Intent(context, AiCallActivity.class);
     }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         theme = AiTheme.of(this);
-        settings = readSettings(getIntent());
-        platformId = readPlatformId(getIntent());
         if (savedInstanceState != null) {
             speakerOn = savedInstanceState.getBoolean(STATE_SPEAKER, true);
         }
@@ -224,8 +201,7 @@ public final class AiCallActivity extends AppCompatActivity {
         titles.addView(title, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         modeLabel = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        shownModeRes = modeLabelRes(settings.mode());
-        modeLabel.setText(shownModeRes);
+        modeLabel.setText(R.string.ai_call_mode_realtime);
         modeLabel.setSingleLine(true);
         modeLabel.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
@@ -341,11 +317,6 @@ public final class AiCallActivity extends AppCompatActivity {
             return;
         }
         AiVoiceSnapshot.State state = snapshot.state();
-        @StringRes int labelRes = modeLabelRes(snapshot.mode());
-        if (labelRes != shownModeRes) {
-            shownModeRes = labelRes;
-            modeLabel.setText(labelRes);
-        }
 
         orb.setPhase(phaseOf(state));
         orb.setLevel(state == AiVoiceSnapshot.State.LISTENING ? snapshot.inputLevel() : 0f);
@@ -453,7 +424,7 @@ public final class AiCallActivity extends AppCompatActivity {
     private void retryCall() {
         viewModel.hangUp();
         setActionMode(ACTION_NONE);
-        viewModel.start(settings, platformId);
+        viewModel.start();
     }
 
     private void setControlsLive(boolean live) {
@@ -534,7 +505,7 @@ public final class AiCallActivity extends AppCompatActivity {
 
     private void startCall() {
         denied = false;
-        viewModel.start(settings, platformId);
+        viewModel.start();
         viewModel.setSpeakerphone(speakerOn);
         setControlsLive(true);
     }
@@ -594,18 +565,6 @@ public final class AiCallActivity extends AppCompatActivity {
         return failure == null ? null : getString(AiMessages.failure(failure.kind()));
     }
 
-    /**
-     * 模式显示名属于界面层（领域不写中文）。等设置页与对话页的徽标也要用同一份时，
-     * 再搬进 {@code AiMessages} 与其它枚举对齐，这里先私有。
-     */
-    @StringRes
-    private static int modeLabelRes(@NonNull AiMode mode) {
-        return switch (mode) {
-            case OMNI -> R.string.ai_call_mode_omni;
-            case CASCADED -> R.string.ai_call_mode_cascaded;
-        };
-    }
-
     @NonNull
     private LinearLayout.LayoutParams fullWidth(int topMarginPx) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -657,25 +616,5 @@ public final class AiCallActivity extends AppCompatActivity {
                 theme.dp(CONTROL_SIZE), theme.dp(CONTROL_SIZE));
         params.setMarginStart(theme.dp(gapDp));
         row.addView(button, params);
-    }
-
-    @NonNull
-    private static AiVoiceSettings readSettings(@Nullable Intent intent) {
-        if (intent == null) {
-            return AiVoiceSettings.defaults();
-        }
-        return new AiVoiceSettings(
-                AiMode.fromName(intent.getStringExtra(EXTRA_MODE)),
-                intent.getStringExtra(EXTRA_TRANSCRIPTION_MODEL),
-                intent.getStringExtra(EXTRA_SYNTHESIS_VOICE),
-                intent.getStringExtra(EXTRA_REALTIME_MODEL),
-                intent.getIntExtra(EXTRA_SILENCE_TIMEOUT, AiVoiceSettings.DEFAULT_SILENCE_TIMEOUT_MILLIS));
-    }
-
-    @NonNull
-    private static String readPlatformId(@Nullable Intent intent) {
-        String id = intent == null ? null : intent.getStringExtra(EXTRA_PLATFORM_ID);
-        // 空串比 null 诚实：让会话按"没有平台"失败，而不是让页面替它挑一个。
-        return id == null ? "" : id;
     }
 }

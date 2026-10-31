@@ -12,7 +12,7 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
@@ -22,6 +22,8 @@ import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 
 import org.json.JSONException;
 import org.junit.Test;
@@ -48,18 +50,23 @@ public class AiJsonTest {
                 List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false),
                         reasoning, AiModel.manual("mine")),
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
-        AiSettings settings = new AiSettings(List.of(platform), new AiSelection("custom-1a2b3c4d", "mine"),
-                new AiChatPreferences("sys \"quoted\"\nline", false),
-                AiVoiceSettings.defaults());
+        AiSettings settings = new AiSettings(List.of(platform), AiInteractionMode.VOICE,
+                new AiSelection("custom-1a2b3c4d", "mine"),
+                new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.QWEN, "sk-voice-secret")),
+                new AiChatPreferences("sys \"quoted\"\nline", false));
 
         String text = settingsJson.encode(settings);
         AiSettings decoded = settingsJson.decode(text);
 
         assertFalse("keys never reach the settings document", text.contains("sk-secret-value"));
+        assertFalse("voice keys never reach the settings document", text.contains("sk-voice-secret"));
         AiPlatformConfig round = decoded.platforms().get(0);
         assertEquals("", round.apiKey());
         assertEquals(platform.withoutKey(), round);
-        assertEquals(settings.selection(), decoded.selection());
+        assertEquals(settings.mode(), decoded.mode());
+        assertEquals(settings.textSelection(), decoded.textSelection());
+        assertEquals(settings.voice().model(), decoded.voice().model());
+        assertEquals("语音 Key 只走加密存储，文档解出来是空的", "", decoded.voice().apiKey());
         assertEquals(settings.preferences(), decoded.preferences());
         assertEquals("sys \"quoted\"\nline", decoded.preferences().systemPrompt());
         assertEquals(failed, round.speedResults().get("deepseek-reasoner"));
@@ -82,7 +89,9 @@ public class AiJsonTest {
                  ]}
                 """);
 
-        assertNull("a selection without a model is no selection", decoded.selection());
+        assertNull("a selection without a model is no selection", decoded.textSelection());
+        assertEquals("没有语音配置时回到默认预设", AiVoiceModel.CHATGPT, decoded.voice().model());
+        assertFalse(decoded.voiceReady());
         assertEquals("preferences 不是对象时整段取默认值", AiChatPreferences.DEFAULT, decoded.preferences());
         assertEquals(1, decoded.platforms().size());
         AiPlatformConfig platform = decoded.platforms().get(0);
@@ -91,6 +100,16 @@ public class AiJsonTest {
         assertEquals(List.of("ok"), platform.models().stream().map(AiModel::id).toList());
         assertEquals(1, platform.speedResults().size());
         assertEquals(AiSpeedResult.Status.OK, platform.speedResults().get("ok").status());
+    }
+
+    @Test
+    public void unknownVoiceModelFallsBackToTheDefaultPreset() throws Exception {
+        AiSettings decoded = settingsJson.decode("""
+                {"v":3,"voice":{"model":"some-other-vendor"}}
+                """);
+
+        assertEquals(AiVoiceModel.CHATGPT, decoded.voice().model());
+        assertFalse("未知预设不该被当成已配置", decoded.voiceReady());
     }
 
     @Test

@@ -216,7 +216,7 @@ public final class AiChatSession {
             return;
         }
         snapshot = settings.load();
-        Optional<AiActiveModel> active = snapshot.activeModel();
+        Optional<AiActiveModel> active = snapshot.textModel();
         if (active.isEmpty()) {
             publish();
             return;
@@ -246,7 +246,7 @@ public final class AiChatSession {
             return;
         }
         snapshot = settings.load();
-        Optional<AiActiveModel> active = snapshot.activeModel();
+        Optional<AiActiveModel> active = snapshot.textModel();
         if (active.isEmpty()) {
             publish();
             return;
@@ -498,12 +498,13 @@ public final class AiChatSession {
     }
 
     private void publish() {
-        Optional<AiActiveModel> active = snapshot.activeModel();
+        Optional<AiActiveModel> active = snapshot.textModel();
         AiChatState.Readiness readiness = active.isPresent()
                 ? AiChatState.Readiness.READY
                 : snapshot.hasConfiguredPlatform() ? AiChatState.Readiness.NO_MODEL : AiChatState.Readiness.NO_PLATFORM;
         AiChatState next = new AiChatState(started, conversation, activeToken != 0, readiness,
-                active.orElse(null), snapshot.preferences(), snapshot.voice(), storageFailed, historyRevision);
+                active.orElse(null), snapshot.preferences(), snapshot.voiceReady(),
+                storageFailed, historyRevision);
         state = next;
         for (Observer observer : observers) {
             notifyOne(observer, next);

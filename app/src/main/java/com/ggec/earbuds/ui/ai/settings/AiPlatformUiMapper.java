@@ -36,7 +36,7 @@ public final class AiPlatformUiMapper {
         if (platform == null) {
             return AiPlatformUiState.empty();
         }
-        AiSelection selection = settings.selection();
+        AiSelection selection = settings.textSelection();
         boolean selectedHere = selection != null && platform.id().equals(selection.platformId());
         String selectedModelId = selectedHere ? selection.modelId() : null;
 
@@ -96,8 +96,10 @@ public final class AiPlatformUiMapper {
                                            @NonNull Set<String> testing,
                                            boolean speedRunning,
                                            @NonNull String query) {
-        List<AiPlatformUiState.Row> all = new ArrayList<>(platform.models().size());
-        for (AiModel model : platform.models()) {
+        // 平台页只服务文本对话：实时模型接不上 Chat Completions，列出来只会让人选中后收到 404。
+        List<AiModel> candidates = platform.chatModels();
+        List<AiPlatformUiState.Row> all = new ArrayList<>(candidates.size());
+        for (AiModel model : candidates) {
             AiSpeedResult speed = platform.speedResults().get(model.id());
             all.add(new AiPlatformUiState.Row(
                     model.id(), model.name(), model.id().equals(selectedModelId),

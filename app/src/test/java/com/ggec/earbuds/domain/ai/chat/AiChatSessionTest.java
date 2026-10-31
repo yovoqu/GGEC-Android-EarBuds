@@ -145,7 +145,7 @@ public class AiChatSessionTest {
 
     @Test
     public void sendingWithoutAUsableModelDoesNothing() {
-        settings.update(s -> s.withSelection(null));
+        settings.update(s -> s.withTextSelection(null));
         session.start();
 
         session.send("hello");

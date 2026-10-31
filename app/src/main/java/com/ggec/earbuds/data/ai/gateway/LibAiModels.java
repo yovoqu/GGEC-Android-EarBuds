@@ -2,11 +2,9 @@ package com.ggec.earbuds.data.ai.gateway;
 
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
-import com.yovo.lib_ai.models.YoModelCapability;
-import com.yovo.lib_ai.models.YoModelCatalog;
-import com.yovo.lib_ai.models.YoModelDescriptor;
-import com.yovo.lib_ai.models.YoModelFeature;
 import com.yovo.lib_ai.models.YoModelInfo;
+import com.yovo.lib_ai.models.spec.YoModelSpec;
+import com.yovo.lib_ai.models.spec.YoModality;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,27 +14,32 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 平台的模型列表混着向量、图片、语音模型，对话只要能聊天的那部分。
- * 排序：发布时间新的在前，没有发布时间的排在最后，再按名字。
+ * 平台的模型列表混着向量、图片、语音模型。APP 只留能走对话协议的：
+ * 平台页是文本模式的配置页，实时模型由 APP 预设（{@code AiVoiceModel}），
+ * 不需要从平台列表里捞出来，也不该混进文本模型的计数里。
+ *
+ * <p>模型清单只有两个来源：平台 {@code /models} 的真实返回，或用户手填的 id。
+ * 这里不补任何"厂商默认模型"——平台没返回的模型，APP 不该替它出现。</p>
+ *
+ * <p>类别、模态、限额、推理全部来自 SDK 的 {@link YoModelSpec}：APP 不再按 id 猜能力，
+ * 只把规格翻译成界面需要的四个字段。排序：发布时间新的在前，没有发布时间的排在最后，再按名字。</p>
  */
 final class LibAiModels {
-
-    private static final YoModelCatalog CATALOG = YoModelCatalog.standard();
 
     private LibAiModels() {
     }
 
-    static List<AiModel> chatModels(List<YoModelInfo> infos) {
-        List<YoModelInfo> chat = new ArrayList<>();
+    static List<AiModel> models(List<YoModelInfo> infos) {
+        List<YoModelInfo> selectable = new ArrayList<>();
         for (YoModelInfo info : infos) {
-            if (info.kind().chatCapable()) {
-                chat.add(info);
+            if (info.spec().category().conversational()) {
+                selectable.add(info);
             }
         }
-        chat.sort(Comparator.comparingLong(LibAiModels::recency).reversed()
+        selectable.sort(Comparator.comparingLong(LibAiModels::recency).reversed()
                 .thenComparing(info -> info.displayName().toLowerCase(Locale.ROOT)));
-        List<AiModel> models = new ArrayList<>();
-        for (YoModelInfo info : chat) {
+        List<AiModel> models = new ArrayList<>(selectable.size());
+        for (YoModelInfo info : selectable) {
             models.add(toModel(info));
         }
         return models;
@@ -47,34 +50,15 @@ final class LibAiModels {
     }
 
     private static AiModel toModel(YoModelInfo info) {
-        Set<AiModelFeature> features = providerFeatures(info);
-        YoModelDescriptor known = CATALOG.describe(info.id());
-        // 有明确出处（内置表 / 用户手写）的能力优先：那是按模型家族声明的，
-        // 比"平台自己报的 feature 位"更可靠——同一份 id 在网关镜像上经常少报一位。
-        // 只有推断结果时才回退到平台报的 feature，免得把平台知道的事也推断掉。
-        if (known.source().trusted()) {
-            features = declaredFeatures(known);
-        }
-        return new AiModel(info.id(), info.displayName(), info.contextWindow(), info.maxOutputTokens(),
-                features, false);
-    }
-
-    private static Set<AiModelFeature> providerFeatures(YoModelInfo info) {
+        YoModelSpec spec = info.spec();
         Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
-        for (YoModelFeature feature : info.features()) {
-            features.add(feature == YoModelFeature.VISION ? AiModelFeature.VISION : AiModelFeature.REASONING);
-        }
-        return features;
-    }
-
-    private static Set<AiModelFeature> declaredFeatures(YoModelDescriptor descriptor) {
-        Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
-        if (descriptor.supports(YoModelCapability.CHAT_VISION)) {
+        if (spec.accepts(YoModality.IMAGE) || spec.accepts(YoModality.VIDEO)) {
             features.add(AiModelFeature.VISION);
         }
-        if (descriptor.supports(YoModelCapability.REASONING)) {
+        if (spec.reasoning().reasons()) {
             features.add(AiModelFeature.REASONING);
         }
-        return features;
+        return new AiModel(info.id(), info.displayName(), spec.limits().contextWindow(),
+                spec.limits().maxOutputTokens(), features, false);
     }
 }

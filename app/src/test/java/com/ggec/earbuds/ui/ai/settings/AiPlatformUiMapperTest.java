@@ -6,13 +6,14 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 
 import org.junit.Test;
 
@@ -216,6 +217,20 @@ public final class AiPlatformUiMapperTest {
         assertEquals(2, AiPlatformUiMapper.filter(List.of(upper, lower), "").size());
     }
 
+    // ---- 模式过滤 ----
+
+    @Test
+    public void textModeListsChatModelsOnly() {
+        AiModel chat = model("deepseek-chat", null);
+        AiModel realtime = new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview", null, null,
+                Set.of(com.ggec.earbuds.domain.ai.model.AiModelFeature.REALTIME_AUDIO), false);
+        AiPlatformConfig config = config("sk-abc", List.of(chat, realtime));
+
+        AiPlatformUiState.Models models = mapper.map(settings(config, "deepseek-chat"), config, null, Set.of(), false, false, "").models();
+
+        assertEquals(List.of("deepseek-chat"), models.rows().stream().map(AiPlatformUiState.Row::id).toList());
+    }
+
     // ---- 高级 ----
 
     @Test
@@ -260,8 +275,8 @@ public final class AiPlatformUiMapperTest {
     }
 
     private static AiSettings settings(AiPlatformConfig config, String modelId) {
-        return new AiSettings(List.of(config),
+        return new AiSettings(List.of(config), AiInteractionMode.TEXT,
                 modelId == null ? null : new AiSelection(config.id(), modelId),
-                AiChatPreferences.DEFAULT, AiVoiceSettings.defaults());
+                AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
     }
 }

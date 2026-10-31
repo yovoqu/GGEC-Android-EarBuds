@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,6 +53,23 @@ public record AiPlatformConfig(
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * 这个平台上可用于文本对话的模型。
+     *
+     * <p>实时模型排除在外：它们走不了 Chat Completions，列出来只会让人选中后收到 404。
+     * 语音模型也不从这里选——那是 APP 预设的一张独立表（{@code AiVoiceModel}），
+     * 与平台上的模型列表无关。</p>
+     */
+    public List<AiModel> chatModels() {
+        List<AiModel> filtered = new ArrayList<>(models.size());
+        for (AiModel model : models) {
+            if (!model.realtime()) {
+                filtered.add(model);
+            }
+        }
+        return filtered;
     }
 
     /**
