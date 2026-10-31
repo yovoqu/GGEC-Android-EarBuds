@@ -65,8 +65,15 @@ public final class AiSettingsActivity extends AppCompatActivity {
     private static final int SEGMENT_VOICE = 1;
     /** 语音 Key 的长度上限：只防手滑粘进一整段报文，不做格式校验。 */
     private static final int MAX_VOICE_KEY_LENGTH = 256;
-    /** 语音卡里的行序：模型在下拉里选，Key 在对话框里填。 */
+    /** 接口地址的长度上限，和平台地址同一档。 */
+    private static final int MAX_VOICE_URL_LENGTH = 256;
+    /** 通义只画厂商和 Key。ChatGPT 在中间插入地址、拉取、实时模型和方言。 */
     private static final int ROW_VOICE_MODEL = 0;
+    private static final int ROW_VOICE_URL = 1;
+    private static final int ROW_VOICE_FETCH = 2;
+    private static final int ROW_VOICE_REALTIME = 3;
+    private static final int ROW_VOICE_DIALECT = 4;
+    private static final int ROW_VOICE_KEY_CHATGPT = 5;
     private static final int ROW_VOICE_KEY = 1;
 
     private AiTheme theme;
@@ -239,31 +246,72 @@ public final class AiSettingsActivity extends AppCompatActivity {
     }
 
     /**
-     * 语音模式的模型卡：选哪家预设、这家的 Key 填没填。
-     *
-     * <p>它不是文本身份卡的变体：文本卡背后是"平台 + 模型列表"，这里背后是 APP 预设的
-     * 固定几项（{@code AiVoiceModel}），所以没有平台名、没有模型数量，也没有"添加平台"。</p>
+     * 语音模式的模型卡。厂商是预设；选中 ChatGPT 时再画地址、拉取、实时模型和方言。
+     * 通义仍只有厂商和 Key。
      */
     private void addVoiceRows(@NonNull AiSettingsUiState.Voice voice) {
-        final YoSelect select = newVoiceSelect(voice);
-        YoList list = newList(position -> {
-            // 行本身也接一下：点在标题上，和点右侧下拉按钮是同一件事。
-            if (position == ROW_VOICE_MODEL) {
-                select.toggle();
-            } else if (position == ROW_VOICE_KEY) {
-                editVoiceKey();
-            }
-        });
+        final YoSelect vendor = newVoiceSelect(voice);
+        final YoSelect realtime = voice.chatGpt() && !voice.realtimeModels().isEmpty()
+                ? newRealtimeSelect(voice) : null;
+        final YoSelect dialect = voice.chatGpt() ? newDialectSelect(voice) : null;
+        YoList list = newList(position -> onVoiceRow(voice, vendor, realtime, dialect, position));
         list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_voice_model)),
-                ListSuffixSpec.custom(select.getView()));
-        // 没填 Key 时用品牌色：这一行是页面上唯一"还差一步"的地方，值得一个强调。
+                ListSuffixSpec.custom(vendor.getView()));
+        if (voice.chatGpt()) {
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
+                    ListTextSpec.of(getString(R.string.ai_settings_voice_url)),
+                    ListSuffixSpec.textAndArrow(voice.baseUrl()));
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
+                    ListTextSpec.of(getString(R.string.ai_settings_voice_fetch)),
+                    voice.fetching()
+                            ? ListSuffixSpec.text(getString(R.string.ai_settings_fetching))
+                            : ListSuffixSpec.textAndArrow(getString(R.string.ai_settings_voice_fetch_action)));
+            if (realtime != null) {
+                list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
+                        ListTextSpec.of(getString(R.string.ai_settings_voice_realtime_model)),
+                        ListSuffixSpec.custom(realtime.getView()));
+            } else {
+                list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
+                        ListTextSpec.of(getString(R.string.ai_settings_voice_realtime_model),
+                                getString(R.string.ai_settings_voice_models_empty)),
+                        ListSuffixSpec.text(voice.realtimeModelId()));
+            }
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_chat, theme.text2),
+                    ListTextSpec.of(getString(R.string.ai_settings_voice_dialect)),
+                    ListSuffixSpec.custom(dialect.getView()));
+        }
         list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_key, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_voice_key)),
                 voice.configured()
                         ? ListSuffixSpec.text(getString(R.string.ai_settings_voice_key_set))
                         : ListSuffixSpec.text(getString(R.string.ai_settings_voice_key_empty), theme.brand));
         addCard(list, AiTheme.SPACE_L);
+    }
+
+    private void onVoiceRow(@NonNull AiSettingsUiState.Voice voice, @NonNull YoSelect vendor,
+                            @Nullable YoSelect realtime, @Nullable YoSelect dialect, int position) {
+        if (position == ROW_VOICE_MODEL) {
+            vendor.toggle();
+            return;
+        }
+        if (!voice.chatGpt()) {
+            if (position == ROW_VOICE_KEY) {
+                editVoiceKey();
+            }
+            return;
+        }
+        if (position == ROW_VOICE_URL) {
+            editVoiceUrl();
+        } else if (position == ROW_VOICE_FETCH || (position == ROW_VOICE_REALTIME && realtime == null)) {
+            viewModel.fetchChatGptModels();
+        } else if (position == ROW_VOICE_REALTIME && realtime != null) {
+            realtime.toggle();
+        } else if (position == ROW_VOICE_DIALECT && dialect != null) {
+            dialect.toggle();
+        } else if (position == ROW_VOICE_KEY_CHATGPT) {
+            editVoiceKey();
+        }
     }
 
     /**
@@ -294,6 +342,54 @@ public final class AiSettingsActivity extends AppCompatActivity {
             builder.addOption(i, option.name());
             if (option.current()) {
                 builder.setSelected(i);
+            }
+        }
+        YoSelect select = builder.build();
+        selects.add(select);
+        return select;
+    }
+
+    @NonNull
+    private YoSelect newRealtimeSelect(@NonNull AiSettingsUiState.Voice voice) {
+        YoSelect.Builder builder = YoSelect.create(this)
+                .setControlSize(YoSelect.ControlSize.SMALL)
+                .setBackgroundColor(theme.fill)
+                .setValue(voice.realtimeModelId())
+                .setMenuAlign(YoSelect.MenuAlignType.END)
+                .setOnSelectListener((index, text, itemId) -> {
+                    if (itemId >= 0 && itemId < voice.realtimeModels().size()) {
+                        viewModel.selectChatGptModel(voice.realtimeModels().get(itemId));
+                    }
+                });
+        for (int i = 0; i < voice.realtimeModels().size(); i++) {
+            String id = voice.realtimeModels().get(i);
+            builder.addOption(i, id);
+            if (id.equals(voice.realtimeModelId())) {
+                builder.setSelected(i);
+            }
+        }
+        YoSelect select = builder.build();
+        selects.add(select);
+        return select;
+    }
+
+    @NonNull
+    private YoSelect newDialectSelect(@NonNull AiSettingsUiState.Voice voice) {
+        YoSelect.Builder builder = YoSelect.create(this)
+                .setControlSize(YoSelect.ControlSize.SMALL)
+                .setBackgroundColor(theme.fill)
+                .setMenuAlign(YoSelect.MenuAlignType.END)
+                .setOnSelectListener((index, text, itemId) -> {
+                    if (itemId >= 0 && itemId < voice.dialects().size()) {
+                        viewModel.selectChatGptDialect(voice.dialects().get(itemId).id());
+                    }
+                });
+        for (int i = 0; i < voice.dialects().size(); i++) {
+            AiSettingsUiState.DialectOption option = voice.dialects().get(i);
+            builder.addOption(i, getString(option.label()));
+            if (option.current()) {
+                builder.setSelected(i);
+                builder.setValue(getString(option.label()));
             }
         }
         YoSelect select = builder.build();
@@ -485,6 +581,31 @@ public final class AiSettingsActivity extends AppCompatActivity {
             dialog.setActions(cancel, save);
         }
         dialog.show();
+    }
+
+    /** 改 ChatGPT 的接口地址。清空并保存会回到官方主机。 */
+    private void editVoiceUrl() {
+        if (current == null) {
+            return;
+        }
+        AiSettingsUiState.Voice voice = current.voice();
+        YoTextInput field = YoTextInput.create(this)
+                .setText(voice.baseUrl())
+                .setPlaceholder(getString(R.string.ai_settings_voice_url_hint))
+                .setMaxLength(MAX_VOICE_URL_LENGTH)
+                .build();
+        YoDialog.create(this)
+                .kind(YoDialog.Kind.INPUT)
+                .hosted(field)
+                .setButtonDirection(YoDialog.ButtonDirection.HORIZONTAL)
+                .setTitle(getString(R.string.ai_settings_voice_url_dialog_title))
+                .setActions(
+                        YoDialog.Action.negative(getString(R.string.ai_cancel), null),
+                        YoDialog.Action.neutral(getString(R.string.ai_settings_voice_url_reset),
+                                () -> viewModel.saveVoiceBaseUrl("")),
+                        YoDialog.Action.positive(getString(R.string.ai_settings_save),
+                                () -> viewModel.saveVoiceBaseUrl(String.valueOf(field.getText()))))
+                .show();
     }
 
     private void showAddPlatform() {

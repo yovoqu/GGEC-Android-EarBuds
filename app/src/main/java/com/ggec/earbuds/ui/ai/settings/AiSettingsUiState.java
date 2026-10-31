@@ -17,7 +17,7 @@ import java.util.List;
  * @param mode     当前分段选中的接入形态
  * @param modeHint 分段下方那行说明，告诉用户这一模式接的是哪类模型
  * @param identity 文本模式的身份卡；语音模式不画它
- * @param voice    语音模式的模型卡：预设模型 + 是否填了 Key
+ * @param voice    语音模式的模型卡：厂商、ChatGPT 的地址与实时模型、方言、Key 状态
  */
 public record AiSettingsUiState(
         boolean loaded,
@@ -55,18 +55,37 @@ public record AiSettingsUiState(
     }
 
     /**
-     * 语音模式的模型卡。语音模型是 APP 预设的固定几项，界面只画下拉与 Key 状态，
-     * 不画平台、也不画模型数量。
+     * 语音模式的模型卡。厂商仍是预设；ChatGPT 这一家再展示地址、拉到的实时模型和方言。
      *
-     * @param configured 当前模型的 Key 是否已填；没填时通话入口不可用
-     * @param options    下拉里的候选，顺序即预设顺序
+     * @param configured       当前厂商的 Key 是否已填；没填时通话入口不可用
+     * @param options          厂商下拉，顺序即预设顺序
+     * @param chatGpt          当前厂商是 ChatGPT 时才画地址、模型和方言
+     * @param baseUrl          真正会去连的主机，没改过时是官方地址
+     * @param realtimeModelId  真正会去连的实时模型；还没拉列表时是厂商预设
+     * @param realtimeModels   已拉取的实时模型 id，空表示还没拉过
+     * @param fetching         正在拉模型列表
      */
     public record Voice(@NonNull String modelId, @NonNull String modelName, boolean configured,
-                        @NonNull List<VoiceOption> options) {
+                        @NonNull List<VoiceOption> options, boolean chatGpt,
+                        @NonNull String baseUrl, @NonNull String realtimeModelId,
+                        @NonNull List<String> realtimeModels, @NonNull String dialectId,
+                        @NonNull List<DialectOption> dialects, boolean fetching) {
 
         public Voice {
             options = List.copyOf(options);
+            realtimeModels = List.copyOf(realtimeModels);
+            dialects = List.copyOf(dialects);
         }
+
+        @NonNull
+        public Voice fetching(boolean value) {
+            return new Voice(modelId, modelName, configured, options, chatGpt, baseUrl,
+                    realtimeModelId, realtimeModels, dialectId, dialects, value);
+        }
+    }
+
+    /** 方言下拉的一项。文案是资源 id，映射层不读 Context。 */
+    public record DialectOption(@NonNull String id, @StringRes int label, boolean current) {
     }
 
     /**
@@ -92,6 +111,7 @@ public record AiSettingsUiState(
     public static AiSettingsUiState empty() {
         return new AiSettingsUiState(false, AiInteractionMode.defaultMode(), AiText.of(0),
                 List.of(), new Identity(null, null, 0, 0),
-                new Voice("", "", false, List.of()), new Style("", AiText.of(0)));
+                new Voice("", "", false, List.of(), false, "", "", List.of(), "", List.of(), false),
+                new Style("", AiText.of(0)));
     }
 }

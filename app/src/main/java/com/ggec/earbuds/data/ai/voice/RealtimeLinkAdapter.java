@@ -5,59 +5,41 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
 import com.yovo.lib_ai.error.YoAiErrorKind;
-import com.yovo.lib_ai.realtime.RealtimeWebSocketLink;
+import com.yovo.lib_ai.realtime.YoRealtime;
 import com.yovo.lib_ai.realtime.YoRealtimeConfig;
-import com.yovo.lib_ai.realtime.YoRealtimeEvent;
-import com.yovo.lib_ai.realtime.YoRealtimeLink;
-import com.yovo.lib_ai.realtime.YoRealtimeListener;
+import com.yovo.lib_ai.realtime.YoRealtimeDialect;
+import com.yovo.lib_ai.realtime.YoRealtimeInput;
+import com.yovo.lib_ai.realtime.YoRealtimeOutput;
 
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
- * 把 lib_ai 的 {@link YoRealtimeLink} 包成领域端口 {@link AiRealtimeLink}。
+ * 把 {@link YoRealtime} 的输入输出译成领域端口。
  *
- * <p><b>为什么需要这一层：</b>领域只知道"打开一条双向语音链路、送音频、取消回答"，
- * 不该知道 Realtime 的帧名、也不该依赖 OkHttp。lib_ai 那边的事件是有字段的事件对象，
- * 领域这边是七个语义化回调；两边的形状不一样，中间必须有一次翻译，而翻译是要被测试和替换的
- * （单测里换掉的是端口那一侧，不是 lib_ai 那一侧）。</p>
+ * <p>这一层只做改名：地址、密钥、模型和方言进 {@link YoRealtimeConfig}，
+ * {@link AiRealtimeInput} 进 {@link YoRealtimeInput}，{@link YoRealtimeOutput} 出
+ * {@link AiRealtimeOutput}。传输、方言 JSON 和打断截断不在这里组装。</p>
  *
- * <p><b>为什么每次 open 都新建一条 lib_ai 链路：</b>那条链路是一次性的（open 一次、
- * close 之后不能重开），而一次通话正好对应一条。复用实例会在第二通电话里直接抛
- * {@code IllegalStateException}，而这种 bug 只有用户打第二通电话才会出现。</p>
- *
- * <p><b>为什么 close 之后不再回调：</b>端口没有"已关闭"这个回调。用户挂断时我们主动 close，
- * 如果这时还把 lib_ai 的 {@code CLOSED} 折成 {@code onFailure}，状态机就会在 ENDED 之后再报一次
- * 失败——页面会从"已结束"跳成"出错了"。所以本地 close 之后一律静默；反过来，
- * 没经过我们 close 的 CLOSED 是真断线，必须报成失败（{@code NETWORK}），不能静默。</p>
+ * <p>本地 {@link #close()} 之后不再把 {@link YoRealtimeOutput.Closed} 报成失败。
+ * 没经过这次 close 的 Closed 是对端断开，报成 {@code NETWORK}。</p>
  */
 public final class RealtimeLinkAdapter implements AiRealtimeLink {
 
     private static final int MIN_REDACTED_KEY = 8;
     private static final int MAX_MESSAGE = 300;
 
-    private final Supplier<YoRealtimeLink> links;
-
     @Nullable
-    private volatile YoRealtimeLink current;
+    private volatile YoRealtime.Connection current;
+    private volatile int outputSampleRateHz = YoRealtimeConfig.DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
     private volatile boolean closed;
     private volatile boolean failureReported;
 
-    /**
-     * 生产用构造：每次 open 新建一条 {@code RealtimeWebSocketLink}。
-     */
     public RealtimeLinkAdapter() {
-        this(RealtimeWebSocketLink::new);
-    }
-
-    /**
-     * @param links 链路工厂。真实通话用 {@link RealtimeWebSocketLink::new}；
-     *              留这个构造是为了在没有网络的环境里演练本类自己的翻译逻辑。
-     */
-    RealtimeLinkAdapter(@NonNull Supplier<YoRealtimeLink> links) {
-        this.links = Objects.requireNonNull(links, "links");
     }
 
     @Override
@@ -65,14 +47,14 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(listener, "listener");
 
-        // 同一个适配器被复用时（理论上每通电话一个，这里只是防御）：先收掉上一条。
-        YoRealtimeLink stale = current;
+        YoRealtime.Connection stale = current;
         if (stale != null) {
             bestEffort(stale::close);
             current = null;
         }
         closed = false;
         failureReported = false;
+        outputSampleRateHz = config.outputSampleRateHz();
 
         YoRealtimeConfig realtime;
         try {
@@ -80,101 +62,85 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .model(config.model())
+                    .dialect(wireDialect(config.dialect()))
                     .inputSampleRateHz(config.inputSampleRateHz())
                     .outputSampleRateHz(config.outputSampleRateHz())
                     .build();
         } catch (IllegalArgumentException unusable) {
-            // 地址或密钥不合法：端口没有返回值，只能折成一次失败回调。
             failureReported = true;
-            listener.onFailure(new AiFailure(AiFailureKind.BAD_REQUEST,
-                    redact(unusable.getMessage(), config.apiKey()), unusable));
+            emit(listener, new AiRealtimeOutput.Failed(new AiFailure(AiFailureKind.BAD_REQUEST,
+                    redact(unusable.getMessage(), config.apiKey()), unusable)));
             return;
         }
 
-        YoRealtimeLink link = links.get();
-        current = link;
         try {
-            link.open(realtime, new YoRealtimeListener() {
-                @Override
-                public void onEvent(@NonNull YoRealtimeEvent event) {
-                    deliver(event, listener, config.apiKey());
-                }
-            });
+            current = YoRealtime.open(realtime, output -> deliver(output, listener, config.apiKey()));
         } catch (RuntimeException broken) {
-            // lib_ai 的 open 在参数非法、已关闭时会抛：折成失败，交给状态机统一收尾。
             failOnce(listener, new AiFailure(AiFailureKind.UNKNOWN,
                     redact(broken.getMessage(), config.apiKey()), broken));
         }
     }
 
     @Override
-    public void appendAudio(@NonNull byte[] pcm16) {
-        YoRealtimeLink link = current;
+    public void send(@NonNull AiRealtimeInput input) {
+        YoRealtime.Connection link = current;
         if (closed || link == null) {
             return;
         }
         try {
-            link.appendAudio(pcm16);
+            link.send(toSdk(input));
         } catch (RuntimeException lost) {
-            // 上行失败在 lib_ai 内部已经会折成 ERROR 事件；这里再抛只会打断采集线程。
-        }
-    }
-
-    @Override
-    public void cancelResponse() {
-        YoRealtimeLink link = current;
-        if (closed || link == null) {
-            return;
-        }
-        try {
-            link.cancelResponse();
-        } catch (RuntimeException lost) {
-            // 同上：取消失败由链路的 ERROR 事件负责上报。
+            // 上行失败由 SDK 的 Failed 输出上报。
         }
     }
 
     @Override
     public void close() {
-        // 幂等：状态机可能从挂断、失败、页面销毁三条路径同时走到这里。
         closed = true;
-        YoRealtimeLink link = current;
+        YoRealtime.Connection link = current;
         current = null;
         if (link != null) {
             bestEffort(link::close);
         }
     }
 
-    // ---------------------------------------------------------------- 事件翻译
+    @NonNull
+    private static YoRealtimeInput toSdk(@NonNull AiRealtimeInput input) {
+        return switch (input) {
+            case AiRealtimeInput.Audio audio -> new YoRealtimeInput.Audio(audio.pcm16());
+            case AiRealtimeInput.Cancel ignored -> new YoRealtimeInput.Cancel();
+        };
+    }
 
-    private void deliver(@NonNull YoRealtimeEvent event, Listener listener, String apiKey) {
+    private void deliver(@NonNull YoRealtimeOutput output, Listener listener, String apiKey) {
         if (closed) {
             return;
         }
-        switch (event.type()) {
-            case OPENED -> listener.onOpened();
-            case INPUT_SPEECH_STARTED -> listener.onUserSpeechStarted();
-            case INPUT_SPEECH_STOPPED -> listener.onUserSpeechStopped();
-            case ASSISTANT_TEXT_DELTA -> {
-                String delta = event.text();
-                if (delta != null && !delta.isEmpty()) {
-                    listener.onAssistantText(delta);
+        switch (output) {
+            case YoRealtimeOutput.Opened ignored -> emit(listener, new AiRealtimeOutput.Opened());
+            case YoRealtimeOutput.SpeechStarted ignored -> emit(listener, new AiRealtimeOutput.UserSpeechStarted());
+            case YoRealtimeOutput.SpeechStopped ignored -> emit(listener, new AiRealtimeOutput.UserSpeechStopped());
+            case YoRealtimeOutput.AssistantText text -> {
+                if (!text.delta().isEmpty()) {
+                    emit(listener, new AiRealtimeOutput.AssistantText(text.delta()));
                 }
             }
-            case ASSISTANT_AUDIO_CHUNK -> {
-                byte[] pcm = event.audioPcm16();
-                if (pcm != null && pcm.length > 0) {
-                    listener.onAssistantAudio(pcm);
+            case YoRealtimeOutput.AssistantAudio audio -> {
+                if (audio.pcm16().length > 0) {
+                    emit(listener, new AiRealtimeOutput.AssistantAudio(audio.pcm16(), outputSampleRateHz));
                 }
             }
-            case RESPONSE_DONE -> listener.onResponseDone();
-            case ERROR -> failOnce(listener, new AiFailure(
-                    kindOf(event.errorKind()),
-                    redact(event.message(), apiKey)));
-            case CLOSED -> {
-                // 我们自己 close 的情况在上面已经被 closed 挡掉了；走到这里说明是被动断开，
-                // 而且 lib_ai 没给过 ERROR（例如对端直接关掉，连 close 原因都没有）。
-                failOnce(listener, new AiFailure(AiFailureKind.NETWORK, "实时链路已经断开。"));
+            case YoRealtimeOutput.ResponseDone ignored -> emit(listener, new AiRealtimeOutput.ResponseDone());
+            case YoRealtimeOutput.UserTranscript ignored -> {
+                // 通话页还没有转写行。类型留在 SDK 输出里，等页面要显示再译。
             }
+            case YoRealtimeOutput.ToolCall ignored -> {
+                // 通话页还没有工具调用。
+            }
+            case YoRealtimeOutput.Failed failed -> failOnce(listener, new AiFailure(
+                    kindOf(failed.kind()), redact(failed.message(), apiKey)));
+            case YoRealtimeOutput.Closed ignored -> failOnce(listener,
+                    new AiFailure(AiFailureKind.NETWORK, "实时链路已经断开。"));
         }
     }
 
@@ -183,7 +149,26 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             return;
         }
         failureReported = true;
-        listener.onFailure(failure);
+        emit(listener, new AiRealtimeOutput.Failed(failure));
+    }
+
+    private void emit(Listener listener, AiRealtimeOutput output) {
+        if (closed) {
+            return;
+        }
+        listener.onOutput(output);
+    }
+
+    /**
+     * 领域方言换成 SDK 线路。没指定时仍走 OpenAI beta，和改方言之前的通话一致。
+     * 通义这一阶段不从设置里选方言，继续用这条默认线路。
+     */
+    @NonNull
+    private static YoRealtimeDialect wireDialect(@Nullable AiRealtimeDialect dialect) {
+        if (dialect == AiRealtimeDialect.GA) {
+            return YoRealtimeDialect.OPENAI_GA;
+        }
+        return YoRealtimeDialect.OPENAI_BETA;
     }
 
     /**

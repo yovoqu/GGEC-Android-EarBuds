@@ -114,8 +114,19 @@
     <!-- 回答风格：只有系统提示词一项 -->
     <string name="ai_settings_section_style">回答风格</string>
 
-    <!-- 语音交流：模型由 APP 预设，用户只选一家并填它的 Key -->
+    <!-- 语音交流：厂商是预设。ChatGPT 再选地址、实时模型和方言 -->
     <string name="ai_settings_voice_model">语音模型</string>
+    <string name="ai_settings_voice_url">接口地址</string>
+    <string name="ai_settings_voice_url_hint">https://api.openai.com</string>
+    <string name="ai_settings_voice_url_dialog_title">ChatGPT 的接口地址</string>
+    <string name="ai_settings_voice_url_reset">恢复官方</string>
+    <string name="ai_settings_voice_fetch">拉取模型</string>
+    <string name="ai_settings_voice_fetch_action">拉取</string>
+    <string name="ai_settings_voice_realtime_model">实时模型</string>
+    <string name="ai_settings_voice_models_empty">尚未拉取</string>
+    <string name="ai_settings_voice_dialect">方言</string>
+    <string name="ai_settings_dialect_beta">Beta</string>
+    <string name="ai_settings_dialect_ga">GA</string>
     <string name="ai_settings_voice_key">API Key</string>
     <string name="ai_settings_voice_key_set">已填写</string>
     <string name="ai_settings_voice_key_empty">未填写</string>

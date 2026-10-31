@@ -5,7 +5,9 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,13 +45,11 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     }
 
     @Override
-    public void appendAudio(@NonNull byte[] pcm16) {
-        appended.add(pcm16.clone());
-    }
-
-    @Override
-    public void cancelResponse() {
-        cancels++;
+    public void send(@NonNull AiRealtimeInput input) {
+        switch (input) {
+            case AiRealtimeInput.Audio audio -> appended.add(audio.pcm16().clone());
+            case AiRealtimeInput.Cancel ignored -> cancels++;
+        }
     }
 
     @Override
@@ -62,49 +62,49 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     public void opened() {
         Listener target = listener;
         if (target != null) {
-            target.onOpened();
+            target.onOutput(new AiRealtimeOutput.Opened());
         }
     }
 
     public void text(String delta) {
         Listener target = listener;
         if (target != null) {
-            target.onAssistantText(delta);
+            target.onOutput(new AiRealtimeOutput.AssistantText(delta));
         }
     }
 
     public void audio(@NonNull byte[] pcm16) {
         Listener target = listener;
         if (target != null) {
-            target.onAssistantAudio(pcm16);
+            target.onOutput(new AiRealtimeOutput.AssistantAudio(pcm16, 24_000));
         }
     }
 
     public void speechStarted() {
         Listener target = listener;
         if (target != null) {
-            target.onUserSpeechStarted();
+            target.onOutput(new AiRealtimeOutput.UserSpeechStarted());
         }
     }
 
     public void speechStopped() {
         Listener target = listener;
         if (target != null) {
-            target.onUserSpeechStopped();
+            target.onOutput(new AiRealtimeOutput.UserSpeechStopped());
         }
     }
 
     public void responseDone() {
         Listener target = listener;
         if (target != null) {
-            target.onResponseDone();
+            target.onOutput(new AiRealtimeOutput.ResponseDone());
         }
     }
 
     public void fail(@NonNull AiFailureKind kind, @NonNull String detail) {
         Listener target = listener;
         if (target != null) {
-            target.onFailure(new AiFailure(kind, detail));
+            target.onOutput(new AiRealtimeOutput.Failed(new AiFailure(kind, detail)));
         }
     }
 

@@ -122,7 +122,9 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
                 voiceKeys.put(model, key);
             }
         }
-        AiVoiceConfig voice = new AiVoiceConfig(stored.voice().model(), voiceKeys);
+        AiVoiceConfig storedVoice = stored.voice();
+        AiVoiceConfig voice = new AiVoiceConfig(storedVoice.model(), voiceKeys, storedVoice.baseUrl(),
+                storedVoice.realtimeModelId(), storedVoice.dialect(), storedVoice.realtimeModels());
         return new AiSettings(platforms, stored.mode(), stored.textSelection(), voice,
                 stored.preferences());
     }
