@@ -22,6 +22,7 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.wiring.AiGraph;
 import com.yohu.youi.api.containers.YoList;
+import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
 import com.yohu.youi.api.containers.list.ListTextSpec;
 import com.yohu.youi.api.controls.YoTextInput;
@@ -201,14 +202,14 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         String value = connection.blockedReason() != null
                 ? connection.blockedReason()
                 : connection.result() == null ? getString(R.string.ai_settings_connection_start) : connection.result();
-        list.addItem(theme.listPrefix(R.drawable.ic_ai_bolt, theme.text2),
+        list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_bolt, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_connection_test), value),
                 ListSuffixSpec.none());
 
         actions.add(viewModel::toggleKeyRevealed);
-        list.addItem(theme.listPrefix(R.drawable.ic_ai_key, theme.text2),
+        list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_key, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_field_key), connection.key().display()),
-                ListSuffixSpec.custom(theme.icon(R.drawable.ic_ai_settings_reveal, theme.text3)));
+                ListSuffixSpec.icon(R.drawable.ic_ai_settings_reveal, theme.text3));
         addSection(R.string.ai_settings_connection_section, list);
     }
 
@@ -225,7 +226,7 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
             ListTextSpec text = facts.isEmpty()
                     ? ListTextSpec.of(row.name())
                     : ListTextSpec.of(row.name(), facts);
-            list.addItem(theme.listPrefix(
+            list.addItem(ListPrefixSpec.iconTinted(
                             row.selected() ? R.drawable.ic_ai_check : R.drawable.ic_ai_chat,
                             row.selected() ? theme.brand : theme.text2),
                     text, ListSuffixSpec.custom(moreButton(row.id())));
@@ -234,7 +235,7 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         if (models.count() == 0) {
             // 空态不是"点一下就拉取"：拉取和手填是两种意图，先给菜单（规格 §4.3）。
             actions.add(this::showAddMenu);
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_plus, theme.text2),
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_plus, theme.text2),
                     ListTextSpec.of(getString(R.string.ai_settings_models_empty),
                             getString(R.string.ai_settings_models_empty_hint)),
                     ListSuffixSpec.arrow());
@@ -243,12 +244,12 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
             actions.add(NO_OP);
             list.addItem(ListTextSpec.of(getString(R.string.ai_settings_models_no_match)));
             actions.add(this::showAddMenu);
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_plus, theme.text2),
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_plus, theme.text2),
                     ListTextSpec.of(getString(R.string.ai_settings_add_model_entry)),
                     ListSuffixSpec.arrow());
         } else {
             actions.add(this::showAddMenu);
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_plus, theme.text2),
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_plus, theme.text2),
                     ListTextSpec.of(getString(R.string.ai_settings_add_model_entry)),
                     ListSuffixSpec.arrow());
         }
@@ -278,8 +279,8 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         if (models.searchable()) {
             LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            searchParams.leftMargin = theme.dp(AiTheme.PAGE_INSET);
-            searchParams.rightMargin = theme.dp(AiTheme.PAGE_INSET);
+            searchParams.leftMargin = theme.dp(AiTheme.LIST_EDGE);
+            searchParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
             searchParams.bottomMargin = theme.dp(AiTheme.SPACE_S);
             column.addView(searchView(), searchParams);
         }
@@ -289,8 +290,8 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
             summary.setText(models.summary());
             LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            summaryParams.leftMargin = theme.dp(AiTheme.PAGE_INSET);
-            summaryParams.rightMargin = theme.dp(AiTheme.PAGE_INSET);
+            summaryParams.leftMargin = theme.dp(AiTheme.LIST_EDGE);
+            summaryParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
             summaryParams.bottomMargin = theme.dp(AiTheme.SPACE_S);
             column.addView(summary, summaryParams);
         }
@@ -381,23 +382,23 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         if (!expanded) {
             actions.add(viewModel::toggleAdvanced);
             String protocol = getString(advanced.protocolRes());
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_swap, theme.text2),
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_swap, theme.text2),
                     ListTextSpec.of(getString(R.string.ai_settings_advanced_section),
                             protocol + " · " + advanced.baseUrl()),
-                    ListSuffixSpec.custom(theme.icon(R.drawable.ic_ai_chevron_down, theme.text3)));
+                    ListSuffixSpec.icon(R.drawable.ic_ai_chevron_down, theme.text3));
             addSection(R.string.ai_settings_advanced_section, list);
             return;
         }
         actions.add(NO_OP);
-        list.addItem(theme.listPrefix(R.drawable.ic_ai_text, theme.text2),
+        list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_text, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_field_name), advanced.name()),
                 ListSuffixSpec.none());
         actions.add(NO_OP);
-        list.addItem(theme.listPrefix(R.drawable.ic_ai_globe, theme.text2),
+        list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_globe, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_field_base_url), advanced.baseUrl()),
                 ListSuffixSpec.none());
         actions.add(NO_OP);
-        list.addItem(theme.listPrefix(R.drawable.ic_ai_swap, theme.text2),
+        list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_swap, theme.text2),
                 ListTextSpec.of(getString(R.string.ai_settings_field_protocol),
                         getString(advanced.protocolRes())),
                 ListSuffixSpec.none());
@@ -414,8 +415,8 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.topMargin = theme.dp(AiTheme.SPACE_XL);
-        params.leftMargin = theme.dp(AiTheme.PAGE_INSET);
-        params.rightMargin = theme.dp(AiTheme.PAGE_INSET);
+        params.leftMargin = theme.dp(AiTheme.LIST_EDGE);
+        params.rightMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(delete, params);
     }
 
@@ -431,7 +432,6 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
     @NonNull
     private YoList newList(@NonNull List<Runnable> actions) {
         YoList list = YoList.create(this)
-                .setItemVerticalInset(AiTheme.SPACE_M)
                 .setOnItemClickListener(position -> {
                     if (position >= 0 && position < actions.size()) {
                         actions.get(position).run();
@@ -458,8 +458,8 @@ public final class AiPlatformActivity extends androidx.appcompat.app.AppCompatAc
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.SPACE_XL),
-                theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.SPACE_S));
+        header.setPadding(theme.dp(AiTheme.LIST_EDGE), theme.dp(AiTheme.SPACE_XL),
+                theme.dp(AiTheme.LIST_EDGE), theme.dp(AiTheme.SPACE_S));
 
         TextView label = theme.text(AiTheme.TEXT_CAPTION, theme.text3, AiTheme.Weight.MEDIUM);
         label.setText(title);

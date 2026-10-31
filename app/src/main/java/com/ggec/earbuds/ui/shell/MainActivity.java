@@ -19,8 +19,8 @@ import com.yohu.youi.api.navigation.YoTabs;
 /**
  * 应用外壳：设备 / AI / 我的三个页签，底部是悬浮标签栏。
  *
- * <p>窗口级 edge-to-edge 由 {@link YoUi#edgeToEdge} 处理；内容根不再补 inset——
- * AI 页由自己的 {@code YoPage} 避开状态栏，占位页由 {@link ShellPageView} 自己补顶部。</p>
+ * <p>窗口级 edge-to-edge 由 {@link YoUi#edgeToEdge} 处理。AI 页自己避开状态栏，
+ * 占位页由 {@link ShellPageView} 补顶部。</p>
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
         return created;
     }
 
-    /** AI 页自带 YoPage；其它页签是共用的占位页。 */
+    /** AI 页是 {@link AiChatPage}；其它页签是共用的占位页。 */
     @NonNull
     private View createPage(@NonNull ShellTabUi tab, @NonNull CharSequence title) {
         if (ShellDestination.AI.key().equals(tab.key())) {
