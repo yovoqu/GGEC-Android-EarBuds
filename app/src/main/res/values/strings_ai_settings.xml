@@ -116,7 +116,6 @@
 
     <!-- 语音交流：模型由 APP 预设，用户只选一家并填它的 Key -->
     <string name="ai_settings_voice_model">语音模型</string>
-    <string name="ai_settings_voice_current">当前</string>
     <string name="ai_settings_voice_key">API Key</string>
     <string name="ai_settings_voice_key_set">已填写</string>
     <string name="ai_settings_voice_key_empty">未填写</string>

@@ -31,7 +31,7 @@ final class AiAddPlatformDialog {
 
     static void show(@NonNull AppCompatActivity activity, @NonNull List<AiPlatformTemplate> templates,
                      @NonNull Consumer<AiPlatformTemplate> onPick) {
-        AiTheme theme = AiTheme.of(activity);
+        int iconTint = AiTheme.of(activity).text2;
         YoList list = YoList.create(activity)
                 .setOnItemClickListener(position -> {
                     if (position < 0 || position >= templates.size()) {
@@ -47,7 +47,7 @@ final class AiAddPlatformDialog {
             ListTextSpec text = template.custom()
                     ? ListTextSpec.of(template.name(), activity.getString(R.string.ai_settings_add_platform_custom))
                     : ListTextSpec.of(template.name(), template.defaultBaseUrl());
-            list.addItem(theme.listPrefix(R.drawable.ic_ai_globe, theme.text2), text,
+            list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_globe, iconTint), text,
                     ListSuffixSpec.arrow());
         }
         YoDialog.create(activity)
