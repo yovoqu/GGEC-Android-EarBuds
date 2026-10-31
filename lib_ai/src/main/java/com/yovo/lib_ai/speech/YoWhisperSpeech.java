@@ -22,8 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Whisper 兼容转写客户端：{@code POST {baseUrl}/audio/transcriptions}，multipart 上传 wav。
  *
- * <p>职责边界：只做"发一次转写请求并解出文本"。不做录音、不做重采样、不做 TTS，
- * 也不持有通话状态——CASCADED 语音链路把它们拼起来（见 {@code ai-module-v2.md} §7.1）。
+ * <p>职责边界：只做一次转写请求并解出文本。不做录音、不做重采样、不做合成，也不持有通话状态。
  *
  * <p>错误策略（不吞异常）：HTTP 非 2xx 折成 {@link YoAiHttpException}，
  * 网络/超时折成 {@link YoAiTransportException}，响应体不合协议折成

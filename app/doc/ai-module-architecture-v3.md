@@ -159,7 +159,7 @@ Idle ──开始测速──► Running ──成功──► Done(首字/总)
 | policy / mapper | JVM 单测 | 每个分支一条 |
 | usecase | JVM 单测 + fake port | 含取消、失败、并发 |
 | ViewModel | JVM 单测（同步执行器 + 假 LiveData 观察） | 状态迁移全覆盖 |
-| 页面 | 真机截图 | 每个状态一张，路径写进 `ai-module-v2.md` §14.3 |
+| 页面 | 真机截图 | 每个状态一张 |
 
 ## 8. 迁移阶段（每阶段可独立交付）
 
