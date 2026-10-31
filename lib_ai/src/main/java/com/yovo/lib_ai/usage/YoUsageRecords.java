@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.chat.YoChatUsage;
 import com.yovo.lib_ai.completion.YoCompletionUsage;
 import com.yovo.lib_ai.messages.YoMessageUsage;
+import com.yovo.lib_ai.realtime.YoRealtimeUsage;
 import com.yovo.lib_ai.responses.YoResponseUsage;
 
 /**
@@ -96,6 +97,24 @@ public final class YoUsageRecords {
                 .tokens(usage.inputTokens(), usage.outputTokens())
                 .cachedInputTokens(usage.cachedInputTokens())
                 .cacheCreationInputTokens(usage.cacheCreationInputTokens())
+                .cost(usage.cost())
+                .currency(currency)
+                .build();
+    }
+
+    @NonNull
+    public static YoUsageRecord realtime(
+            @NonNull YoRealtimeUsage usage,
+            @Nullable String platformId,
+            @Nullable String model,
+            @Nullable String currency) {
+        return YoUsageRecord.builder()
+                .source(YoUsageSource.REALTIME)
+                .platformId(platformId)
+                .model(model)
+                .tokens(usage.inputTokens(), usage.outputTokens())
+                .totalTokens(usage.totalTokens())
+                .cachedInputTokens(usage.cachedInputTokens())
                 .cost(usage.cost())
                 .currency(currency)
                 .build();

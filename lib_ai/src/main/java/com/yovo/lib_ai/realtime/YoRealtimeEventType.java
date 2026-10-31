@@ -6,10 +6,11 @@ package com.yovo.lib_ai.realtime;
  * <p>Realtime 协议里有几十种帧（{@code session.updated}、{@code conversation.item.*}、
  * {@code response.output_item.*} …）。它们全部不出现在这里：通话页只关心
  * 「连上了 / 人开始说了 / 人说完了 / 来了一段字 / 来了一段声音 / 这轮说完了 / 出错了 / 结束了」
- * 这八件事。把协议的帧名泄漏到界面层，会让界面层的状态机和网关实现绑定死，
+ * 这八件事。后面三个是会话层才用得上的信号：配置已生效、用户那一句的转写、函数调用。
+ * 通话页的状态机可以不接它们。把协议的帧名泄漏到界面层，会让界面层的状态机和网关实现绑定死，
  * 换一个兼容端点就得改界面。</p>
  */
-public enum YoRealtimeEventType {
+enum YoRealtimeEventType {
 
     /**
      * 会话已建立（收到 {@code session.created}），可以开始往上送音频了。
@@ -39,8 +40,23 @@ public enum YoRealtimeEventType {
      */
     ASSISTANT_AUDIO_CHUNK,
 
-    /** 一轮回答结束（{@code response.done}）。上层据此回到 LISTENING。 */
+    /** 一轮回答结束（{@code response.done}）。上层据此回到 LISTENING。用量在事件上，不在这个枚举里。 */
     RESPONSE_DONE,
+
+    /**
+     * {@code session.update} 已被服务端接受。GA 方言要等这一帧才放行缓存音频。
+     */
+    SESSION_UPDATED,
+
+    /**
+     * 用户刚才那一句的转写完成。{@link YoRealtimeEvent#text()} 是整句，不是增量。
+     */
+    USER_TRANSCRIPT,
+
+    /**
+     * 模型要调用一个函数，参数已经拼完。名字、call id 和参数 JSON 在事件上。
+     */
+    TOOL_CALL,
 
     /**
      * 出错了，{@link YoRealtimeEvent#errorKind()} 给出分类，{@link YoRealtimeEvent#message()} 给出可读原因。

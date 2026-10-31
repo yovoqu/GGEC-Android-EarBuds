@@ -47,6 +47,10 @@ public final class RealtimeProtocolTest {
         assertEquals("pcm16", session.getString("input_audio_format"));
         assertEquals("pcm16", session.getString("output_audio_format"));
         assertEquals("server_vad", session.getJSONObject("turn_detection").getString("type"));
+        // 默认 beta 帧不能多字段：旧网关按「只看到 type」在跑，多写 create_response 会改它们的行为。
+        assertEquals(1, session.getJSONObject("turn_detection").length());
+        assertFalse(session.has("tools"));
+        assertFalse(session.has("type"));
         // 没配就不下发：下发 null 会被当成非法音色名。
         assertFalse(session.has("voice"));
         assertFalse(session.has("instructions"));
@@ -145,7 +149,9 @@ public final class RealtimeProtocolTest {
     public void unknownAndIrrelevantFramesAreIgnored() throws Exception {
         // 协议一直在加帧：不认识的一律忽略，绝不能抛异常把链路带下去。
         assertNull(RealtimeProtocol.parse("{\"type\":\"conversation.item.created\"}"));
-        assertNull(RealtimeProtocol.parse("{\"type\":\"session.updated\"}"));
+        YoRealtimeEvent updated = RealtimeProtocol.parse("{\"type\":\"session.updated\"}");
+        assertNotNull(updated);
+        assertEquals(YoRealtimeEventType.SESSION_UPDATED, updated.type());
         assertNull(RealtimeProtocol.parse("{\"type\":\"rate_limits.updated\"}"));
         // 连 type 都没有的帧：当作无关帧，不是错误。
         assertNull(RealtimeProtocol.parse("{\"foo\":1}"));
@@ -253,6 +259,9 @@ public final class RealtimeProtocolTest {
         assertEquals(24_000, config.outputSampleRateHz());
         assertNull(config.voice());
         assertNull(config.instructions());
+        assertEquals(YoRealtimeDialect.OPENAI_BETA, config.dialect());
+        assertEquals(24_000, config.inputWireFormat().sampleRateHz());
+        assertEquals(24_000, config.outputWireFormat().sampleRateHz());
         // 密钥不能出现在 toString 里：这个对象很容易被顺手打进日志。
         assertFalse(config.toString().contains("sk-test"));
     }
@@ -277,6 +286,110 @@ public final class RealtimeProtocolTest {
 
         assertEquals("https://api.example.com", config.baseUrl());
         assertTrue(config.toString().contains("https://api.example.com"));
+    }
+
+    @Test
+    public void gaSessionDeclaresNestedRateAndDoesNotUseTheMicRate() throws Exception {
+        JSONObject frame = RealtimeProtocol.encodeSessionUpdate(base()
+                .dialect(YoRealtimeDialect.OPENAI_GA)
+                .inputSampleRateHz(16_000)
+                .voice("marin")
+                .build());
+
+        JSONObject session = frame.getJSONObject("session");
+        assertEquals("realtime", session.getString("type"));
+        assertEquals("gpt-4o-realtime-preview", session.getString("model"));
+        JSONObject input = session.getJSONObject("audio").getJSONObject("input");
+        assertEquals("audio/pcm", input.getJSONObject("format").getString("type"));
+        // 麦克风是 16k，线上字节仍是默认 24k。把 16k 写进去，服务端会把升采样后的声音听慢。
+        assertEquals(24_000, input.getJSONObject("format").getInt("rate"));
+        JSONObject turn = input.getJSONObject("turn_detection");
+        assertEquals("server_vad", turn.getString("type"));
+        assertTrue(turn.getBoolean("interrupt_response"));
+        assertEquals("marin", session.getJSONObject("audio").getJSONObject("output").getString("voice"));
+        assertFalse(session.has("voice"));
+    }
+
+    @Test
+    public void gaHandshakeOmitsBetaHeader() {
+        Map<String, String> headers = RealtimeProtocol.handshakeHeaders(
+                base().dialect(YoRealtimeDialect.OPENAI_GA).build());
+
+        assertEquals("Bearer sk-test", headers.get("Authorization"));
+        assertFalse(headers.containsKey("OpenAI-Beta"));
+        assertTrue(YoRealtimeDialect.OPENAI_GA.holdsAudioUntilConfigured());
+        assertFalse(YoRealtimeDialect.OPENAI_BETA.holdsAudioUntilConfigured());
+    }
+
+    @Test
+    public void qwenSessionUsesSampleRateField() throws Exception {
+        JSONObject session = RealtimeProtocol.encodeSessionUpdate(base()
+                .dialect(YoRealtimeDialect.QWEN)
+                .inputWireFormat(YoRealtimeAudioFormat.pcm16(16_000))
+                .voice("Cherry")
+                .build()).getJSONObject("session");
+
+        assertEquals(16_000, session.getJSONObject("audio").getJSONObject("input")
+                .getJSONObject("format").getInt("sample_rate"));
+        assertEquals("pcm", session.getJSONObject("audio").getJSONObject("input")
+                .getJSONObject("format").getString("type"));
+        assertEquals("Cherry", session.getString("voice"));
+        assertEquals("text", session.getJSONArray("modalities").getString(0));
+        assertEquals("audio", session.getJSONArray("modalities").getString(1));
+    }
+
+    @Test
+    public void parsesGaAudioAndUserTranscriptAndToolCall() throws Exception {
+        byte[] pcm = {0x01, 0x02};
+        String audio = "{\"type\":\"response.output_audio.delta\",\"item_id\":\"item_9\",\"content_index\":0,"
+                + "\"delta\":\"" + Base64.getEncoder().encodeToString(pcm) + "\"}";
+        YoRealtimeEvent chunk = RealtimeProtocol.parse(audio);
+        assertNotNull(chunk);
+        assertEquals("item_9", chunk.itemId());
+        assertEquals(Integer.valueOf(0), chunk.contentIndex());
+        assertArrayEquals(pcm, chunk.audioPcm16());
+
+        YoRealtimeEvent said = RealtimeProtocol.parse(
+                "{\"type\":\"conversation.item.input_audio_transcription.completed\","
+                        + "\"item_id\":\"item_u\",\"transcript\":\"开灯\"}");
+        assertNotNull(said);
+        assertEquals(YoRealtimeEventType.USER_TRANSCRIPT, said.type());
+        assertEquals("开灯", said.text());
+
+        YoRealtimeEvent call = RealtimeProtocol.parse(
+                "{\"type\":\"response.function_call_arguments.done\",\"call_id\":\"call_1\","
+                        + "\"name\":\"set_volume\",\"arguments\":\"{\\\"level\\\":1}\"}");
+        assertNotNull(call);
+        assertEquals(YoRealtimeEventType.TOOL_CALL, call.type());
+        assertEquals("set_volume", call.toolName());
+        assertEquals("call_1", call.callId());
+    }
+
+    @Test
+    public void responseDoneCarriesUsage() throws Exception {
+        YoRealtimeEvent event = RealtimeProtocol.parse(
+                "{\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{"
+                        + "\"input_tokens\":3,\"output_tokens\":4,\"total_tokens\":7}}}");
+
+        assertNotNull(event);
+        assertEquals("completed", event.responseStatus());
+        assertNotNull(event.usage());
+        assertEquals(3, event.usage().inputTokens());
+        assertEquals(4, event.usage().outputTokens());
+        assertEquals(7, event.usage().totalTokens());
+    }
+
+    @Test
+    public void truncateAndToolOutputUseConversationItems() throws Exception {
+        JSONObject truncate = RealtimeProtocol.encodeTruncate("item_1", 0, 250);
+        assertEquals("conversation.item.truncate", truncate.getString("type"));
+        assertEquals("item_1", truncate.getString("item_id"));
+        assertEquals(250, truncate.getInt("audio_end_ms"));
+
+        JSONObject tool = RealtimeProtocol.encodeToolOutput("call_1", "{\"ok\":true}");
+        assertEquals("conversation.item.create", tool.getString("type"));
+        assertEquals("function_call_output", tool.getJSONObject("item").getString("type"));
+        assertEquals("call_1", tool.getJSONObject("item").getString("call_id"));
     }
 
     private static YoRealtimeConfig.Builder base() {
