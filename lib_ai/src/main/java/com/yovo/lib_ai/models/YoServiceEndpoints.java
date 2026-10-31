@@ -29,6 +29,7 @@ public final class YoServiceEndpoints {
     private static final String RESPONSES_PATH = "/responses";
     private static final String TRANSCRIPTIONS_PATH = "/audio/transcriptions";
     private static final String SPEECH_PATH = "/audio/speech";
+    private static final String EMBEDDINGS_PATH = "/embeddings";
     private static final String REALTIME_PATH = "/realtime";
 
     private YoServiceEndpoints() {
@@ -49,6 +50,7 @@ public final class YoServiceEndpoints {
             case RESPONSES -> responses(baseUrl);
             case AUDIO_TRANSCRIBE -> transcriptions(baseUrl);
             case AUDIO_SPEECH -> speech(baseUrl);
+            case EMBEDDINGS -> embeddings(baseUrl);
             case REALTIME -> realtime(baseUrl, modelId);
         };
     }
@@ -76,6 +78,11 @@ public final class YoServiceEndpoints {
     @NonNull
     public static String speech(@NonNull String baseUrl) {
         return withPath(baseUrl, SPEECH_PATH);
+    }
+
+    @NonNull
+    public static String embeddings(@NonNull String baseUrl) {
+        return withPath(baseUrl, EMBEDDINGS_PATH);
     }
 
     /**

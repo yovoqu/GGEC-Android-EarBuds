@@ -64,6 +64,20 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void fetchDropsRealtimeModelsBecauseThePlatformPageIsTextOnly() throws Exception {
+        server.enqueue(new MockResponse().setBody("""
+                {"object":"list","data":[
+                  {"id":"gpt-4o","created":1715367049},
+                  {"id":"gpt-4o-realtime-preview","created":1715367049}
+                ]}
+                """));
+
+        List<AiModel> models = new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
+
+        assertEquals(List.of("gpt-4o"), models.stream().map(AiModel::id).toList());
+    }
+
+    @Test
     public void fetchKeepsChatModelsNewestFirstAndMapsMetadata() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[

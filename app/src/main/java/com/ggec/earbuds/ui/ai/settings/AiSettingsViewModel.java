@@ -7,16 +7,19 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
-import com.ggec.earbuds.domain.ai.usecase.SaveVoiceSettings;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
+import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
+import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -34,7 +37,9 @@ public final class AiSettingsViewModel extends ViewModel {
     private final LoadAiSettings loadSettings;
     private final ObserveAiSettings observeSettings;
     private final SaveChatPreferences savePreferences;
-    private final SaveVoiceSettings saveVoice;
+    private final SelectInteractionMode selectMode;
+    private final SelectVoiceModel selectVoiceModel;
+    private final SaveVoiceApiKey saveVoiceApiKey;
     private final LoadPlatformTemplates loadTemplates;
     private final AiSettingsUiMapper mapper;
 
@@ -49,13 +54,17 @@ public final class AiSettingsViewModel extends ViewModel {
     public AiSettingsViewModel(@NonNull LoadAiSettings loadSettings,
                                @NonNull ObserveAiSettings observeSettings,
                                @NonNull SaveChatPreferences savePreferences,
-                               @NonNull SaveVoiceSettings saveVoice,
+                               @NonNull SelectInteractionMode selectMode,
+                               @NonNull SelectVoiceModel selectVoiceModel,
+                               @NonNull SaveVoiceApiKey saveVoiceApiKey,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
         this.savePreferences = Objects.requireNonNull(savePreferences, "savePreferences");
-        this.saveVoice = Objects.requireNonNull(saveVoice, "saveVoice");
+        this.selectMode = Objects.requireNonNull(selectMode, "selectMode");
+        this.selectVoiceModel = Objects.requireNonNull(selectVoiceModel, "selectVoiceModel");
+        this.saveVoiceApiKey = Objects.requireNonNull(saveVoiceApiKey, "saveVoiceApiKey");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -94,13 +103,35 @@ public final class AiSettingsViewModel extends ViewModel {
         subscription = observeSettings.execute(this::onSettings);
     }
 
-    public void selectMode(@NonNull AiMode mode) {
-        guard(() -> saveVoice.withMode(mode));
+    /**
+     * 切换分段只记住"下次进来停在哪个模式"，不要求另一模式已经配好：
+     * 用户可以先切到语音模式，再去添加实时模型。
+     */
+    public void selectMode(@NonNull AiInteractionMode mode) {
+        guard(() -> selectMode.execute(mode));
     }
 
     /** 回答风格现在只有这一项可改：提示词写什么，模型就按什么口径回答。 */
     public void saveSystemPrompt(@NonNull String systemPrompt) {
         guard(() -> savePreferences.update(preferences -> preferences.withSystemPrompt(systemPrompt)));
+    }
+
+    /**
+     * 切换语音模型。只认预设表里的 id：界面传上来的是下拉项，不是用户手写的模型名，
+     * 所以这里把未知 id 当成"界面状态过期"，提示一句而不是静默改掉用户的选择。
+     */
+    public void selectVoiceModel(@NonNull String modelId) {
+        AiVoiceModel model = AiVoiceModel.fromId(modelId);
+        if (model == null) {
+            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
+            return;
+        }
+        guard(() -> selectVoiceModel.execute(model));
+    }
+
+    /** 保存当前语音模型的 Key；空串表示清掉这一家的 Key。 */
+    public void saveVoiceApiKey(@NonNull String apiKey) {
+        guard(() -> saveVoiceApiKey.execute(apiKey));
     }
 
     private void onSettings(AiSettings settings) {

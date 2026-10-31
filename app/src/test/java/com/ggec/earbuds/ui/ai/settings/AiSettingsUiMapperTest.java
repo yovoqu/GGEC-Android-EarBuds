@@ -6,13 +6,16 @@ import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiMode;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.testing.ai.AiFixtures;
 
 import org.junit.Test;
 
@@ -22,8 +25,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 设置总览的取舍：副标题怎么说、什么时候不能点、提示词怎么预览。
- * 这三处出错的后果分别是"误导"、"点了没反应"和"看不出改没改"。
+ * 设置总览的取舍：身份卡按模式取哪个模型、空态说缺哪一类、提示词怎么预览。
+ * 这三处出错的后果分别是"显示错模型"、"用户不知道去配什么"和"看不出改没改"。
  */
 public class AiSettingsUiMapperTest {
 
@@ -61,7 +64,7 @@ public class AiSettingsUiMapperTest {
     }
 
     @Test
-    public void theRowHoldingTheSelectedModelIsMarked() {
+    public void thePlatformHoldingTheSelectedModelIsMarked() {
         AiSettings settings = settings(new AiSelection("deepseek", "chat"),
                 platform("deepseek", "sk-live", null, "chat"),
                 platform("other", "sk-other", null, "chat"));
@@ -72,45 +75,75 @@ public class AiSettingsUiMapperTest {
         assertFalse(rows.get(1).current());
     }
 
-    // ---- 模式行 ----
+    // ---- 模式与身份卡 ----
 
     @Test
-    public void fullDuplexIsDisabledAndExplainsWhyWithoutARealtimeModel() {
+    public void textModeShowsTheTextModelAndItsHint() {
+        AiSettings settings = settings(new AiSelection("deepseek", "deepseek-chat"),
+                platform("deepseek", "sk-live", null, "deepseek-chat", "gpt-4o-realtime-preview"));
+
+        AiSettingsUiState state = mapper.map(settings);
+
+        assertEquals(AiInteractionMode.TEXT, state.mode());
+        assertEquals(AiText.of(R.string.ai_settings_mode_text_hint), state.modeHint());
+        assertFalse(state.identity().empty());
+        assertEquals("deepseek", state.identity().platformName());
+        assertEquals("deepseek-chat", state.identity().modelName());
+    }
+
+    @Test
+    public void voiceModeShowsThePresetVoiceModelAndItsKeyState() {
+        AiSettings settings = voiceSettings(new AiSelection("openai", "gpt-4o"),
+                AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen"),
+                platform("openai", "sk-live", null, "gpt-4o"));
+
+        AiSettingsUiState state = mapper.map(settings);
+
+        assertEquals(AiInteractionMode.VOICE, state.mode());
+        assertEquals(AiText.of(R.string.ai_settings_mode_voice_hint), state.modeHint());
+        assertEquals("Qwen", state.voice().modelName());
+        assertTrue(state.voice().configured());
+        assertEquals(2, state.voice().options().size());
+        assertEquals("ChatGPT", state.voice().options().get(0).name());
+        assertFalse("没选中的预设不该标成当前", state.voice().options().get(0).current());
+        assertTrue(state.voice().options().get(1).current());
+        assertEquals("另一家没填 Key", false, state.voice().options().get(0).configured());
+    }
+
+    @Test
+    public void anEmptyTextModeSaysTheTextModelIsMissing() {
         AiSettings settings = settings(null, platform("deepseek", "sk-live", null, "chat"));
 
-        List<AiSettingsUiState.ModeRow> modes = mapper.map(settings).modes();
+        AiSettingsUiState.Identity identity = mapper.map(settings).identity();
 
-        AiSettingsUiState.ModeRow omni = modes.get(1);
-        assertEquals(AiMode.OMNI, omni.mode());
-        assertFalse("没有实时模型时全双工不能点", omni.enabled());
-        assertEquals(AiText.of(R.string.ai_settings_mode_omni_needs_model), omni.subtitle());
-        assertTrue("级联模式任何时候都能点", modes.get(0).enabled());
+        assertTrue(identity.empty());
+        assertEquals(R.string.ai_settings_text_empty, identity.emptyTitle());
+        assertEquals(R.string.ai_settings_text_empty_hint, identity.emptyHint());
     }
 
     @Test
-    public void fullDuplexBecomesAvailableWithARealtimeModel() {
-        AiVoiceSettings voice = AiVoiceSettings.defaults().withRealtimeModel("gpt-4o-realtime-preview");
-        AiSettings settings = new AiSettings(
-                List.of(platform("openai", "sk-live", null, "gpt-4o-realtime-preview")),
-                null, AiChatPreferences.DEFAULT, voice);
+    public void anUnconfiguredVoiceModelIsStillSelectedButNotReady() {
+        AiSettings settings = voiceSettings(null, AiVoiceConfig.DEFAULT,
+                platform("openai", "sk-live", null, "gpt-4o"));
 
-        AiSettingsUiState.ModeRow omni = mapper.map(settings).modes().get(1);
+        AiSettingsUiState.Voice voice = mapper.map(settings).voice();
 
-        assertTrue(omni.enabled());
-        assertEquals(AiText.of(R.string.ai_settings_mode_omni_hint), omni.subtitle());
-        assertFalse(omni.selected());
+        assertEquals("ChatGPT", voice.modelName());
+        assertFalse("只选了模型、没填 Key 时不算可用", voice.configured());
+        assertTrue(voice.options().get(0).current());
     }
 
     @Test
-    public void theStoredModeIsTheSelectedRow() {
-        AiSettings settings = new AiSettings(List.of(platform("openai", "sk-live", null, "chat")), null,
-                AiChatPreferences.DEFAULT,
-                AiVoiceSettings.defaults().withMode(AiMode.OMNI).withRealtimeModel("gpt-4o-realtime-preview"));
+    public void switchingModeDoesNotMoveTheOtherSelection() {
+        AiSettings text = settings(new AiSelection("deepseek", "chat"),
+                platform("deepseek", "sk-live", null, "chat"));
 
-        List<AiSettingsUiState.ModeRow> modes = mapper.map(settings).modes();
+        AiSettings voice = text.withMode(AiInteractionMode.VOICE);
 
-        assertFalse(modes.get(0).selected());
-        assertTrue(modes.get(1).selected());
+        assertEquals(AiInteractionMode.VOICE, voice.mode());
+        assertTrue(voice.textModel().isPresent());
+        assertEquals("语音默认预设仍在，但没 Key 不可用", false, mapper.map(voice).voice().configured());
+        assertEquals(new AiSelection("deepseek", "chat"), voice.textSelection());
     }
 
     // ---- 回答风格 ----
@@ -118,8 +151,8 @@ public class AiSettingsUiMapperTest {
     @Test
     public void theStyleSectionCarriesTheStoredPrompt() {
         AiChatPreferences preferences = AiChatPreferences.DEFAULT.withSystemPrompt("只回答一句话");
-        AiSettings settings = new AiSettings(List.of(platform("deepseek", "sk-live", null, "chat")), null,
-                preferences, AiVoiceSettings.defaults());
+        AiSettings settings = new AiSettings(List.of(platform("deepseek", "sk-live", null, "chat")),
+                AiInteractionMode.TEXT, null, AiVoiceConfig.DEFAULT, preferences);
 
         AiSettingsUiState.Style style = mapper.map(settings).style();
 
@@ -149,15 +182,23 @@ public class AiSettingsUiMapperTest {
 
     // ---- 夹具 ----
 
-    private static AiSettings settings(AiSelection selection, AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), selection, AiChatPreferences.DEFAULT,
-                AiVoiceSettings.defaults());
+    private static AiSettings settings(AiSelection textSelection, AiPlatformConfig... platforms) {
+        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection,
+                AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
+    }
+
+    private static AiSettings voiceSettings(AiSelection textSelection, AiVoiceConfig voice,
+                                            AiPlatformConfig... platforms) {
+        return new AiSettings(List.of(platforms), AiInteractionMode.VOICE, textSelection, voice,
+                AiChatPreferences.DEFAULT);
     }
 
     private static AiPlatformConfig platform(String id, String apiKey, String baseUrl, String... modelIds) {
         List<AiModel> models = new ArrayList<>();
         for (String modelId : modelIds) {
-            models.add(new AiModel(modelId, modelId, null, null, Set.of(), false));
+            Set<AiModelFeature> features = modelId.contains("realtime")
+                    ? Set.of(AiModelFeature.REALTIME_AUDIO) : Set.of();
+            models.add(new AiModel(modelId, modelId, null, null, features, false));
         }
         return new AiPlatformConfig(id, id, id, baseUrl, apiKey, AiProtocol.CHAT_COMPLETIONS, models, 0L, Map.of());
     }

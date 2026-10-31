@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.error.YoAiProtocolException;
+import com.yovo.lib_ai.models.spec.YoModelSpec;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 
 import org.json.JSONArray;
@@ -13,12 +14,12 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
  * OpenAI {@code GET /v1/models}，DeepSeek、SenseNova 和大多数兼容主机沿用同一形状。
- * 标准字段只有 id、owned_by、created。主机额外给出的上下文长度和模态字段会被读取，缺失则留空。
+ * 标准字段只有 id、owned_by、created。主机额外给出的类别、模态、上下文与输出长度、
+ * 函数调用等特性字段由 {@link ModelReports} 读取，缺失则留空，不凭 id 猜。
  */
 public final class OpenAiModelListing implements YoModelListing {
 
@@ -80,8 +81,7 @@ public final class OpenAiModelListing implements YoModelListing {
     @Nullable
     private static YoModelInfo decodeEntry(@Nullable Object entry) {
         if (entry instanceof String id) {
-            return id.isBlank() ? null : YoModelInfo.builder(id)
-                    .kind(YoModelKinds.kindOf(id))
+            return id.isBlank() ? null : YoModelInfo.builder(YoModelInference.infer(id))
                     .rawJson(JSONObject.quote(id))
                     .build();
         }
@@ -92,58 +92,14 @@ public final class OpenAiModelListing implements YoModelListing {
         if (id == null) {
             return null;
         }
-        YoModelInfo.Builder builder = YoModelInfo.builder(id)
-                .displayName(ModelJson.string(json, "display_name", "name"))
+        // 先按 id 推断出底，再把平台上报的逐项盖上去：上报过的项可信，没上报的仍是推断或未知。
+        YoModelSpec.Builder spec = YoModelInference.infer(id).toBuilder()
+                .displayName(ModelJson.string(json, "display_name", "name"));
+        ModelReports.apply(json, spec);
+        return YoModelInfo.builder(spec.build())
                 .ownedBy(ModelJson.string(json, "owned_by"))
                 .createdAtMillis(ModelJson.millis(json, "created", "created_at"))
-                .contextWindow(ModelJson.positiveInt(json,
-                        "context_length", "context_window", "max_context_length",
-                        "max_input_tokens", "input_token_limit", "context_size"))
-                .maxOutputTokens(ModelJson.positiveInt(json,
-                        "max_output_length", "max_output_tokens", "max_completion_tokens",
-                        "output_token_limit", "max_tokens"))
-                .kind(kind(json, id))
-                .rawJson(json.toString());
-        Set<String> capabilities = ModelJson.lowerNames(json, "supported_features", "capabilities");
-        Set<String> inputs = ModelJson.lowerNames(json, "input_modalities");
-        if (inputs.contains("image") || capabilities.contains("vision")) {
-            builder.feature(YoModelFeature.VISION);
-        }
-        if (capabilities.contains("reasoning") || capabilities.contains("thinking")
-                || YoModelKinds.looksLikeReasoning(id)) {
-            builder.feature(YoModelFeature.REASONING);
-        }
-        return builder.build();
-    }
-
-    private static YoModelKind kind(JSONObject json, String id) {
-        Set<String> outputs = ModelJson.lowerNames(json, "output_modalities");
-        if (!outputs.isEmpty() && !outputs.contains("text")) {
-            if (outputs.contains("audio")) {
-                return YoModelKind.AUDIO;
-            }
-            return outputs.contains("image") ? YoModelKind.IMAGE : YoModelKind.OTHER;
-        }
-        String type = ModelJson.string(json, "type");
-        if (type != null) {
-            switch (type.toLowerCase(Locale.ROOT)) {
-                case "embedding", "embeddings" -> {
-                    return YoModelKind.EMBEDDING;
-                }
-                case "image", "image_generation" -> {
-                    return YoModelKind.IMAGE;
-                }
-                case "audio", "speech", "tts", "transcription" -> {
-                    return YoModelKind.AUDIO;
-                }
-                case "moderation" -> {
-                    return YoModelKind.MODERATION;
-                }
-                default -> {
-                    // chat、model 等通用取值不携带分类信息，交给 id 判断。
-                }
-            }
-        }
-        return YoModelKinds.kindOf(id);
+                .rawJson(json.toString())
+                .build();
     }
 }

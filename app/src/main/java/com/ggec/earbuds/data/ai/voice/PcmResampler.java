@@ -5,11 +5,11 @@ import androidx.annotation.NonNull;
 import java.io.ByteArrayOutputStream;
 
 /**
- * 把 16kHz 的 PCM16 升到 24kHz，供全双工链路下行/上行对齐使用。
+ * 把 16kHz 的 PCM16 升到 24kHz，供实时语音链路上下行对齐使用。
  *
  * <p><b>为什么必须重采样，而不是把 16k 的字节直接发给服务端</b>：Realtime 的 {@code pcm16} 只有一个档位，
  * 服务端按 24kHz 解释这些字节；协议里没有"这段是 16k"的字段。送 16k 过去，服务端会当成慢了 1.5 倍的
- * 声音——听起来音调变低、语速变慢，识别质量也跟着掉。所以采集端保持 16k（耳机麦克风与转写链路都用它），
+ * 声音——听起来音调变低、语速变慢，识别质量也跟着掉。所以采集端保持 16k（耳机麦克风按它工作），
  * 到了上行这一层再升到 24k。</p>
  *
  * <p><b>为什么是流式的、要记住跨帧状态</b>：采集一帧 20ms，帧与帧之间不能各算各的。16k→24k 的步长是
@@ -27,7 +27,7 @@ final class PcmResampler {
     /** 采集链路统一 16kHz（见 {@code AiAudioCapture#start}）。 */
     static final int INPUT_RATE_HZ = 16_000;
 
-    /** 全双工下行/上行的原生档位：24kHz。 */
+    /** 实时语音下行/上行的原生档位：24kHz。 */
     static final int OUTPUT_RATE_HZ = 24_000;
 
     private static final int MIN_SAMPLE = Short.MIN_VALUE;

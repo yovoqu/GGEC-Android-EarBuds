@@ -4,6 +4,16 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.error.YoAiProtocolException;
+import com.yovo.lib_ai.models.spec.YoModality;
+import com.yovo.lib_ai.models.spec.YoModelCapability;
+import com.yovo.lib_ai.models.spec.YoModelCategory;
+import com.yovo.lib_ai.models.spec.YoModelLimits;
+import com.yovo.lib_ai.models.spec.YoModelSpec;
+import com.yovo.lib_ai.models.spec.YoReasoning;
+import com.yovo.lib_ai.models.spec.YoReasoningEffort;
+import com.yovo.lib_ai.models.spec.YoReasoningMode;
+import com.yovo.lib_ai.models.spec.YoSpecSource;
+import com.yovo.lib_ai.models.spec.YoSupport;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 
 import org.json.JSONArray;
@@ -13,11 +23,16 @@ import org.json.JSONObject;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.List;
 
 /**
  * Anthropic {@code GET /v1/models}。游标翻页：{@code has_more} 为真时用 {@code last_id} 作为下一页的 {@code after_id}。
  * 已退役（{@code lifecycle=retired}）的模型调用必然失败，直接丢弃。
+ *
+ * <p>Anthropic 在每个模型上带一块 {@code capabilities}，每项形如 {@code {"supported": true}}，
+ * 是模型厂商自己的声明，所以逐项记为上报。列表里的全是对话模型。</p>
  */
 public final class AnthropicModelListing implements YoModelListing {
 
@@ -78,25 +93,86 @@ public final class AnthropicModelListing implements YoModelListing {
         if (id == null || "retired".equals(ModelJson.string(json, "lifecycle"))) {
             return null;
         }
-        YoModelInfo.Builder builder = YoModelInfo.builder(id)
+        // max_input_tokens 是整个输入上下文窗口，max_tokens 是单次输出上限。
+        YoModelSpec.Builder spec = YoModelInference.infer(id).toBuilder()
                 .displayName(ModelJson.string(json, "display_name"))
+                .category(YoModelCategory.TEXT, YoSpecSource.REPORTED)
+                .limits(YoModelLimits.tokens(
+                        ModelJson.positiveInt(json, "max_input_tokens"),
+                        null,
+                        ModelJson.positiveInt(json, "max_tokens")));
+        capabilities(json.optJSONObject("capabilities"), spec);
+        return YoModelInfo.builder(spec.build())
                 .createdAtMillis(ModelJson.millis(json, "created_at"))
-                .contextWindow(ModelJson.positiveInt(json, "max_input_tokens"))
-                .maxOutputTokens(ModelJson.positiveInt(json, "max_tokens"))
-                .kind(YoModelKind.CHAT)
-                .rawJson(json.toString());
-        JSONObject capabilities = json.optJSONObject("capabilities");
-        if (supported(capabilities, "image_input")) {
-            builder.feature(YoModelFeature.VISION);
-        }
-        if (supported(capabilities, "thinking")) {
-            builder.feature(YoModelFeature.REASONING);
-        }
-        return builder.build();
+                .rawJson(json.toString())
+                .build();
     }
 
-    private static boolean supported(@Nullable JSONObject capabilities, String name) {
-        JSONObject capability = capabilities == null ? null : capabilities.optJSONObject(name);
-        return capability != null && capability.optBoolean("supported", false);
+    private static void capabilities(@Nullable JSONObject capabilities, YoModelSpec.Builder spec) {
+        if (capabilities == null) {
+            return;
+        }
+        input(capabilities, "image_input", YoModality.IMAGE, spec);
+        input(capabilities, "pdf_input", YoModality.DOCUMENT, spec);
+        capability(capabilities, "structured_outputs", YoModelCapability.STRUCTURED_OUTPUT, spec);
+        capability(capabilities, "batch", YoModelCapability.BATCH, spec);
+        thinking(capabilities, spec);
+    }
+
+    private static void input(JSONObject capabilities, String name, YoModality modality,
+                              YoModelSpec.Builder spec) {
+        Boolean supported = supported(capabilities.optJSONObject(name));
+        if (supported != null) {
+            spec.input(modality, YoSupport.of(supported), YoSpecSource.REPORTED);
+        }
+    }
+
+    private static void capability(JSONObject capabilities, String name, YoModelCapability capability,
+                                   YoModelSpec.Builder spec) {
+        Boolean supported = supported(capabilities.optJSONObject(name));
+        if (supported != null) {
+            spec.capability(capability, YoSupport.of(supported), YoSpecSource.REPORTED);
+        }
+    }
+
+    /**
+     * Claude 的思考是请求里自己决定开不开（{@code thinking.type}），所以支持就等于可开关；
+     * {@code effort} 块列出可选的力度档位，{@code thinking.types.enabled} 表示能手动给思考预算。
+     */
+    private static void thinking(JSONObject capabilities, YoModelSpec.Builder spec) {
+        JSONObject thinking = capabilities.optJSONObject("thinking");
+        Boolean supported = supported(thinking);
+        if (supported == null) {
+            return;
+        }
+        if (!supported) {
+            spec.reasoning(YoReasoning.of(YoReasoningMode.NONE, YoSpecSource.REPORTED));
+            return;
+        }
+        JSONObject types = thinking.optJSONObject("types");
+        boolean budget = types != null && Boolean.TRUE.equals(supported(types.optJSONObject("enabled")));
+        EnumSet<YoReasoningEffort> efforts = EnumSet.noneOf(YoReasoningEffort.class);
+        JSONObject effort = capabilities.optJSONObject("effort");
+        if (effort != null && Boolean.TRUE.equals(supported(effort))) {
+            for (Iterator<String> keys = effort.keys(); keys.hasNext(); ) {
+                String key = keys.next();
+                YoReasoningEffort level = YoReasoningEffort.fromWire(key);
+                if (level != null && Boolean.TRUE.equals(supported(effort.optJSONObject(key)))) {
+                    efforts.add(level);
+                }
+            }
+        }
+        spec.reasoning(new YoReasoning(YoReasoningMode.SWITCHABLE, efforts, budget, YoSpecSource.REPORTED));
+    }
+
+    /**
+     * {@code {"supported": true}} 里的布尔值；块不存在或没有这个字段返回 {@code null}（没说，不是不支持）。
+     */
+    @Nullable
+    private static Boolean supported(@Nullable JSONObject capability) {
+        if (capability == null || !(capability.opt("supported") instanceof Boolean supported)) {
+            return null;
+        }
+        return supported;
     }
 }

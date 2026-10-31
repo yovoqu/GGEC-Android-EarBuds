@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiVoiceSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 
@@ -18,10 +17,10 @@ import java.util.List;
  * 通话页的 ViewModel：把会话的快照搬给页面、把用户操作搬回会话、挂断时释放会话。
  *
  * <p>这里**不做任何状态推导**。{@link AiVoiceSnapshot} 已经是"页面该画什么"的完整答案，
- * 模式、发言记录、电平、失败原因都在里面；再推导一层就会出现两份状态，动画和文案开始互相打脸。</p>
+ * 发言记录、电平、失败原因都在里面；再推导一层就会出现两份状态，动画和文案开始互相打脸。</p>
  *
- * <p>会话由 {@link AiVoiceSessionFactory} 造，所以这一层只知道"有一路会话"，不知道它是
- * OMNI 的 WebSocket 还是 CASCADED 的转写链路——链路选择属于装配根，不属于界面。</p>
+ * <p>会话由 {@link AiVoiceSessionFactory} 造，所以这一层只知道"有一路会话"，不知道
+ * 它背后是 WebSocket 还是别的传输——链路选择属于装配根，不属于界面。</p>
  *
  * <p>生命周期跟着 ViewModel 走而不是 Activity：转屏或深色模式切换会重建页面，
  * 但通话不该断。真正的挂断由 {@link #hangUp()} 和 {@link #onCleared()} 两处触发。</p>
@@ -50,21 +49,22 @@ public final class AiCallViewModel extends ViewModel {
      * <p>这里在主线程上调用会话，会话契约要求实现方自己把采集与网络的初始化投到 IO 执行器；
      * 页面不等它，先画"正在连接"。</p>
      *
-     * @param platformId 用哪个平台；配置为空时交给会话去报 {@code NO_PLATFORM}，页面不替它猜
+     * <p>用哪个语音模型由会话自己去设置里读：页面不传模型，也就不会出现
+     * "界面记的选择和设置里已经变了"这种两份状态。缺 Key 时会话会报失败快照。</p>
      */
-    public void start(@NonNull AiVoiceSettings settings, @NonNull String platformId) {
+    public void start() {
         if (session != null) {
             return;
         }
-        // 先给页面一个确定的起点：没收到第一帧之前它也能画出模式徽标和"正在连接"。
-        snapshot.setValue(AiVoiceSnapshot.idle(settings.mode()));
+        // 先给页面一个确定的起点：没收到第一帧之前它也能画出"正在连接"。
+        snapshot.setValue(AiVoiceSnapshot.idle());
         AiVoiceSession created = factory.create();
         session = created;
         try {
-            created.start(settings, platformId, snapshot::postValue);
+            created.start(snapshot::postValue);
         } catch (RuntimeException error) {
             // 契约上失败应该走快照；这里兜住实现方漏掉的异常，页面至少能看到"断了"，而不是停在连接中。
-            snapshot.postValue(new AiVoiceSnapshot(AiVoiceSnapshot.State.FAILED, settings.mode(),
+            snapshot.postValue(new AiVoiceSnapshot(AiVoiceSnapshot.State.FAILED,
                     List.of(), 0f, new AiFailure(AiFailureKind.UNKNOWN, error.getMessage(), error)));
             release();
         }

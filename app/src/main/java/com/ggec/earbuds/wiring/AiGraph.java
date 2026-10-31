@@ -20,14 +20,9 @@ import com.ggec.earbuds.data.ai.store.AiDocumentStore;
 import com.ggec.earbuds.data.ai.store.EncryptedSecretStore;
 import com.ggec.earbuds.data.ai.store.FileAiDocumentStore;
 import com.ggec.earbuds.data.ai.store.SecretStore;
-import com.ggec.earbuds.data.ai.voice.CascadedVoiceStrategy;
-import com.ggec.earbuds.data.ai.voice.OmniVoiceStrategy;
 import com.ggec.earbuds.data.ai.voice.RealtimeLinkAdapter;
-import com.ggec.earbuds.data.ai.voice.WhisperSpeechRecognizer;
+import com.ggec.earbuds.data.ai.voice.RealtimeVoiceSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
-import com.ggec.earbuds.domain.ai.model.AiMode;
-import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
-import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.AiConversationRepository;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
@@ -46,14 +41,13 @@ import com.ggec.earbuds.domain.ai.usecase.RemovePlatform;
 import com.ggec.earbuds.domain.ai.usecase.RunSpeedTest;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
 import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
-import com.ggec.earbuds.domain.ai.usecase.SaveVoiceSettings;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
+import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
-import com.ggec.earbuds.domain.ai.port.AiSpeechRecognizer;
-import com.ggec.earbuds.domain.ai.port.AiSpeechSynthesizer;
+import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
-import com.ggec.earbuds.platform.ai.voice.SystemTtsSynthesizer;
 import com.ggec.earbuds.ui.ai.call.AiCallViewModel;
 import com.ggec.earbuds.ui.ai.call.AiVoiceSessionFactory;
 import com.ggec.earbuds.ui.ai.chat.AiChatUiMapper;
@@ -77,7 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 对话会话和设置仓库必须是应用级单例——生成过程不能因为界面销毁而中断。
  *
  * <p>配置界面（设置页、平台页）与历史面板各有自己的装配；整个 AI 功能里只有这里知道各层的具体实现，
- * 语音的采集与播放、转写与合成也都在这里选定——界面层只拿端口。</p>
+ * 语音的采集、播放与实时链路也都在这里选定——界面层只拿端口。</p>
  */
 public final class AiGraph {
 
@@ -103,11 +97,7 @@ public final class AiGraph {
     private final AiChatSession session;
     private final Context context;
     private final AiClock clock;
-    /** TTS 引擎初始化慢、绑在进程上，应用级一个；采集与播放持有设备，每次通话新建。 */
-    private final AiSpeechSynthesizer synthesizer;
-    private final AiSpeechRecognizer recognizer;
     private final Executor voiceState;
-    private final Executor voiceBlocking;
     /** 设置页与平台页共用的几个依赖：存储、网关池、平台目录、id 生成器。 */
     private final AiDocumentStore documents;
     private final LibAiClientPool clients;
@@ -120,7 +110,6 @@ public final class AiGraph {
         AiClock clock = System::currentTimeMillis;
         this.clock = clock;
         this.voiceState = pool("ai-voice", 1);
-        this.voiceBlocking = pool("ai-voice-io", 1);
         this.documents = new FileAiDocumentStore(new File(context.getFilesDir(), "ai"));
         // 密文放进不参与备份的目录：它只有在这台设备的密钥库里才解得开，恢复到别的设备上也是废的。
         AiDocumentStore secretDocuments = new FileAiDocumentStore(new File(context.getNoBackupFilesDir(), "ai"));
@@ -133,8 +122,6 @@ public final class AiGraph {
         ids = () -> UUID.randomUUID().toString();
         session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients), clock, ids,
                 pool("ai-chat", 1));
-        synthesizer = new SystemTtsSynthesizer(context);
-        recognizer = new WhisperSpeechRecognizer(settings);
     }
 
     /** 创建对话页的 ViewModel。 */
@@ -159,23 +146,14 @@ public final class AiGraph {
     }
 
     /**
-     * 通话页的会话工厂。每次通话新建采集与播放（它们持有音频设备），
-     * 转写与合成复用应用级实例；状态合并与阻塞调用各占一条线程，
-     * 否则一次朗读会把"打断"排在它后面才生效。
+     * 通话页的会话工厂。每次通话新建采集与播放（它们持有音频设备）；
+     * 所有状态合并都投到同一条串行线程，否则一次朗读会把"打断"排在它后面才生效。
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
-        return () -> {
-            // 采集与播放持有音频设备，两种模式各自新建一份；差别只在中间那条链路。
-            AiAudioCapture input = new AndroidAudioCapture(context);
-            AiAudioPlayback output = new AndroidAudioPlayback(context);
-            if (settings.load().voice().mode() == AiMode.OMNI) {
-                return new OmniVoiceStrategy(settings, input, output, new RealtimeLinkAdapter(),
-                        clock, voiceState);
-            }
-            return new CascadedVoiceStrategy(settings, session, input, output, recognizer, synthesizer,
-                    clock, voiceState, voiceBlocking);
-        };
+        return () -> new RealtimeVoiceSession(settings,
+                new AndroidAudioCapture(context), new AndroidAudioPlayback(context),
+                new RealtimeLinkAdapter(), clock, voiceState);
     }
 
     private static Executor pool(String name, int threads) {
@@ -205,7 +183,8 @@ public final class AiGraph {
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
-                        new SaveChatPreferences(settings), new SaveVoiceSettings(settings),
+                        new SaveChatPreferences(settings), new SelectInteractionMode(settings),
+                        new SelectVoiceModel(settings), new SaveVoiceApiKey(settings),
                         new LoadPlatformTemplates(catalog),
                         new AiSettingsUiMapper()));
             }

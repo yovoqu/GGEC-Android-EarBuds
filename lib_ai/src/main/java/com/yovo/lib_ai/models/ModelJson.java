@@ -2,15 +2,10 @@ package com.yovo.lib_ai.models;
 
 import androidx.annotation.Nullable;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Locale;
-import java.util.Set;
 
 /**
  * 模型列表解码共用的宽松取值。Android 的 {@code optString} 会把 JSON null 读成 "null"，这里统一绕开。
@@ -55,38 +50,6 @@ final class ModelJson {
             }
         }
         return null;
-    }
-
-    /**
-     * 数组里的字符串，或对象里值为 true 的键，统一成小写集合。
-     */
-    static Set<String> lowerNames(@Nullable JSONObject json, String... keys) {
-        Set<String> names = new HashSet<>();
-        if (json == null) {
-            return names;
-        }
-        for (String key : keys) {
-            if (!json.has(key) || json.isNull(key)) {
-                continue;
-            }
-            Object value = json.opt(key);
-            if (value instanceof JSONArray array) {
-                for (int i = 0; i < array.length(); i++) {
-                    Object item = array.opt(i);
-                    if (item instanceof String text) {
-                        names.add(text.toLowerCase(Locale.ROOT));
-                    }
-                }
-            } else if (value instanceof JSONObject object) {
-                for (Iterator<String> it = object.keys(); it.hasNext(); ) {
-                    String name = it.next();
-                    if (object.optBoolean(name, false)) {
-                        names.add(name.toLowerCase(Locale.ROOT));
-                    }
-                }
-            }
-        }
-        return names;
     }
 
     /**

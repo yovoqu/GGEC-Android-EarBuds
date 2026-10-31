@@ -136,7 +136,7 @@ public class PlatformUseCasesTest {
 
         new FetchPlatformModels(repository, gateway(List.of(model("deepseek-reasoner"))), clock).execute("deepseek");
 
-        assertNull(repository.load().selection());
+        assertNull(repository.load().textSelection());
     }
 
     @Test
@@ -145,7 +145,7 @@ public class PlatformUseCasesTest {
 
         new FetchPlatformModels(repository, gateway(List.of(model("deepseek-chat"))), clock).execute("deepseek");
 
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
     }
 
     @Test
@@ -202,7 +202,7 @@ public class PlatformUseCasesTest {
         AiSettings settings = repository.load();
         assertEquals(List.of("deepseek-reasoner"),
                 settings.platform("deepseek").orElseThrow().models().stream().map(AiModel::id).toList());
-        assertNull(settings.selection());
+        assertNull(settings.textSelection());
     }
 
     @Test
@@ -213,10 +213,21 @@ public class PlatformUseCasesTest {
         SelectModel select = new SelectModel(repository);
 
         select.execute("deepseek", "deepseek-chat");
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
         assertValidation(() -> select.execute("deepseek", "nope"), AiValidationError.MODEL_UNKNOWN);
         assertValidation(() -> select.execute("openai", "gpt-4o"), AiValidationError.PLATFORM_NOT_CONFIGURED);
-        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().selection());
+        assertEquals(new AiSelection("deepseek", "deepseek-chat"), repository.load().textSelection());
+    }
+
+    @Test
+    public void textModeRejectsRealtimeModels() {
+        repository.update(settings -> settings.withPlatform(AiFixtures.platformOf("realtime", "k",
+                AiFixtures.realtimeModel("gpt-4o-realtime-preview"))));
+        SelectModel select = new SelectModel(repository);
+
+        assertValidation(() -> select.execute("realtime", "gpt-4o-realtime-preview"),
+                AiValidationError.REALTIME_MODEL_NOT_CHAT);
+        assertNull(repository.load().textSelection());
     }
 
     @Test
@@ -226,7 +237,7 @@ public class PlatformUseCasesTest {
         new RemovePlatform(repository).execute("deepseek");
 
         assertTrue(repository.load().platforms().isEmpty());
-        assertNull(repository.load().selection());
+        assertNull(repository.load().textSelection());
     }
 
     @Test

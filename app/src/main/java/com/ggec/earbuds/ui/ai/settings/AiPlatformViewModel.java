@@ -6,6 +6,8 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.ggec.earbuds.R;
+
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -189,7 +191,7 @@ public final class AiPlatformViewModel extends ViewModel {
     /** 测试连接 = 只测当前选中模型，等价于一次真实的最小请求。 */
     @androidx.annotation.Nullable
     private String selectedModelOf(@NonNull AiPlatformConfig platform) {
-        com.ggec.earbuds.domain.ai.model.AiSelection selection = settings.selection();
+        com.ggec.earbuds.domain.ai.model.AiSelection selection = settings.textSelection();
         return selection != null && platform.id().equals(selection.platformId())
                 ? selection.modelId() : null;
     }
@@ -252,7 +254,8 @@ public final class AiPlatformViewModel extends ViewModel {
         if (platform == null) {
             return;
         }
-        List<String> ids = platform.models().stream().map(AiModel::id).toList();
+        // 只测能用于文本对话的模型：实时模型不在这条链路上，测了也没有意义。
+        List<String> ids = platform.chatModels().stream().map(AiModel::id).toList();
         if (ids.isEmpty()) {
             events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_models_empty));
             return;
@@ -306,7 +309,11 @@ public final class AiPlatformViewModel extends ViewModel {
         }
         io.execute(() -> {
             try {
-                addManualModel.execute(platform.id(), rawId);
+                AiModel added = addManualModel.execute(platform.id(), rawId);
+                // 实时模型接不上文本对话，加进来也选不到；直接说清楚，而不是让它悄悄消失。
+                if (added.realtime()) {
+                    events.postValue(AiPlatformEvent.toast(R.string.ai_settings_model_realtime_only));
+                }
             } catch (AiValidationException invalid) {
                 events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
             }
