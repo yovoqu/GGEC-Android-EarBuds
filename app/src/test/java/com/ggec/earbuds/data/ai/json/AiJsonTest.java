@@ -18,6 +18,7 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
@@ -60,6 +61,8 @@ public class AiJsonTest {
 
         assertFalse("keys never reach the settings document", text.contains("sk-secret-value"));
         assertFalse("voice keys never reach the settings document", text.contains("sk-voice-secret"));
+        assertFalse("默认方言不写进文档", text.contains("openai_beta"));
+        assertFalse("没拉过的实时模型列表不写进文档", text.contains("realtimeModels"));
         AiPlatformConfig round = decoded.platforms().get(0);
         assertEquals("", round.apiKey());
         assertEquals(platform.withoutKey(), round);
@@ -72,6 +75,27 @@ public class AiJsonTest {
         assertEquals(failed, round.speedResults().get("deepseek-reasoner"));
         assertTrue(round.model("mine").orElseThrow().manual());
         assertTrue(round.model("deepseek-reasoner").orElseThrow().features().contains(AiModelFeature.VISION));
+    }
+
+    @Test
+    public void chatGptRealtimeChoicesRoundTripWithoutTheKey() throws Exception {
+        AiVoiceConfig voice = new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of(AiVoiceModel.CHATGPT, "sk-gpt"))
+                .withBaseUrl("https://gw.example.com/")
+                .withDialect(AiRealtimeDialect.GA)
+                .withRealtimeModels(List.of("gpt-realtime", "gpt-4o-realtime-preview"))
+                .withRealtimeModel("gpt-4o-realtime-preview");
+        AiSettings settings = new AiSettings(List.of(), AiInteractionMode.VOICE, null, voice,
+                AiChatPreferences.DEFAULT);
+
+        String text = settingsJson.encode(settings);
+        AiVoiceConfig decoded = settingsJson.decode(text).voice();
+
+        assertFalse(text.contains("sk-gpt"));
+        assertEquals("https://gw.example.com", decoded.baseUrl());
+        assertEquals(AiRealtimeDialect.GA, decoded.dialect());
+        assertEquals(List.of("gpt-realtime", "gpt-4o-realtime-preview"), decoded.realtimeModels());
+        assertEquals("gpt-4o-realtime-preview", decoded.realtimeModelId());
+        assertEquals("", decoded.apiKey());
     }
 
     @Test

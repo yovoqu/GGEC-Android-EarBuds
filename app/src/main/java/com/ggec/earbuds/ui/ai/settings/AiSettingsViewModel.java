@@ -13,6 +13,7 @@ import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
+import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
@@ -20,17 +21,18 @@ import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
 import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
+import com.ggec.earbuds.domain.ai.usecase.UpdateChatGptRealtime;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
 import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executor;
 
 /**
  * 设置总览页的 ViewModel：只经用例读写设置，把结果交给 {@link AiSettingsUiMapper} 变成界面状态。
  *
- * <p>它不认识 Context、不认识视图、也不认识仓库实现，所有调用都是同步的用例调用——
- * 设置本身很小，读一次磁盘不值得再开线程。</p>
+ * <p>读设置是同步的。拉取 ChatGPT 实时模型是例外：它走网络，必须丢到 {@code io} 上。</p>
  */
 public final class AiSettingsViewModel extends ViewModel {
 
@@ -40,6 +42,9 @@ public final class AiSettingsViewModel extends ViewModel {
     private final SelectInteractionMode selectMode;
     private final SelectVoiceModel selectVoiceModel;
     private final SaveVoiceApiKey saveVoiceApiKey;
+    private final UpdateChatGptRealtime updateChatGpt;
+    private final FetchChatGptRealtimeModels fetchRealtime;
+    private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
     private final AiSettingsUiMapper mapper;
 
@@ -50,6 +55,7 @@ public final class AiSettingsViewModel extends ViewModel {
     private volatile List<AiPlatformTemplate> templates = List.of();
     private Subscription subscription;
     private boolean started;
+    private volatile boolean fetchingRealtime;
 
     public AiSettingsViewModel(@NonNull LoadAiSettings loadSettings,
                                @NonNull ObserveAiSettings observeSettings,
@@ -57,6 +63,9 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull SelectInteractionMode selectMode,
                                @NonNull SelectVoiceModel selectVoiceModel,
                                @NonNull SaveVoiceApiKey saveVoiceApiKey,
+                               @NonNull UpdateChatGptRealtime updateChatGpt,
+                               @NonNull FetchChatGptRealtimeModels fetchRealtime,
+                               @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
@@ -65,6 +74,9 @@ public final class AiSettingsViewModel extends ViewModel {
         this.selectMode = Objects.requireNonNull(selectMode, "selectMode");
         this.selectVoiceModel = Objects.requireNonNull(selectVoiceModel, "selectVoiceModel");
         this.saveVoiceApiKey = Objects.requireNonNull(saveVoiceApiKey, "saveVoiceApiKey");
+        this.updateChatGpt = Objects.requireNonNull(updateChatGpt, "updateChatGpt");
+        this.fetchRealtime = Objects.requireNonNull(fetchRealtime, "fetchRealtime");
+        this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -134,13 +146,55 @@ public final class AiSettingsViewModel extends ViewModel {
         guard(() -> saveVoiceApiKey.execute(apiKey));
     }
 
+    /** 改 ChatGPT 的接口地址。空串恢复官方主机。不合法的地址只提示，不写入。 */
+    public void saveVoiceBaseUrl(@NonNull String baseUrl) {
+        guard(() -> updateChatGpt.baseUrl(baseUrl));
+    }
+
+    /** 从已拉取的实时模型里选一个。列表里没有的 id 不写入。 */
+    public void selectChatGptModel(@NonNull String modelId) {
+        guard(() -> updateChatGpt.model(modelId));
+    }
+
+    /** 选择 ChatGPT 的线路方言。未知 id 不写入。 */
+    public void selectChatGptDialect(@NonNull String dialectId) {
+        guard(() -> updateChatGpt.dialect(dialectId));
+    }
+
+    /** 用当前地址和 Key 拉取 ChatGPT 实时模型。进行中再点一次会被忽略。 */
+    public void fetchChatGptModels() {
+        if (fetchingRealtime) {
+            return;
+        }
+        fetchingRealtime = true;
+        publish();
+        events.postValue(AiSettingsEvent.toast(R.string.ai_settings_fetching));
+        io.execute(() -> {
+            try {
+                fetchRealtime.execute();
+            } catch (AiFailure failure) {
+                events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
+            } catch (IllegalArgumentException invalid) {
+                events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
+            } finally {
+                fetchingRealtime = false;
+                publish();
+            }
+        });
+    }
+
     private void onSettings(AiSettings settings) {
         latest = settings;
         publish();
     }
 
     private void publish() {
-        uiState.postValue(mapper.map(latest));
+        AiSettingsUiState mapped = mapper.map(latest);
+        if (fetchingRealtime) {
+            mapped = new AiSettingsUiState(mapped.loaded(), mapped.mode(), mapped.modeHint(),
+                    mapped.platforms(), mapped.identity(), mapped.voice().fetching(true), mapped.style());
+        }
+        uiState.postValue(mapped);
     }
 
     /**

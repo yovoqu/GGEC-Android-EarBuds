@@ -7,6 +7,7 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
@@ -95,18 +96,60 @@ public final class AiSettingsJson {
     }
 
     /**
-     * 语音模式只存"选了哪家预设"：端点在代码里，Key 在加密存储里，文档里没有第三样东西。
+     * 厂商 id 一定写。ChatGPT 改过的地址、选中的实时模型和方言只在不是默认值时写。
+     * Key 仍只在加密存储里。
      */
     private static void putVoice(JSONObject root, AiVoiceConfig voice) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "model", voice.model().id());
+        if (!voice.baseUrl().isEmpty()) {
+            JsonValues.put(json, "baseUrl", voice.baseUrl());
+        }
+        if (!voice.realtimeModelId().isEmpty()) {
+            JsonValues.put(json, "realtimeModel", voice.realtimeModelId());
+        }
+        if (voice.dialect() != AiRealtimeDialect.defaultDialect()) {
+            JsonValues.put(json, "dialect", voice.dialect().id());
+        }
+        if (!voice.realtimeModels().isEmpty()) {
+            JSONArray models = new JSONArray();
+            for (String id : voice.realtimeModels()) {
+                models.put(id);
+            }
+            JsonValues.put(json, "realtimeModels", models);
+        }
         JsonValues.put(root, "voice", json);
     }
 
     private static AiVoiceConfig decodeVoice(@Nullable JSONObject root) {
         JSONObject json = root == null ? null : root.optJSONObject("voice");
         AiVoiceModel model = json == null ? null : AiVoiceModel.fromId(JsonValues.string(json, "model"));
-        return new AiVoiceConfig(model == null ? AiVoiceModel.defaultModel() : model, Map.of());
+        if (model == null) {
+            model = AiVoiceModel.defaultModel();
+        }
+        if (json == null) {
+            return new AiVoiceConfig(model, Map.of());
+        }
+        AiRealtimeDialect dialect = AiRealtimeDialect.fromId(JsonValues.string(json, "dialect"));
+        if (dialect == null) {
+            dialect = AiRealtimeDialect.defaultDialect();
+        }
+        List<String> models = new ArrayList<>();
+        JSONArray listed = json.optJSONArray("realtimeModels");
+        for (int i = 0; listed != null && i < listed.length(); i++) {
+            String id = listed.optString(i, "").strip();
+            if (!id.isEmpty() && !models.contains(id)) {
+                models.add(id);
+            }
+        }
+        String selected = JsonValues.string(json, "realtimeModel", "");
+        AiVoiceConfig voice = new AiVoiceConfig(model, Map.of(), "", selected, dialect, models);
+        String baseUrl = JsonValues.string(json, "baseUrl", "");
+        try {
+            return voice.withBaseUrl(baseUrl);
+        } catch (IllegalArgumentException invalid) {
+            return voice;
+        }
     }
 
     private static JSONObject encodePreferences(AiChatPreferences preferences) {

@@ -14,6 +14,8 @@ import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
+import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.testing.ai.AiFixtures;
@@ -101,6 +103,23 @@ public class AiSettingsRepositoryImplTest {
         repository.update(s -> s.withVoice(s.voice().withApiKey("")));
         assertNull(secrets.secrets.get("voicekey.qwen"));
         assertFalse(repository().load().voiceReady());
+    }
+
+    @Test
+    public void chatGptRealtimeChoicesSurviveARestartBesideTheKey() {
+        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
+                .withBaseUrl("https://gw.example.com")
+                .withDialect(AiRealtimeDialect.GA)
+                .withRealtimeModels(List.of("gpt-realtime"))));
+
+        AiVoiceConfig voice = repository().load().voice();
+
+        assertEquals("sk-gpt", voice.apiKey());
+        assertEquals("https://gw.example.com", voice.baseUrl());
+        assertEquals(AiRealtimeDialect.GA, voice.dialect());
+        assertEquals(List.of("gpt-realtime"), voice.realtimeModels());
+        assertEquals("gpt-realtime", voice.resolvedRealtimeModel());
+        assertFalse(documents.documents.get("settings.json").contains("sk-gpt"));
     }
 
     @Test

@@ -5,12 +5,16 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
+import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
@@ -117,43 +121,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
                 executor.execute(() -> fail(new AiFailure(kind, "麦克风出错：" + detail)));
             }
         };
-        this.linkListener = new AiRealtimeLink.Listener() {
-            @Override
-            public void onOpened() {
-                executor.execute(RealtimeVoiceSession.this::onLinkOpened);
-            }
-
-            @Override
-            public void onAssistantText(@NonNull String delta) {
-                // 必须显式限定到外层：这个匿名类自己也有同名方法，不限定就会调回自己（无限递归）。
-                executor.execute(() -> RealtimeVoiceSession.this.onAssistantText(delta));
-            }
-
-            @Override
-            public void onAssistantAudio(@NonNull byte[] pcm16) {
-                executor.execute(() -> RealtimeVoiceSession.this.onAssistantAudio(pcm16));
-            }
-
-            @Override
-            public void onUserSpeechStarted() {
-                executor.execute(RealtimeVoiceSession.this::onUserSpeechStarted);
-            }
-
-            @Override
-            public void onUserSpeechStopped() {
-                executor.execute(RealtimeVoiceSession.this::onUserSpeechStopped);
-            }
-
-            @Override
-            public void onResponseDone() {
-                executor.execute(RealtimeVoiceSession.this::onResponseDone);
-            }
-
-            @Override
-            public void onFailure(@NonNull AiFailure reason) {
-                executor.execute(() -> fail(reason));
-            }
-        };
+        this.linkListener = output -> executor.execute(() -> onLinkOutput(output));
     }
 
     // ---- AiVoiceSession ----
@@ -206,7 +174,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             // 地址只给到平台主机基址：wss 的拼法（/v1/realtime、模型名转义）属于协议细节，
             // 留在 lib_ai 那一侧，这一层不重复拼一遍。
             link.open(new AiRealtimeLink.Config(plan.baseUrl(), plan.apiKey(), plan.model(),
-                    INPUT_SAMPLE_RATE_HZ, OUTPUT_SAMPLE_RATE_HZ), linkListener);
+                    INPUT_SAMPLE_RATE_HZ, OUTPUT_SAMPLE_RATE_HZ, plan.dialect()), linkListener);
         } catch (RuntimeException broken) {
             fail(new AiFailure(AiFailureKind.UNKNOWN,
                     "实时语音通道打不开：" + detailOf(broken), broken));
@@ -269,7 +237,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             return;
         }
         // 先让服务端停：只丢本地缓存的话，下一块音频紧接着又到，界面上会看起来"打断失败"。
-        bestEffort(link::cancelResponse);
+        bestEffort(() -> link.send(new AiRealtimeInput.Cancel()));
         bestEffort(playback::flush);
         markTurnFinal(assistantTurnId);
         assistantTurnId = null;
@@ -318,13 +286,25 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             return;
         }
         try {
-            link.appendAudio(upsampled);
+            link.send(new AiRealtimeInput.Audio(upsampled, OUTPUT_SAMPLE_RATE_HZ));
         } catch (RuntimeException lost) {
             // 上行失败由链路的错误事件负责上报；这里再抛只会把采集线程打断。
         }
     }
 
     // ---- 下行 ----
+
+    private void onLinkOutput(@NonNull AiRealtimeOutput output) {
+        switch (output) {
+            case AiRealtimeOutput.Opened ignored -> onLinkOpened();
+            case AiRealtimeOutput.AssistantText text -> onAssistantText(text.delta());
+            case AiRealtimeOutput.AssistantAudio audio -> onAssistantAudio(audio.pcm16(), audio.sampleRateHz());
+            case AiRealtimeOutput.UserSpeechStarted ignored -> onUserSpeechStarted();
+            case AiRealtimeOutput.UserSpeechStopped ignored -> onUserSpeechStopped();
+            case AiRealtimeOutput.ResponseDone ignored -> onResponseDone();
+            case AiRealtimeOutput.Failed failed -> fail(failed.failure());
+        }
+    }
 
     private void onAssistantText(String delta) {
         if (ended || failure != null) {
@@ -347,13 +327,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         publish();
     }
 
-    private void onAssistantAudio(byte[] pcm16) {
+    private void onAssistantAudio(byte[] pcm16, int sampleRateHz) {
         if (ended || failure != null || pcm16 == null || pcm16.length == 0) {
             return;
         }
         if (!playbackStarted) {
             try {
-                playback.start(OUTPUT_SAMPLE_RATE_HZ);
+                playback.start(sampleRateHz);
                 playbackStarted = true;
             } catch (RuntimeException broken) {
                 fail(new AiFailure(AiFailureKind.UNKNOWN,
@@ -382,7 +362,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         }
         bestEffort(playback::flush);
         // 同时让服务端停止生成：不取消的话，下一块音频到达又会把状态推回 SPEAKING。
-        bestEffort(link::cancelResponse);
+        bestEffort(() -> link.send(new AiRealtimeInput.Cancel()));
         markTurnFinal(assistantTurnId);
         assistantTurnId = null;
         phase = Phase.LISTENING;
@@ -510,7 +490,11 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED,
                     "语音模型「" + voice.model().displayName() + "」还没有填 API Key。");
         }
-        return new RealtimePlan(voice.model().baseUrl(), voice.apiKey(), voice.model().realtimeModel());
+        if (voice.model() == AiVoiceModel.CHATGPT) {
+            return new RealtimePlan(voice.effectiveBaseUrl(), voice.apiKey(),
+                    voice.resolvedRealtimeModel(), voice.dialect());
+        }
+        return new RealtimePlan(voice.model().baseUrl(), voice.apiKey(), voice.model().realtimeModel(), null);
     }
 
     /**
@@ -531,8 +515,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         return detail == null || detail.isBlank() ? error.getClass().getSimpleName() : detail;
     }
 
-    /** 一次通话要连的目标：主机基址、密钥、模型。只在开工前算一次，之后不再读设置。 */
-    private record RealtimePlan(String baseUrl, String apiKey, String model) {
+    /** 一次通话要连的目标。方言为空表示按厂商默认线路。只在开工前算一次，之后不再读设置。 */
+    private record RealtimePlan(String baseUrl, String apiKey, String model,
+                                @Nullable AiRealtimeDialect dialect) {
     }
 
     /** 内部阶段。对外只暴露 {@link AiVoiceSnapshot.State}，这个枚举不进领域。 */

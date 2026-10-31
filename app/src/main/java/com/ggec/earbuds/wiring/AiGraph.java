@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.CreationExtras;
 
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
 import com.ggec.earbuds.data.ai.gateway.LibAiChatGateway;
+import com.ggec.earbuds.data.ai.gateway.LibAiChatGptRealtimeGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiModelGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiPlatformCatalog;
 import com.ggec.earbuds.data.ai.gateway.LibAiSpeedTestGateway;
@@ -31,6 +32,7 @@ import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
+import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
@@ -45,6 +47,7 @@ import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
+import com.ggec.earbuds.domain.ai.usecase.UpdateChatGptRealtime;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
@@ -185,6 +188,9 @@ public final class AiGraph {
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new SaveChatPreferences(settings), new SelectInteractionMode(settings),
                         new SelectVoiceModel(settings), new SaveVoiceApiKey(settings),
+                        new UpdateChatGptRealtime(settings),
+                        new FetchChatGptRealtimeModels(settings, new LibAiChatGptRealtimeGateway()),
+                        pool("ai-chatgpt-realtime", 1),
                         new LoadPlatformTemplates(catalog),
                         new AiSettingsUiMapper()));
             }
