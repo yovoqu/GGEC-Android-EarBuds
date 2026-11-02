@@ -7,6 +7,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
+import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
@@ -109,8 +110,8 @@ public final class AiSettingsUiMapper {
     // ---- 语音模型 ----
 
     /**
-     * 厂商下拉来自 {@link AiVoiceModel} 的预设顺序。ChatGPT 的地址、实时模型和方言
-     * 原样交给界面，映射层不决定选哪一个。
+     * 服务商下拉来自 {@link AiVoiceModel} 的预设顺序。地址、模型与方言原样交给界面，
+     * 映射层不决定选哪一个；拉到的模型全部交给界面，只按能力位标一个"实时"。
      */
     @NonNull
     private static AiSettingsUiState.Voice voice(@NonNull AiVoiceConfig config) {
@@ -125,10 +126,15 @@ public final class AiSettingsUiMapper {
             dialects.add(new AiSettingsUiState.DialectOption(dialect.id(), dialectLabel(dialect),
                     dialect == config.dialect()));
         }
+        List<AiSettingsUiState.VoiceModelOption> models =
+                new ArrayList<>(config.realtimeModels().size());
+        for (String id : config.realtimeModels()) {
+            models.add(new AiSettingsUiState.VoiceModelOption(id, AiModel.looksRealtime(id)));
+        }
         return new AiSettingsUiState.Voice(config.model().id(), config.model().displayName(),
                 config.configured(), options, config.model() == AiVoiceModel.CHATGPT,
-                config.effectiveBaseUrl(), config.resolvedRealtimeModel(), config.realtimeModels(),
-                config.dialect().id(), dialects, false);
+                config.effectiveBaseUrl(), !config.baseUrl().isEmpty(),
+                config.resolvedRealtimeModel(), models, config.dialect().id(), dialects, false);
     }
 
     private static int dialectLabel(AiRealtimeDialect dialect) {

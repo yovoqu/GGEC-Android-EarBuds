@@ -60,33 +60,43 @@ public record AiSettingsUiState(
     }
 
     /**
-     * 语音模式的模型卡。厂商仍是预设；ChatGPT 这一家再展示地址、拉到的实时模型和方言。
+     * 语音模式的模型卡：服务商、地址、拉到的全部模型、方言与 Key 状态。
      *
-     * @param configured       当前厂商的 Key 是否已填；没填时通话入口不可用
-     * @param options          厂商下拉，顺序即预设顺序
-     * @param chatGpt          当前厂商是 ChatGPT 时才画地址、模型和方言
+     * @param configured       当前服务商的 Key 是否已填；没填时通话入口不可用
+     * @param options          服务商下拉/列表，顺序即预设顺序
+     * @param chatGpt          当前服务商是 ChatGPT 时才画方言与可改地址
      * @param baseUrl          真正会去连的主机，没改过时是官方地址
-     * @param realtimeModelId  真正会去连的实时模型；还没拉列表时是厂商预设
-     * @param realtimeModels   已拉取的实时模型 id，空表示还没拉过
+     * @param baseUrlCustom    true 表示用户改过地址，界面据此说"自定义/官方"
+     * @param realtimeModelId  真正会去连的模型；没拉列表时是厂商预设
+     * @param models           已拉取的全部模型（不再只留实时模型），空表示还没拉过
      * @param fetching         正在拉模型列表
      */
     public record Voice(@NonNull String modelId, @NonNull String modelName, boolean configured,
                         @NonNull List<VoiceOption> options, boolean chatGpt,
-                        @NonNull String baseUrl, @NonNull String realtimeModelId,
-                        @NonNull List<String> realtimeModels, @NonNull String dialectId,
-                        @NonNull List<DialectOption> dialects, boolean fetching) {
+                        @NonNull String baseUrl, boolean baseUrlCustom,
+                        @NonNull String realtimeModelId, @NonNull List<VoiceModelOption> models,
+                        @NonNull String dialectId, @NonNull List<DialectOption> dialects,
+                        boolean fetching) {
 
         public Voice {
             options = List.copyOf(options);
-            realtimeModels = List.copyOf(realtimeModels);
+            models = List.copyOf(models);
             dialects = List.copyOf(dialects);
         }
 
         @NonNull
         public Voice fetching(boolean value) {
-            return new Voice(modelId, modelName, configured, options, chatGpt, baseUrl,
-                    realtimeModelId, realtimeModels, dialectId, dialects, value);
+            return new Voice(modelId, modelName, configured, options, chatGpt, baseUrl, baseUrlCustom,
+                    realtimeModelId, models, dialectId, dialects, value);
         }
+    }
+
+    /**
+     * 已拉取模型列表里的一项。
+     *
+     * @param realtime 能不能直接接一条实时语音连接；只做标注，不拦选择
+     */
+    public record VoiceModelOption(@NonNull String id, boolean realtime) {
     }
 
     /** 方言下拉的一项。文案是资源 id，映射层不读 Context。 */
@@ -116,7 +126,7 @@ public record AiSettingsUiState(
     public static AiSettingsUiState empty() {
         return new AiSettingsUiState(false, false, AiInteractionMode.defaultMode(), AiText.of(0),
                 List.of(), new Identity(null, null, 0, 0),
-                new Voice("", "", false, List.of(), false, "", "", List.of(), "", List.of(), false),
+                new Voice("", "", false, List.of(), false, "", false, "", List.of(), "", List.of(), false),
                 new Style("", AiText.of(0)), AiSettingsPersistenceStatus.SAVED);
     }
 

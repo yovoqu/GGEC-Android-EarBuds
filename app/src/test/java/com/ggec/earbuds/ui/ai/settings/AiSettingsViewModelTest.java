@@ -12,7 +12,7 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
-import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
+import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
@@ -59,7 +59,7 @@ public class AiSettingsViewModelTest {
                 new SelectVoiceModel(settings),
                 new SaveVoiceApiKey(settings),
                 new UpdateChatGptRealtime(settings),
-                new FetchChatGptRealtimeModels(settings, (baseUrl, apiKey) -> List.copyOf(realtimeCatalog)),
+                new FetchVoiceModels(settings, (baseUrl, apiKey) -> List.copyOf(realtimeCatalog)),
                 Runnable::run,
                 new LoadPlatformTemplates(catalog),
                 new AiSettingsUiMapper());
@@ -135,7 +135,7 @@ public class AiSettingsViewModelTest {
         viewModel.saveVoiceBaseUrl("https://gw.example.com/");
         viewModel.selectChatGptDialect("openai_ga");
         viewModel.saveVoiceBaseUrl("ftp://nope");
-        viewModel.fetchChatGptModels();
+        viewModel.fetchVoiceModels();
         viewModel.selectChatGptModel("gpt-4o-realtime-preview");
 
         assertEquals("https://gw.example.com", settings.load().voice().baseUrl());
@@ -145,7 +145,7 @@ public class AiSettingsViewModelTest {
         assertTrue(voice.chatGpt());
         assertEquals("https://gw.example.com", voice.baseUrl());
         assertEquals("gpt-4o-realtime-preview", voice.realtimeModelId());
-        assertEquals(2, voice.realtimeModels().size());
+        assertEquals(2, voice.models().size());
         assertEquals("openai_ga", voice.dialectId());
         assertFalse(voice.fetching());
     }
@@ -162,7 +162,7 @@ public class AiSettingsViewModelTest {
                 new SelectVoiceModel(deferred),
                 new SaveVoiceApiKey(deferred),
                 new UpdateChatGptRealtime(deferred),
-                new FetchChatGptRealtimeModels(deferred, (baseUrl, apiKey) -> List.of()),
+                new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of()),
                 Runnable::run, new LoadPlatformTemplates(catalog), new AiSettingsUiMapper());
 
         loading.start();

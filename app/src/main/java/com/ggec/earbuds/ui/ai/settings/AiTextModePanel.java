@@ -96,9 +96,9 @@ final class AiTextModePanel {
     }
 
     void setVisible(boolean visible) {
-        // INVISIBLE keeps the panel laid out and its glass attached; only the draw is toggled, so
-        // switching modes never re-measures the heavy subtree or re-mounts the glass.
-        view.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        // GONE 才不参与测量：两个面板高度不同，非当前面板若只 INVISIBLE，共用槽会被撑到
+        // 较高那块的高度，切换与内容变化时就表现为整页上下跳。
+        view.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     private void bindIdentity(@NonNull AiSettingsUiState.Identity identity) {

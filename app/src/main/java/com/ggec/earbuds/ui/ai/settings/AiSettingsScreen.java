@@ -18,6 +18,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.settings.voice.VoiceSettingsView;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoSegmentButton;
 import com.yohu.youi.api.platform.YoSystemBar;
@@ -51,10 +52,14 @@ public final class AiSettingsScreen {
     private final AiTheme theme;
     private final YoComponents components;
     private final Listener listener;
+    private final AiSettingsHeader header;
     private final NestedScrollView scroll;
     private final LinearLayout root;
     private final LinearLayout column;
-    /** 两个模式面板叠在同一槽里常驻布局，切换只改可见性（不 GONE、不重排、不重挂玻璃）。 */
+    /**
+     * 两个模式面板轮流占用这个槽：非当前模式的面板置 GONE（不参与测量），
+     * 这样槽高永远等于"当前面板"的高度，不会因为另一块被测量而把页面撑高或跳一下。
+     */
     private final FrameLayout contentHost;
     /**
      * 分段按钮只在「已加载的真实模式」确定后构建一次，并以该模式作为初始选择。分段未设初始
@@ -64,9 +69,8 @@ public final class AiSettingsScreen {
     @Nullable private YoSegmentButton modes;
     private final TextView modeHint;
     private final TextView loadingHint;
-    private final TextView saveHint;
     @Nullable private AiTextModePanel textPanel;
-    @Nullable private AiVoiceModePanel voicePanel;
+    @Nullable private VoiceSettingsView voicePanel;
     private boolean rendered;
 
     public AiSettingsScreen(@NonNull AppCompatActivity context, @NonNull AiTheme theme,
@@ -80,7 +84,7 @@ public final class AiSettingsScreen {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(theme.page);
 
-        AiSettingsHeader header = new AiSettingsHeader(context, theme,
+        header = new AiSettingsHeader(context, theme,
                 R.string.ai_settings_title, listener::onClose);
         root.addView(header.view(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -108,21 +112,15 @@ public final class AiSettingsScreen {
         modeHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
         modeHint.setVisibility(View.GONE);
         modeHint.setLineSpacing(theme.dpf(3), 1f);
+        modeHint.setMaxLines(2);
+        modeHint.setMinLines(2);
+        modeHint.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hintParams.topMargin = theme.dp(AiTheme.SPACE_S);
         hintParams.leftMargin = theme.dp(AiTheme.LIST_EDGE);
         hintParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(modeHint, hintParams);
-
-        saveHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
-        saveHint.setVisibility(View.GONE);
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        saveParams.topMargin = theme.dp(AiTheme.SPACE_XS);
-        saveParams.leftMargin = theme.dp(AiTheme.LIST_EDGE);
-        saveParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
-        column.addView(saveHint, saveParams);
 
         contentHost = new FrameLayout(context);
         column.addView(contentHost, matchWrap());
@@ -166,12 +164,17 @@ public final class AiSettingsScreen {
         boolean voice = state.mode() == AiInteractionMode.VOICE;
         int selected = voice ? SEGMENT_VOICE : SEGMENT_TEXT;
         ensureModeSegment(selected);
-        modeHint.setVisibility(View.VISIBLE);
-        modeHint.setText(state.modeHint().resolve(context));
-        // 两个模式面板都在数据到达时建一次，之后切换只做显隐（面板放进叠加槽），
-        // 绝不在分段点击回调里构建视图。
+        CharSequence nextHint = state.modeHint().resolve(context);
+        if (modeHint.getVisibility() != View.VISIBLE) {
+            modeHint.setVisibility(View.VISIBLE);
+        }
+        if (!nextHint.toString().contentEquals(modeHint.getText())) {
+            modeHint.setText(nextHint);
+        }
+        // 两个模式面板都在数据到达时建一次，之后切换只做显隐；非当前面板置 GONE、不参与测量，
+        // 槽高永远等于当前面板，切换只换来一次正确的高度，不会反复被另一块撑高。
         AiTextModePanel text = textPanel();
-        AiVoiceModePanel voiceContent = voicePanel();
+        VoiceSettingsView voiceContent = voicePanel();
         text.setVisible(!voice);
         voiceContent.setVisible(voice);
         if (voice) {
@@ -229,9 +232,10 @@ public final class AiSettingsScreen {
 
     /** 语音模式面板，首次需要时才构建。 */
     @NonNull
-    private AiVoiceModePanel voicePanel() {
+    private VoiceSettingsView voicePanel() {
         if (voicePanel == null) {
-            voicePanel = new AiVoiceModePanel(context, theme, components, new AiVoiceModePanel.Listener() {
+            voicePanel = new VoiceSettingsView(context, theme, components,
+                    new VoiceSettingsView.Listener() {
                 @Override
                 public void onSelectVoiceModel(@NonNull String modelId) {
                     listener.onSelectVoiceModel(modelId);
@@ -258,7 +262,7 @@ public final class AiSettingsScreen {
                 }
 
                 @Override
-                public void onFetchRealtimeModels() {
+                public void onFetchVoiceModels() {
                     listener.onFetchRealtimeModels();
                 }
             });
@@ -267,23 +271,24 @@ public final class AiSettingsScreen {
         return voicePanel;
     }
 
-    /** 把面板挂进叠加槽：两者都常驻布局，切换只改可见性。 */
+    /** 把面板挂进叠加槽；只有当前模式那块参与测量，另一块 GONE。 */
     private void mountPanel(@NonNull View panelView) {
+        panelView.setVisibility(View.GONE);
         contentHost.addView(panelView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
+    /**
+     * 保存状态只写在页头右侧的固定状态位，不占正文的竖向空间。每一次改值都会先发 SAVING、
+     * 写盘后再发 SAVED；把这两条放进正文流里，就等于每次改值都把页面往下推一下再弹回来。
+     */
     private void bindPersistence(AiSettingsPersistenceStatus status) {
         if (status == AiSettingsPersistenceStatus.FAILED) {
-            saveHint.setText(R.string.ai_settings_save_failed);
-            saveHint.setTextColor(theme.alert);
-            saveHint.setVisibility(View.VISIBLE);
+            header.setStatus(context.getString(R.string.ai_settings_save_failed), theme.alert);
         } else if (status == AiSettingsPersistenceStatus.SAVING) {
-            saveHint.setText(R.string.ai_settings_saving);
-            saveHint.setTextColor(theme.text3);
-            saveHint.setVisibility(View.VISIBLE);
+            header.setStatus(context.getString(R.string.ai_settings_saving), theme.text3);
         } else {
-            saveHint.setVisibility(View.GONE);
+            header.setStatus(null, theme.text3);
         }
     }
 

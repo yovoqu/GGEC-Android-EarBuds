@@ -54,9 +54,9 @@ final class PlatformModelsSection {
         this.listener = listener;
         view = new LinearLayout(context);
         view.setOrientation(LinearLayout.VERTICAL);
-        title = PlatformSectionHeader.title(theme);
-        action = PlatformSectionHeader.action(theme);
-        view.addView(PlatformSectionHeader.withAction(theme, context, title, action,
+        title = AiSectionHeader.title(theme);
+        action = AiSectionHeader.action(theme);
+        view.addView(AiSectionHeader.withAction(theme, context, title, action,
                 () -> {
                     if (current != null && current.count() == 0) {
                         listener.onFetchModels();
