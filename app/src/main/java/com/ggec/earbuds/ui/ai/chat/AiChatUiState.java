@@ -13,7 +13,8 @@ public record AiChatUiState(
         List<AiMessageUi> messages,
         Welcome welcome,
         Composer composer,
-        boolean storageFailed) {
+        boolean storageFailed,
+        boolean voiceReady) {
 
     public enum Welcome {
         NONE,
@@ -28,11 +29,16 @@ public record AiChatUiState(
     public record Composer(boolean enabled, boolean generating, @Nullable String modelChip) {
     }
 
+    public boolean canSend() {
+        return composer.enabled() && !composer.generating();
+    }
+
     public AiChatUiState {
         messages = List.copyOf(messages);
     }
 
     public static AiChatUiState empty() {
-        return new AiChatUiState(false, List.of(), Welcome.NONE, new Composer(false, false, null), false);
+        return new AiChatUiState(false, List.of(), Welcome.NONE,
+                new Composer(false, false, null), false, false);
     }
 }

@@ -123,7 +123,7 @@ public final class AiComposerView extends LinearLayout {
             }
         });
         sendButton.setOnClickListener(view -> onSendClick());
-        setState(false, false, null);
+        applyState(false, false, null);
     }
 
     public void setListener(@Nullable Listener listener) {
@@ -133,7 +133,7 @@ public final class AiComposerView extends LinearLayout {
     /**
      * @param modelChip 平台 · 模型；为空表示还没有可用模型，这行改说「未接入平台」
      */
-    public void setState(boolean enabled, boolean generating, @Nullable String modelChip) {
+    private void applyState(boolean enabled, boolean generating, @Nullable String modelChip) {
         boolean wasEnabled = this.enabled;
         this.enabled = enabled;
         this.generating = generating;
@@ -160,6 +160,10 @@ public final class AiComposerView extends LinearLayout {
         }
         applyFieldLook(!enabled);
         refreshSendButton();
+    }
+
+    public void setState(@NonNull AiChatUiState.Composer state) {
+        applyState(state.enabled(), state.generating(), state.modelChip());
     }
 
     /** 不可用时换成浅填充底色：一眼看出这不是能打字的地方，而不只是提示语变了。 */
