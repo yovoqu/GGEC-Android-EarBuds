@@ -135,6 +135,9 @@
     <string name="ai_settings_voice_key_clear">清除</string>
 
     <string name="ai_settings_loading">正在读取设置…</string>
+    <string name="ai_settings_load_failed">设置读取失败，请检查存储空间</string>
+    <string name="ai_settings_saving">正在保存设置…</string>
+    <string name="ai_settings_save_failed">设置保存失败，修改尚未写入磁盘</string>
     <string name="ai_settings_platform_change">更换</string>
     <string name="ai_settings_connection_section">连接</string>
     <string name="ai_settings_advanced_section">高级</string>

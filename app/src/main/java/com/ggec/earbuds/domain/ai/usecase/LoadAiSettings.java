@@ -4,6 +4,7 @@ import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 public final class LoadAiSettings {
 
@@ -15,5 +16,9 @@ public final class LoadAiSettings {
 
     public AiSettings execute() {
         return repository.load();
+    }
+
+    public CompletableFuture<AiSettings> executeAsync() {
+        return repository.loadAsync();
     }
 }
