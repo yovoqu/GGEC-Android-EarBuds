@@ -133,7 +133,9 @@ final class AiVoiceModePanel {
     }
 
     void setVisible(boolean visible) {
-        view.setVisibility(visible ? View.VISIBLE : View.GONE);
+        // INVISIBLE keeps the panel laid out and its dropdown glass attached; only the draw is
+        // toggled, so switching modes never re-measures the heavy subtree or re-mounts the glass.
+        view.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
     }
 
     /** 厂商行不重建；只更新已有下拉的选项与值。 */
@@ -235,6 +237,7 @@ final class AiVoiceModePanel {
         YoSelect select = YoSelect.create(context)
                 .setControlSize(YoSelect.ControlSize.SMALL)
                 .setBackgroundColor(theme.fill)
+                .setMenuSystemMaterial(YoSelect.MenuSystemMaterial.none())
                 .setMenuAlign(YoSelect.MenuAlignType.END)
                 .setOnSelectListener(onSelect)
                 .build();

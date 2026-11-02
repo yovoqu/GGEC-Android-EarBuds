@@ -3,6 +3,7 @@ package com.ggec.earbuds.ui.ai.settings;
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -53,6 +54,8 @@ public final class AiSettingsScreen {
     private final NestedScrollView scroll;
     private final LinearLayout root;
     private final LinearLayout column;
+    /** 两个模式面板叠在同一槽里常驻布局，切换只改可见性（不 GONE、不重排、不重挂玻璃）。 */
+    private final FrameLayout contentHost;
     private final YoSegmentButton modes;
     private final TextView modeHint;
     private final TextView loadingHint;
@@ -128,6 +131,9 @@ public final class AiSettingsScreen {
         saveParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(saveHint, saveParams);
 
+        contentHost = new FrameLayout(context);
+        column.addView(contentHost, matchWrap());
+
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         loadingHint.setText(R.string.ai_settings_loading);
         LinearLayout.LayoutParams loadingParams = new LinearLayout.LayoutParams(
@@ -172,20 +178,16 @@ public final class AiSettingsScreen {
             modes.setSelectedIndex(selected);
         }
         modeHint.setText(state.modeHint().resolve(context));
+        // 两个模式面板都建一次：分段切换因此只是一次显隐切换，绝不在点击回调里构建视图。
+        // （Select 已不再在构造期构建菜单，面板构造成本很低，可在数据到达后一次建好。）
+        AiTextModePanel text = textPanel();
+        AiVoiceModePanel voiceContent = voicePanel();
+        text.setVisible(!voice);
+        voiceContent.setVisible(voice);
         if (voice) {
-            AiVoiceModePanel panel = voicePanel();
-            panel.setVisible(true);
-            panel.bind(state.voice());
-            if (textPanel != null) {
-                textPanel.setVisible(false);
-            }
+            voiceContent.bind(state.voice());
         } else {
-            AiTextModePanel panel = textPanel();
-            panel.setVisible(true);
-            panel.bind(state.identity(), state.style());
-            if (voicePanel != null) {
-                voicePanel.setVisible(false);
-            }
+            text.bind(state.identity(), state.style());
         }
         bindPersistence(state.persistence());
     }
@@ -205,7 +207,7 @@ public final class AiSettingsScreen {
                     listener.onEditPrompt();
                 }
             });
-            insertBeforeLoadingHint(textPanel.view());
+            mountPanel(textPanel.view());
         }
         return textPanel;
     }
@@ -245,15 +247,15 @@ public final class AiSettingsScreen {
                     listener.onFetchRealtimeModels();
                 }
             });
-            insertBeforeLoadingHint(voicePanel.view());
+            mountPanel(voicePanel.view());
         }
         return voicePanel;
     }
 
-    /** 面板按加入顺序排在加载提示之前：先文本后语音，仅当前模式可见。 */
-    private void insertBeforeLoadingHint(@NonNull View panelView) {
-        int index = column.indexOfChild(loadingHint);
-        column.addView(panelView, index < 0 ? column.getChildCount() : index, matchWrap());
+    /** 把面板挂进叠加槽：两者都常驻布局，切换只改可见性。 */
+    private void mountPanel(@NonNull View panelView) {
+        contentHost.addView(panelView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private void bindPersistence(AiSettingsPersistenceStatus status) {
