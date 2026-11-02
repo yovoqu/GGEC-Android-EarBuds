@@ -40,7 +40,7 @@ final class PlatformConnectionSection {
         this.listener = listener;
         view = new LinearLayout(context);
         view.setOrientation(LinearLayout.VERTICAL);
-        view.addView(PlatformSectionHeader.titleOnly(theme, context,
+        view.addView(AiSectionHeader.titleOnly(theme, context,
                 context.getString(R.string.ai_settings_connection_section)), matchWrap());
         list = YoList.create(context).setOnItemClickListener(this::onRow).build();
         components.own(list::destroy);

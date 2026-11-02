@@ -15,7 +15,7 @@ import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
-import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
+import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
@@ -47,7 +47,7 @@ public final class AiSettingsViewModel extends ViewModel {
     private final SelectVoiceModel selectVoiceModel;
     private final SaveVoiceApiKey saveVoiceApiKey;
     private final UpdateChatGptRealtime updateChatGpt;
-    private final FetchChatGptRealtimeModels fetchRealtime;
+    private final FetchVoiceModels fetchVoiceModels;
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
     private final AiSettingsUiMapper mapper;
@@ -73,7 +73,7 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull SelectVoiceModel selectVoiceModel,
                                @NonNull SaveVoiceApiKey saveVoiceApiKey,
                                @NonNull UpdateChatGptRealtime updateChatGpt,
-                               @NonNull FetchChatGptRealtimeModels fetchRealtime,
+                               @NonNull FetchVoiceModels fetchVoiceModels,
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiSettingsUiMapper mapper) {
@@ -85,7 +85,7 @@ public final class AiSettingsViewModel extends ViewModel {
         this.selectVoiceModel = Objects.requireNonNull(selectVoiceModel, "selectVoiceModel");
         this.saveVoiceApiKey = Objects.requireNonNull(saveVoiceApiKey, "saveVoiceApiKey");
         this.updateChatGpt = Objects.requireNonNull(updateChatGpt, "updateChatGpt");
-        this.fetchRealtime = Objects.requireNonNull(fetchRealtime, "fetchRealtime");
+        this.fetchVoiceModels = Objects.requireNonNull(fetchVoiceModels, "fetchVoiceModels");
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -190,8 +190,8 @@ public final class AiSettingsViewModel extends ViewModel {
         guard(() -> updateChatGpt.dialect(dialectId));
     }
 
-    /** 用当前地址和 Key 拉取 ChatGPT 实时模型。进行中再点一次会被忽略。 */
-    public void fetchChatGptModels() {
+    /** 用当前地址和 Key 拉取该服务商的全部模型。进行中再点一次会被忽略。 */
+    public void fetchVoiceModels() {
         if (fetchingRealtime) {
             return;
         }
@@ -200,7 +200,7 @@ public final class AiSettingsViewModel extends ViewModel {
         events.postValue(AiSettingsEvent.toast(R.string.ai_settings_fetching));
         io.execute(() -> {
             try {
-                fetchRealtime.execute();
+                fetchVoiceModels.execute();
             } catch (AiFailure failure) {
                 events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
             } catch (IllegalArgumentException invalid) {

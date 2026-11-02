@@ -146,8 +146,34 @@ public class AiSettingsUiMapperTest {
         assertEquals(new AiSelection("deepseek", "chat"), voice.textSelection());
     }
 
-    // ---- 回答风格 ----
+    @Test
+    public void fetchedVoiceModelsKeepEveryIdAndOnlyBadgeRealtimeOnes() {
+        AiVoiceConfig voice = AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
+                .withRealtimeModels(List.of("gpt-4o", "gpt-4o-realtime-preview",
+                        "qwen3-omni-flash-realtime"))
+                .withRealtimeModel("gpt-4o-realtime-preview");
 
+        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice)).voice();
+
+        assertEquals(3, state.models().size());
+        assertFalse("普通文本模型不该被标成实时", state.models().get(0).realtime());
+        assertTrue(state.models().get(1).realtime());
+        assertTrue("名字带 omni/realtime 的也算实时", state.models().get(2).realtime());
+        assertEquals("gpt-4o-realtime-preview", state.realtimeModelId());
+    }
+
+    @Test
+    public void aCustomBaseUrlIsFlaggedSoTheInterfaceCanSayOfficialOrNot() {
+        AiVoiceConfig voice = AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
+                .withBaseUrl("https://gw.example.com");
+
+        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice)).voice();
+
+        assertTrue(state.baseUrlCustom());
+        assertEquals("https://gw.example.com", state.baseUrl());
+    }
+
+    // ---- 回答风格 ----
     @Test
     public void theStyleSectionCarriesTheStoredPrompt() {
         AiChatPreferences preferences = AiChatPreferences.DEFAULT.withSystemPrompt("只回答一句话");

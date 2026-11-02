@@ -141,7 +141,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
         @Override
         public void onFetchRealtimeModels() {
-            viewModel.fetchChatGptModels();
+            viewModel.fetchVoiceModels();
         }
 
         @Override

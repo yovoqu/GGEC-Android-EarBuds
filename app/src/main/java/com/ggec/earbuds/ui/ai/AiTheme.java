@@ -49,6 +49,7 @@ public final class AiTheme {
     public static final float TEXT_CAPTION = 12f;
     public static final float TEXT_SUBHEAD = 13f;
     public static final float TEXT_BODY = 15f;
+    public static final float TEXT_TITLE = 17f;
     public static final float TEXT_HEADLINE = 20f;
 
     // ---- 尺寸 ----
@@ -183,6 +184,25 @@ public final class AiTheme {
     @NonNull
     public GradientDrawable roundedStroke(@ColorInt int color, float radiusDp, @ColorInt int stroke, float strokeDp) {
         GradientDrawable drawable = rounded(color, radiusDp);
+        drawable.setStroke(Math.max(1, dp(strokeDp)), stroke);
+        return drawable;
+    }
+
+    /**
+     * 对角渐变底：只用于语音状态卡的"身份"面，制造一点光的来源感，不做装饰滥用。
+     */
+    @NonNull
+    public GradientDrawable gradient(@ColorInt int start, @ColorInt int end, float radiusDp) {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR, new int[]{start, end});
+        drawable.setCornerRadius(dpf(radiusDp));
+        return drawable;
+    }
+
+    @NonNull
+    public GradientDrawable gradientStroke(@ColorInt int start, @ColorInt int end, float radiusDp,
+                                          @ColorInt int stroke, float strokeDp) {
+        GradientDrawable drawable = gradient(start, end, radiusDp);
         drawable.setStroke(Math.max(1, dp(strokeDp)), stroke);
         return drawable;
     }

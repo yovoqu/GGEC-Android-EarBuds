@@ -125,6 +125,25 @@
     <string name="ai_settings_voice_realtime_model">实时模型</string>
     <string name="ai_settings_voice_models_empty">尚未拉取</string>
     <string name="ai_settings_voice_dialect">方言</string>
+
+    <!-- 语音交流：重构后的分段设置。状态卡 / 服务商 / 连接 / 模型 / 方言 -->
+    <string name="ai_settings_voice_status_subtitle">实时语音 · %1$s</string>
+    <string name="ai_settings_voice_status_ready">可直接通话</string>
+    <string name="ai_settings_voice_status_key_missing">还差 API Key</string>
+    <string name="ai_settings_voice_section_provider">服务商</string>
+    <string name="ai_settings_voice_provider_ready">已填写 Key</string>
+    <string name="ai_settings_voice_provider_needs_key">未填写 Key</string>
+    <string name="ai_settings_voice_model_section">语音模型</string>
+    <string name="ai_settings_voice_model_section_count">语音模型 · %1$d</string>
+    <string name="ai_settings_voice_fetch_retry">重新拉取</string>
+    <string name="ai_settings_voice_models_loading">正在拉取…</string>
+    <string name="ai_settings_voice_models_empty_hint">点右上角「拉取」，取回该服务商的全部模型</string>
+    <string name="ai_settings_voice_model_realtime">实时 · 可直接通话</string>
+    <string name="ai_settings_voice_model_plain">普通模型，可能不支持实时通话</string>
+    <string name="ai_settings_voice_model_realtime_short">实时</string>
+    <string name="ai_settings_voice_model_plain_short">普通</string>
+    <string name="ai_settings_voice_url_custom">自定义</string>
+    <string name="ai_settings_voice_url_official">官方</string>
     <string name="ai_settings_dialect_beta">Beta</string>
     <string name="ai_settings_dialect_ga">GA</string>
     <string name="ai_settings_voice_key">API Key</string>
