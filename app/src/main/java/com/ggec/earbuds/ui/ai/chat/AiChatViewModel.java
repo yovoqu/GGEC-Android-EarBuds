@@ -10,9 +10,7 @@ import com.ggec.earbuds.domain.ai.chat.AiChatState;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.yovo.lib_common.event.OneShotLiveData;
 
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 对话页的 ViewModel。真正的对话状态在应用级的 {@link AiChatSession} 里，它不随界面销毁；
@@ -28,7 +26,7 @@ public final class AiChatViewModel extends ViewModel {
 
     private final MutableLiveData<AiChatUiState> uiState = new MutableLiveData<>(AiChatUiState.empty());
     private final OneShotLiveData<AiChatEvent> events = new OneShotLiveData<>();
-    private final Map<String, Boolean> reasoningOverrides = new ConcurrentHashMap<>();
+    private final ReasoningOverrides reasoningOverrides = new ReasoningOverrides();
     private final Subscription subscription;
 
     private volatile AiChatState latest;
@@ -55,14 +53,6 @@ public final class AiChatViewModel extends ViewModel {
     @NonNull
     public String draft() {
         return draft;
-    }
-
-    /**
-     * 语音交流模式是否已经可用：预设模型选好、Key 已填。为假时通话入口隐藏。
-     * 页面只拿这个布尔值，不需要知道用的是哪家模型——那是通话页与会话的事。
-     */
-    public boolean voiceReady() {
-        return latest.voiceReady();
     }
 
     public void setDraft(@NonNull String draft) {
@@ -94,18 +84,6 @@ public final class AiChatViewModel extends ViewModel {
         session.open(conversationId);
     }
 
-    public void deleteConversation(@NonNull String conversationId) {
-        session.deleteConversation(conversationId);
-    }
-
-    public void renameConversation(@NonNull String conversationId, @NonNull String title) {
-        session.rename(conversationId, title);
-    }
-
-    public void clearHistory() {
-        session.clearAll();
-    }
-
     public void toggleReasoning(@NonNull String messageId) {
         AiChatUiState current = uiState.getValue();
         if (current == null) {
@@ -113,8 +91,8 @@ public final class AiChatViewModel extends ViewModel {
         }
         for (AiMessageUi message : current.messages()) {
             if (message.id().equals(messageId)) {
-                reasoningOverrides.put(messageId, !message.reasoningExpanded());
-                uiState.setValue(mapper.map(latest, reasoningOverrides));
+                reasoningOverrides.toggle(messageId, !message.reasoningExpanded());
+                uiState.setValue(mapper.map(latest, reasoningOverrides.values()));
                 return;
             }
         }
@@ -122,7 +100,11 @@ public final class AiChatViewModel extends ViewModel {
 
     private void onState(AiChatState state) {
         latest = state;
-        uiState.postValue(mapper.map(state, reasoningOverrides));
+        AiChatUiState next = mapper.map(state, reasoningOverrides.values());
+        if (Objects.equals(uiState.getValue(), next)) {
+            return;
+        }
+        uiState.postValue(next);
     }
 
     @Override

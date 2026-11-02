@@ -33,7 +33,8 @@ public final class AiChatUiMapper {
                 items,
                 welcome(state),
                 new AiChatUiState.Composer(state.ready(), state.generating(), model == null ? null : label),
-                state.storageFailed());
+                state.storageFailed(),
+                state.voiceReady());
     }
 
     private static AiChatUiState.Welcome welcome(AiChatState state) {
