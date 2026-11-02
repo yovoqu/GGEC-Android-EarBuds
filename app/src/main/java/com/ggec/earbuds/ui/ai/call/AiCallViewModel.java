@@ -6,12 +6,10 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.domain.ai.model.AiFailure;
-import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 
-import java.util.List;
+import java.util.Objects;
 
 /**
  * 通话页的 ViewModel：把会话的快照搬给页面、把用户操作搬回会话、挂断时释放会话。
@@ -28,19 +26,23 @@ import java.util.List;
 public final class AiCallViewModel extends ViewModel {
 
     private final AiVoiceSessionFactory factory;
-    private final MutableLiveData<AiVoiceSnapshot> snapshot = new MutableLiveData<>();
+    private final AiCallUiMapper mapper;
+    private final MutableLiveData<AiCallUiState> uiState =
+            new MutableLiveData<>(AiCallUiState.connecting());
 
     @Nullable
     private AiVoiceSession session;
+    private boolean speakerOn = true;
 
-    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory) {
+    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory, @NonNull AiCallUiMapper mapper) {
         this.factory = factory;
+        this.mapper = mapper;
     }
 
-    /** 页面唯一的真相来源；{@link #start} 之前是 null，页面按"正在连接"画。 */
+    /** 页面唯一的真相来源；{@link #start} 之前是连接中。 */
     @NonNull
-    public LiveData<AiVoiceSnapshot> snapshot() {
-        return snapshot;
+    public LiveData<AiCallUiState> uiState() {
+        return uiState;
     }
 
     /**
@@ -57,17 +59,21 @@ public final class AiCallViewModel extends ViewModel {
             return;
         }
         // 先给页面一个确定的起点：没收到第一帧之前它也能画出"正在连接"。
-        snapshot.setValue(AiVoiceSnapshot.idle());
+        uiState.setValue(AiCallUiState.connecting().withSpeakerOn(speakerOn));
         AiVoiceSession created = factory.create();
         session = created;
-        try {
-            created.start(snapshot::postValue);
-        } catch (RuntimeException error) {
-            // 契约上失败应该走快照；这里兜住实现方漏掉的异常，页面至少能看到"断了"，而不是停在连接中。
-            snapshot.postValue(new AiVoiceSnapshot(AiVoiceSnapshot.State.FAILED,
-                    List.of(), 0f, new AiFailure(AiFailureKind.UNKNOWN, error.getMessage(), error)));
-            release();
-        }
+        created.start(snapshot -> publish(mapper.map(snapshot).withSpeakerOn(speakerOn)));
+        created.setSpeakerphone(speakerOn);
+    }
+
+    /** 当前是否已经有一条通话会话；页面重建后用来避免重复 start。 */
+    public boolean isStarted() {
+        return session != null;
+    }
+
+    /** 权限拒绝由 View 报告，状态仍只在这里发布。 */
+    public void permissionDenied() {
+        uiState.setValue(AiCallUiState.permissionDenied().withSpeakerOn(speakerOn));
     }
 
     /** 静音只停上行；会话用 MUTED 快照确认，页面不自己改按钮状态。 */
@@ -80,9 +86,14 @@ public final class AiCallViewModel extends ViewModel {
 
     /** 扬声器 / 听筒路由。 */
     public void setSpeakerphone(boolean speaker) {
-        AiVoiceSession current = session;
+        speakerOn = speaker;
+        AiCallUiState current = uiState.getValue();
         if (current != null) {
-            current.setSpeakerphone(speaker);
+            uiState.setValue(current.withSpeakerOn(speaker));
+        }
+        AiVoiceSession running = session;
+        if (running != null) {
+            running.setSpeakerphone(speaker);
         }
     }
 
@@ -110,5 +121,12 @@ public final class AiCallViewModel extends ViewModel {
         if (current != null) {
             current.stop();
         }
+    }
+
+    private void publish(@NonNull AiCallUiState next) {
+        if (Objects.equals(uiState.getValue(), next)) {
+            return;
+        }
+        uiState.postValue(next);
     }
 }
