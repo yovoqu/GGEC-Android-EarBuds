@@ -60,3 +60,12 @@ google-services.json
 # 重写过程的草稿，以及交给模型接手用的 prompt，只留在本机。
 /app/doc/rewrite-drafts/
 /app/doc/*prompt*.md
+
+# 运行期崩溃转储与回放日志：统一归档到仓库外的 YoAgentLogs/<repo>/，仓库内即使残留也不入库。
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+*.jfr
+/.logs/
+/.agent-logs/
+
