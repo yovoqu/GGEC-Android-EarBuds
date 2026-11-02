@@ -65,9 +65,9 @@ public class AiHistoryViewModelTest {
 
     @Test
     public void startShowsWhatIsOnDisk() {
-        List<AiHistoryItemUi> rows = viewModel.items().getValue();
+        List<AiHistoryItemUi> rows = viewModel.uiState().getValue().items();
 
-        assertTrue(viewModel.loaded().getValue());
+        assertFalse(viewModel.uiState().getValue().loading());
         assertEquals(2, rows.size());
         assertEquals("c1", rows.get(0).id());
         assertEquals(AiHistoryText.of(R.string.ai_history_title_untitled), rows.get(1).title());
@@ -84,7 +84,7 @@ public class AiHistoryViewModelTest {
         other.start();
 
         assertEquals(1, counting.reads);
-        other.destroy();
+        other.close();
     }
 
     @Test
@@ -92,7 +92,7 @@ public class AiHistoryViewModelTest {
         viewModel.rename("c2", "  续航问题  ");
 
         assertEquals("续航问题", conversations.stored.get("c2").title());
-        assertEquals(AiHistoryText.raw("续航问题"), viewModel.items().getValue().get(1).title());
+        assertEquals(AiHistoryText.raw("续航问题"), viewModel.uiState().getValue().items().get(1).title());
     }
 
     /** 空标题由面板挡下并提示：会话会把空串当成"没改名"静默返回，报一句错比什么都不发生好。 */
@@ -110,7 +110,7 @@ public class AiHistoryViewModelTest {
         viewModel.delete("c1");
 
         assertFalse(conversations.stored.containsKey("c1"));
-        List<AiHistoryItemUi> rows = viewModel.items().getValue();
+        List<AiHistoryItemUi> rows = viewModel.uiState().getValue().items();
         assertEquals(1, rows.size());
         assertEquals("c2", rows.get(0).id());
     }
@@ -120,15 +120,15 @@ public class AiHistoryViewModelTest {
         viewModel.clearAll();
 
         assertTrue(conversations.stored.isEmpty());
-        assertTrue(viewModel.items().getValue().isEmpty());
-        assertTrue(viewModel.loaded().getValue());
+        assertTrue(viewModel.uiState().getValue().items().isEmpty());
+        assertFalse(viewModel.uiState().getValue().loading());
     }
 
     @Test
     public void openingMarksThatConversation() {
         viewModel.open("c2");
 
-        List<AiHistoryItemUi> rows = viewModel.items().getValue();
+        List<AiHistoryItemUi> rows = viewModel.uiState().getValue().items();
         assertEquals("c2", rows.get(1).id());
         assertTrue(rows.get(1).current());
         assertFalse(rows.get(0).current());
@@ -139,15 +139,15 @@ public class AiHistoryViewModelTest {
     public void aChangeFromOutsideRefreshesTheList() {
         session.rename("c2", "外部改名");
 
-        assertEquals(AiHistoryText.raw("外部改名"), viewModel.items().getValue().get(1).title());
+        assertEquals(AiHistoryText.raw("外部改名"), viewModel.uiState().getValue().items().get(1).title());
     }
 
     @Test
     public void destroyedPanelsStopFollowingTheSession() {
-        viewModel.destroy();
+        viewModel.close();
         session.rename("c2", "改名之后");
 
-        assertEquals(AiHistoryText.of(R.string.ai_history_title_untitled), viewModel.items().getValue().get(1).title());
+        assertEquals(AiHistoryText.of(R.string.ai_history_title_untitled), viewModel.uiState().getValue().items().get(1).title());
     }
 
     /**
@@ -165,11 +165,11 @@ public class AiHistoryViewModelTest {
         broken.start();
 
         assertTrue(captured.isEmpty());
-        assertTrue(broken.items().getValue().isEmpty());
-        assertTrue(broken.loaded().getValue());
+        assertTrue(broken.uiState().getValue().items().isEmpty());
+        assertFalse(broken.uiState().getValue().loading());
         // 界面靠这个信号把空态换成"没能读取对话记录 + 重试"，而不是"还没有对话"。
-        assertEquals(Boolean.TRUE, broken.loadFailed().getValue());
-        broken.destroy();
+        assertEquals(Boolean.TRUE, broken.uiState().getValue().failed());
+        broken.close();
     }
 
     /** 已有内容时刷新失败：旧行必须留着，只弹一次原因——此时没有别的可见反馈。 */
@@ -181,16 +181,16 @@ public class AiHistoryViewModelTest {
         List<AiHistoryEvent> captured = new ArrayList<>();
         panel.events().observeForever(captured::add);
         panel.start();
-        assertEquals(2, panel.items().getValue().size());
+        assertEquals(2, panel.uiState().getValue().items().size());
 
         flaky.fail = true;
         panel.refresh();
 
-        assertEquals(2, panel.items().getValue().size());
+        assertEquals(2, panel.uiState().getValue().items().size());
         assertEquals(1, captured.size());
         assertEquals(AiHistoryEvent.toast(R.string.ai_history_load_failed), captured.get(0));
-        assertEquals(Boolean.TRUE, panel.loadFailed().getValue());
-        panel.destroy();
+        assertEquals(Boolean.TRUE, panel.uiState().getValue().failed());
+        panel.close();
     }
 
     // ---- 夹具 ----

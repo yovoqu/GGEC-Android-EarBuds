@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
@@ -15,12 +16,14 @@ import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
 import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
 import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
 import com.ggec.earbuds.domain.ai.usecase.UpdateChatGptRealtime;
 import com.ggec.earbuds.testing.ai.AiFixtures;
+import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 
@@ -50,6 +53,7 @@ public class AiSettingsViewModelTest {
         viewModel = new AiSettingsViewModel(
                 new LoadAiSettings(settings),
                 new ObserveAiSettings(settings),
+                new ObserveAiSettingsPersistence(settings),
                 new SaveChatPreferences(settings),
                 new SelectInteractionMode(settings),
                 new SelectVoiceModel(settings),
@@ -69,7 +73,7 @@ public class AiSettingsViewModelTest {
         assertTrue(state.loaded());
         assertEquals(1, state.platforms().size());
         assertEquals("deepseek", state.platforms().get(0).name());
-        assertEquals(2, viewModel.templates().size());
+        assertEquals(2, viewModel.templates().getValue().size());
     }
 
     @Test
@@ -144,5 +148,28 @@ public class AiSettingsViewModelTest {
         assertEquals(2, voice.realtimeModels().size());
         assertEquals("openai_ga", voice.dialectId());
         assertFalse(voice.fetching());
+    }
+
+    @Test
+    public void startPublishesLoadingBeforeTheRepositoryFinishes() {
+        DeferredSettingsRepository deferred = new DeferredSettingsRepository();
+        AiSettingsViewModel loading = new AiSettingsViewModel(
+                new LoadAiSettings(deferred),
+                new ObserveAiSettings(deferred),
+                new ObserveAiSettingsPersistence(deferred),
+                new SaveChatPreferences(deferred),
+                new SelectInteractionMode(deferred),
+                new SelectVoiceModel(deferred),
+                new SaveVoiceApiKey(deferred),
+                new UpdateChatGptRealtime(deferred),
+                new FetchChatGptRealtimeModels(deferred, (baseUrl, apiKey) -> List.of()),
+                Runnable::run, new LoadPlatformTemplates(catalog), new AiSettingsUiMapper());
+
+        loading.start();
+
+        assertFalse(loading.uiState().getValue().loaded());
+        assertEquals(1, deferred.loadRequests);
+        deferred.complete(AiFixtures.readySettings());
+        assertTrue(loading.uiState().getValue().loaded());
     }
 }
