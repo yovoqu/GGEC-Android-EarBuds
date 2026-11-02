@@ -10,6 +10,7 @@ import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
@@ -34,8 +35,9 @@ public final class AiSettingsUiMapper {
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings) {
         AiInteractionMode mode = settings.mode();
-        return new AiSettingsUiState(true, mode, hint(mode), platforms(settings),
-                identity(settings), voice(settings.voice()), style(settings));
+        return new AiSettingsUiState(true, false, mode, hint(mode), platforms(settings),
+                identity(settings), voice(settings.voice()), style(settings),
+                AiSettingsPersistenceStatus.SAVED);
     }
 
     @NonNull

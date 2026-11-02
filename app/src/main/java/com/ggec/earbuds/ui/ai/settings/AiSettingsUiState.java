@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 
 import java.util.List;
 
@@ -18,15 +19,19 @@ import java.util.List;
  * @param modeHint 分段下方那行说明，告诉用户这一模式接的是哪类模型
  * @param identity 文本模式的身份卡；语音模式不画它
  * @param voice    语音模式的模型卡：厂商、ChatGPT 的地址与实时模型、方言、Key 状态
+ * @param persistence 设置的磁盘持久化状态
+ * @param loadFailed  首次读取失败；此时设置内容尚不可用
  */
 public record AiSettingsUiState(
         boolean loaded,
+        boolean loadFailed,
         @NonNull AiInteractionMode mode,
         @NonNull AiText modeHint,
         List<PlatformRow> platforms,
         @NonNull Identity identity,
         @NonNull Voice voice,
-        @NonNull Style style) {
+        @NonNull Style style,
+        @NonNull AiSettingsPersistenceStatus persistence) {
 
     public AiSettingsUiState {
         platforms = List.copyOf(platforms);
@@ -109,9 +114,27 @@ public record AiSettingsUiState(
 
     @NonNull
     public static AiSettingsUiState empty() {
-        return new AiSettingsUiState(false, AiInteractionMode.defaultMode(), AiText.of(0),
+        return new AiSettingsUiState(false, false, AiInteractionMode.defaultMode(), AiText.of(0),
                 List.of(), new Identity(null, null, 0, 0),
                 new Voice("", "", false, List.of(), false, "", "", List.of(), "", List.of(), false),
-                new Style("", AiText.of(0)));
+                new Style("", AiText.of(0)), AiSettingsPersistenceStatus.SAVED);
+    }
+
+    @NonNull
+    public AiSettingsUiState failedLoading() {
+        return new AiSettingsUiState(false, true, mode, modeHint, platforms, identity, voice,
+                style, persistence);
+    }
+
+    @NonNull
+    public AiSettingsUiState withFetchingVoice(boolean fetching) {
+        return new AiSettingsUiState(loaded, loadFailed, mode, modeHint, platforms, identity,
+                voice.fetching(fetching), style, persistence);
+    }
+
+    @NonNull
+    public AiSettingsUiState withPersistence(@NonNull AiSettingsPersistenceStatus next) {
+        return new AiSettingsUiState(loaded, loadFailed, mode, modeHint, platforms, identity,
+                voice, style, next);
     }
 }

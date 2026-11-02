@@ -7,9 +7,11 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
@@ -17,6 +19,7 @@ import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
 import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
@@ -32,12 +35,13 @@ import java.util.concurrent.Executor;
 /**
  * 设置总览页的 ViewModel：只经用例读写设置，把结果交给 {@link AiSettingsUiMapper} 变成界面状态。
  *
- * <p>读设置是同步的。拉取 ChatGPT 实时模型是例外：它走网络，必须丢到 {@code io} 上。</p>
+ * <p>首次读设置与网络请求都走 {@code io}；页面在读取完成前只显示加载态。</p>
  */
 public final class AiSettingsViewModel extends ViewModel {
 
     private final LoadAiSettings loadSettings;
     private final ObserveAiSettings observeSettings;
+    private final ObserveAiSettingsPersistence observePersistence;
     private final SaveChatPreferences savePreferences;
     private final SelectInteractionMode selectMode;
     private final SelectVoiceModel selectVoiceModel;
@@ -52,13 +56,18 @@ public final class AiSettingsViewModel extends ViewModel {
     private final OneShotLiveData<AiSettingsEvent> events = new OneShotLiveData<>();
 
     private volatile AiSettings latest = AiSettings.EMPTY;
-    private volatile List<AiPlatformTemplate> templates = List.of();
+    private final MutableLiveData<List<AiPlatformTemplate>> templates =
+            new MutableLiveData<>(List.of());
     private Subscription subscription;
+    private Subscription persistenceSubscription;
     private boolean started;
     private volatile boolean fetchingRealtime;
+    private volatile AiSettingsPersistenceStatus persistence =
+            AiSettingsPersistenceStatus.SAVED;
 
     public AiSettingsViewModel(@NonNull LoadAiSettings loadSettings,
                                @NonNull ObserveAiSettings observeSettings,
+                               @NonNull ObserveAiSettingsPersistence observePersistence,
                                @NonNull SaveChatPreferences savePreferences,
                                @NonNull SelectInteractionMode selectMode,
                                @NonNull SelectVoiceModel selectVoiceModel,
@@ -70,6 +79,7 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
+        this.observePersistence = Objects.requireNonNull(observePersistence, "observePersistence");
         this.savePreferences = Objects.requireNonNull(savePreferences, "savePreferences");
         this.selectMode = Objects.requireNonNull(selectMode, "selectMode");
         this.selectVoiceModel = Objects.requireNonNull(selectVoiceModel, "selectVoiceModel");
@@ -93,7 +103,7 @@ public final class AiSettingsViewModel extends ViewModel {
 
     /** 可以添加的平台模板；「添加平台」对话框按它列候选。 */
     @NonNull
-    public List<AiPlatformTemplate> templates() {
+    public LiveData<List<AiPlatformTemplate>> templates() {
         return templates;
     }
 
@@ -105,14 +115,33 @@ public final class AiSettingsViewModel extends ViewModel {
             return;
         }
         started = true;
-        try {
-            templates = loadTemplates.execute();
-        } catch (RuntimeException unreadable) {
-            // 模板表是编译期固定的，读不出来就没有可添加的平台；设置本身照常显示。
-            templates = List.of();
-        }
-        onSettings(loadSettings.execute());
+        loadSettings.executeAsync().whenComplete((settings, failure) -> {
+            if (failure != null) {
+                AiSettingsUiState current = uiState.getValue();
+                uiState.postValue(current == null
+                        ? AiSettingsUiState.empty().failedLoading()
+                        : current.failedLoading());
+                events.postValue(AiSettingsEvent.toast(AiMessages.failure(
+                        AiFailureKind.STORAGE)));
+                return;
+            }
+            onSettings(settings);
+        });
+        io.execute(this::loadTemplates);
         subscription = observeSettings.execute(this::onSettings);
+        persistenceSubscription = observePersistence.execute(status -> {
+            persistence = status;
+            publish();
+        });
+    }
+
+    private void loadTemplates() {
+        try {
+            templates.postValue(loadTemplates.execute());
+        } catch (RuntimeException unreadable) {
+            // 目录是编译期固定的；读不出来只表示当前不能新增平台。
+            templates.postValue(List.of());
+        }
     }
 
     /**
@@ -191,10 +220,12 @@ public final class AiSettingsViewModel extends ViewModel {
     private void publish() {
         AiSettingsUiState mapped = mapper.map(latest);
         if (fetchingRealtime) {
-            mapped = new AiSettingsUiState(mapped.loaded(), mapped.mode(), mapped.modeHint(),
-                    mapped.platforms(), mapped.identity(), mapped.voice().fetching(true), mapped.style());
+            mapped = mapped.withFetchingVoice(true);
         }
-        uiState.postValue(mapped);
+        mapped = mapped.withPersistence(persistence);
+        if (!Objects.equals(uiState.getValue(), mapped)) {
+            uiState.postValue(mapped);
+        }
     }
 
     /**
@@ -217,6 +248,9 @@ public final class AiSettingsViewModel extends ViewModel {
     protected void onCleared() {
         if (subscription != null) {
             subscription.cancel();
+        }
+        if (persistenceSubscription != null) {
+            persistenceSubscription.cancel();
         }
     }
 }
