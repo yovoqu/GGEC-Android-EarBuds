@@ -56,7 +56,12 @@ public final class AiSettingsScreen {
     private final LinearLayout column;
     /** 两个模式面板叠在同一槽里常驻布局，切换只改可见性（不 GONE、不重排、不重挂玻璃）。 */
     private final FrameLayout contentHost;
-    private final YoSegmentButton modes;
+    /**
+     * 分段按钮只在「已加载的真实模式」确定后构建一次，并以该模式作为初始选择。分段未设初始
+     * 选择时会默认选第一项；先建后改会让首帧先画默认项再跳到真实项（横向闪动），所以把「构建」
+     * 推迟到状态已知，用真实模式做 opening selection，首帧即正确。
+     */
+    @Nullable private YoSegmentButton modes;
     private final TextView modeHint;
     private final TextView loadingHint;
     private final TextView saveHint;
@@ -98,19 +103,7 @@ public final class AiSettingsScreen {
         });
         ViewCompat.requestApplyInsets(root);
 
-        modes = YoSegmentButton.create(context)
-                .addSegment(SEGMENT_TEXT, context.getString(R.string.ai_settings_mode_text))
-                .addSegment(SEGMENT_VOICE, context.getString(R.string.ai_settings_mode_voice))
-                .setType(YoSegmentButton.SegmentType.SINGLE_CHOICE)
-                .setSize(YoSegmentButton.Size.MEDIUM)
-                .setLayoutMode(YoSegmentButton.LayoutMode.DISTRIBUTE)
-                .setSelectedIndex(SEGMENT_TEXT)
-                .setEnabled(false)
-                .setOnSelectionChangeListener(index -> listener.onModeChanged(
-                        index == SEGMENT_VOICE ? AiInteractionMode.VOICE : AiInteractionMode.TEXT))
-                .build();
-        components.own(modes::destroy);
-        column.addView(modes.getView(), insetParams(AiTheme.SPACE_L));
+        // 分段按钮不在这里建：持久化模式要等异步加载才知道，见 ensureModeSegment()。
 
         modeHint = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
         modeHint.setVisibility(View.GONE);
@@ -170,16 +163,13 @@ public final class AiSettingsScreen {
         rendered = true;
         loadingHint.setVisibility(View.GONE);
         loadingHint.setTextColor(theme.text3);
-        modes.setEnabled(true);
-        modeHint.setVisibility(View.VISIBLE);
         boolean voice = state.mode() == AiInteractionMode.VOICE;
         int selected = voice ? SEGMENT_VOICE : SEGMENT_TEXT;
-        if (modes.getSelectedIndex() != selected) {
-            modes.setSelectedIndex(selected);
-        }
+        ensureModeSegment(selected);
+        modeHint.setVisibility(View.VISIBLE);
         modeHint.setText(state.modeHint().resolve(context));
-        // 两个模式面板都建一次：分段切换因此只是一次显隐切换，绝不在点击回调里构建视图。
-        // （Select 已不再在构造期构建菜单，面板构造成本很低，可在数据到达后一次建好。）
+        // 两个模式面板都在数据到达时建一次，之后切换只做显隐（面板放进叠加槽），
+        // 绝不在分段点击回调里构建视图。
         AiTextModePanel text = textPanel();
         AiVoiceModePanel voiceContent = voicePanel();
         text.setVisible(!voice);
@@ -190,6 +180,31 @@ public final class AiSettingsScreen {
             text.bind(state.identity(), state.style());
         }
         bindPersistence(state.persistence());
+    }
+
+    /**
+     * 按已加载的真实模式构建分段（仅一次）：把真实模式作为 opening selection，首帧即落在正确项，
+     * 不会先画默认项再跳过去。
+     */
+    private void ensureModeSegment(int selectedIndex) {
+        if (modes == null) {
+            modes = YoSegmentButton.create(context)
+                    .addSegment(SEGMENT_TEXT, context.getString(R.string.ai_settings_mode_text))
+                    .addSegment(SEGMENT_VOICE, context.getString(R.string.ai_settings_mode_voice))
+                    .setType(YoSegmentButton.SegmentType.SINGLE_CHOICE)
+                    .setSize(YoSegmentButton.Size.MEDIUM)
+                    .setLayoutMode(YoSegmentButton.LayoutMode.DISTRIBUTE)
+                    .setSelectedIndex(selectedIndex)
+                    .setOnSelectionChangeListener(index -> listener.onModeChanged(
+                            index == SEGMENT_VOICE ? AiInteractionMode.VOICE : AiInteractionMode.TEXT))
+                    .build();
+            components.own(modes::destroy);
+            column.addView(modes.getView(), 0, insetParams(AiTheme.SPACE_L));
+            return;
+        }
+        if (modes.getSelectedIndex() != selectedIndex) {
+            modes.setSelectedIndex(selectedIndex);
+        }
     }
 
     /** 文本模式面板，首次需要时才构建（含列表/下拉等较重组件）。 */
