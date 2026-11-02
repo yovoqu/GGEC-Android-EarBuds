@@ -18,8 +18,8 @@ import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
 import com.ggec.earbuds.domain.ai.port.Subscription;
-import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
+import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
@@ -33,8 +33,6 @@ import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
@@ -65,7 +63,7 @@ public final class AiPlatformViewModel extends ViewModel {
     private final MutableLiveData<AiPlatformUiState> state =
             new MutableLiveData<>(AiPlatformUiState.empty());
     private final OneShotLiveData<AiPlatformEvent> events = new OneShotLiveData<>();
-    private final Set<String> testing = ConcurrentHashMap.newKeySet();
+    private final PlatformSpeedTestState speed = new PlatformSpeedTestState();
 
     @Nullable
     private String platformId;
@@ -74,12 +72,9 @@ public final class AiPlatformViewModel extends ViewModel {
     private AiSettings settings = AiSettings.EMPTY;
     private List<AiPlatformTemplate> templates = List.of();
     private boolean advancedExpanded;
-    private boolean speedRunning;
-    private boolean keyRevealed;
     /** 搜索词：只影响"哪些行可见"，不进存储、不发网络。 */
     private volatile String searchQuery = "";
-    @Nullable
-    private AiCancellable speedTest;
+    private volatile long platformGeneration;
     @Nullable
     private Subscription subscription;
     private boolean started;
@@ -122,6 +117,7 @@ public final class AiPlatformViewModel extends ViewModel {
 
     /** 绑定一个已有平台。 */
     public void open(@NonNull String platformId) {
+        platformGeneration++;
         this.platformId = platformId;
         this.creatingTemplateId = null;
         start();
@@ -129,6 +125,7 @@ public final class AiPlatformViewModel extends ViewModel {
 
     /** 新建：还没落盘，只有模板与一份空配置。 */
     public void create(@NonNull String templateId) {
+        platformGeneration++;
         this.creatingTemplateId = templateId;
         this.platformId = null;
         start();
@@ -140,25 +137,41 @@ public final class AiPlatformViewModel extends ViewModel {
             return;
         }
         started = true;
-        io.execute(() -> {
-            settings = loadSettings.execute();
+        io.execute(() -> loadInitialState());
+    }
+
+    private void loadInitialState() {
+        try {
+            settings = loadSettings.executeAsync().join();
             templates = loadTemplates.execute();
             publish();
             subscription = observeSettings.execute(next -> {
                 settings = next;
                 publish();
             });
-        });
+        } catch (RuntimeException unreadable) {
+            events.postValue(AiPlatformEvent.toast(
+                    com.ggec.earbuds.R.string.ai_failure_storage));
+        }
     }
 
     private void publish() {
         AiPlatformConfig platform = platform();
         if (platform == null && creatingTemplateId == null) {
-            state.postValue(AiPlatformUiState.empty());
+            if (started) {
+                publishState(AiPlatformUiState.empty());
+            }
             return;
         }
         AiPlatformUiState next = mapper.map(settings, platform, template(),
-                testing, speedRunning, advancedExpanded, searchQuery);
+                speed.testing(), speed.running(), advancedExpanded, searchQuery);
+        publishState(next);
+    }
+
+    private void publishState(@NonNull AiPlatformUiState next) {
+        if (Objects.equals(state.getValue(), next)) {
+            return;
+        }
         state.postValue(next);
     }
 
@@ -190,33 +203,18 @@ public final class AiPlatformViewModel extends ViewModel {
 
     /** 测试连接 = 只测当前选中模型，等价于一次真实的最小请求。 */
     @androidx.annotation.Nullable
-    private String selectedModelOf(@NonNull AiPlatformConfig platform) {
-        com.ggec.earbuds.domain.ai.model.AiSelection selection = settings.textSelection();
-        return selection != null && platform.id().equals(selection.platformId())
-                ? selection.modelId() : null;
-    }
-
     public void testConnection() {
         AiPlatformConfig platform = platform();
-        if (platform == null || speedRunning) {
+        if (platform == null || speed.running()) {
             return;
         }
-        String selected = selectedModelOf(platform);
+        String selected = AiPlatformPolicy.selectedModelOf(settings, platform);
         if (selected == null) {
             events.postValue(AiPlatformEvent.toast(AiMessages.validation(
                     com.ggec.earbuds.domain.ai.model.AiValidationError.MODEL_UNKNOWN)));
             return;
         }
         runSpeed(List.of(selected));
-    }
-
-    public void toggleKeyRevealed() {
-        keyRevealed = !keyRevealed;
-        publish();
-    }
-
-    public boolean keyRevealed() {
-        return keyRevealed;
     }
 
     // ---- 模型 ----
@@ -241,7 +239,7 @@ public final class AiPlatformViewModel extends ViewModel {
      * 具体匹配规则在 {@link AiPlatformUiMapper#filter} 里，可单测。
      */
     public void setSearchQuery(@NonNull String query) {
-        String next = query.strip();
+        String next = AiPlatformPolicy.normalizeSearch(query);
         if (next.equals(searchQuery)) {
             return;
         }
@@ -255,7 +253,7 @@ public final class AiPlatformViewModel extends ViewModel {
             return;
         }
         // 只测能用于文本对话的模型：实时模型不在这条链路上，测了也没有意义。
-        List<String> ids = platform.chatModels().stream().map(AiModel::id).toList();
+        List<String> ids = AiPlatformPolicy.chatModelIds(platform);
         if (ids.isEmpty()) {
             events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_models_empty));
             return;
@@ -263,62 +261,46 @@ public final class AiPlatformViewModel extends ViewModel {
         runSpeed(ids);
     }
 
+    public void toggleAllSpeed() {
+        if (speed.running()) {
+            cancelSpeed();
+        } else {
+            runAllSpeed();
+        }
+    }
+
     public void cancelSpeed() {
-        AiCancellable running = speedTest;
-        speedTest = null;
+        AiCancellable running = speed.detach();
+        speed.invalidate();
         if (running != null) {
             running.cancel();
         }
-        testing.clear();
-        speedRunning = false;
         publish();
     }
 
     private void runSpeed(@NonNull List<String> modelIds) {
         AiPlatformConfig platform = platform();
-        if (platform == null || speedRunning) {
+        if (platform == null || speed.running()) {
             return;
         }
-        speedRunning = true;
-        testing.clear();
-        testing.addAll(modelIds);
+        speed.begin(modelIds);
         publish();
         try {
-            speedTest = runSpeedTest.execute(platform.id(), modelIds, new Listener());
+            long generation = speed.generation();
+            speed.attach(runSpeedTest.execute(platform.id(), modelIds, new Listener(generation)));
         } catch (AiFailure failure) {
             fail(failure);
         } catch (AiValidationException invalid) {
-            speedRunning = false;
-            testing.clear();
+            speed.finish();
             publish();
             events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
         }
     }
 
     private void fail(@NonNull AiFailure failure) {
-        speedRunning = false;
-        testing.clear();
+        speed.finish();
         publish();
         events.postValue(AiPlatformEvent.toast(AiMessages.failure(failure.kind())));
-    }
-
-    public void addManualModel(@NonNull String rawId) {
-        AiPlatformConfig platform = platform();
-        if (platform == null) {
-            return;
-        }
-        io.execute(() -> {
-            try {
-                AiModel added = addManualModel.execute(platform.id(), rawId);
-                // 实时模型接不上文本对话，加进来也选不到；直接说清楚，而不是让它悄悄消失。
-                if (added.realtime()) {
-                    events.postValue(AiPlatformEvent.toast(R.string.ai_settings_model_realtime_only));
-                }
-            } catch (AiValidationException invalid) {
-                events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
-            }
-            publish();
-        });
     }
 
     public void fetchModels() {
@@ -327,13 +309,35 @@ public final class AiPlatformViewModel extends ViewModel {
             return;
         }
         events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_fetching));
+        long generation = platformGeneration;
         io.execute(() -> {
             try {
                 fetchModels.execute(platform.id());
             } catch (AiFailure failure) {
                 events.postValue(AiPlatformEvent.toast(AiMessages.failure(failure.kind())));
             }
-            publish();
+            if (generation == platformGeneration) {
+                publish();
+            }
+        });
+    }
+
+    /** 手动添加模型：输入校验和持久化仍由领域用例完成。 */
+    public void addManualModel(@NonNull String rawId) {
+        AiPlatformConfig platform = platform();
+        if (platform == null) {
+            return;
+        }
+        long generation = platformGeneration;
+        io.execute(() -> {
+            try {
+                addManualModel.execute(platform.id(), rawId);
+            } catch (AiValidationException invalid) {
+                events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
+            }
+            if (generation == platformGeneration) {
+                publish();
+            }
         });
     }
 
@@ -342,9 +346,12 @@ public final class AiPlatformViewModel extends ViewModel {
         if (platform == null) {
             return;
         }
+        long generation = platformGeneration;
         io.execute(() -> {
             removeModel.execute(platform.id(), modelId);
-            publish();
+            if (generation == platformGeneration) {
+                publish();
+            }
         });
     }
 
@@ -355,78 +362,20 @@ public final class AiPlatformViewModel extends ViewModel {
         publish();
     }
 
-    public void saveKey(@NonNull String key) {
-        AiPlatformConfig platform = platform();
-        if (platform == null) {
-            return;
-        }
-        io.execute(() -> {
-            try {
-                savePlatform.execute(new SavePlatform.Command(platform.id(), platform.templateId(),
-                        null, key, null, null));
-            } catch (AiValidationException invalid) {
-                events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
-            }
-            publish();
-        });
-    }
-
-    public void saveBaseUrl(@NonNull String baseUrl) {
-        AiPlatformConfig platform = platform();
-        if (platform == null) {
-            return;
-        }
-        io.execute(() -> {
-            try {
-                savePlatform.execute(new SavePlatform.Command(platform.id(), platform.templateId(),
-                        null, platform.apiKey(), baseUrl, null));
-            } catch (AiValidationException invalid) {
-                events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
-            }
-            publish();
-        });
-    }
-
-    public void saveName(@NonNull String name) {
-        AiPlatformConfig platform = platform();
-        if (platform == null) {
-            return;
-        }
-        io.execute(() -> {
-            savePlatform.execute(new SavePlatform.Command(platform.id(), platform.templateId(),
-                    name, platform.apiKey(), null, null));
-            publish();
-        });
-    }
-
-    /** 新建平台：唯一一次"整体提交"，因为没密钥就落不了盘。 */
-    public void createWithKey(@NonNull String apiKey) {
-        String templateId = creatingTemplateId;
-        if (templateId == null) {
-            return;
-        }
-        io.execute(() -> {
-            try {
-                AiPlatformConfig created = savePlatform.execute(new SavePlatform.Command(
-                        null, templateId, null, apiKey, null, null));
-                platformId = created.id();
-                creatingTemplateId = null;
-                publish();
-                events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_saved));
-            } catch (AiValidationException invalid) {
-                events.postValue(AiPlatformEvent.toast(AiMessages.validation(invalid.error())));
-            }
-        });
-    }
-
     public void deletePlatform() {
         AiPlatformConfig platform = platform();
         if (platform == null) {
             return;
         }
+        platformGeneration++;
+        long generation = platformGeneration;
         io.execute(() -> {
+            speed.invalidate();
             removePlatform.execute(platform.id());
-            events.postValue(AiPlatformEvent.closed(com.ggec.earbuds.R.string.ai_settings_platform_removed));
+            if (generation == platformGeneration) {
+                events.postValue(AiPlatformEvent.closed(
+                        com.ggec.earbuds.R.string.ai_settings_platform_removed));
+            }
         });
     }
 
@@ -441,6 +390,11 @@ public final class AiPlatformViewModel extends ViewModel {
     }
 
     private final class Listener implements AiSpeedTestListener {
+        private final long generation;
+
+        Listener(long generation) {
+            this.generation = generation;
+        }
         @Override
         public void onStarted(@NonNull String modelId) {
             // 已提前置为 TESTING，无需再刷新。
@@ -448,15 +402,19 @@ public final class AiPlatformViewModel extends ViewModel {
 
         @Override
         public void onResult(@NonNull AiSpeedResult result) {
-            testing.remove(result.modelId());
+            if (generation != speed.generation()) {
+                return;
+            }
+            speed.result(result.modelId());
             publish();
         }
 
         @Override
         public void onComplete(boolean cancelled) {
-            speedTest = null;
-            speedRunning = false;
-            testing.clear();
+            if (generation != speed.generation()) {
+                return;
+            }
+            speed.finish();
             publish();
             if (cancelled) {
                 events.postValue(AiPlatformEvent.toast(com.ggec.earbuds.R.string.ai_settings_speed_cancelled));
