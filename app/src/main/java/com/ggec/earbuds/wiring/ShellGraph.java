@@ -18,13 +18,15 @@ import com.ggec.earbuds.ui.shell.ShellViewModel;
 
 public final class ShellGraph {
 
-    private ShellGraph() {
-    }
+    private final ShellRepository repository = new ShellRepositoryImpl(
+            new ShellCatalogSource(), new ShellTabMapper());
+    private final LoadShellTabs loadShellTabs = new LoadShellTabs(repository);
+    private final ShellSelectionPolicy selection = new ShellSelectionPolicy();
+    private final ShellUiMapper uiMapper = new ShellUiMapper();
 
     @NonNull
-    public static ViewModelProvider.Factory factory() {
-        ShellRepository repository = new ShellRepositoryImpl(new ShellCatalogSource(), new ShellTabMapper());
-        return new Factory(new LoadShellTabs(repository), new ShellSelectionPolicy(), new ShellUiMapper());
+    public ViewModelProvider.Factory factory() {
+        return new Factory(loadShellTabs, selection, uiMapper);
     }
 
     private static final class Factory implements ViewModelProvider.Factory {
