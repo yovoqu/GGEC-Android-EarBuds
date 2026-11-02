@@ -9,7 +9,7 @@ import androidx.lifecycle.viewmodel.CreationExtras;
 
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
 import com.ggec.earbuds.data.ai.gateway.LibAiChatGateway;
-import com.ggec.earbuds.data.ai.gateway.LibAiChatGptRealtimeGateway;
+import com.ggec.earbuds.data.ai.gateway.LibAiVoiceModelGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiModelGateway;
 import com.ggec.earbuds.data.ai.gateway.LibAiPlatformCatalog;
 import com.ggec.earbuds.data.ai.gateway.LibAiSpeedTestGateway;
@@ -32,7 +32,7 @@ import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
-import com.ggec.earbuds.domain.ai.usecase.FetchChatGptRealtimeModels;
+import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
@@ -175,7 +175,7 @@ public final class AiGraph {
                         new SaveChatPreferences(settings), new SelectInteractionMode(settings),
                         new SelectVoiceModel(settings), new SaveVoiceApiKey(settings),
                         new UpdateChatGptRealtime(settings),
-                        new FetchChatGptRealtimeModels(settings, new LibAiChatGptRealtimeGateway()),
+                        new FetchVoiceModels(settings, new LibAiVoiceModelGateway()),
                         realtimeFetch,
                         new LoadPlatformTemplates(catalog),
                         new AiSettingsUiMapper()));

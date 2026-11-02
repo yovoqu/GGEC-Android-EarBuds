@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.gateway;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.yovo.lib_ai.models.YoModelInfo;
+import com.yovo.lib_ai.models.spec.YoModelCategory;
 import com.yovo.lib_ai.models.spec.YoModelSpec;
 import com.yovo.lib_ai.models.spec.YoModality;
 
@@ -45,6 +46,29 @@ final class LibAiModels {
         return models;
     }
 
+    /**
+     * 语音设置要的"全部模型"：不按类别过滤，文本、向量、实时都回来。
+     *
+     * <p>实时能力只做标注、不做筛选：类别是 {@link YoModelCategory#REALTIME}，或名字本身
+     * 带 realtime/omni 的，标上 {@link AiModelFeature#REALTIME_AUDIO}。界面据此打「实时」角标，
+     * 但用户仍可以选任何一个——平台没报能力位的实时模型不会因此被藏起来。</p>
+     */
+    static List<AiModel> all(List<YoModelInfo> infos) {
+        List<YoModelInfo> selectable = new ArrayList<>();
+        for (YoModelInfo info : infos) {
+            if (info != null) {
+                selectable.add(info);
+            }
+        }
+        selectable.sort(Comparator.comparingLong(LibAiModels::recency).reversed()
+                .thenComparing(info -> info.displayName().toLowerCase(Locale.ROOT)));
+        List<AiModel> models = new ArrayList<>(selectable.size());
+        for (YoModelInfo info : selectable) {
+            models.add(toModel(info));
+        }
+        return models;
+    }
+
     private static long recency(YoModelInfo info) {
         return info.createdAtMillis() > 0 ? info.createdAtMillis() : Long.MIN_VALUE;
     }
@@ -57,6 +81,9 @@ final class LibAiModels {
         }
         if (spec.reasoning().reasons()) {
             features.add(AiModelFeature.REASONING);
+        }
+        if (spec.category() == YoModelCategory.REALTIME || AiModel.looksRealtime(info.id())) {
+            features.add(AiModelFeature.REALTIME_AUDIO);
         }
         return new AiModel(info.id(), info.displayName(), spec.limits().contextWindow(),
                 spec.limits().maxOutputTokens(), features, false);

@@ -490,11 +490,11 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED,
                     "语音模型「" + voice.model().displayName() + "」还没有填 API Key。");
         }
-        if (voice.model() == AiVoiceModel.CHATGPT) {
-            return new RealtimePlan(voice.effectiveBaseUrl(), voice.apiKey(),
-                    voice.resolvedRealtimeModel(), voice.dialect());
-        }
-        return new RealtimePlan(voice.model().baseUrl(), voice.apiKey(), voice.model().realtimeModel(), null);
+        // 地址与模型都走同一套取值：改过地址用改过的，选过某个模型用选中的，否则用厂商预设。
+        // 方言只有 ChatGPT 这条线有；别的服务商传 null，由传输层按厂商默认线路处理。
+        return new RealtimePlan(voice.effectiveBaseUrl(), voice.apiKey(),
+                voice.resolvedRealtimeModel(),
+                voice.model() == AiVoiceModel.CHATGPT ? voice.dialect() : null);
     }
 
     /**
