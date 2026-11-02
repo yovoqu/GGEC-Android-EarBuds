@@ -21,11 +21,13 @@ import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.MemoryDocumentStore;
 import com.ggec.earbuds.testing.ai.MemorySecretStore;
+import com.ggec.earbuds.testing.ai.QueueExecutor;
 
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 
 public class AiSettingsRepositoryImplTest {
 
@@ -33,7 +35,13 @@ public class AiSettingsRepositoryImplTest {
     private final MemorySecretStore secrets = new MemorySecretStore();
 
     private AiSettingsRepositoryImpl repository() {
-        return new AiSettingsRepositoryImpl(documents, secrets, new AiSettingsJson());
+        return new AiSettingsRepositoryImpl(
+                documents, secrets, new AiSettingsJson(), Runnable::run);
+    }
+
+    private AiSettingsRepositoryImpl queuedRepository(QueueExecutor executor) {
+        return new AiSettingsRepositoryImpl(
+                documents, secrets, new AiSettingsJson(), executor);
     }
 
     @Test
@@ -229,16 +237,125 @@ public class AiSettingsRepositoryImplTest {
         repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
         List<AiSettings> seen = new ArrayList<>();
         repository.observe(seen::add);
+        List<Throwable> failures = new ArrayList<>();
+        repository.observePersistenceFailures(failures::add);
         documents.failWrites = true;
 
         try {
             repository.update(s -> s.withTextSelection(new AiSelection("a", "m")));
-            fail("a storage failure must reach the caller");
-        } catch (AiFailure expected) {
+            repository.flush().join();
+            fail("a storage failure must reach flush");
+        } catch (CompletionException wrapped) {
+            assertTrue(wrapped.getCause() instanceof AiFailure);
+            AiFailure expected = (AiFailure) wrapped.getCause();
             assertEquals(AiFailureKind.STORAGE, expected.kind());
             assertTrue(expected.getCause() instanceof AiStorageException);
-            assertNull(repository.load().textSelection());
-            assertTrue(seen.isEmpty());
+            assertEquals(new AiSelection("a", "m"), repository.load().textSelection());
+            assertEquals(1, seen.size());
+            assertEquals(1, failures.size());
         }
+    }
+
+    @Test
+    public void commitsPublishMemoryBeforeTheDiskWriteRuns() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        List<AiSettings> seen = new ArrayList<>();
+        repository.observe(seen::add);
+
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
+
+        assertEquals(1, seen.size());
+        assertEquals("a", repository.load().platforms().get(0).id());
+        assertEquals(0, documents.writes);
+        assertEquals(1, executor.pending());
+        executor.drain();
+        assertEquals(1, documents.writes);
+    }
+
+    @Test
+    public void queuedWritesCoalesceToTheLatestSnapshot() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        List<AiSettings> seen = new ArrayList<>();
+        repository.observe(seen::add);
+
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
+        repository.update(s -> s.withTextSelection(new AiSelection("a", "m")));
+        repository.update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")));
+
+        assertEquals(3, seen.size());
+        assertEquals(0, documents.writes);
+        assertEquals(1, executor.pending());
+        executor.drain();
+        assertEquals(1, documents.writes);
+        assertEquals(AiVoiceModel.QWEN, repository().load().voice().model());
+        assertEquals(new AiSelection("a", "m"), repository().load().textSelection());
+    }
+
+    @Test
+    public void flushWaitsForTheQueuedRevision() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
+
+        java.util.concurrent.CompletableFuture<Void> flushed = repository.flush();
+
+        assertFalse(flushed.isDone());
+        executor.drain();
+        assertTrue(flushed.isDone());
+        assertFalse(flushed.isCompletedExceptionally());
+    }
+
+    @Test
+    public void loadAsyncReadsOnTheInjectedExecutorAndSharesOneRead() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        assertFalse(repository.ready());
+
+        java.util.concurrent.CompletableFuture<AiSettings> first = repository.loadAsync();
+        java.util.concurrent.CompletableFuture<AiSettings> second = repository.loadAsync();
+
+        assertFalse(first.isDone());
+        assertFalse(second.isDone());
+        assertEquals(1, executor.pending());
+        executor.drain();
+        assertEquals(AiSettings.EMPTY, first.join());
+        assertEquals(AiSettings.EMPTY, second.join());
+        assertTrue(repository.ready());
+    }
+
+    @Test
+    public void persistenceStatusReportsSavingThenSaved() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        List<com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus> statuses =
+                new ArrayList<>();
+        repository.observePersistenceStatus(statuses::add);
+
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
+        assertEquals(List.of(com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus.SAVING),
+                statuses);
+        executor.drain();
+        assertEquals(List.of(
+                com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus.SAVING,
+                com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus.SAVED),
+                statuses);
+    }
+
+    @Test
+    public void persistenceStatusReportsFailure() {
+        QueueExecutor executor = new QueueExecutor();
+        AiSettingsRepositoryImpl repository = queuedRepository(executor);
+        List<com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus> statuses =
+                new ArrayList<>();
+        repository.observePersistenceStatus(statuses::add);
+        documents.failWrites = true;
+
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "k", "m")));
+        executor.drain();
+
+        assertEquals(com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus.FAILED,
+                statuses.get(statuses.size() - 1));
     }
 }
