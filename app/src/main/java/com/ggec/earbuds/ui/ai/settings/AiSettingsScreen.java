@@ -7,6 +7,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -20,7 +21,13 @@ import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoSegmentButton;
 import com.yohu.youi.api.platform.YoSystemBar;
 
-/** 设置页视图。只负责布局、展示 UiState、把用户动作交给 ViewModel。 */
+/**
+ * 设置页视图。只负责布局、展示 UiState、把用户动作交给 ViewModel。
+ *
+ * <p>进入页面时只构建轻量的骨架（头部、模式分段、加载提示）；两个模式面板（含
+ * {@code YoSelect} 下拉、{@code YoList} 列表等较重的 YoUI 组件）在数据到达、首次需要时才构建，
+ * 这样 Activity 进场的首帧是轻的，跨窗口跳转不再因为同步装配整棵树而卡顿。面板只建一次。</p>
+ */
 public final class AiSettingsScreen {
 
     private static final int SEGMENT_TEXT = 0;
@@ -45,12 +52,13 @@ public final class AiSettingsScreen {
     private final Listener listener;
     private final NestedScrollView scroll;
     private final LinearLayout root;
+    private final LinearLayout column;
     private final YoSegmentButton modes;
     private final TextView modeHint;
     private final TextView loadingHint;
     private final TextView saveHint;
-    private final AiTextModePanel textPanel;
-    private final AiVoiceModePanel voicePanel;
+    @Nullable private AiTextModePanel textPanel;
+    @Nullable private AiVoiceModePanel voicePanel;
     private boolean rendered;
 
     public AiSettingsScreen(@NonNull AppCompatActivity context, @NonNull AiTheme theme,
@@ -72,7 +80,7 @@ public final class AiSettingsScreen {
         scroll = new NestedScrollView(context);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        LinearLayout column = new LinearLayout(context);
+        column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(column, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -120,54 +128,6 @@ public final class AiSettingsScreen {
         saveParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(saveHint, saveParams);
 
-        textPanel = new AiTextModePanel(context, theme, components, new AiTextModePanel.Listener() {
-            @Override
-            public void onOpenPlatform() {
-                listener.onOpenPlatform();
-            }
-
-            @Override
-            public void onEditPrompt() {
-                listener.onEditPrompt();
-            }
-        });
-        column.addView(textPanel.view(), matchWrap());
-        textPanel.setVisible(false);
-
-        voicePanel = new AiVoiceModePanel(context, theme, components, new AiVoiceModePanel.Listener() {
-            @Override
-            public void onSelectVoiceModel(@NonNull String modelId) {
-                listener.onSelectVoiceModel(modelId);
-            }
-
-            @Override
-            public void onSelectRealtimeModel(@NonNull String modelId) {
-                listener.onSelectRealtimeModel(modelId);
-            }
-
-            @Override
-            public void onSelectDialect(@NonNull String dialectId) {
-                listener.onSelectDialect(dialectId);
-            }
-
-            @Override
-            public void onEditVoiceKey() {
-                listener.onEditVoiceKey();
-            }
-
-            @Override
-            public void onEditVoiceUrl() {
-                listener.onEditVoiceUrl();
-            }
-
-            @Override
-            public void onFetchRealtimeModels() {
-                listener.onFetchRealtimeModels();
-            }
-        });
-        column.addView(voicePanel.view(), matchWrap());
-        voicePanel.setVisible(false);
-
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         loadingHint.setText(R.string.ai_settings_loading);
         LinearLayout.LayoutParams loadingParams = new LinearLayout.LayoutParams(
@@ -175,7 +135,6 @@ public final class AiSettingsScreen {
         loadingParams.topMargin = theme.dp(AiTheme.SPACE_XL);
         loadingParams.leftMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(loadingHint, loadingParams);
-
     }
 
     @NonNull
@@ -185,7 +144,7 @@ public final class AiSettingsScreen {
 
     @NonNull
     public View identityAnchor() {
-        return textPanel.anchor();
+        return textPanel().anchor();
     }
 
     public boolean rendered() {
@@ -213,11 +172,88 @@ public final class AiSettingsScreen {
             modes.setSelectedIndex(selected);
         }
         modeHint.setText(state.modeHint().resolve(context));
-        textPanel.setVisible(!voice);
-        voicePanel.setVisible(voice);
-        textPanel.bind(state.identity(), state.style());
-        voicePanel.bind(state.voice());
+        if (voice) {
+            AiVoiceModePanel panel = voicePanel();
+            panel.setVisible(true);
+            panel.bind(state.voice());
+            if (textPanel != null) {
+                textPanel.setVisible(false);
+            }
+        } else {
+            AiTextModePanel panel = textPanel();
+            panel.setVisible(true);
+            panel.bind(state.identity(), state.style());
+            if (voicePanel != null) {
+                voicePanel.setVisible(false);
+            }
+        }
         bindPersistence(state.persistence());
+    }
+
+    /** 文本模式面板，首次需要时才构建（含列表/下拉等较重组件）。 */
+    @NonNull
+    private AiTextModePanel textPanel() {
+        if (textPanel == null) {
+            textPanel = new AiTextModePanel(context, theme, components, new AiTextModePanel.Listener() {
+                @Override
+                public void onOpenPlatform() {
+                    listener.onOpenPlatform();
+                }
+
+                @Override
+                public void onEditPrompt() {
+                    listener.onEditPrompt();
+                }
+            });
+            insertBeforeLoadingHint(textPanel.view());
+        }
+        return textPanel;
+    }
+
+    /** 语音模式面板，首次需要时才构建。 */
+    @NonNull
+    private AiVoiceModePanel voicePanel() {
+        if (voicePanel == null) {
+            voicePanel = new AiVoiceModePanel(context, theme, components, new AiVoiceModePanel.Listener() {
+                @Override
+                public void onSelectVoiceModel(@NonNull String modelId) {
+                    listener.onSelectVoiceModel(modelId);
+                }
+
+                @Override
+                public void onSelectRealtimeModel(@NonNull String modelId) {
+                    listener.onSelectRealtimeModel(modelId);
+                }
+
+                @Override
+                public void onSelectDialect(@NonNull String dialectId) {
+                    listener.onSelectDialect(dialectId);
+                }
+
+                @Override
+                public void onEditVoiceKey() {
+                    listener.onEditVoiceKey();
+                }
+
+                @Override
+                public void onEditVoiceUrl() {
+                    listener.onEditVoiceUrl();
+                }
+
+                @Override
+                public void onFetchRealtimeModels() {
+                    listener.onFetchRealtimeModels();
+                }
+            });
+            insertBeforeLoadingHint(voicePanel.view());
+        }
+        return voicePanel;
+    }
+
+    /** 面板按加入顺序排在加载提示之前：先文本后语音，仅当前模式可见。 */
+    private void insertBeforeLoadingHint(@NonNull View panelView) {
+        int index = column.indexOfChild(loadingHint);
+        column.addView(panelView, index < 0 ? column.getChildCount() : index, matchWrap());
     }
 
     private void bindPersistence(AiSettingsPersistenceStatus status) {

@@ -34,6 +34,9 @@ final class AiChatMenus {
     }
 
     void showPageMenu(@NonNull View anchor) {
+        // 设置页是一次跨窗口跳转：不在菜单退场动画中途启动新 Activity（两条动画、两套首帧叠加会卡）。
+        // 点击时只记下意图，等菜单真正收起（OnDismiss，退场结束时序）再启动设置页。
+        final boolean[] openSettingsAfterDismiss = { false };
         YoMenu menu = YoMenu.create(activity)
                 .addItem(MENU_NEW_CHAT, activity.getString(R.string.ai_menu_new_chat),
                         R.drawable.ic_ai_new_chat)
@@ -44,11 +47,16 @@ final class AiChatMenus {
                     if (id == MENU_NEW_CHAT) {
                         listener.onNewConversation();
                     } else if (id == MENU_SETTINGS) {
-                        listener.onSettings();
+                        openSettingsAfterDismiss[0] = true;
                     }
                 })
                 .build();
-        menu.setOnDismissListener(menu::destroy);
+        menu.setOnDismissListener(() -> {
+            menu.destroy();
+            if (openSettingsAfterDismiss[0]) {
+                listener.onSettings();
+            }
+        });
         menu.show();
     }
 
