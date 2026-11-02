@@ -96,7 +96,9 @@ final class AiTextModePanel {
     }
 
     void setVisible(boolean visible) {
-        view.setVisibility(visible ? View.VISIBLE : View.GONE);
+        // INVISIBLE keeps the panel laid out and its glass attached; only the draw is toggled, so
+        // switching modes never re-measures the heavy subtree or re-mounts the glass.
+        view.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
     }
 
     private void bindIdentity(@NonNull AiSettingsUiState.Identity identity) {
