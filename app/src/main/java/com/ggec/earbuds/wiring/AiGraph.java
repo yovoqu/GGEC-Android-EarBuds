@@ -38,6 +38,7 @@ import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.RemoveModel;
 import com.ggec.earbuds.domain.ai.usecase.RemovePlatform;
 import com.ggec.earbuds.domain.ai.usecase.RunSpeedTest;
@@ -52,6 +53,7 @@ import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
 import com.ggec.earbuds.ui.ai.call.AiCallViewModel;
+import com.ggec.earbuds.ui.ai.call.AiCallUiMapper;
 import com.ggec.earbuds.ui.ai.call.AiVoiceSessionFactory;
 import com.ggec.earbuds.ui.ai.chat.AiChatUiMapper;
 import com.ggec.earbuds.ui.ai.settings.AiPlatformUiMapper;
@@ -59,15 +61,13 @@ import com.ggec.earbuds.ui.ai.settings.AiPlatformViewModel;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiMapper;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsViewModel;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
+import com.ggec.earbuds.ui.ai.history.AiHistoryUiMapper;
+import com.ggec.earbuds.ui.ai.history.AiHistoryViewModel;
 
 import java.io.File;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * AI 功能的装配根：应用里只有一份，创建存储、网关和对话会话，再按需造出对话页的 ViewModel。
@@ -78,29 +78,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class AiGraph {
 
-    private static volatile AiGraph instance;
-
-    @NonNull
-    public static AiGraph get(@NonNull Context context) {
-        AiGraph graph = instance;
-        if (graph == null) {
-            synchronized (AiGraph.class) {
-                graph = instance;
-                if (graph == null) {
-                    graph = new AiGraph(context.getApplicationContext());
-                    instance = graph;
-                }
-            }
-        }
-        return graph;
-    }
-
     private final AiSettingsRepository settings;
     private final AiConversationRepository conversations;
     private final AiChatSession session;
     private final Context context;
     private final AiClock clock;
     private final Executor voiceState;
+    /** 历史列表读取单独一条串行执行器；不与会话写盘、网络或音频线程共享。 */
+    private final Executor historyIo;
+    private final Executor settingsOperation;
+    private final Executor realtimeFetch;
     /** 设置页与平台页共用的几个依赖：存储、网关池、平台目录、id 生成器。 */
     private final AiDocumentStore documents;
     private final LibAiClientPool clients;
@@ -108,23 +95,27 @@ public final class AiGraph {
     private final AiIdGenerator ids;
     private final ViewModelProvider.Factory factory = new Factory();
 
-    private AiGraph(Context context) {
+    public AiGraph(@NonNull Context context, @NonNull AppExecutors executors) {
         this.context = context;
         AiClock clock = System::currentTimeMillis;
         this.clock = clock;
-        this.voiceState = pool("ai-voice", 1);
+        this.voiceState = executors.voiceState();
+        this.historyIo = executors.historyIo();
         this.documents = new FileAiDocumentStore(new File(context.getFilesDir(), "ai"));
         // 密文放进不参与备份的目录：它只有在这台设备的密钥库里才解得开，恢复到别的设备上也是废的。
         AiDocumentStore secretDocuments = new FileAiDocumentStore(new File(context.getNoBackupFilesDir(), "ai"));
         SecretStore secrets = new EncryptedSecretStore(secretDocuments, new KeystoreSecretCipher());
-        settings = new AiSettingsRepositoryImpl(documents, secrets, new AiSettingsJson());
+        settings = new AiSettingsRepositoryImpl(
+                documents, secrets, new AiSettingsJson(), executors.settingsPersistence());
         conversations = new AiConversationRepositoryImpl(documents, new AiConversationJson());
 
         // 网关回调用单线程，保证同一次调用的增量按顺序送达；会话自己再投回它的串行执行器处理。
-        clients = new LibAiClientPool(pool("ai-callbacks", 1));
+        clients = new LibAiClientPool(executors.aiCallbacks());
         ids = () -> UUID.randomUUID().toString();
         session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients), clock, ids,
-                pool("ai-chat", 1));
+                executors.chatState());
+        this.settingsOperation = executors.settingsOperation();
+        this.realtimeFetch = executors.realtimeFetch();
     }
 
     /** 创建对话页的 ViewModel。 */
@@ -144,6 +135,13 @@ public final class AiGraph {
         return new ListConversations(conversations);
     }
 
+    /** 每次打开历史面板创建一份页面级 ViewModel；面板关闭时由面板释放。 */
+    @NonNull
+    public AiHistoryViewModel historyViewModel() {
+        return new AiHistoryViewModel(session, listConversations(), historyIo,
+                clock, new AiHistoryUiMapper());
+    }
+
     private AiChatViewModel newChatViewModel() {
         return new AiChatViewModel(session, new AiChatUiMapper());
     }
@@ -159,19 +157,6 @@ public final class AiGraph {
                 new RealtimeLinkAdapter(), clock, voiceState);
     }
 
-    private static Executor pool(String name, int threads) {
-        AtomicInteger counter = new AtomicInteger();
-        ThreadFactory threadFactory = task -> {
-            Thread thread = new Thread(task, name + "-" + counter.incrementAndGet());
-            thread.setDaemon(true);
-            return thread;
-        };
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                threads, threads, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), threadFactory);
-        executor.allowCoreThreadTimeOut(true);
-        return executor;
-    }
-
     private final class Factory implements ViewModelProvider.Factory {
 
         @NonNull
@@ -181,16 +166,17 @@ public final class AiGraph {
                 return modelClass.cast(newChatViewModel());
             }
             if (AiCallViewModel.class.equals(modelClass)) {
-                return modelClass.cast(new AiCallViewModel(voiceSessions()));
+                return modelClass.cast(new AiCallViewModel(voiceSessions(), new AiCallUiMapper()));
             }
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
+                        new ObserveAiSettingsPersistence(settings),
                         new SaveChatPreferences(settings), new SelectInteractionMode(settings),
                         new SelectVoiceModel(settings), new SaveVoiceApiKey(settings),
                         new UpdateChatGptRealtime(settings),
                         new FetchChatGptRealtimeModels(settings, new LibAiChatGptRealtimeGateway()),
-                        pool("ai-chatgpt-realtime", 1),
+                        realtimeFetch,
                         new LoadPlatformTemplates(catalog),
                         new AiSettingsUiMapper()));
             }
@@ -205,7 +191,7 @@ public final class AiGraph {
                         new RemoveModel(settings), new SelectModel(settings),
                         new RunSpeedTest(settings, new LibAiSpeedTestGateway(clients), clock),
                         new RemovePlatform(settings),
-                        pool("ai-settings", 2), new AiPlatformUiMapper()));
+                        settingsOperation, new AiPlatformUiMapper()));
             }
             throw new IllegalArgumentException("Unknown model: " + modelClass.getName());
         }

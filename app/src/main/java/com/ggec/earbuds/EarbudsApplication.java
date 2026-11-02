@@ -2,6 +2,9 @@ package com.ggec.earbuds;
 
 import android.app.Application;
 
+import androidx.annotation.NonNull;
+
+import com.ggec.earbuds.wiring.AppContainer;
 import com.yovo.lib_common.system.refresh_rate.YoRefreshRate;
 
 /**
@@ -14,12 +17,21 @@ import com.yovo.lib_common.system.refresh_rate.YoRefreshRate;
  * <p>这里只申请最高刷新率，不接管系统设置：用户在系统里选了 60Hz，或厂商策略限制时，
  * 系统会自行裁决，APP 不会强行改系统配置。</p>
  */
-public final class EarbudsApplication extends Application {
+public final class EarbudsApplication extends Application implements AppContainer.ContainerOwner {
+
+    private AppContainer container;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        container = new AppContainer(this);
         // 必须在任何 Activity 创建之前注册，否则首个 Activity 的 onResume 收不到。
         YoRefreshRate.installHighRefreshForAllActivities(this);
+    }
+
+    @NonNull
+    @Override
+    public AppContainer container() {
+        return container;
     }
 }
