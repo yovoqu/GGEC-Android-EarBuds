@@ -64,6 +64,28 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void voiceFetchKeepsEveryModelAndOnlyMarksRealtimeOnes() throws Exception {
+        server.enqueue(new MockResponse().setBody("""
+                {"object":"list","data":[
+                  {"id":"gpt-4o","created":1715367049},
+                  {"id":"gpt-4o-realtime-preview","created":1715367049},
+                  {"id":"text-embedding-3-small","created":1705948997}
+                ]}
+                """));
+
+        List<AiModel> models = new LibAiVoiceModelGateway()
+                .fetch(server.url("/").toString().replaceAll("/+$", ""), KEY);
+
+        assertEquals("全部模型都要回来，不再只留实时模型",
+                List.of("gpt-4o", "gpt-4o-realtime-preview", "text-embedding-3-small"),
+                models.stream().map(AiModel::id).toList());
+        assertTrue(models.stream().anyMatch(model ->
+                model.id().equals("gpt-4o-realtime-preview") && model.realtime()));
+        assertFalse(models.stream().anyMatch(model ->
+                model.id().equals("gpt-4o") && model.realtime()));
+    }
+
+    @Test
     public void fetchDropsRealtimeModelsBecauseThePlatformPageIsTextOnly() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[

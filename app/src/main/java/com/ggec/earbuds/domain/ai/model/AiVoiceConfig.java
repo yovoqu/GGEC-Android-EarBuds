@@ -64,20 +64,25 @@ public record AiVoiceConfig(
     }
 
     /**
-     * 真正去连的实时模型。ChatGPT 选过拉取结果时用那个 id，否则用厂商预设。
+     * 真正去连的实时模型。拉取过并选了一个就用那个 id，否则用厂商预设。
+     *
+     * <p>不再只对 ChatGPT 生效：任何服务商都可以拉全部模型并挑一个，
+     * 选中值存在同一个字段里，谁提供服务谁负责解释。</p>
      */
     @NonNull
     public String resolvedRealtimeModel() {
-        if (model == AiVoiceModel.CHATGPT && !realtimeModelId.isEmpty()) {
-            return realtimeModelId;
-        }
-        return model.realtimeModel();
+        return realtimeModelId.isEmpty() ? model.realtimeModel() : realtimeModelId;
     }
 
+    /**
+     * 换服务商。地址、选中模型和已拉列表都是"上一家"的，跟着换过去会让新服务商
+     * 连到旧家的主机或模型上，所以一并清空，回到新厂商的预设。各家的 Key 各自保留。
+     */
     @NonNull
     public AiVoiceConfig withModel(@NonNull AiVoiceModel next) {
         Objects.requireNonNull(next, "model");
-        return next == model ? this : copy(next, apiKeys, baseUrl, realtimeModelId, dialect, realtimeModels);
+        return next == model ? this
+                : copy(next, apiKeys, "", "", dialect, List.of());
     }
 
     /** 给当前模型换 Key；空串表示清掉这一家的 Key。 */
