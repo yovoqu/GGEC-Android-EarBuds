@@ -154,3 +154,65 @@ tasks.register('checkAiLayerImports') {
 tasks.named('preBuild').configure {
     dependsOn 'checkShellLayerImports', 'checkAiLayerImports'
 }
+
+tasks.register('checkMainThreadIoImports') {
+    group = 'verification'
+    description = 'Fail if UI or ViewModel code owns disk, JSON, or persistence implementations.'
+    doLast {
+        def offenders = []
+        def forbidden = [
+                'java.io.FileOutputStream',
+                'java.io.FileDescriptor',
+                'java.nio.file.Files',
+                'org.json.',
+                'FileAiDocumentStore',
+                'AiSettingsRepositoryImpl',
+                'AiConversationRepositoryImpl'
+        ]
+        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/*.java'
+        }.each { File file ->
+            def rel = rootProject.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                forbidden.each { token ->
+                    if (line.contains(token)) {
+                        offenders << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('UI layer owns storage work:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkComponentOwnership') {
+    group = 'verification'
+    description = 'Fail if page code destroys YoUI components outside a release scope.'
+    doLast {
+        def offenders = []
+        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/*.java'
+        }.each { File file ->
+            def rel = rootProject.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                def trimmed = line.trim()
+                if ((trimmed.contains('YoList') || trimmed.contains('YoSelect')
+                        || trimmed.contains('YoMenu') || trimmed.contains('YoDialog'))
+                        && trimmed.matches('.*\\.destroy\\(\\);.*')) {
+                    offenders << "${rel}:${index}: ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'YoUI component destroyed outside YoComponents/YoComponentScope:\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkMainThreadIoImports', 'checkComponentOwnership'
+}
