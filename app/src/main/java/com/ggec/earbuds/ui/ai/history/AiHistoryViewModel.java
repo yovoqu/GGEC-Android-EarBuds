@@ -44,10 +44,8 @@ public final class AiHistoryViewModel extends ViewModel {
     private final AiHistoryUiMapper mapper;
     private final ZoneId zone;
 
-    private final MutableLiveData<List<AiHistoryItemUi>> items = new MutableLiveData<>(List.of());
-    private final MutableLiveData<Boolean> loaded = new MutableLiveData<>(Boolean.FALSE);
-    /** 这一轮读取失败了吗。首次失败时列表是空的，界面必须说"没读到"而不是"没有对话"。 */
-    private final MutableLiveData<Boolean> loadFailed = new MutableLiveData<>(Boolean.FALSE);
+    private final MutableLiveData<AiHistoryUiState> uiState =
+            new MutableLiveData<>(AiHistoryUiState.from(false, false, List.of()));
     private final OneShotLiveData<AiHistoryEvent> events = new OneShotLiveData<>();
     private final Subscription subscription;
 
@@ -84,20 +82,8 @@ public final class AiHistoryViewModel extends ViewModel {
     }
 
     @NonNull
-    public LiveData<List<AiHistoryItemUi>> items() {
-        return items;
-    }
-
-    /** 读取失败：界面据此把空态换成"没读到"+ 重试。 */
-    @NonNull
-    public LiveData<Boolean> loadFailed() {
-        return loadFailed;
-    }
-
-    /** 第一次读完盘之前不要画空态：「还没有对话」和「还没读到」是两件事。 */
-    @NonNull
-    public LiveData<Boolean> loaded() {
-        return loaded;
+    public LiveData<AiHistoryUiState> uiState() {
+        return uiState;
     }
 
     @NonNull
@@ -129,16 +115,16 @@ public final class AiHistoryViewModel extends ViewModel {
             } catch (RuntimeException unreadable) {
                 // 读不出来时保留上一次的行。列表本来就是空的时候不弹 toast：
                 // 面板会就地写「没能读取对话记录」+「重试」，状态由界面承载，不由 toast 承载。
-                loadFailed.postValue(Boolean.TRUE);
+                AiHistoryUiState current = uiState.getValue();
+                publishState(AiHistoryUiState.from(
+                        true, true, current == null ? List.of() : current.items()));
                 if (!itemsAreEmpty()) {
                     events.postValue(AiHistoryEvent.toast(R.string.ai_history_load_failed));
                 }
-                postLoadedOnce();
                 return;
             }
-            loadFailed.postValue(Boolean.FALSE);
-            items.postValue(mapper.map(summaries, currentId, clock.now(), zone));
-            postLoadedOnce();
+            publishState(AiHistoryUiState.from(
+                    true, false, mapper.map(summaries, currentId, clock.now(), zone)));
         });
     }
 
@@ -189,12 +175,13 @@ public final class AiHistoryViewModel extends ViewModel {
     }
 
     /** 面板关闭时调；之后所有操作都变成空操作，晚到的磁盘结果也不会再发出去。 */
-    public void destroy() {
+    @Override
+    protected void onCleared() {
         release();
     }
 
-    @Override
-    protected void onCleared() {
+    /** 面板关闭时释放订阅。幂等，并与 {@link #onCleared()} 共用同一释放路径。 */
+    public void close() {
         release();
     }
 
@@ -214,17 +201,16 @@ public final class AiHistoryViewModel extends ViewModel {
         }
     }
 
-    /** 只在第一次成功读完时把 loaded 翻成 true；之后重复置位没有意义，也会多触发一次渲染。 */
-    private void postLoadedOnce() {
-        if (!Boolean.TRUE.equals(loaded.getValue())) {
-            loaded.postValue(Boolean.TRUE);
-        }
+    private boolean itemsAreEmpty() {
+        AiHistoryUiState current = uiState.getValue();
+        return current == null || current.items().isEmpty();
     }
 
-    /** 当前列表里有没有行。读 {@link LiveData#getValue()} 是安全的：它只是一次字段读取。 */
-    private boolean itemsAreEmpty() {
-        List<AiHistoryItemUi> current = items.getValue();
-        return current == null || current.isEmpty();
+    private void publishState(@NonNull AiHistoryUiState next) {
+        if (Objects.equals(uiState.getValue(), next)) {
+            return;
+        }
+        uiState.postValue(next);
     }
 
     private void release() {
