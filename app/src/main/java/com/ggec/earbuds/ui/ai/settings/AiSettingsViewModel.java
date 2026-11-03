@@ -6,88 +6,103 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
+import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
+import com.ggec.earbuds.domain.ai.model.AiValidationError;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
-import com.ggec.earbuds.domain.ai.usecase.SaveChatPreferences;
-import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
-import com.ggec.earbuds.domain.ai.usecase.SelectInteractionMode;
-import com.ggec.earbuds.domain.ai.usecase.SelectVoiceModel;
-import com.ggec.earbuds.domain.ai.usecase.UpdateChatGptRealtime;
+import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
 import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
+import java.util.function.UnaryOperator;
 
 /**
- * 设置总览页的 ViewModel：只经用例读写设置，把结果交给 {@link AiSettingsUiMapper} 变成界面状态。
+ * 设置页的展示层状态机：本地优先（local-first）+ 节流落盘 + 视图偏好与配置分离。
  *
- * <p>首次读设置与网络请求都走 {@code io}；页面在读取完成前只显示加载态。</p>
+ * <p>一次操作只有一条同步路径：<b>先改内存草稿 → 立刻发布一份新 UiState</b>；
+ * 仓库写入被推迟到 {@link AiDebouncer} 的静默窗口之后，多个连续操作合并成一次。
+ * 因此每个开关/下拉都不会等一次磁盘往返，也不会出现"保存中"闪一下再把页面重画三遍。</p>
+ *
+ * <p>三条解耦：</p>
+ * <ul>
+ *   <li><b>模式 ⊥ 配置</b>：当前分段是 {@link AiUiPreferences} 里的视图偏好，切换不写设置文档；</li>
+ *   <li><b>状态 ⊥ 持久化</b>：持久化状态不再进 {@link AiSettingsUiState}，只用独立的
+ *       {@link #saveStatus()} 通知页头，状态发布次数从每次三遍降到一遍；</li>
+ *   <li><b>草稿 ⊥ 仓库回显</b>：自己写入后的仓库回调与草稿相同，直接忽略，不重算界面。</li>
+ * </ul>
  */
 public final class AiSettingsViewModel extends ViewModel {
+
+    /** 连续操作的合并窗口：最后一次改动后 350ms 才真正落盘。 */
+    static final long SAVE_DEBOUNCE_MILLIS = 350L;
 
     private final LoadAiSettings loadSettings;
     private final ObserveAiSettings observeSettings;
     private final ObserveAiSettingsPersistence observePersistence;
-    private final SaveChatPreferences savePreferences;
-    private final SelectInteractionMode selectMode;
-    private final SelectVoiceModel selectVoiceModel;
-    private final SaveVoiceApiKey saveVoiceApiKey;
-    private final UpdateChatGptRealtime updateChatGpt;
     private final FetchVoiceModels fetchVoiceModels;
+    private final SaveAiSettings saveSettings;
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
+    private final AiUiPreferences uiPreferences;
+    private final AiDebouncer debouncer;
     private final AiSettingsUiMapper mapper;
 
-    private final MutableLiveData<AiSettingsUiState> uiState = new MutableLiveData<>(AiSettingsUiState.empty());
+    private final MutableLiveData<AiSettingsUiState> uiState =
+            new MutableLiveData<>(AiSettingsUiState.empty());
     private final OneShotLiveData<AiSettingsEvent> events = new OneShotLiveData<>();
-
-    private volatile AiSettings latest = AiSettings.EMPTY;
+    private final MutableLiveData<AiSettingsPersistenceStatus> saveStatus =
+            new MutableLiveData<>(AiSettingsPersistenceStatus.SAVED);
     private final MutableLiveData<List<AiPlatformTemplate>> templates =
             new MutableLiveData<>(List.of());
+
+    /** 界面看到的唯一真相（草稿）。持久化只是把它延后写进仓库。 */
+    private volatile AiSettings latest = AiSettings.EMPTY;
+    private AiInteractionMode displayMode = AiInteractionMode.defaultMode();
+    private boolean started;
+    private boolean loaded;
+    private boolean loadFailed;
+    private volatile boolean fetchingVoice;
+    /** 尚未落盘的变更，按到达顺序组合成一个纯函数。 */
+    private volatile UnaryOperator<AiSettings> pending;
     private Subscription subscription;
     private Subscription persistenceSubscription;
-    private boolean started;
-    private volatile boolean fetchingRealtime;
-    private volatile AiSettingsPersistenceStatus persistence =
-            AiSettingsPersistenceStatus.SAVED;
 
     public AiSettingsViewModel(@NonNull LoadAiSettings loadSettings,
                                @NonNull ObserveAiSettings observeSettings,
                                @NonNull ObserveAiSettingsPersistence observePersistence,
-                               @NonNull SaveChatPreferences savePreferences,
-                               @NonNull SelectInteractionMode selectMode,
-                               @NonNull SelectVoiceModel selectVoiceModel,
-                               @NonNull SaveVoiceApiKey saveVoiceApiKey,
-                               @NonNull UpdateChatGptRealtime updateChatGpt,
                                @NonNull FetchVoiceModels fetchVoiceModels,
+                               @NonNull SaveAiSettings saveSettings,
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
+                               @NonNull AiUiPreferences uiPreferences,
+                               @NonNull AiDebouncer debouncer,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
         this.observePersistence = Objects.requireNonNull(observePersistence, "observePersistence");
-        this.savePreferences = Objects.requireNonNull(savePreferences, "savePreferences");
-        this.selectMode = Objects.requireNonNull(selectMode, "selectMode");
-        this.selectVoiceModel = Objects.requireNonNull(selectVoiceModel, "selectVoiceModel");
-        this.saveVoiceApiKey = Objects.requireNonNull(saveVoiceApiKey, "saveVoiceApiKey");
-        this.updateChatGpt = Objects.requireNonNull(updateChatGpt, "updateChatGpt");
         this.fetchVoiceModels = Objects.requireNonNull(fetchVoiceModels, "fetchVoiceModels");
+        this.saveSettings = Objects.requireNonNull(saveSettings, "saveSettings");
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
+        this.uiPreferences = Objects.requireNonNull(uiPreferences, "uiPreferences");
+        this.debouncer = Objects.requireNonNull(debouncer, "debouncer");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -101,101 +116,115 @@ public final class AiSettingsViewModel extends ViewModel {
         return events;
     }
 
-    /** 可以添加的平台模板；「添加平台」对话框按它列候选。 */
+    /** 只有"保存失败"和"已恢复"需要页头展示；正常保存不闪任何提示。 */
+    @NonNull
+    public LiveData<AiSettingsPersistenceStatus> saveStatus() {
+        return saveStatus;
+    }
+
     @NonNull
     public LiveData<List<AiPlatformTemplate>> templates() {
         return templates;
     }
 
-    /**
-     * 进页面时调一次。配置页在返回后可能被重建，所以这里幂等：已经开始了就什么都不做。
-     */
     public void start() {
         if (started) {
             return;
         }
         started = true;
+        subscription = observeSettings.execute(this::onExternalSettings);
+        persistenceSubscription = observePersistence.execute(status -> {
+            if (status == AiSettingsPersistenceStatus.FAILED
+                    || status == AiSettingsPersistenceStatus.SAVED) {
+                saveStatus.postValue(status);
+            }
+        });
         loadSettings.executeAsync().whenComplete((settings, failure) -> {
             if (failure != null) {
+                loadFailed = true;
+                loaded = false;
                 AiSettingsUiState current = uiState.getValue();
                 uiState.postValue(current == null
                         ? AiSettingsUiState.empty().failedLoading()
                         : current.failedLoading());
-                events.postValue(AiSettingsEvent.toast(AiMessages.failure(
-                        AiFailureKind.STORAGE)));
+                events.postValue(AiSettingsEvent.toast(AiMessages.failure(AiFailureKind.STORAGE)));
                 return;
             }
-            onSettings(settings);
-        });
-        io.execute(this::loadTemplates);
-        subscription = observeSettings.execute(this::onSettings);
-        persistenceSubscription = observePersistence.execute(status -> {
-            persistence = status;
+            latest = settings;
+            loaded = true;
+            loadFailed = false;
+            displayMode = uiPreferences.lastSettingsMode(settings.mode());
             publish();
         });
+        io.execute(this::loadTemplates);
     }
 
     private void loadTemplates() {
         try {
             templates.postValue(loadTemplates.execute());
         } catch (RuntimeException unreadable) {
-            // 目录是编译期固定的；读不出来只表示当前不能新增平台。
             templates.postValue(List.of());
         }
     }
 
     /**
-     * 切换分段只记住"下次进来停在哪个模式"，不要求另一模式已经配好：
-     * 用户可以先切到语音模式，再去添加实时模型。
+     * 切分段只改视图偏好：不碰设置文档、不触发保存、不重建另一块面板。
      */
     public void selectMode(@NonNull AiInteractionMode mode) {
-        guard(() -> selectMode.execute(mode));
+        Objects.requireNonNull(mode, "mode");
+        if (displayMode == mode) {
+            return;
+        }
+        displayMode = mode;
+        uiPreferences.setLastSettingsMode(mode);
+        publish();
     }
 
-    /** 回答风格现在只有这一项可改：提示词写什么，模型就按什么口径回答。 */
     public void saveSystemPrompt(@NonNull String systemPrompt) {
-        guard(() -> savePreferences.update(preferences -> preferences.withSystemPrompt(systemPrompt)));
+        mutate(settings -> {
+            AiChatPreferences next = settings.preferences().withSystemPrompt(systemPrompt);
+            if (next.systemPrompt().length() > AiChatPreferences.MAX_SYSTEM_PROMPT_LENGTH) {
+                throw new AiValidationException(AiValidationError.PROMPT_TOO_LONG);
+            }
+            return settings.withPreferences(next);
+        });
     }
 
-    /**
-     * 切换语音模型。只认预设表里的 id：界面传上来的是下拉项，不是用户手写的模型名，
-     * 所以这里把未知 id 当成"界面状态过期"，提示一句而不是静默改掉用户的选择。
-     */
     public void selectVoiceModel(@NonNull String modelId) {
         AiVoiceModel model = AiVoiceModel.fromId(modelId);
         if (model == null) {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        guard(() -> selectVoiceModel.execute(model));
+        mutate(settings -> settings.withVoice(settings.voice().withModel(model)));
     }
 
-    /** 保存当前语音模型的 Key；空串表示清掉这一家的 Key。 */
     public void saveVoiceApiKey(@NonNull String apiKey) {
-        guard(() -> saveVoiceApiKey.execute(apiKey));
+        mutate(settings -> settings.withVoice(settings.voice().withApiKey(apiKey)));
     }
 
-    /** 改 ChatGPT 的接口地址。空串恢复官方主机。不合法的地址只提示，不写入。 */
     public void saveVoiceBaseUrl(@NonNull String baseUrl) {
-        guard(() -> updateChatGpt.baseUrl(baseUrl));
+        mutate(settings -> settings.withVoice(settings.voice().withBaseUrl(baseUrl)));
     }
 
-    /** 从已拉取的实时模型里选一个。列表里没有的 id 不写入。 */
     public void selectChatGptModel(@NonNull String modelId) {
-        guard(() -> updateChatGpt.model(modelId));
+        mutate(settings -> settings.withVoice(settings.voice().withRealtimeModel(modelId)));
     }
 
-    /** 选择 ChatGPT 的线路方言。未知 id 不写入。 */
     public void selectChatGptDialect(@NonNull String dialectId) {
-        guard(() -> updateChatGpt.dialect(dialectId));
-    }
-
-    /** 用当前地址和 Key 拉取该服务商的全部模型。进行中再点一次会被忽略。 */
-    public void fetchVoiceModels() {
-        if (fetchingRealtime) {
+        AiRealtimeDialect dialect = AiRealtimeDialect.fromId(dialectId);
+        if (dialect == null) {
+            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        fetchingRealtime = true;
+        mutate(settings -> settings.withVoice(settings.voice().withDialect(dialect)));
+    }
+
+    public void fetchVoiceModels() {
+        if (fetchingVoice) {
+            return;
+        }
+        fetchingVoice = true;
         publish();
         events.postValue(AiSettingsEvent.toast(R.string.ai_settings_fetching));
         io.execute(() -> {
@@ -206,51 +235,103 @@ public final class AiSettingsViewModel extends ViewModel {
             } catch (IllegalArgumentException invalid) {
                 events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             } finally {
-                fetchingRealtime = false;
+                fetchingVoice = false;
                 publish();
             }
         });
     }
 
-    private void onSettings(AiSettings settings) {
-        latest = settings;
+    /** 页面离开/销毁前把节流窗口内没写完的改动立即写掉。 */
+    public void flushNow() {
+        debouncer.cancel();
+        flushPending();
+    }
+
+    /** 本地先落地一次变更，再排进节流窗口。 */
+    private void mutate(@NonNull UnaryOperator<AiSettings> change) {
+        if (!loaded) {
+            return;
+        }
+        AiSettings next;
+        try {
+            next = change.apply(latest);
+        } catch (AiValidationException invalid) {
+            events.postValue(AiSettingsEvent.toast(AiMessages.validation(invalid.error())));
+            return;
+        } catch (IllegalArgumentException invalid) {
+            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
+            return;
+        }
+        if (next.equals(latest)) {
+            return;
+        }
+        latest = next;
+        publish();
+        enqueue(change);
+    }
+
+    private void enqueue(@NonNull UnaryOperator<AiSettings> change) {
+        UnaryOperator<AiSettings> previous = pending;
+        pending = previous == null ? change : settings -> change.apply(previous.apply(settings));
+        debouncer.schedule(SAVE_DEBOUNCE_MILLIS, this::flushPending);
+    }
+
+    private void flushPending() {
+        UnaryOperator<AiSettings> change = pending;
+        pending = null;
+        if (change == null) {
+            return;
+        }
+        io.execute(() -> {
+            try {
+                saveSettings.execute(change);
+            } catch (AiFailure failure) {
+                events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
+            } catch (RuntimeException unexpected) {
+                events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
+            }
+        });
+    }
+
+    /**
+     * 仓库变化 = 外部写入（平台页等）。与自己草稿相同说明只是自己的落盘回显，直接忽略；
+     * 不同才覆盖草稿，避免把用户正在编辑的内容冲掉。
+     */
+    private void onExternalSettings(@NonNull AiSettings settings) {
+        if (loaded && settings.equals(latest)) {
+            return;
+        }
+        // 外部写入（平台页等）进入时，把还没落盘的本地变更叠上去，避免覆盖用户刚点下的改动。
+        UnaryOperator<AiSettings> undelivered = pending;
+        latest = undelivered == null ? settings : undelivered.apply(settings);
+        if (!loaded) {
+            loaded = true;
+        }
+        if (fetchingVoice) {
+            return;
+        }
         publish();
     }
 
     private void publish() {
-        AiSettingsUiState mapped = mapper.map(latest);
-        if (fetchingRealtime) {
+        AiSettingsUiState mapped = mapper.map(latest, displayMode);
+        if (fetchingVoice) {
             mapped = mapped.withFetchingVoice(true);
         }
-        mapped = mapped.withPersistence(persistence);
         if (!Objects.equals(uiState.getValue(), mapped)) {
             uiState.postValue(mapped);
         }
     }
 
-    /**
-     * 用例把"输入不合法"和"平台返回失败"分开报，界面也分开显示：
-     * 前者是这个字段没填对，后者是网络或账号那边的事。
-     */
-    private void guard(@NonNull Runnable change) {
-        try {
-            change.run();
-        } catch (AiValidationException invalid) {
-            events.postValue(AiSettingsEvent.toast(AiMessages.validation(invalid.error())));
-        } catch (AiFailure failure) {
-            events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
-        } catch (IllegalArgumentException invalid) {
-            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
-        }
-    }
-
     @Override
     protected void onCleared() {
+        debouncer.cancel();
         if (subscription != null) {
             subscription.cancel();
         }
         if (persistenceSubscription != null) {
             persistenceSubscription.cancel();
         }
+        flushPending();
     }
 }

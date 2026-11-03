@@ -11,7 +11,6 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
@@ -35,10 +34,17 @@ public final class AiSettingsUiMapper {
 
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings) {
-        AiInteractionMode mode = settings.mode();
+        return map(settings, settings.mode());
+    }
+
+    /**
+     * @param mode 展示用的接入形态。它由界面偏好提供，不再从设置文档里读：
+     *             切分段只是换一个视图，不该触发设置文档落盘。
+     */
+    @NonNull
+    public AiSettingsUiState map(@NonNull AiSettings settings, @NonNull AiInteractionMode mode) {
         return new AiSettingsUiState(true, false, mode, hint(mode), platforms(settings),
-                identity(settings), voice(settings.voice()), style(settings),
-                AiSettingsPersistenceStatus.SAVED);
+                identity(settings), voice(settings.voice()), style(settings));
     }
 
     @NonNull
