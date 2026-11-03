@@ -54,6 +54,11 @@ public final class AiSettingsActivity extends AppCompatActivity {
             screen.render(state);
         });
         viewModel.events().observe(this, this::showEvent);
+        viewModel.saveStatus().observe(this, status -> {
+            if (status != null) {
+                screen.showSaveStatus(status);
+            }
+        });
         viewModel.start();
     }
 
@@ -70,6 +75,13 @@ public final class AiSettingsActivity extends AppCompatActivity {
         if (screen.rendered()) {
             YoToast.show(this, getString(event.message()));
         }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // 节流窗口里可能还有没落盘的改动；离开页面时立即写掉，避免"改了没保存"。
+        viewModel.flushNow();
     }
 
     @Override

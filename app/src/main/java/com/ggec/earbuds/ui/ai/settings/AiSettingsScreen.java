@@ -171,18 +171,32 @@ public final class AiSettingsScreen {
         if (!nextHint.toString().contentEquals(modeHint.getText())) {
             modeHint.setText(nextHint);
         }
-        // 两个模式面板都在数据到达时建一次，之后切换只做显隐；非当前面板置 GONE、不参与测量，
-        // 槽高永远等于当前面板，切换只换来一次正确的高度，不会反复被另一块撑高。
-        AiTextModePanel text = textPanel();
-        VoiceSettingsView voiceContent = voicePanel();
-        text.setVisible(!voice);
-        voiceContent.setVisible(voice);
+        // 只构建/绑定当前模式的面板：另一块不创建、不测量。切换模式才按需建一次，
+        // 避免"进语音页却顺手把文本页的 YoList 全装配一遍"这种首帧卡顿。
         if (voice) {
+            VoiceSettingsView voiceContent = voicePanel();
+            if (textPanel != null) {
+                textPanel.setVisible(false);
+            }
+            voiceContent.setVisible(true);
             voiceContent.bind(state.voice());
         } else {
+            AiTextModePanel text = textPanel();
+            if (voicePanel != null) {
+                voicePanel.setVisible(false);
+            }
+            text.setVisible(true);
             text.bind(state.identity(), state.style());
         }
-        bindPersistence(state.persistence());
+    }
+
+    /** 持久化状态独立于 UiState：只有失败/恢复才需要页头显示，不再触发整页重绑。 */
+    public void showSaveStatus(@NonNull AiSettingsPersistenceStatus status) {
+        if (status == AiSettingsPersistenceStatus.FAILED) {
+            header.setStatus(context.getString(R.string.ai_settings_save_failed), theme.alert);
+        } else {
+            header.setStatus(null, theme.text3);
+        }
     }
 
     /**
@@ -276,20 +290,6 @@ public final class AiSettingsScreen {
         panelView.setVisibility(View.GONE);
         contentHost.addView(panelView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    }
-
-    /**
-     * 保存状态只写在页头右侧的固定状态位，不占正文的竖向空间。每一次改值都会先发 SAVING、
-     * 写盘后再发 SAVED；把这两条放进正文流里，就等于每次改值都把页面往下推一下再弹回来。
-     */
-    private void bindPersistence(AiSettingsPersistenceStatus status) {
-        if (status == AiSettingsPersistenceStatus.FAILED) {
-            header.setStatus(context.getString(R.string.ai_settings_save_failed), theme.alert);
-        } else if (status == AiSettingsPersistenceStatus.SAVING) {
-            header.setStatus(context.getString(R.string.ai_settings_saving), theme.text3);
-        } else {
-            header.setStatus(null, theme.text3);
-        }
     }
 
     @NonNull
