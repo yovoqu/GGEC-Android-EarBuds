@@ -96,8 +96,6 @@ final class AiTextModePanel {
     }
 
     void setVisible(boolean visible) {
-        // GONE 才不参与测量：两个面板高度不同，非当前面板若只 INVISIBLE，共用槽会被撑到
-        // 较高那块的高度，切换与内容变化时就表现为整页上下跳。
         view.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 

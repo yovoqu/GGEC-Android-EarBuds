@@ -32,14 +32,9 @@ public final class AiSettingsUiMapper {
     /** 提示词预览最多显示多少个字：一行副标题放得下的量，再多要进对话框看。 */
     static final int PROMPT_PREVIEW_LENGTH = 34;
 
-    @NonNull
-    public AiSettingsUiState map(@NonNull AiSettings settings) {
-        return map(settings, settings.mode());
-    }
-
     /**
-     * @param mode 展示用的接入形态。它由界面偏好提供，不再从设置文档里读：
-     *             切分段只是换一个视图，不该触发设置文档落盘。
+     * @param mode 展示用的接入形态。它由界面偏好提供（{@link com.ggec.earbuds.domain.ai.port.AiUiPreferences}），
+     *             不进设置文档——切分段只是换一个视图，不该触发配置落盘。
      */
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings, @NonNull AiInteractionMode mode) {

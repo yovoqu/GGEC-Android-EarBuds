@@ -98,7 +98,6 @@ public final class VoiceSettingsView {
     }
 
     public void setVisible(boolean visible) {
-        // GONE：非当前面板不参与测量，共用槽的高度只等于当前面板，避免被另一块撑高。
         view.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 

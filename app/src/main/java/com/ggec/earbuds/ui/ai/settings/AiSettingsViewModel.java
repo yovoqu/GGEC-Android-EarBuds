@@ -6,15 +6,14 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiSettingsChanges;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
-import com.ggec.earbuds.domain.ai.model.AiValidationError;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
@@ -153,7 +152,7 @@ public final class AiSettingsViewModel extends ViewModel {
             latest = settings;
             loaded = true;
             loadFailed = false;
-            displayMode = uiPreferences.lastSettingsMode(settings.mode());
+            displayMode = uiPreferences.lastSettingsMode(AiInteractionMode.defaultMode());
             publish();
         });
         io.execute(this::loadTemplates);
@@ -190,13 +189,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     public void saveSystemPrompt(@NonNull String systemPrompt) {
-        mutate(settings -> {
-            AiChatPreferences next = settings.preferences().withSystemPrompt(systemPrompt);
-            if (next.systemPrompt().length() > AiChatPreferences.MAX_SYSTEM_PROMPT_LENGTH) {
-                throw new AiValidationException(AiValidationError.PROMPT_TOO_LONG);
-            }
-            return settings.withPreferences(next);
-        });
+        mutate(AiSettingsChanges.systemPrompt(systemPrompt));
     }
 
     public void selectVoiceModel(@NonNull String modelId) {
@@ -205,19 +198,19 @@ public final class AiSettingsViewModel extends ViewModel {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        mutate(settings -> settings.withVoice(settings.voice().withModel(model)));
+        mutate(AiSettingsChanges.voiceModel(model));
     }
 
     public void saveVoiceApiKey(@NonNull String apiKey) {
-        mutate(settings -> settings.withVoice(settings.voice().withApiKey(apiKey)));
+        mutate(AiSettingsChanges.voiceApiKey(apiKey));
     }
 
     public void saveVoiceBaseUrl(@NonNull String baseUrl) {
-        mutate(settings -> settings.withVoice(settings.voice().withBaseUrl(baseUrl)));
+        mutate(AiSettingsChanges.voiceBaseUrl(baseUrl));
     }
 
     public void selectChatGptModel(@NonNull String modelId) {
-        mutate(settings -> settings.withVoice(settings.voice().withRealtimeModel(modelId)));
+        mutate(AiSettingsChanges.voiceRealtimeModel(modelId));
     }
 
     public void selectChatGptDialect(@NonNull String dialectId) {
@@ -226,7 +219,7 @@ public final class AiSettingsViewModel extends ViewModel {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        mutate(settings -> settings.withVoice(settings.voice().withDialect(dialect)));
+        mutate(AiSettingsChanges.voiceDialect(dialect));
     }
 
     public void fetchVoiceModels() {
