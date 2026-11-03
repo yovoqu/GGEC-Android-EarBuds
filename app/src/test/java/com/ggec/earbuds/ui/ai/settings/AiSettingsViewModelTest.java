@@ -80,7 +80,7 @@ public class AiSettingsViewModelTest {
      */
     @Test
     public void switchingTheModeNeverTouchesTheSettingsDocument() {
-        assertEquals(AiInteractionMode.TEXT, settings.load().mode());
+        AiSettings before = settings.load();
 
         viewModel.selectMode(AiInteractionMode.VOICE);
 
@@ -88,7 +88,7 @@ public class AiSettingsViewModelTest {
                 viewModel.uiState().getValue().mode());
         assertEquals("view preference is stored", AiInteractionMode.VOICE,
                 uiPreferences.lastSettingsMode(AiInteractionMode.TEXT));
-        assertEquals("settings document is untouched", AiInteractionMode.TEXT, settings.load().mode());
+        assertEquals("settings document is untouched", before, settings.load());
     }
 
     @Test

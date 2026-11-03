@@ -12,7 +12,6 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
@@ -51,7 +50,7 @@ public class AiJsonTest {
                 List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false),
                         reasoning, AiModel.manual("mine")),
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
-        AiSettings settings = new AiSettings(List.of(platform), AiInteractionMode.VOICE,
+        AiSettings settings = new AiSettings(List.of(platform),
                 new AiSelection("custom-1a2b3c4d", "mine"),
                 new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.QWEN, "sk-voice-secret")),
                 new AiChatPreferences("sys \"quoted\"\nline", false));
@@ -66,7 +65,6 @@ public class AiJsonTest {
         AiPlatformConfig round = decoded.platforms().get(0);
         assertEquals("", round.apiKey());
         assertEquals(platform.withoutKey(), round);
-        assertEquals(settings.mode(), decoded.mode());
         assertEquals(settings.textSelection(), decoded.textSelection());
         assertEquals(settings.voice().model(), decoded.voice().model());
         assertEquals("语音 Key 只走加密存储，文档解出来是空的", "", decoded.voice().apiKey());
@@ -84,7 +82,7 @@ public class AiJsonTest {
                 .withDialect(AiRealtimeDialect.GA)
                 .withRealtimeModels(List.of("gpt-realtime", "gpt-4o-realtime-preview"))
                 .withRealtimeModel("gpt-4o-realtime-preview");
-        AiSettings settings = new AiSettings(List.of(), AiInteractionMode.VOICE, null, voice,
+        AiSettings settings = new AiSettings(List.of(), null, voice,
                 AiChatPreferences.DEFAULT);
 
         String text = settingsJson.encode(settings);

@@ -6,7 +6,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
@@ -275,7 +274,7 @@ public final class AiPlatformUiMapperTest {
     }
 
     private static AiSettings settings(AiPlatformConfig config, String modelId) {
-        return new AiSettings(List.of(config), AiInteractionMode.TEXT,
+        return new AiSettings(List.of(config),
                 modelId == null ? null : new AiSelection(config.id(), modelId),
                 AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
     }
