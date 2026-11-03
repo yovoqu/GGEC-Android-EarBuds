@@ -9,31 +9,25 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * AI 功能的全部用户设置：已添加的平台、当前正在配置哪种接入形态、两种形态各自的模型。
+ * AI 功能的全部用户配置：已添加的平台、文本模式选中项、语音模式预设与对话偏好。
  *
- * <p><b>为什么两种形态的选择分开存，而且类型都不一样</b>：文本模式用 DeepSeek 这类对话模型，
- * 它是"某个平台上的某个模型"，所以记成 {@link AiSelection}；语音模式用实时模型，
- * 它是 APP 预设的一项能力（{@link AiVoiceModel}），有自己的端点和 Key，所以记成
- * {@link AiVoiceConfig}。共用一个选中项的结果是切到语音发现"模型不支持"，
- * 再回设置里改一次；共用一种类型的结果是语音又被绑回文本平台。</p>
+ * <p><b>当前分段不在这里</b>：它只决定设置页展示哪一块，是视图偏好，存在
+ * {@code AiUiPreferences}；写进配置文档会让每次切 tab 都落一次盘。</p>
  *
- * @param mode          当前正在配置的接入形态；只影响设置页展示，不影响另一模式的选择
  * @param textSelection 文本模式选中的平台与对话模型
  * @param voice         语音模式选中的预设模型与它自己的 Key
  */
 public record AiSettings(
         List<AiPlatformConfig> platforms,
-        AiInteractionMode mode,
         @Nullable AiSelection textSelection,
         @NonNull AiVoiceConfig voice,
         AiChatPreferences preferences) {
 
-    public static final AiSettings EMPTY = new AiSettings(List.of(), AiInteractionMode.defaultMode(),
+    public static final AiSettings EMPTY = new AiSettings(List.of(),
             null, AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
 
     public AiSettings {
         platforms = List.copyOf(platforms);
-        mode = mode == null ? AiInteractionMode.defaultMode() : mode;
         voice = voice == null ? AiVoiceConfig.DEFAULT : voice;
         Objects.requireNonNull(preferences, "preferences");
     }
@@ -82,11 +76,11 @@ public record AiSettings(
         for (int i = 0; i < next.size(); i++) {
             if (next.get(i).id().equals(config.id())) {
                 next.set(i, config);
-                return new AiSettings(next, mode, textSelection, voice, preferences);
+                return new AiSettings(next, textSelection, voice, preferences);
             }
         }
         next.add(config);
-        return new AiSettings(next, mode, textSelection, voice, preferences);
+        return new AiSettings(next, textSelection, voice, preferences);
     }
 
     /**
@@ -97,19 +91,15 @@ public record AiSettings(
         next.removeIf(platform -> platform.id().equals(id));
         AiSelection keptText = textSelection != null && textSelection.platformId().equals(id)
                 ? null : textSelection;
-        return new AiSettings(next, mode, keptText, voice, preferences);
+        return new AiSettings(next, keptText, voice, preferences);
     }
 
     public AiSettings withTextSelection(@Nullable AiSelection selection) {
-        return new AiSettings(platforms, mode, selection, voice, preferences);
+        return new AiSettings(platforms, selection, voice, preferences);
     }
 
     public AiSettings withVoice(@NonNull AiVoiceConfig next) {
-        return new AiSettings(platforms, mode, textSelection, next, preferences);
-    }
-
-    public AiSettings withMode(@NonNull AiInteractionMode next) {
-        return new AiSettings(platforms, next, textSelection, voice, preferences);
+        return new AiSettings(platforms, textSelection, next, preferences);
     }
 
     /**
@@ -121,7 +111,7 @@ public record AiSettings(
         if (validText || textSelection == null) {
             return this;
         }
-        return new AiSettings(platforms, mode, null, voice, preferences);
+        return new AiSettings(platforms, null, voice, preferences);
     }
 
     private boolean valid(@Nullable AiSelection selection) {
@@ -133,6 +123,6 @@ public record AiSettings(
     }
 
     public AiSettings withPreferences(AiChatPreferences preferences) {
-        return new AiSettings(platforms, mode, textSelection, voice, preferences);
+        return new AiSettings(platforms, textSelection, voice, preferences);
     }
 }

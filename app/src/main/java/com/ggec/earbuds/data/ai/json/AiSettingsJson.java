@@ -2,7 +2,6 @@ package com.ggec.earbuds.data.ai.json;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -30,18 +29,17 @@ import java.util.Set;
 /**
  * 设置文档的编解码。密钥不在这里：文档里只有平台的连接参数、模型缓存和语音模式选了哪家预设。
  *
- * <p>v3 把语音选择从"某平台上的实时模型"改成"预设语音模型"：语音模型是 APP 在代码里
- * 维护的一张表，文档里只存它的稳定 id（{@code chatgpt} / {@code qwen}），不存端点、不存密钥。
+ * <p>v4 移除了 {@code mode}：设置页当前分段是视图偏好，存 {@code AiUiPreferences}，
+ * 不再进入配置文档。v3 的语音预设 id（{@code chatgpt} / {@code qwen}）保持不变。
  * 解码尽量宽容：未知的枚举取默认值，坏掉的单条模型或测速结果直接跳过，不连累整份设置。</p>
  */
 public final class AiSettingsJson {
 
-    static final int VERSION = 3;
+    static final int VERSION = 4;
 
     public String encode(AiSettings settings) {
         JSONObject root = new JSONObject();
         JsonValues.put(root, "v", VERSION);
-        JsonValues.put(root, "mode", settings.mode().name());
         JsonValues.put(root, "preferences", encodePreferences(settings.preferences()));
         putSelection(root, "textSelection", settings.textSelection());
         putVoice(root, settings.voice());
@@ -69,7 +67,6 @@ public final class AiSettingsJson {
         }
         AiSelection textSelection = readSelection(root.optJSONObject("textSelection"));
         return new AiSettings(platforms,
-                AiInteractionMode.fromName(JsonValues.string(root, "mode")),
                 textSelection,
                 decodeVoice(root),
                 decodePreferences(root.optJSONObject("preferences")));
