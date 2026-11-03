@@ -94,3 +94,34 @@ Ready 上的事件：
     本地即时更新、节流后一次落盘。
   - `anInvalidPromptIsRejectedWithoutTouchingTheDraft`：校验失败不污染草稿。
 - 真机：切换分段无"正在保存"闪现；`settings.json` 的 `mode` 不再被改写（视图偏好单独存）。
+
+## 5. 首次切换不掉帧（第三轮根因）
+
+去除保存后仍会"首次切换卡一下"，继续沿数据链路排查，剩下的是**视图层的切换成本**：
+
+1. **懒建面板压在点击帧上**：进页面只建当前面板，第一次切到另一模式时，
+   `render()` 在点击引发的那一帧同步 `new` 出整棵面板（YoList/多层 LinearLayout）并绑定数据。
+2. **`GONE / VISIBLE` 触发整树 measure+layout**：两块面板高度差很大，切换时父级 `FrameLayout`
+   重新测量可见孩子，语音面板几十个 TextView/胶囊一次布局就是几十毫秒。
+3. **`setSelectedIndex` 回写分段**：状态驱动控件再选一次，多触发一轮选中动画。
+
+处理：
+
+- **切片更新**：`AiSettingsUiState.withMode()` 只换 mode/说明，不重算平台/身份/语音分区。
+- **空闲预热**：首帧后在 `contentHost.postDelayed(120ms)` 里构建另一块面板并 `bind` 当前状态，
+  同时按真实宽度 `measure + layout` 一次；点击时不再构建、不再首次布局。
+- **自绘切换宿主 `ModePanelSwitcher`**：两块面板都保留测量结果，切换只改 activeIndex，
+  宿主只测量/绘制当前块，另一块用 translation 移出可视区（不参与高度、不接收触摸），
+  避免 `GONE/VISIBLE` 的整树重排。
+- **分段单向**：分段只作为输入，不再由状态回写选中项。
+
+真机 `dumpsys gfxinfo`（NEPI4E0106，每次 reset 后测 2s）：
+
+| 场景 | 掉帧帧数 | 99th |
+| --- | --- | --- |
+| 修复前 首次切换 | 2 帧（3.1%） | 85 ms |
+| 修复后 首次切换 | 1 帧（1.4%） | 23 ms |
+| 修复后 再次切换 | 1–2 帧 | 23–36 ms |
+
+剩余的一帧来自"一块高内容首次绘制"本身，不再是同步建树/整树测量。
+
