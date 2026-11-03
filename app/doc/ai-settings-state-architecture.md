@@ -125,3 +125,30 @@ Ready 上的事件：
 
 剩余的一帧来自"一块高内容首次绘制"本身，不再是同步建树/整树测量。
 
+## 6. 兼容层清理（目标架构判定）
+
+完成前两轮后仍不是"最优架构"：还留着几处为兼容旧设计而生的冗余。第三轮把它们一起删掉：
+
+| 冗余 | 旧为什么留着 | 处理 |
+| --- | --- | --- |
+| `AiSettings.mode` 字段 | 分段曾写进配置文档 | 从领域模型、JSON（v4）、仓储读回全部删除；分段只存 `AiUiPreferences` |
+| `SelectInteractionMode` 用例 | 只为把 mode 写回仓库 | 删除 |
+| `SaveChatPreferences` / `SelectVoiceModel` / `SaveVoiceApiKey` / `UpdateChatGptRealtime` | 每个字段一个 `repository.update` 包装，和 ViewModel 内联逻辑重复 | 删除；统一收口到 `AiSettingsChanges` 纯函数 |
+| `AiSettingsUiMapper.map(settings)` 重载 | 靠 `settings.mode()` 猜展示模式 | 删除重载，强制显式传 `mode`（来自视图偏好） |
+| 面板 `setVisible()` | 旧 `GONE/VISIBLE` 时代残留 | 删除；切换宿主 `ModePanelSwitcher` 统一管理 |
+
+现在的边界：
+
+```
+AiSettings（纯配置：平台 / 文本选择 / 语音预设 / 偏好）
+AiSettingsChanges（每条变更的纯函数，本地与落盘同一份规则）
+AiUiPreferences（分段等视图偏好，SharedPreferences.apply）
+AiSettingsRepository（持久化文档，只存配置）
+ViewModel（草稿 + 节流 + 只读状态机）
+ModePanelSwitcher（只测量/绘制当前面板的切换宿主）
+```
+
+判定：这才是当前需求下的最简闭环——**配置、视图偏好、持久化状态、渲染路径四者互不穿透**；
+没有"为了兼容旧字段/旧用例"而存在的生产代码。
+
+
