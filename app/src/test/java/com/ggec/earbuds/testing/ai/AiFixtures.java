@@ -1,7 +1,6 @@
 package com.ggec.earbuds.testing.ai;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
@@ -43,22 +42,22 @@ public final class AiFixtures {
     }
 
     public static AiSettings settings(AiSelection textSelection, AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection,
+        return new AiSettings(List.of(platforms), textSelection,
                 AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
     }
 
     public static AiSettings settings(AiSelection textSelection, AiVoiceConfig voice,
                                       AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection, voice,
+        return new AiSettings(List.of(platforms), textSelection, voice,
                 AiChatPreferences.DEFAULT);
     }
 
-    /** 一个配好 Key 的语音模型，用来演练通话与入口可见性。 */
+    /** 涓€涓厤濂?Key 鐨勮闊虫ā鍨嬶紝鐢ㄦ潵婕旂粌閫氳瘽涓庡叆鍙ｅ彲瑙佹€с€?*/
     public static AiVoiceConfig voice(AiVoiceModel model, String apiKey) {
         return new AiVoiceConfig(model, Map.of(model, apiKey));
     }
 
-    /** 一个已配置密钥、选中了 {@code deepseek-chat} 的设置：对话页处于可发送状态。 */
+    /** 涓€涓凡閰嶇疆瀵嗛挜銆侀€変腑浜?{@code deepseek-chat} 鐨勮缃細瀵硅瘽椤靛浜庡彲鍙戦€佺姸鎬併€?*/
     public static AiSettings readySettings() {
         return settings(new AiSelection("deepseek", "deepseek-chat"),
                 platform("deepseek", "sk-test-key-1234", "deepseek-chat", "deepseek-reasoner"));

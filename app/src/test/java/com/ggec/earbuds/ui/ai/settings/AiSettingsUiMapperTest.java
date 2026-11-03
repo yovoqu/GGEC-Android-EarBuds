@@ -38,7 +38,7 @@ public class AiSettingsUiMapperTest {
     public void platformWithKeyShowsModelCount() {
         AiSettings settings = settings(null, platform("deepseek", "sk-live", null, "chat", "reasoner"));
 
-        AiSettingsUiState.PlatformRow row = mapper.map(settings).platforms().get(0);
+        AiSettingsUiState.PlatformRow row = map(settings).platforms().get(0);
 
         assertEquals(AiText.of(R.string.ai_settings_platform_models, "2"), row.subtitle());
         assertFalse("没有选中模型时不该说它是当前的", row.current());
@@ -48,7 +48,7 @@ public class AiSettingsUiMapperTest {
     public void platformWithoutKeySaysSoInsteadOfZeroModels() {
         AiSettings settings = settings(null, platform("deepseek", "", "https://api.deepseek.com", "chat"));
 
-        AiSettingsUiState.PlatformRow row = mapper.map(settings).platforms().get(0);
+        AiSettingsUiState.PlatformRow row = map(settings).platforms().get(0);
 
         assertEquals(AiText.of(R.string.ai_settings_platform_no_key), row.subtitle());
     }
@@ -57,7 +57,7 @@ public class AiSettingsUiMapperTest {
     public void customHostIsPartOfTheSubtitleSoWrongHostIsVisible() {
         AiSettings settings = settings(null, platform("gateway", "sk-live", "https://gw.example.com/v1/", "chat"));
 
-        AiSettingsUiState.PlatformRow row = mapper.map(settings).platforms().get(0);
+        AiSettingsUiState.PlatformRow row = map(settings).platforms().get(0);
 
         assertEquals(AiText.of(R.string.ai_settings_platform_summary, "1", "gw.example.com/v1"),
                 row.subtitle());
@@ -69,7 +69,7 @@ public class AiSettingsUiMapperTest {
                 platform("deepseek", "sk-live", null, "chat"),
                 platform("other", "sk-other", null, "chat"));
 
-        List<AiSettingsUiState.PlatformRow> rows = mapper.map(settings).platforms();
+        List<AiSettingsUiState.PlatformRow> rows = map(settings).platforms();
 
         assertTrue(rows.get(0).current());
         assertFalse(rows.get(1).current());
@@ -82,7 +82,7 @@ public class AiSettingsUiMapperTest {
         AiSettings settings = settings(new AiSelection("deepseek", "deepseek-chat"),
                 platform("deepseek", "sk-live", null, "deepseek-chat", "gpt-4o-realtime-preview"));
 
-        AiSettingsUiState state = mapper.map(settings);
+        AiSettingsUiState state = map(settings);
 
         assertEquals(AiInteractionMode.TEXT, state.mode());
         assertEquals(AiText.of(R.string.ai_settings_mode_text_hint), state.modeHint());
@@ -97,7 +97,7 @@ public class AiSettingsUiMapperTest {
                 AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen"),
                 platform("openai", "sk-live", null, "gpt-4o"));
 
-        AiSettingsUiState state = mapper.map(settings);
+        AiSettingsUiState state = mapper.map(settings, AiInteractionMode.VOICE);
 
         assertEquals(AiInteractionMode.VOICE, state.mode());
         assertEquals(AiText.of(R.string.ai_settings_mode_voice_hint), state.modeHint());
@@ -114,7 +114,7 @@ public class AiSettingsUiMapperTest {
     public void anEmptyTextModeSaysTheTextModelIsMissing() {
         AiSettings settings = settings(null, platform("deepseek", "sk-live", null, "chat"));
 
-        AiSettingsUiState.Identity identity = mapper.map(settings).identity();
+        AiSettingsUiState.Identity identity = map(settings).identity();
 
         assertTrue(identity.empty());
         assertEquals(R.string.ai_settings_text_empty, identity.emptyTitle());
@@ -126,7 +126,7 @@ public class AiSettingsUiMapperTest {
         AiSettings settings = voiceSettings(null, AiVoiceConfig.DEFAULT,
                 platform("openai", "sk-live", null, "gpt-4o"));
 
-        AiSettingsUiState.Voice voice = mapper.map(settings).voice();
+        AiSettingsUiState.Voice voice = mapper.map(settings, AiInteractionMode.VOICE).voice();
 
         assertEquals("ChatGPT", voice.modelName());
         assertFalse("只选了模型、没填 Key 时不算可用", voice.configured());
@@ -135,15 +135,17 @@ public class AiSettingsUiMapperTest {
 
     @Test
     public void switchingModeDoesNotMoveTheOtherSelection() {
-        AiSettings text = settings(new AiSelection("deepseek", "chat"),
+        AiSettings settings = settings(new AiSelection("deepseek", "chat"),
                 platform("deepseek", "sk-live", null, "chat"));
 
-        AiSettings voice = text.withMode(AiInteractionMode.VOICE);
+        AiSettingsUiState textState = mapper.map(settings, AiInteractionMode.TEXT);
+        AiSettingsUiState voiceState = mapper.map(settings, AiInteractionMode.VOICE);
 
-        assertEquals(AiInteractionMode.VOICE, voice.mode());
-        assertTrue(voice.textModel().isPresent());
-        assertEquals("语音默认预设仍在，但没 Key 不可用", false, mapper.map(voice).voice().configured());
-        assertEquals(new AiSelection("deepseek", "chat"), voice.textSelection());
+        assertEquals(AiInteractionMode.TEXT, textState.mode());
+        assertEquals(AiInteractionMode.VOICE, voiceState.mode());
+        assertTrue("切换展示形态不影响文本选择", settings.textModel().isPresent());
+        assertEquals("语音默认预设仍在，但没 Key 不可用", false, voiceState.voice().configured());
+        assertEquals(new AiSelection("deepseek", "chat"), settings.textSelection());
     }
 
     @Test
@@ -153,7 +155,8 @@ public class AiSettingsUiMapperTest {
                         "qwen3-omni-flash-realtime"))
                 .withRealtimeModel("gpt-4o-realtime-preview");
 
-        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice)).voice();
+        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice),
+                AiInteractionMode.VOICE).voice();
 
         assertEquals(3, state.models().size());
         assertFalse("普通文本模型不该被标成实时", state.models().get(0).realtime());
@@ -167,7 +170,8 @@ public class AiSettingsUiMapperTest {
         AiVoiceConfig voice = AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
                 .withBaseUrl("https://gw.example.com");
 
-        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice)).voice();
+        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice),
+                AiInteractionMode.VOICE).voice();
 
         assertTrue(state.baseUrlCustom());
         assertEquals("https://gw.example.com", state.baseUrl());
@@ -178,9 +182,9 @@ public class AiSettingsUiMapperTest {
     public void theStyleSectionCarriesTheStoredPrompt() {
         AiChatPreferences preferences = AiChatPreferences.DEFAULT.withSystemPrompt("只回答一句话");
         AiSettings settings = new AiSettings(List.of(platform("deepseek", "sk-live", null, "chat")),
-                AiInteractionMode.TEXT, null, AiVoiceConfig.DEFAULT, preferences);
+                null, AiVoiceConfig.DEFAULT, preferences);
 
-        AiSettingsUiState.Style style = mapper.map(settings).style();
+        AiSettingsUiState.Style style = map(settings).style();
 
         assertEquals("只回答一句话", style.systemPrompt());
         assertEquals(AiText.raw("只回答一句话"), style.promptPreview());
@@ -208,14 +212,18 @@ public class AiSettingsUiMapperTest {
 
     // ---- 夹具 ----
 
+    private AiSettingsUiState map(AiSettings settings) {
+        return mapper.map(settings, AiInteractionMode.TEXT);
+    }
+
     private static AiSettings settings(AiSelection textSelection, AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.TEXT, textSelection,
+        return new AiSettings(List.of(platforms), textSelection,
                 AiVoiceConfig.DEFAULT, AiChatPreferences.DEFAULT);
     }
 
     private static AiSettings voiceSettings(AiSelection textSelection, AiVoiceConfig voice,
                                             AiPlatformConfig... platforms) {
-        return new AiSettings(List.of(platforms), AiInteractionMode.VOICE, textSelection, voice,
+        return new AiSettings(List.of(platforms), textSelection, voice,
                 AiChatPreferences.DEFAULT);
     }
 
