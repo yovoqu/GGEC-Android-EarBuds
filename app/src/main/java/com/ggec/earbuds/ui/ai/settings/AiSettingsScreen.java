@@ -60,7 +60,7 @@ public final class AiSettingsScreen {
      * 两个模式面板轮流占用这个槽：非当前模式的面板置 GONE（不参与测量），
      * 这样槽高永远等于"当前面板"的高度，不会因为另一块被测量而把页面撑高或跳一下。
      */
-    private final FrameLayout contentHost;
+    private final ModePanelSwitcher contentHost;
     /**
      * 分段按钮只在「已加载的真实模式」确定后构建一次，并以该模式作为初始选择。分段未设初始
      * 选择时会默认选第一项；先建后改会让首帧先画默认项再跳到真实项（横向闪动），所以把「构建」
@@ -71,6 +71,8 @@ public final class AiSettingsScreen {
     private final TextView loadingHint;
     @Nullable private AiTextModePanel textPanel;
     @Nullable private VoiceSettingsView voicePanel;
+    @Nullable private AiSettingsUiState lastState;
+    private boolean prewarmed;
     private boolean rendered;
 
     public AiSettingsScreen(@NonNull AppCompatActivity context, @NonNull AiTheme theme,
@@ -122,7 +124,7 @@ public final class AiSettingsScreen {
         hintParams.rightMargin = theme.dp(AiTheme.LIST_EDGE);
         column.addView(modeHint, hintParams);
 
-        contentHost = new FrameLayout(context);
+        contentHost = new ModePanelSwitcher(context);
         column.addView(contentHost, matchWrap());
 
         loadingHint = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
@@ -175,19 +177,60 @@ public final class AiSettingsScreen {
         // 避免"进语音页却顺手把文本页的 YoList 全装配一遍"这种首帧卡顿。
         if (voice) {
             VoiceSettingsView voiceContent = voicePanel();
-            if (textPanel != null) {
-                textPanel.setVisible(false);
-            }
-            voiceContent.setVisible(true);
+            contentHost.setActiveView(voiceContent.view());
             voiceContent.bind(state.voice());
         } else {
             AiTextModePanel text = textPanel();
-            if (voicePanel != null) {
-                voicePanel.setVisible(false);
-            }
-            text.setVisible(true);
+            contentHost.setActiveView(text.view());
             text.bind(state.identity(), state.style());
         }
+        lastState = state;
+        // 首次渲染完成后再预热另一块面板：把 YoList/控件树的装配挪出用户的第一次点击路径。
+        if (!prewarmed) {
+            prewarmed = true;
+            contentHost.postDelayed(this::prewarmInactivePanel, 120L);
+        }
+    }
+
+    /**
+     * 空闲时把非当前模式的面板预先建好并绑上当前状态，并保持 GONE。
+     * 这样"进入页面后的第一次切换"只剩一次可见性切换，不再在点击回调里同步装配整棵控件树。
+     */
+    private void prewarmInactivePanel() {
+        AiSettingsUiState state = lastState;
+        if (state == null || !state.loaded()) {
+            prewarmed = false;
+            return;
+        }
+        if (state.mode() == AiInteractionMode.VOICE) {
+            if (textPanel == null) {
+                textPanel().bind(state.identity(), state.style());
+            }
+            if (textPanel != null) {
+                premeasure(textPanel.view());
+            }
+        } else {
+            if (voicePanel == null) {
+                voicePanel().bind(state.voice());
+            }
+            if (voicePanel != null) {
+                premeasure(voicePanel.view());
+            }
+        }
+    }
+
+    /**
+     * 隐藏面板也先按真实宽度量一次并布局：列表/控件树内部的一次性布局在空闲时完成，
+     * 切换时只剩可见性翻转，避免把首次整树布局压在点击帧上。
+     */
+    private void premeasure(@NonNull View panel) {
+        int width = contentHost.getWidth() > 0 ? contentHost.getWidth() : root.getWidth();
+        if (width <= 0) {
+            return;
+        }
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        panel.layout(0, 0, width, panel.getMeasuredHeight());
     }
 
     /** 持久化状态独立于 UiState：只有失败/恢复才需要页头显示，不再触发整页重绑。 */
@@ -217,11 +260,9 @@ public final class AiSettingsScreen {
                     .build();
             components.own(modes::destroy);
             column.addView(modes.getView(), 0, insetParams(AiTheme.SPACE_L));
-            return;
         }
-        if (modes.getSelectedIndex() != selectedIndex) {
-            modes.setSelectedIndex(selectedIndex);
-        }
+        // 之后不再由状态回写分段：模式变化的唯一来源就是用户点分段本身，
+        // 回写只会重复触发一次选中动画，让"首次切换"看起来卡一下。
     }
 
     /** 文本模式面板，首次需要时才构建（含列表/下拉等较重组件）。 */
@@ -285,11 +326,9 @@ public final class AiSettingsScreen {
         return voicePanel;
     }
 
-    /** 把面板挂进叠加槽；只有当前模式那块参与测量，另一块 GONE。 */
+    /** 把面板挂进切换宿主：两块都常驻测量，切换只改当前项。 */
     private void mountPanel(@NonNull View panelView) {
-        panelView.setVisibility(View.GONE);
-        contentHost.addView(panelView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        contentHost.addPanel(panelView);
     }
 
     @NonNull

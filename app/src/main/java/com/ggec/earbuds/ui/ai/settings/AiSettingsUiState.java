@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 
 import java.util.List;
@@ -130,6 +131,28 @@ public record AiSettingsUiState(
     @NonNull
     public AiSettingsUiState failedLoading() {
         return new AiSettingsUiState(false, true, mode, modeHint, platforms, identity, voice, style);
+    }
+
+    /**
+     * 只更换接入形态：不重算平台/身份/语音等任何分区。
+     *
+     * <p>切分段本质上只影响两个字段（mode 与说明行），所以给状态机一个"切片更新"入口，
+     * 避免为了换一个 tab 又把整页状态重建一遍。</p>
+     */
+    @NonNull
+    public AiSettingsUiState withMode(@NonNull AiInteractionMode next) {
+        if (next == mode) {
+            return this;
+        }
+        return new AiSettingsUiState(loaded, loadFailed, next, modeHint(next), platforms, identity,
+                voice, style);
+    }
+
+    @NonNull
+    private static AiText modeHint(@NonNull AiInteractionMode mode) {
+        return AiText.of(mode == AiInteractionMode.VOICE
+                ? R.string.ai_settings_mode_voice_hint
+                : R.string.ai_settings_mode_text_hint);
     }
 
     @NonNull
