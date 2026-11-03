@@ -177,7 +177,16 @@ public final class AiSettingsViewModel extends ViewModel {
         }
         displayMode = mode;
         uiPreferences.setLastSettingsMode(mode);
-        publish();
+        // 切片更新：只换 mode 与说明行，不重算平台/身份/语音分区。
+        AiSettingsUiState current = uiState.getValue();
+        if (current == null || !current.loaded()) {
+            publish();
+            return;
+        }
+        AiSettingsUiState next = current.withMode(mode);
+        if (!Objects.equals(current, next)) {
+            uiState.postValue(next);
+        }
     }
 
     public void saveSystemPrompt(@NonNull String systemPrompt) {
