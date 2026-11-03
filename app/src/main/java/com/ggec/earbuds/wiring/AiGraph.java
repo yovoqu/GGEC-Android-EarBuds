@@ -57,7 +57,6 @@ import com.ggec.earbuds.ui.ai.settings.AiPlatformUiMapper;
 import com.ggec.earbuds.ui.ai.settings.AiPlatformViewModel;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiMapper;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsViewModel;
-import com.ggec.earbuds.ui.ai.settings.HandlerAiDebouncer;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
 import com.ggec.earbuds.ui.ai.history.AiHistoryUiMapper;
 import com.ggec.earbuds.ui.ai.history.AiHistoryViewModel;
@@ -175,7 +174,6 @@ public final class AiGraph {
                         realtimeFetch,
                         new LoadPlatformTemplates(catalog),
                         new SharedPreferencesAiUiPreferences(context),
-                        new HandlerAiDebouncer(),
                         new AiSettingsUiMapper()));
             }
             if (AiPlatformViewModel.class.equals(modelClass)) {

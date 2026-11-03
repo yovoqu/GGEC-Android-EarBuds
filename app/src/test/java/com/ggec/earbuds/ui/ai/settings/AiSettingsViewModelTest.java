@@ -22,8 +22,6 @@ import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
-import com.ggec.earbuds.testing.ai.ImmediateAiDebouncer;
-import com.ggec.earbuds.testing.ai.ManualAiDebouncer;
 import com.ggec.earbuds.testing.ai.MemoryAiUiPreferences;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 
@@ -36,7 +34,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 设置页 ViewModel：本地优先 + 节流落盘 + 视图偏好与配置分离。
+ * 设置页 ViewModel：单一数据源（设置仓库）+ 视图偏好分离。
  */
 public class AiSettingsViewModelTest {
 
@@ -51,18 +49,22 @@ public class AiSettingsViewModelTest {
 
     @Before
     public void setUp() {
-        viewModel = new AiSettingsViewModel(
-                new LoadAiSettings(settings),
-                new ObserveAiSettings(settings),
-                new ObserveAiSettingsPersistence(settings),
-                new FetchVoiceModels(settings, (baseUrl, apiKey) -> List.copyOf(voiceCatalog)),
-                new SaveAiSettings(settings),
+        viewModel = newViewModel(settings, uiPreferences);
+        viewModel.start();
+    }
+
+    private AiSettingsViewModel newViewModel(MemorySettingsRepository repository,
+                                             MemoryAiUiPreferences preferences) {
+        return new AiSettingsViewModel(
+                new LoadAiSettings(repository),
+                new ObserveAiSettings(repository),
+                new ObserveAiSettingsPersistence(repository),
+                new FetchVoiceModels(repository, (baseUrl, apiKey) -> List.copyOf(voiceCatalog)),
+                new SaveAiSettings(repository),
                 Runnable::run,
                 new LoadPlatformTemplates(catalog),
-                uiPreferences,
-                new ImmediateAiDebouncer(),
+                preferences,
                 new AiSettingsUiMapper());
-        viewModel.start();
     }
 
     @Test
@@ -76,7 +78,7 @@ public class AiSettingsViewModelTest {
     }
 
     /**
-     * 核心回归：切分段只改视图偏好，绝不写设置文档——这就是之前"每次切换闪一下保存、页面卡顿"的根因。
+     * 核心回归：切分段只改视图偏好，绝不写设置文档。
      */
     @Test
     public void switchingTheModeNeverTouchesTheSettingsDocument() {
@@ -93,13 +95,7 @@ public class AiSettingsViewModelTest {
 
     @Test
     public void theStoredViewPreferenceDecidesTheOpeningSegment() {
-        MemoryAiUiPreferences reopened = new MemoryAiUiPreferences(AiInteractionMode.VOICE);
-        AiSettingsViewModel fresh = new AiSettingsViewModel(
-                new LoadAiSettings(settings), new ObserveAiSettings(settings),
-                new ObserveAiSettingsPersistence(settings),
-                new FetchVoiceModels(settings, (baseUrl, apiKey) -> List.of()),
-                new SaveAiSettings(settings), Runnable::run, new LoadPlatformTemplates(catalog),
-                reopened, new ImmediateAiDebouncer(), new AiSettingsUiMapper());
+        AiSettingsViewModel fresh = newViewModel(settings, new MemoryAiUiPreferences(AiInteractionMode.VOICE));
 
         fresh.start();
 
@@ -107,46 +103,21 @@ public class AiSettingsViewModelTest {
     }
 
     /**
-     * 本地优先：界面状态立刻变，仓库写入延后到节流窗口——不需要等一次磁盘往返才重绘。
+     * 单一数据源：一次操作写入仓库，仓库同步通知，UiState 与仓库立刻一致。
      */
     @Test
-    public void aChangeUpdatesUiBeforeItReachesTheRepository() {
-        ManualAiDebouncer debouncer = new ManualAiDebouncer();
-        AiSettingsViewModel gated = new AiSettingsViewModel(
-                new LoadAiSettings(settings), new ObserveAiSettings(settings),
-                new ObserveAiSettingsPersistence(settings),
-                new FetchVoiceModels(settings, (baseUrl, apiKey) -> List.of()),
-                new SaveAiSettings(settings), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(), debouncer, new AiSettingsUiMapper());
-        gated.start();
+    public void aChangeLandsInTheSingleSettingsSourceImmediately() {
+        viewModel.saveVoiceApiKey("sk-gpt");
 
-        gated.saveVoiceApiKey("sk-gpt");
-
-        assertTrue("ui reflects the key immediately", gated.uiState().getValue().voice().configured());
-        assertEquals("repository waits for the debounce window", AiVoiceModel.CHATGPT,
-                settings.load().voice().model());
-        assertFalse("key not persisted yet", settings.load().voice().configured());
-
-        debouncer.runPending();
-
-        assertTrue(settings.load().voice().configured());
+        assertTrue("ui reflects the key", viewModel.uiState().getValue().voice().configured());
+        assertTrue("repository is the source", settings.load().voice().configured());
     }
 
     @Test
-    public void consecutiveChangesCollapseIntoOneWrite() {
-        ManualAiDebouncer debouncer = new ManualAiDebouncer();
-        AiSettingsViewModel gated = new AiSettingsViewModel(
-                new LoadAiSettings(settings), new ObserveAiSettings(settings),
-                new ObserveAiSettingsPersistence(settings),
-                new FetchVoiceModels(settings, (baseUrl, apiKey) -> List.of()),
-                new SaveAiSettings(settings), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(), debouncer, new AiSettingsUiMapper());
-        gated.start();
-
-        gated.saveVoiceBaseUrl("https://gw.example.com");
-        gated.selectChatGptDialect(AiRealtimeDialect.GA.id());
-        gated.saveVoiceApiKey("sk-gpt");
-        debouncer.runPending();
+    public void consecutiveChangesLandInOrder() {
+        viewModel.saveVoiceBaseUrl("https://gw.example.com");
+        viewModel.selectChatGptDialect(AiRealtimeDialect.GA.id());
+        viewModel.saveVoiceApiKey("sk-gpt");
 
         AiSettings stored = settings.load();
         assertEquals("https://gw.example.com", stored.voice().baseUrl());
@@ -165,7 +136,7 @@ public class AiSettingsViewModelTest {
     }
 
     @Test
-    public void switchingTheVoiceModelAndSavingItsKeyGoThroughUseCases() {
+    public void switchingTheVoiceModelAndSavingItsKeyGoThroughTheSingleSource() {
         viewModel.selectVoiceModel(AiVoiceModel.QWEN.id());
         viewModel.saveVoiceApiKey("sk-qwen");
 
@@ -220,13 +191,21 @@ public class AiSettingsViewModelTest {
     }
 
     @Test
-    public void anInvalidPromptIsRejectedWithoutTouchingTheDraft() {
+    public void beforeFetchingTheVoiceModelIsNotPretendedToBeSelected() {
+        AiSettingsUiState.Voice voice = viewModel.uiState().getValue().voice();
+
+        assertTrue(voice.models().isEmpty());
+        assertEquals("没拉取前不能把厂商预设当成已选模型", "", voice.realtimeModelId());
+    }
+
+    @Test
+    public void anInvalidPromptIsRejectedWithoutTouchingTheSource() {
         viewModel.saveSystemPrompt("ok");
         String oversized = "x".repeat(40_000);
 
         viewModel.saveSystemPrompt(oversized);
 
-        assertEquals("ok", viewModel.uiState().getValue().style().systemPrompt());
+        assertEquals("ok", settings.load().preferences().systemPrompt());
     }
 
     @Test
@@ -237,7 +216,7 @@ public class AiSettingsViewModelTest {
                 new ObserveAiSettingsPersistence(deferred),
                 new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of()),
                 new SaveAiSettings(deferred), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(), new ImmediateAiDebouncer(), new AiSettingsUiMapper());
+                new MemoryAiUiPreferences(), new AiSettingsUiMapper());
 
         loading.start();
 

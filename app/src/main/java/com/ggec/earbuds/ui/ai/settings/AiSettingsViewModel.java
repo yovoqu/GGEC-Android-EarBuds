@@ -33,24 +33,17 @@ import java.util.concurrent.Executor;
 import java.util.function.UnaryOperator;
 
 /**
- * 设置页的展示层状态机：本地优先（local-first）+ 节流落盘 + 视图偏好与配置分离。
+ * 设置页的 MVVM 视图模型。
  *
- * <p>一次操作只有一条同步路径：<b>先改内存草稿 → 立刻发布一份新 UiState</b>；
- * 仓库写入被推迟到 {@link AiDebouncer} 的静默窗口之后，多个连续操作合并成一次。
- * 因此每个开关/下拉都不会等一次磁盘往返，也不会出现"保存中"闪一下再把页面重画三遍。</p>
+ * <p><b>唯一数据源</b>：所有配置都来自应用级的 {@code AiSettingsRepository}——设置页不维护
+ * 第二份草稿，也不自己排队落盘。一次操作就是 {@code SaveAiSettings.execute(change)}：
+ * 仓库在内存里同步提交并通知，界面状态从这条通知重算；磁盘写由仓库自己的串行执行器合并完成。</p>
  *
- * <p>三条解耦：</p>
- * <ul>
- *   <li><b>模式 ⊥ 配置</b>：当前分段是 {@link AiUiPreferences} 里的视图偏好，切换不写设置文档；</li>
- *   <li><b>状态 ⊥ 持久化</b>：持久化状态不再进 {@link AiSettingsUiState}，只用独立的
- *       {@link #saveStatus()} 通知页头，状态发布次数从每次三遍降到一遍；</li>
- *   <li><b>草稿 ⊥ 仓库回显</b>：自己写入后的仓库回调与草稿相同，直接忽略，不重算界面。</li>
- * </ul>
+ * <p><b>视图偏好分离</b>：当前分段只存 {@code AiUiPreferences}，切换不写配置文档。</p>
+ *
+ * <p><b>持久化状态分离</b>：{@link #saveStatus()} 只把失败/恢复给页头，不进入 UiState。</p>
  */
 public final class AiSettingsViewModel extends ViewModel {
-
-    /** 连续操作的合并窗口：最后一次改动后 350ms 才真正落盘。 */
-    static final long SAVE_DEBOUNCE_MILLIS = 350L;
 
     private final LoadAiSettings loadSettings;
     private final ObserveAiSettings observeSettings;
@@ -60,7 +53,6 @@ public final class AiSettingsViewModel extends ViewModel {
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
     private final AiUiPreferences uiPreferences;
-    private final AiDebouncer debouncer;
     private final AiSettingsUiMapper mapper;
 
     private final MutableLiveData<AiSettingsUiState> uiState =
@@ -71,15 +63,12 @@ public final class AiSettingsViewModel extends ViewModel {
     private final MutableLiveData<List<AiPlatformTemplate>> templates =
             new MutableLiveData<>(List.of());
 
-    /** 界面看到的唯一真相（草稿）。持久化只是把它延后写进仓库。 */
     private volatile AiSettings latest = AiSettings.EMPTY;
     private AiInteractionMode displayMode = AiInteractionMode.defaultMode();
     private boolean started;
     private boolean loaded;
     private boolean loadFailed;
     private volatile boolean fetchingVoice;
-    /** 尚未落盘的变更，按到达顺序组合成一个纯函数。 */
-    private volatile UnaryOperator<AiSettings> pending;
     private Subscription subscription;
     private Subscription persistenceSubscription;
 
@@ -91,7 +80,6 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiUiPreferences uiPreferences,
-                               @NonNull AiDebouncer debouncer,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
@@ -101,7 +89,6 @@ public final class AiSettingsViewModel extends ViewModel {
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.uiPreferences = Objects.requireNonNull(uiPreferences, "uiPreferences");
-        this.debouncer = Objects.requireNonNull(debouncer, "debouncer");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -131,7 +118,7 @@ public final class AiSettingsViewModel extends ViewModel {
             return;
         }
         started = true;
-        subscription = observeSettings.execute(this::onExternalSettings);
+        subscription = observeSettings.execute(this::onSettings);
         persistenceSubscription = observePersistence.execute(status -> {
             if (status == AiSettingsPersistenceStatus.FAILED
                     || status == AiSettingsPersistenceStatus.SAVED) {
@@ -149,9 +136,7 @@ public final class AiSettingsViewModel extends ViewModel {
                 events.postValue(AiSettingsEvent.toast(AiMessages.failure(AiFailureKind.STORAGE)));
                 return;
             }
-            latest = settings;
-            loaded = true;
-            loadFailed = false;
+            onSettings(settings);
             displayMode = uiPreferences.lastSettingsMode(AiInteractionMode.defaultMode());
             publish();
         });
@@ -166,9 +151,7 @@ public final class AiSettingsViewModel extends ViewModel {
         }
     }
 
-    /**
-     * 切分段只改视图偏好：不碰设置文档、不触发保存、不重建另一块面板。
-     */
+    /** 切分段只改视图偏好：不碰设置文档、不触发保存。 */
     public void selectMode(@NonNull AiInteractionMode mode) {
         Objects.requireNonNull(mode, "mode");
         if (displayMode == mode) {
@@ -176,20 +159,17 @@ public final class AiSettingsViewModel extends ViewModel {
         }
         displayMode = mode;
         uiPreferences.setLastSettingsMode(mode);
-        // 切片更新：只换 mode 与说明行，不重算平台/身份/语音分区。
         AiSettingsUiState current = uiState.getValue();
-        if (current == null || !current.loaded()) {
-            publish();
-            return;
-        }
-        AiSettingsUiState next = current.withMode(mode);
-        if (!Objects.equals(current, next)) {
-            uiState.postValue(next);
+        if (current != null && current.loaded()) {
+            AiSettingsUiState next = current.withMode(mode);
+            if (!Objects.equals(current, next)) {
+                uiState.postValue(next);
+            }
         }
     }
 
     public void saveSystemPrompt(@NonNull String systemPrompt) {
-        mutate(AiSettingsChanges.systemPrompt(systemPrompt));
+        apply(AiSettingsChanges.systemPrompt(systemPrompt));
     }
 
     public void selectVoiceModel(@NonNull String modelId) {
@@ -198,19 +178,19 @@ public final class AiSettingsViewModel extends ViewModel {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        mutate(AiSettingsChanges.voiceModel(model));
+        apply(AiSettingsChanges.voiceModel(model));
     }
 
     public void saveVoiceApiKey(@NonNull String apiKey) {
-        mutate(AiSettingsChanges.voiceApiKey(apiKey));
+        apply(AiSettingsChanges.voiceApiKey(apiKey));
     }
 
     public void saveVoiceBaseUrl(@NonNull String baseUrl) {
-        mutate(AiSettingsChanges.voiceBaseUrl(baseUrl));
+        apply(AiSettingsChanges.voiceBaseUrl(baseUrl));
     }
 
     public void selectChatGptModel(@NonNull String modelId) {
-        mutate(AiSettingsChanges.voiceRealtimeModel(modelId));
+        apply(AiSettingsChanges.voiceRealtimeModel(modelId));
     }
 
     public void selectChatGptDialect(@NonNull String dialectId) {
@@ -219,7 +199,7 @@ public final class AiSettingsViewModel extends ViewModel {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
         }
-        mutate(AiSettingsChanges.voiceDialect(dialect));
+        apply(AiSettingsChanges.voiceDialect(dialect));
     }
 
     public void fetchVoiceModels() {
@@ -243,71 +223,27 @@ public final class AiSettingsViewModel extends ViewModel {
         });
     }
 
-    /** 页面离开/销毁前把节流窗口内没写完的改动立即写掉。 */
-    public void flushNow() {
-        debouncer.cancel();
-        flushPending();
-    }
-
-    /** 本地先落地一次变更，再排进节流窗口。 */
-    private void mutate(@NonNull UnaryOperator<AiSettings> change) {
+    /** 唯一写入口：仓库在内存里提交并同步通知，界面状态由 {@link #onSettings} 统一重算。 */
+    private void apply(@NonNull UnaryOperator<AiSettings> change) {
         if (!loaded) {
             return;
         }
-        AiSettings next;
         try {
-            next = change.apply(latest);
+            saveSettings.execute(change);
         } catch (AiValidationException invalid) {
             events.postValue(AiSettingsEvent.toast(AiMessages.validation(invalid.error())));
-            return;
+        } catch (AiFailure failure) {
+            events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
         } catch (IllegalArgumentException invalid) {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
-            return;
         }
-        if (next.equals(latest)) {
-            return;
-        }
-        latest = next;
-        publish();
-        enqueue(change);
     }
 
-    private void enqueue(@NonNull UnaryOperator<AiSettings> change) {
-        UnaryOperator<AiSettings> previous = pending;
-        pending = previous == null ? change : settings -> change.apply(previous.apply(settings));
-        debouncer.schedule(SAVE_DEBOUNCE_MILLIS, this::flushPending);
-    }
-
-    private void flushPending() {
-        UnaryOperator<AiSettings> change = pending;
-        pending = null;
-        if (change == null) {
-            return;
-        }
-        io.execute(() -> {
-            try {
-                saveSettings.execute(change);
-            } catch (AiFailure failure) {
-                events.postValue(AiSettingsEvent.toast(AiMessages.failure(failure.kind())));
-            } catch (RuntimeException unexpected) {
-                events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
-            }
-        });
-    }
-
-    /**
-     * 仓库变化 = 外部写入（平台页等）。与自己草稿相同说明只是自己的落盘回显，直接忽略；
-     * 不同才覆盖草稿，避免把用户正在编辑的内容冲掉。
-     */
-    private void onExternalSettings(@NonNull AiSettings settings) {
-        if (loaded && settings.equals(latest)) {
-            return;
-        }
-        // 外部写入（平台页等）进入时，把还没落盘的本地变更叠上去，避免覆盖用户刚点下的改动。
-        UnaryOperator<AiSettings> undelivered = pending;
-        latest = undelivered == null ? settings : undelivered.apply(settings);
+    private void onSettings(@NonNull AiSettings settings) {
+        latest = settings;
         if (!loaded) {
             loaded = true;
+            loadFailed = false;
         }
         if (fetchingVoice) {
             return;
@@ -327,13 +263,11 @@ public final class AiSettingsViewModel extends ViewModel {
 
     @Override
     protected void onCleared() {
-        debouncer.cancel();
         if (subscription != null) {
             subscription.cancel();
         }
         if (persistenceSubscription != null) {
             persistenceSubscription.cancel();
         }
-        flushPending();
     }
 }

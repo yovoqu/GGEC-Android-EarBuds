@@ -78,13 +78,6 @@ public final class AiSettingsActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
-        // 节流窗口里可能还有没落盘的改动；离开页面时立即写掉，避免"改了没保存"。
-        viewModel.flushNow();
-    }
-
-    @Override
     protected void onDestroy() {
         components.close();
         super.onDestroy();
