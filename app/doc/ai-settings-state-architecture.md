@@ -1,0 +1,96 @@
+# AI 设置页状态机与保存策略（架构重构）
+
+> 背景：两种模式（文本 / 语音）每次切换都会走一遍 `AiSettings` 文档保存，
+> 页头闪一下"正在保存…"，分段点击明显卡顿。本文记录根因与重构后的架构。
+
+## 1. 根因（旧链路）
+
+一次分段点击：
+
+```
+YoSegmentButton.onSelectionChanged
+  → ViewModel.selectMode
+    → SelectInteractionMode.execute
+      → AiSettingsRepository.update           // 同步：内存提交
+          ├─ notifyObservers(settings)        // 同步回调 → mapper.map → postValue → render ①
+          ├─ notifyPersistenceStatus(SAVING)  // 同步回调 → publish → render ②
+          └─ enqueuePersistence → 后台 fsync 写整份 JSON
+                └─ notifyPersistenceStatus(SAVED) // 后台回调 → publish → render ③
+```
+
+三个结构性错误：
+
+1. **视图偏好写进了配置文档**：当前分段只影响设置页展示，却被存进 `AiSettings.mode`，
+   每次切换触发整份 JSON 的原子写 + `fsync`。
+2. **持久化状态塞进 UiState**：`SAVING / SAVED` 各产生一份新 `AiSettingsUiState`，
+   每次切换把整页重新 map、重绘三遍；`saveHint` 还在正文流里把内容推上推下。
+3. **UI 状态依赖仓库回显**：界面要等 `repository.update → observe` 才更新，链路长且必然重复。
+
+## 2. 重构后的分层
+
+```
+UI (AiSettingsScreen / VoiceSettingsView)
+   │  只吃 UiState，发意图
+   ▼
+AiSettingsViewModel  ← 状态机：本地草稿 + 节流保存 + 视图偏好
+   ├─ AiUiPreferences（新）       当前分段（SharedPreferences.apply，不 fsync）
+   ├─ SaveAiSettings（新用例）     静默窗口后一次性写仓库
+   ├─ FetchVoiceModels            网络拉取（写仓库后由 observe 回填草稿）
+   └─ AiSettingsUiMapper          纯函数：AiSettings + mode → UiState
+   ▼
+domain ports（AiSettingsRepository / AiUiPreferences）
+   ▲
+data / platform 实现（AiSettingsRepositoryImpl / SharedPreferencesAiUiPreferences）
+```
+
+### 2.1 三条解耦
+
+| 解耦 | 旧 | 新 |
+| --- | --- | --- |
+| 模式 ⊥ 配置 | 切分段写 `AiSettings.mode` + 整份 JSON | `AiUiPreferences`（SharedPreferences.apply），设置文档完全不动 |
+| 状态 ⊥ 持久化 | `persistence` 是 UiState 字段，SAVING/SAVED 各重绘一次 | UiState 不含持久化；独立 `saveStatus()` 只把 `FAILED` 送到页头 |
+| 草稿 ⊥ 仓库回显 | 每次操作等 observe 回调再更新 | 先改本地草稿并立即发布；自己落盘的回显与草稿相等，直接忽略 |
+
+### 2.2 状态机
+
+```
+Idle(未开始)
+  ├─ loadAsync 成功 → Ready(draft=settings, mode=prefs.lastMode(settings.mode))
+  └─ loadAsync 失败 → LoadFailed
+
+Ready 上的事件：
+  SelectMode(m)       → mode=m; prefs.set(m); publish()          （不写仓库）
+  Mutate(change)      → draft=change(draft); publish(); scheduleSave()
+  FetchVoiceModels    → fetching=true; publish(); 后台执行; 完成后 fetching=false; publish()
+  ExternalSettings(s) → if s == draft: ignore（自己的回显）；else draft=s; publish()
+  PersistenceStatus   → FAILED/SAVED 走 saveStatus 通道，不进入 UiState
+  FlushNow / onCleared→ cancel debounce + 立即写掉 pending
+```
+
+### 2.3 保存策略
+
+- **本地优先**：`mutate` 先在内存草稿上应用纯函数并 `publish()`，用户看到的是零等待的新状态。
+- **节流合并**：变更被组合成 `UnaryOperator<AiSettings>`，`AiDebouncer` 用 350ms 静默窗口；
+  连续操作（如连点几个开关）只产生一次 `SaveAiSettings.execute`。
+- **离开即刷**：`Activity.onStop()` / `ViewModel.onCleared()` 调 `flushNow()`，节流窗口里没写完的
+  改动立即落盘，不丢。
+- **失败才出声**：正常保存不显示任何"保存中"；只有 `FAILED` 在页头右侧固定状态位显示，
+  下一次 `SAVED` 清除。页头 56dp 固定高度，显隐不影响正文。
+- **回显抑制**：仓库写入后的 `observe` 回调与草稿相等，直接 return，不再重算界面。
+
+## 3. 面板按需构建
+
+`AiSettingsScreen.render()` 只构建/绑定**当前模式**面板：另一块不创建、不测量。
+切换模式时才按需建一次，避免"进语音页顺手把文本页的 YoList 全装配一遍"这类首帧抖动。
+（非当前面板为 `GONE`，不参与测量。）
+
+## 4. 验证
+
+- `:app:testDebugUnitTest` 通过，新增/覆盖：
+  - `switchingTheModeNeverTouchesTheSettingsDocument`：切模式后 `settings.load().mode()` 不变，
+    `AiUiPreferences` 变了，UiState 立即变。
+  - `theStoredViewPreferenceDecidesTheOpeningSegment`：重进页面按偏好落在语音段。
+  - `aChangeUpdatesUiBeforeItReachesTheRepository` / `consecutiveChangesCollapseIntoOneWrite`：
+    本地即时更新、节流后一次落盘。
+  - `anInvalidPromptIsRejectedWithoutTouchingTheDraft`：校验失败不污染草稿。
+- 真机：切换分段无"正在保存"闪现；`settings.json` 的 `mode` 不再被改写（视图偏好单独存）。
