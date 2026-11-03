@@ -135,7 +135,7 @@ public final class AiSettingsUiMapper {
         return new AiSettingsUiState.Voice(config.model().id(), config.model().displayName(),
                 config.configured(), options, config.model() == AiVoiceModel.CHATGPT,
                 config.effectiveBaseUrl(), !config.baseUrl().isEmpty(),
-                config.resolvedRealtimeModel(), models, config.dialect().id(), dialects, false);
+                config.realtimeModelId(), models, config.dialect().id(), dialects, false);
     }
 
     private static int dialectLabel(AiRealtimeDialect dialect) {

@@ -111,6 +111,13 @@ final class VoiceHeroCard {
         }
         signature = next;
         name.setText(voice.modelName());
+        if (voice.realtimeModelId().isEmpty()) {
+            // 还没拉取/选中模型时，只说"尚未拉取"，不把厂商预设伪装成已选模型。
+            subtitle.setText(R.string.ai_settings_voice_status_subtitle_empty);
+        } else {
+            subtitle.setText(theme.context.getString(R.string.ai_settings_voice_status_subtitle,
+                    voice.realtimeModelId()));
+        }
         subtitle.setText(theme.context.getString(R.string.ai_settings_voice_status_subtitle,
                 voice.realtimeModelId()));
         if (voice.configured()) {

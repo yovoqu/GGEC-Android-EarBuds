@@ -128,6 +128,7 @@
 
     <!-- 语音交流：重构后的分段设置。状态卡 / 服务商 / 连接 / 模型 / 方言 -->
     <string name="ai_settings_voice_status_subtitle">实时语音 · %1$s</string>
+    <string name="ai_settings_voice_status_subtitle_empty">实时语音 · 尚未拉取模型</string>
     <string name="ai_settings_voice_status_ready">可直接通话</string>
     <string name="ai_settings_voice_status_key_missing">还差 API Key</string>
     <string name="ai_settings_voice_section_provider">服务商</string>
