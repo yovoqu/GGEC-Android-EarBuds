@@ -83,7 +83,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
                     .build();
             if (created.getState() != AudioTrack.STATE_INITIALIZED) {
                 created.release();
-                throw new IllegalStateException("AudioTrack 没有初始化成功（设备不支持该采样率或输出被占用）");
+                throw new IllegalStateException("AudioTrack init failed");
             }
             created.play();
             track = created;
