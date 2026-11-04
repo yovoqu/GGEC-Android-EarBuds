@@ -126,9 +126,10 @@ tasks.register('checkAiLayerImports') {
             }
         }
         def base = 'src/main/java/com/ggec/earbuds'
-        // 领域层：纯 Java，不认识 lib_ai、JSON 和任何 Android 层。
+        // 领域层：纯 Java，不认识 lib_ai、JSON、Android、数据层与装配。
         scanTree("${base}/domain/ai", '**/*.java',
-                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring'])
+                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
+                 'com.ggec.earbuds.wiring', 'com.ggec.earbuds.data'])
         // 数据层：只通过端口和 lib_ai 说话，不碰界面、平台实现和装配。
         scanTree("${base}/data/ai", '**/*.java',
                 ['com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring'])
@@ -145,6 +146,9 @@ tasks.register('checkAiLayerImports') {
         // 平台层：只放 Android 实现，不反向依赖界面。
         scanTree("${base}/platform", '**/*.java',
                 ['com.ggec.earbuds.ui', 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+        // 数据网关只做 I/O：模型筛选等业务策略必须留在领域，不允许网关反向依赖策略。
+        scanTree("${base}/data/ai/gateway", '**/*.java',
+                ['com.ggec.earbuds.domain.ai.policy'])
         if (!offenders.isEmpty()) {
             throw new GradleException('AI layer boundary violated:\n' + offenders.join('\n'))
         }

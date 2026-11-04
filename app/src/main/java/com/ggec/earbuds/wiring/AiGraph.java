@@ -18,6 +18,7 @@ import com.ggec.earbuds.data.ai.json.AiConversationJson;
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
 import com.ggec.earbuds.data.ai.settings.AiSettingsRepositoryImpl;
 import com.ggec.earbuds.data.ai.store.AiDocumentStore;
+import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
 import com.ggec.earbuds.data.ai.store.EncryptedSecretStore;
 import com.ggec.earbuds.data.ai.store.FileAiDocumentStore;
 import com.ggec.earbuds.data.ai.store.SecretStore;
@@ -27,6 +28,7 @@ import com.ggec.earbuds.data.ai.voice.RealtimeVoiceSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.AiConversationRepository;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
@@ -76,6 +78,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 public final class AiGraph {
 
     private final AiSettingsRepository settings;
+    private final AiCredentialStore credentials;
     private final AiConversationRepository conversations;
     private final AiChatSession session;
     private final Context context;
@@ -102,6 +105,7 @@ public final class AiGraph {
         // 密文放进不参与备份的目录：它只有在这台设备的密钥库里才解得开，恢复到别的设备上也是废的。
         AiDocumentStore secretDocuments = new FileAiDocumentStore(new File(context.getNoBackupFilesDir(), "ai"));
         SecretStore secrets = new EncryptedSecretStore(secretDocuments, new KeystoreSecretCipher());
+        this.credentials = new EncryptedCredentialStore(secrets);
         settings = new AiSettingsRepositoryImpl(
                 documents, secrets, new AiSettingsJson(), executors.settingsPersistence());
         conversations = new AiConversationRepositoryImpl(documents, new AiConversationJson());
@@ -109,7 +113,7 @@ public final class AiGraph {
         // 网关回调用单线程，保证同一次调用的增量按顺序送达；会话自己再投回它的串行执行器处理。
         clients = new LibAiClientPool(executors.aiCallbacks());
         ids = () -> UUID.randomUUID().toString();
-        session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients), clock, ids,
+        session = new AiChatSession(settings, conversations, new LibAiChatGateway(clients, credentials), clock, ids,
                 executors.chatState());
         this.settingsOperation = executors.settingsOperation();
         this.realtimeFetch = executors.realtimeFetch();
@@ -149,7 +153,7 @@ public final class AiGraph {
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
-        return () -> new RealtimeVoiceSession(settings,
+        return () -> new RealtimeVoiceSession(settings, credentials,
                 new AndroidAudioCapture(context), new AndroidAudioPlayback(context),
                 new RealtimeLinkAdapter(), clock, voiceState);
     }
@@ -169,11 +173,12 @@ public final class AiGraph {
                 return modelClass.cast(new AiSettingsViewModel(
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new ObserveAiSettingsPersistence(settings),
-                        new FetchVoiceModels(settings, new LibAiVoiceModelGateway()),
+                        new FetchVoiceModels(settings, new LibAiVoiceModelGateway(), credentials),
                         new SaveAiSettings(settings),
                         realtimeFetch,
                         new LoadPlatformTemplates(catalog),
                         new SharedPreferencesAiUiPreferences(context),
+                        credentials,
                         new AiSettingsUiMapper()));
             }
             if (AiPlatformViewModel.class.equals(modelClass)) {
@@ -181,11 +186,11 @@ public final class AiGraph {
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new LoadPlatformTemplates(catalog),
                         new SavePlatform(settings, catalog, new AiApiKeyPolicy(),
-                                new AiBaseUrlPolicy(catalog), ids),
-                        new FetchPlatformModels(settings, new LibAiModelGateway(clients), clock),
+                                new AiBaseUrlPolicy(catalog), ids, credentials),
+                        new FetchPlatformModels(settings, new LibAiModelGateway(clients, credentials), clock),
                         new AddManualModel(settings, new AiModelIdPolicy()),
                         new RemoveModel(settings), new SelectModel(settings),
-                        new RunSpeedTest(settings, new LibAiSpeedTestGateway(clients), clock),
+                        new RunSpeedTest(settings, new LibAiSpeedTestGateway(clients, credentials), clock),
                         new RemovePlatform(settings),
                         settingsOperation, new AiPlatformUiMapper()));
             }
