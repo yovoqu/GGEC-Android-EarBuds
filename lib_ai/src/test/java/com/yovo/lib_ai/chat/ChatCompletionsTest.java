@@ -51,6 +51,11 @@ public final class ChatCompletionsTest {
         assertEquals("function", json.getJSONObject("tool_choice").getString("type"));
         assertEquals("get_weather", json.getJSONObject("tool_choice").getJSONObject("function").getString("name"));
         assertEquals("json_object", json.getJSONObject("response_format").getString("type"));
+        assertEquals(32, json.getInt("max_completion_tokens"));
+        assertFalse(json.has("max_tokens"));
+        JSONObject deepSeek = ChatCodec.encode(request, false, DeepSeekChatPartEncoder.INSTANCE);
+        assertEquals(32, deepSeek.getInt("max_tokens"));
+        assertFalse(deepSeek.has("max_completion_tokens"));
 
         YoChatCompletion completion = ChatCodec.decodeCompletion("""
                 {"id":"chatcmpl-1","model":"gpt-4o","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi"}}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4},"future_field":true}

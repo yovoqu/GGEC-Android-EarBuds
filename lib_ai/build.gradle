@@ -59,7 +59,9 @@ def publicRoots = [
         'src/main/java/com/yovo/lib_ai/completion/',
         'src/main/java/com/yovo/lib_ai/probe/',
         'src/main/java/com/yovo/lib_ai/params/',
-        'src/main/java/com/yovo/lib_ai/usage/'
+        'src/main/java/com/yovo/lib_ai/usage/',
+        'src/main/java/com/yovo/lib_ai/realtime/',
+        'src/main/java/com/yovo/lib_ai/speech/'
 ]
 
 tasks.register('checkLibAiPublicBoundary') {
@@ -72,10 +74,18 @@ tasks.register('checkLibAiPublicBoundary') {
                 include "${root}**/*.java"
             }.each { file ->
                 def rel = project.relativePath(file).replace('\\', '/')
+                def publicType = false
+                def hits = []
                 file.eachLine { line, index ->
-                    if (line =~ /^\s*import\s+(com\.yovo\.lib_ai\.internal\.|okhttp3\.|okio\.)/) {
-                        offenders << "${rel}:${index}: ${line.trim()}"
+                    if (line =~ /^\s*public\s+(?:(?:final|abstract|sealed)\s+)*(?:class|interface|enum|record)\s/) {
+                        publicType = true
                     }
+                    if (line =~ /^\s*import\s+(com\.yovo\.lib_ai\.internal\.|okhttp3\.|okio\.)/) {
+                        hits << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+                if (publicType) {
+                    offenders.addAll(hits)
                 }
             }
         }

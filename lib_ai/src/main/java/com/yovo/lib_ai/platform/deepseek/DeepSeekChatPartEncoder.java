@@ -18,6 +18,12 @@ public final class DeepSeekChatPartEncoder implements YoChatPartEncoder {
 
     @NonNull
     @Override
+    public String maxOutputTokensField() {
+        return "max_tokens";
+    }
+
+    @NonNull
+    @Override
     public JSONObject encode(@NonNull YoChatContentPart part) throws JSONException {
         if (part.kind() != YoChatContentPart.Kind.FILE) {
             return OpenAiChatPartEncoder.INSTANCE.encode(part);

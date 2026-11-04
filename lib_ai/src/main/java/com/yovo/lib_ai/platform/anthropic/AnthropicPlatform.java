@@ -3,6 +3,7 @@ package com.yovo.lib_ai.platform.anthropic;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
@@ -16,6 +17,7 @@ import com.yovo.lib_ai.responses.YoResponsesPolicy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 官方 Anthropic Messages。
@@ -23,6 +25,7 @@ import java.util.List;
 public final class AnthropicPlatform implements YoPlatform {
 
     public static final String ID = "anthropic";
+    public static final List<YoProtocol> OFFERED = List.of(YoProtocol.MESSAGES);
 
     private final String id;
     private final YoServiceTarget messages;
@@ -41,6 +44,12 @@ public final class AnthropicPlatform implements YoPlatform {
     @Override
     public String id() {
         return id;
+    }
+
+    @NonNull
+    @Override
+    public Set<YoProtocol> protocols() {
+        return Set.copyOf(OFFERED);
     }
 
     @NonNull

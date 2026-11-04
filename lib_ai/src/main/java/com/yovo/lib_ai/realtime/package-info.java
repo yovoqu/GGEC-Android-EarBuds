@@ -6,7 +6,7 @@
  *       选哪一个不在这里。</li>
  *   <li>{@link com.yovo.lib_ai.realtime.YoRealtime}：唯一入口。打开时传入
  *       {@link com.yovo.lib_ai.realtime.YoRealtimeConfig}。</li>
- *   <li>{@link com.yovo.lib_ai.realtime.YoRealtimeInput}：送进去的音频和打断。</li>
+ *   <li>{@link com.yovo.lib_ai.realtime.YoRealtimeInput}：送进去的音频、断句、打断和工具结果。</li>
  *   <li>{@link com.yovo.lib_ai.realtime.YoRealtimeOutput}：送出来的文字、音频、说话状态和失败。
  *       每种输出只带自己的字段。</li>
  * </ul>

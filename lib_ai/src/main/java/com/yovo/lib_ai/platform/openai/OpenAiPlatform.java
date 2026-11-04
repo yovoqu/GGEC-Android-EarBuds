@@ -3,6 +3,7 @@ package com.yovo.lib_ai.platform.openai;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
@@ -14,7 +15,9 @@ import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.responses.YoResponsesPolicy;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 官方 OpenAI。Chat 与 Responses 走标准编码器。
@@ -22,6 +25,8 @@ import java.util.Map;
 public final class OpenAiPlatform implements YoPlatform {
 
     public static final String ID = "openai";
+    public static final List<YoProtocol> OFFERED = List.of(
+            YoProtocol.CHAT_COMPLETIONS, YoProtocol.RESPONSES);
 
     private final String id;
     private final YoServiceTarget target;
@@ -40,6 +45,12 @@ public final class OpenAiPlatform implements YoPlatform {
     @Override
     public String id() {
         return id;
+    }
+
+    @NonNull
+    @Override
+    public Set<YoProtocol> protocols() {
+        return Set.copyOf(OFFERED);
     }
 
     @NonNull

@@ -3,7 +3,6 @@ package com.yovo.lib_ai.catalog;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.anthropic.AnthropicPlatform;
 import com.yovo.lib_ai.platform.deepseek.DeepSeekPlatform;
@@ -142,31 +141,31 @@ public final class YoPlatformCatalog {
         Map<String, Entry> entries = new LinkedHashMap<>();
         register(entries, new YoPlatformDescriptor(
                 OpenAiPlatform.ID, "OpenAI", "https://api.openai.com",
-                List.of(YoProtocol.CHAT_COMPLETIONS, YoProtocol.RESPONSES), false, "sk-…",
+                OpenAiPlatform.OFFERED, false, "sk-…",
                 "https://platform.openai.com/api-keys"),
                 r -> OpenAiPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 AnthropicPlatform.ID, "Anthropic", "https://api.anthropic.com",
-                List.of(YoProtocol.MESSAGES), false, "sk-ant-…",
+                AnthropicPlatform.OFFERED, false, "sk-ant-…",
                 "https://console.anthropic.com/settings/keys"),
                 r -> AnthropicPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 DeepSeekPlatform.ID, "DeepSeek", "https://api.deepseek.com",
-                List.of(YoProtocol.CHAT_COMPLETIONS, YoProtocol.MESSAGES), false, "sk-…",
+                DeepSeekPlatform.OFFERED, false, "sk-…",
                 "https://platform.deepseek.com/api_keys"),
                 r -> DeepSeekPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 SenseNovaPlatform.ID, "SenseNova", "https://token.sensenova.cn",
-                List.of(YoProtocol.CHAT_COMPLETIONS, YoProtocol.RESPONSES, YoProtocol.MESSAGES), false, "sk-…",
+                SenseNovaPlatform.OFFERED, false, "sk-…",
                 null),
                 r -> SenseNovaPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 OPENAI_COMPATIBLE, "OpenAI Compatible", "",
-                List.of(YoProtocol.CHAT_COMPLETIONS, YoProtocol.RESPONSES), true, "sk-…", null),
+                OpenAiPlatform.OFFERED, true, "sk-…", null),
                 r -> OpenAiPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 ANTHROPIC_COMPATIBLE, "Anthropic Compatible", "",
-                List.of(YoProtocol.MESSAGES), true, "sk-…", null),
+                AnthropicPlatform.OFFERED, true, "sk-…", null),
                 r -> AnthropicPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         return new YoPlatformCatalog(Collections.unmodifiableMap(entries));
     }

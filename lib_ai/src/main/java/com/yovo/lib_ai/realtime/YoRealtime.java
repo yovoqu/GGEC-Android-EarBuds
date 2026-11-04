@@ -48,6 +48,10 @@ public final class YoRealtime {
             switch (input) {
                 case YoRealtimeInput.Audio audio -> session.appendAudio(audio.pcm16());
                 case YoRealtimeInput.Cancel ignored -> session.cancelResponse();
+                case YoRealtimeInput.Commit ignored -> session.commitInput();
+                case YoRealtimeInput.Clear ignored -> session.clearInput();
+                case YoRealtimeInput.CreateResponse ignored -> session.createResponse();
+                case YoRealtimeInput.ToolOutput tool -> session.submitToolOutput(tool.callId(), tool.output());
             }
         }
 

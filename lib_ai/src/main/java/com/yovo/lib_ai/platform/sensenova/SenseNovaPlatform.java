@@ -3,6 +3,7 @@ package com.yovo.lib_ai.platform.sensenova;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.chat.OpenAiChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * SenseNova。Chat 与 Responses 的标准字段走官方编码器，主机差异放在 Responses 策略上。
@@ -25,6 +27,8 @@ import java.util.Map;
 public final class SenseNovaPlatform implements YoPlatform {
 
     public static final String ID = "sensenova";
+    public static final List<YoProtocol> OFFERED = List.of(
+            YoProtocol.CHAT_COMPLETIONS, YoProtocol.RESPONSES, YoProtocol.MESSAGES);
 
     private final String id;
     private final YoServiceTarget openAi;
@@ -51,6 +55,12 @@ public final class SenseNovaPlatform implements YoPlatform {
     @Override
     public String id() {
         return id;
+    }
+
+    @NonNull
+    @Override
+    public Set<YoProtocol> protocols() {
+        return Set.copyOf(OFFERED);
     }
 
     @NonNull

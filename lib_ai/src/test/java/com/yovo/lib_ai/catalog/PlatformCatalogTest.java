@@ -15,6 +15,7 @@ import com.yovo.lib_ai.platform.YoPlatform;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -51,6 +52,8 @@ public final class PlatformCatalogTest {
                     .apiKey("k")
                     .baseUrl(descriptor.custom() ? "https://gateway.example.com" : null)
                     .build());
+            assertEquals(descriptor.templateId(),
+                    Set.copyOf(descriptor.protocols()), platform.protocols());
             for (YoProtocol protocol : descriptor.protocols()) {
                 boolean provided = switch (protocol) {
                     case CHAT_COMPLETIONS -> platform.chatTarget() != null;
@@ -59,8 +62,32 @@ public final class PlatformCatalogTest {
                 };
                 assertTrue(descriptor.templateId() + " should provide " + protocol, provided);
             }
+            try (YoAiClient client = YoAiClient.builder().platform(platform).build()) {
+                if (platform.protocols().contains(YoProtocol.RESPONSES)) {
+                    assertNotNull(client.responses(platform.id()));
+                } else {
+                    try {
+                        client.responses(platform.id());
+                        fail(descriptor.templateId() + " should not mount responses");
+                    } catch (IllegalStateException expected) {
+                        assertTrue(expected.getMessage().contains("responses"));
+                    }
+                }
+            }
             assertNotNull(descriptor.templateId() + " should list models", platform.modelListing());
         }
+    }
+
+    @Test
+    public void aCustomDeepSeekHostMovesTheMessagesHostWithIt() {
+        YoPlatform platform = catalog.create(YoPlatformSettings.builder("deepseek")
+                .apiKey("k")
+                .baseUrl("https://proxy.example/v1")
+                .build());
+        assertEquals("https://proxy.example", platform.chatTarget().baseUrl());
+        assertEquals("https://proxy.example/anthropic", platform.messagesTarget().baseUrl());
+        assertNull(platform.responsesTarget());
+        assertFalse(platform.protocols().contains(YoProtocol.RESPONSES));
     }
 
     @Test

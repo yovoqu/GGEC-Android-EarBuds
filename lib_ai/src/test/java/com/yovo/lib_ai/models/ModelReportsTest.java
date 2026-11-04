@@ -125,6 +125,8 @@ public final class ModelReportsTest {
                 decodeOne("{\"id\":\"a\",\"output_modalities\":[\"embedding\"]}").category());
         assertEquals(YoModelCategory.SPEECH_SYNTHESIS,
                 decodeOne("{\"id\":\"b\",\"output_modalities\":[\"audio\"]}").category());
+        assertEquals(YoModelCategory.SPEECH_SYNTHESIS,
+                decodeOne("{\"id\":\"b2\",\"output_modalities\":[\"speech\"]}").category());
         assertEquals(YoModelCategory.VIDEO_GENERATION,
                 decodeOne("{\"id\":\"c\",\"output_modalities\":[\"video\"]}").category());
         assertEquals(YoModelCategory.RERANK, decodeOne("{\"id\":\"d\",\"type\":\"rerank\"}").category());
@@ -142,6 +144,18 @@ public final class ModelReportsTest {
         assertEquals("audio 分不清识别还是合成，按名字判断", YoModelCategory.SPEECH_RECOGNITION,
                 ambiguous.category());
         assertEquals(YoSpecSource.INFERRED, ambiguous.categorySource());
+    }
+
+    @Test
+    public void anExhaustiveModalityListIsNotOverwrittenByFeatureFlags() {
+        YoModelSpec textOnly = decodeOne("""
+                {"id":"text-only","input_modalities":["text"],"supports_vision":true}
+                """);
+        assertFalse(textOnly.accepts(YoModality.IMAGE));
+        YoModelSpec vision = decodeOne("""
+                {"id":"sees","input_modalities":["text","image"],"supports_vision":false}
+                """);
+        assertTrue(vision.accepts(YoModality.IMAGE));
     }
 
     @Test

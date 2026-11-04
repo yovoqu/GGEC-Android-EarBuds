@@ -3,12 +3,15 @@ package com.yovo.lib_ai.models;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.messages.YoMessagesPolicy;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.responses.YoResponsesPolicy;
+
+import java.util.Set;
 
 /**
  * 测试用：把任意平台包一层，去掉它的模型列表能力，模拟不支持列表的主机。
@@ -25,6 +28,12 @@ final class NoListingPlatform implements YoPlatform {
     @Override
     public String id() {
         return delegate.id();
+    }
+
+    @NonNull
+    @Override
+    public Set<YoProtocol> protocols() {
+        return delegate.protocols();
     }
 
     @Nullable
