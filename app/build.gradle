@@ -216,3 +216,73 @@ tasks.register('checkComponentOwnership') {
 tasks.named('preBuild').configure {
     dependsOn 'checkMainThreadIoImports', 'checkComponentOwnership'
 }
+
+tasks.register('checkDeviceLayerImports') {
+    group = 'verification'
+    description = 'Fail if the device feature crosses its layer boundaries.'
+    doLast {
+        def offenders = []
+        def scanTree = { String dir, String pattern, List<String> forbidden ->
+            fileTree(project.file(dir)) {
+                include pattern
+            }.each { File file ->
+                def rel = rootProject.relativePath(file).replace('\\', '/')
+                file.eachLine { line, index ->
+                    forbidden.each { token ->
+                        if (line.contains(token)) {
+                            offenders << "${rel}:${index}: ${line.trim()}"
+                        }
+                    }
+                }
+            }
+        }
+        def base = 'src/main/java/com/ggec/earbuds'
+        scanTree("${base}/domain/device", '**/*.java',
+                ['com.ggec.earbuds.data', 'com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+        scanTree("${base}/data/device", '**/*.java',
+                ['com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+        scanTree("${base}/ui/device", '**/*.java',
+                ['com.ggec.earbuds.data'])
+        scanTree("${base}/ui/device", '**/*ViewModel.java',
+                ['android.view', 'android.widget', 'android.content', 'android.app',
+                 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Device layer boundary violated:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkDeviceLayerImports'
+}
+
+tasks.register('checkExplicitImports') {
+    group = 'verification'
+    description = 'Fail if a Java file uses a wildcard import.'
+    doLast {
+        def offenders = []
+        ['src/main/java', 'src/test/java', 'src/androidTest/java'].each { String dir ->
+            def root = project.file(dir)
+            if (!root.exists()) {
+                return
+            }
+            fileTree(root) {
+                include '**/*.java'
+            }.each { File file ->
+                def rel = rootProject.relativePath(file).replace('\\', '/')
+                file.eachLine { line, index ->
+                    if (line.trim().matches('import\\s+(static\\s+)?[\\w.]+\\.\\*;')) {
+                        offenders << "${rel}:${index}: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Wildcard import is not allowed:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkExplicitImports'
+}
