@@ -46,7 +46,7 @@ final class VoiceHeroCard {
     private final TextView name;
     private final TextView chevron;
     private final TextView status;
-    private final LinearLayout top;
+    private final LinearLayout providerSwitch;
     private final TextView addressValue;
     private final TextView keyValue;
     private final TextView modelValue;
@@ -65,10 +65,9 @@ final class VoiceHeroCard {
                 AiTheme.RADIUS_SHEET, theme.cardStroke, 1));
         card.setClipToOutline(true);
 
-        top = new LinearLayout(context);
+        LinearLayout top = new LinearLayout(context);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
         card.addView(top, VoiceCard.matchWrap());
 
         FrameLayout orb = new FrameLayout(context);
@@ -80,19 +79,34 @@ final class VoiceHeroCard {
         orb.addView(orbIcon, iconParams);
         top.addView(orb, new LinearLayout.LayoutParams(theme.dp(ORB), theme.dp(ORB)));
 
+        // 只有"名称 + 箭头"这一小块是下拉触发器，图标与右侧状态都不参与点击。
+        providerSwitch = new LinearLayout(context);
+        providerSwitch.setOrientation(LinearLayout.HORIZONTAL);
+        providerSwitch.setGravity(Gravity.CENTER_VERTICAL);
+        providerSwitch.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
+        providerSwitch.setPadding(theme.dp(AiTheme.SPACE_S), theme.dp(2f),
+                theme.dp(AiTheme.SPACE_S), theme.dp(2f));
+        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        switchParams.setMarginStart(theme.dp(14f));
+        top.addView(providerSwitch, switchParams);
+
         name = theme.text(AiTheme.TEXT_TITLE, theme.text1, AiTheme.Weight.MEDIUM);
-        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        nameParams.setMarginStart(theme.dp(14f));
-        top.addView(name, nameParams);
+        providerSwitch.addView(name, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chevron = theme.text(16f, theme.text3);
         chevron.setText("▾");
         LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         chevronParams.setMarginStart(theme.dp(AiTheme.SPACE_XS));
-        chevronParams.setMarginEnd(theme.dp(AiTheme.SPACE_S));
-        top.addView(chevron, chevronParams);
+        providerSwitch.addView(chevron, chevronParams);
+
+        providerSwitch.setOnClickListener(view -> showProviderMenu());
+
+        View spacer = new View(context);
+        top.addView(spacer, new LinearLayout.LayoutParams(
+                0, 1, 1f));
 
         status = theme.text(AiTheme.TEXT_CAPTION, theme.brand, AiTheme.Weight.MEDIUM);
         status.setGravity(Gravity.CENTER);
@@ -100,8 +114,6 @@ final class VoiceHeroCard {
                 theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS));
         top.addView(status, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        top.setOnClickListener(view -> showProviderMenu());
 
         LinearLayout.LayoutParams lineParams = VoiceCard.matchWrap();
         lineParams.topMargin = theme.dp(14f);
@@ -142,7 +154,7 @@ final class VoiceHeroCard {
         current = voice;
         name.setText(voice.modelName());
         chevron.setVisibility(voice.options().size() > 1 ? View.VISIBLE : View.GONE);
-        top.setContentDescription(context.getString(R.string.ai_settings_voice_section_provider)
+        providerSwitch.setContentDescription(context.getString(R.string.ai_settings_voice_section_provider)
                 + " " + voice.modelName());
         addressValue.setText(VoiceCard.host(voice.baseUrl()));
         keyValue.setText(voice.configured()
@@ -172,7 +184,7 @@ final class VoiceHeroCard {
             return;
         }
         YoMenu.Builder builder = YoMenu.create(activity)
-                .setAnchorView(top)
+                .setAnchorView(providerSwitch)
                 .setPlacement(YoMenu.Placement.BOTTOM_LEFT)
                 .setSelectedMark(YoMenu.SelectedMark.CHECK)
                 .setOnItemClickListener(id -> {
