@@ -14,6 +14,6 @@ public enum AiValidationError {
     PLATFORM_NOT_CONFIGURED,
     MODEL_UNKNOWN,
     PROMPT_TOO_LONG,
-    /** 语音交流模式只能选实时模型；选到普通对话模型时给这句。 */
+    /** 文本对话不能选 SDK 标成非对话的类别。 */
     REALTIME_MODEL_NOT_CHAT
 }

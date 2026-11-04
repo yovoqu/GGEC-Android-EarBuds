@@ -2,177 +2,198 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.NonNull;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
- * 语音交流模式的配置。
+ * 语音交流模式的配置聚合：当前选哪一家 + 每一家自己的状态。
  *
- * <p>厂商（{@link AiVoiceModel}）决定默认主机和兜底模型。ChatGPT 这一家还可以改接口地址、
- * 从拉取到的实时模型里选一个、并选线路方言。这些选择存在设置文档里；Key 仍只在加密存储。</p>
+ * <p>领域模型只有两份数据：
+ * <ul>
+ *   <li>{@link #model}：当前选中的服务商，只是一个指针；</li>
+ *   <li>{@link #providers}：按服务商索引的 {@link AiVoiceProvider}，地址、选中模型、方言、
+ *       已拉列表都挂在自己名下。</li>
+ * </ul>
+ * 切换服务商只改指针，不碰任何一家的状态，所以"Qwen 拉好模型 → 切到 ChatGPT → 切回 Qwen"
+ * 之后 Qwen 的列表还在。旧模型把这些字段放在公共位置，切换时只能清空，正是数据丢失的根因。</p>
+ *
+ * <p>Key 不在领域里：每家"是否已填 Key"只作为事实 {@link #configuredProviders} 存在，
+ * 明文密钥由 {@code AiCredentialStore} 在建立连接/拉取模型的那一刻提供。</p>
  */
 public record AiVoiceConfig(
         @NonNull AiVoiceModel model,
-        @NonNull Map<AiVoiceModel, String> apiKeys,
-        @NonNull String baseUrl,
-        @NonNull String realtimeModelId,
-        @NonNull AiRealtimeDialect dialect,
-        @NonNull List<String> realtimeModels) {
+        @NonNull Set<AiVoiceModel> configuredProviders,
+        @NonNull Map<AiVoiceModel, AiVoiceProvider> providers) {
 
-    public static final AiVoiceConfig DEFAULT = new AiVoiceConfig(AiVoiceModel.defaultModel(), Map.of());
-
-    /** 旧构造：只选厂商和 Key。地址、模型和方言用默认，已有测试和文档走这条。 */
-    public AiVoiceConfig(@NonNull AiVoiceModel model, @NonNull Map<AiVoiceModel, String> apiKeys) {
-        this(model, apiKeys, "", "", AiRealtimeDialect.defaultDialect(), List.of());
-    }
+    public static final AiVoiceConfig DEFAULT = new AiVoiceConfig(
+            AiVoiceModel.defaultModel(), Set.of(), Map.of());
 
     public AiVoiceConfig {
         Objects.requireNonNull(model, "model");
-        Objects.requireNonNull(dialect, "dialect");
-        EnumMap<AiVoiceModel, String> copy = new EnumMap<>(AiVoiceModel.class);
-        for (Map.Entry<AiVoiceModel, String> entry : apiKeys.entrySet()) {
-            String key = entry.getValue() == null ? "" : entry.getValue().strip();
-            if (entry.getKey() != null && !key.isEmpty()) {
-                copy.put(entry.getKey(), key);
+        EnumSet<AiVoiceModel> configured = EnumSet.noneOf(AiVoiceModel.class);
+        for (AiVoiceModel provider : configuredProviders) {
+            if (provider != null) {
+                configured.add(provider);
             }
         }
-        apiKeys = Collections.unmodifiableMap(copy);
-        baseUrl = normalizeBaseUrl(baseUrl);
-        realtimeModelId = realtimeModelId == null ? "" : realtimeModelId.strip();
-        realtimeModels = cleanIds(realtimeModels);
+        configuredProviders = Collections.unmodifiableSet(configured);
+        EnumMap<AiVoiceModel, AiVoiceProvider> stateCopy = new EnumMap<>(AiVoiceModel.class);
+        for (Map.Entry<AiVoiceModel, AiVoiceProvider> entry : providers.entrySet()) {
+            if (entry.getKey() != null && entry.getValue() != null && !entry.getValue().isEmpty()) {
+                stateCopy.put(entry.getKey(), entry.getValue());
+            }
+        }
+        providers = Collections.unmodifiableMap(stateCopy);
     }
 
-    /** 当前选中的模型用的 Key；没填时是空串。 */
+    /** 当前这一家自己的状态；没配过就是 {@link AiVoiceProvider#EMPTY}。 */
     @NonNull
-    public String apiKey() {
-        return apiKeys.getOrDefault(model, "");
+    public AiVoiceProvider provider() {
+        return providers.getOrDefault(model, AiVoiceProvider.EMPTY);
     }
 
     /** 只选了模型还不算配好：没有 Key 就连不上，通话入口不该放出去。 */
     public boolean configured() {
-        return !apiKey().isBlank();
+        return configuredProviders.contains(model);
+    }
+
+    /** 当前这一家改过的接口地址；空串表示用厂商预设。 */
+    @NonNull
+    public String baseUrl() {
+        return provider().baseUrl();
     }
 
     /** 真正去连的主机。没改过地址时用厂商预设。 */
     @NonNull
     public String effectiveBaseUrl() {
-        return baseUrl.isEmpty() ? model.baseUrl() : baseUrl;
+        String override = baseUrl();
+        return override.isEmpty() ? model.baseUrl() : override;
+    }
+
+    /** 当前这一家选中的实时模型 id；空串表示用厂商预设。 */
+    @NonNull
+    public String realtimeModelId() {
+        return provider().realtimeModelId();
+    }
+
+    /** 当前这一家已拉到的实时模型。 */
+    @NonNull
+    public List<AiModel> realtimeModels() {
+        return provider().realtimeModels();
     }
 
     /**
-     * 真正去连的实时模型。拉取过并选了一个就用那个 id，否则用厂商预设。
+     * 真正去连的实时模型。拉取过、选了、而且它确实是实时类别时才用那个 id，否则用厂商预设。
      *
-     * <p>不再只对 ChatGPT 生效：任何服务商都可以拉全部模型并挑一个，
-     * 选中值存在同一个字段里，谁提供服务谁负责解释。</p>
+     * <p>只认实时类别：服务商目录里聊天模型排在最前，若把「列表里第一个」直接当成实时模型，
+     * 通话会拿一个文本模型去连 realtime 端点并失败。</p>
      */
     @NonNull
     public String resolvedRealtimeModel() {
-        return realtimeModelId.isEmpty() ? model.realtimeModel() : realtimeModelId;
+        String selected = realtimeModelId();
+        return selected.isEmpty() || !isRealtime(selected) ? model.realtimeModel() : selected;
+    }
+
+    private boolean isRealtime(@NonNull String id) {
+        for (AiModel listed : realtimeModels()) {
+            if (listed.id().equals(id)) {
+                return listed.category() == AiModelCategory.REALTIME;
+            }
+        }
+        return false;
     }
 
     /**
-     * 换服务商。地址、选中模型和已拉列表都是"上一家"的，跟着换过去会让新服务商
-     * 连到旧家的主机或模型上，所以一并清空，回到新厂商的预设。各家的 Key 各自保留。
+     * 换服务商：只移动指针，保留每一家自己的地址、选中模型、方言与已拉列表。
+     * 这正是修复"切走再切回，模型不见了"的地方。
      */
     @NonNull
     public AiVoiceConfig withModel(@NonNull AiVoiceModel next) {
         Objects.requireNonNull(next, "model");
-        return next == model ? this
-                : copy(next, apiKeys, "", "", dialect, List.of());
+        return next == model ? this : new AiVoiceConfig(next, configuredProviders, providers);
     }
 
-    /** 给当前模型换 Key；空串表示清掉这一家的 Key。 */
+    /** 记录当前这一家是否已填 Key；真正的密钥写入由用例调用凭证端口完成。 */
     @NonNull
-    public AiVoiceConfig withApiKey(@NonNull String key) {
-        EnumMap<AiVoiceModel, String> next = new EnumMap<>(AiVoiceModel.class);
-        next.putAll(apiKeys);
-        String trimmed = key.strip();
-        if (trimmed.isEmpty()) {
-            next.remove(model);
+    public AiVoiceConfig withConfigured(boolean configured) {
+        EnumSet<AiVoiceModel> next = EnumSet.noneOf(AiVoiceModel.class);
+        next.addAll(configuredProviders);
+        if (configured) {
+            next.add(model);
         } else {
-            next.put(model, trimmed);
+            next.remove(model);
         }
-        return copy(model, next, baseUrl, realtimeModelId, dialect, realtimeModels);
+        return new AiVoiceConfig(model, next, providers);
     }
 
-    /**
-     * 改 ChatGPT 的接口地址。空串恢复成厂商预设。必须是 http 或 https。
-     */
+    /** 改当前这一家的接口地址。空串恢复成厂商预设。必须是 http 或 https。 */
     @NonNull
     public AiVoiceConfig withBaseUrl(@NonNull String url) {
-        String normalized = normalizeBaseUrl(url);
+        String normalized = AiVoiceProvider.normalizeBaseUrl(url);
         if (!normalized.isEmpty()
                 && !normalized.startsWith("https://")
                 && !normalized.startsWith("http://")) {
             throw new IllegalArgumentException("baseUrl must start with http:// or https://");
         }
-        return copy(model, apiKeys, normalized, realtimeModelId, dialect, realtimeModels);
+        return withProvider(new AiVoiceProvider(normalized, realtimeModelId(), realtimeModels()));
     }
 
-    @NonNull
-    public AiVoiceConfig withDialect(@NonNull AiRealtimeDialect next) {
-        Objects.requireNonNull(next, "dialect");
-        return copy(model, apiKeys, baseUrl, realtimeModelId, next, realtimeModels);
-    }
-
+    /** 只在当前这一家已拉取的模型列表里选；不在列表里抛 {@link IllegalArgumentException}。 */
     @NonNull
     public AiVoiceConfig withRealtimeModel(@NonNull String modelId) {
         String id = modelId.strip();
-        if (id.isEmpty() || !realtimeModels.contains(id)) {
+        if (id.isEmpty() || !AiVoiceProvider.contains(realtimeModels(), id)) {
             throw new IllegalArgumentException("realtime model is not in the fetched list");
         }
-        return copy(model, apiKeys, baseUrl, id, dialect, realtimeModels);
+        return withProvider(new AiVoiceProvider(baseUrl(), id, realtimeModels()));
+    }
+
+    /** 用刚拉到的实时模型替换当前这一家的候选；当前选择还在新列表里就留着，否则改选第一项。 */
+    @NonNull
+    public AiVoiceConfig withRealtimeModels(@NonNull List<AiModel> models) {
+        return withRealtimeModelsFor(model, models);
     }
 
     /**
-     * 用刚拉到的实时模型替换候选。当前选择还在新列表里就留着，否则改选第一项。
+     * 把拉取结果写回<b>发起请求的那一家</b>，而不是"写入时恰好选中的那一家"。
+     *
+     * <p>网络返回可能晚于用户切换服务商；按 active 写会把 Qwen 的结果写进 ChatGPT。
+     * 拉取用例在开始时捕获 provider id，回来时用这个入口落到正确归属。</p>
      */
     @NonNull
-    public AiVoiceConfig withRealtimeModels(@NonNull List<String> ids) {
-        List<String> cleaned = cleanIds(ids);
-        String selected = realtimeModelId;
-        if (!cleaned.contains(selected)) {
-            selected = cleaned.isEmpty() ? "" : cleaned.get(0);
+    public AiVoiceConfig withRealtimeModelsFor(@NonNull AiVoiceModel owner, @NonNull List<AiModel> models) {
+        Objects.requireNonNull(owner, "owner");
+        AiVoiceProvider current = providers.getOrDefault(owner, AiVoiceProvider.EMPTY);
+        List<AiModel> cleaned = AiVoiceProvider.cleanModels(models);
+        String selected = current.realtimeModelId();
+        if (!AiVoiceProvider.contains(cleaned, selected)) {
+            selected = cleaned.isEmpty() ? "" : cleaned.get(0).id();
         }
-        return copy(model, apiKeys, baseUrl, selected, dialect, cleaned);
+        AiVoiceProvider updated = new AiVoiceProvider(current.baseUrl(), selected, cleaned);
+        EnumMap<AiVoiceModel, AiVoiceProvider> map = new EnumMap<>(AiVoiceModel.class);
+        map.putAll(providers);
+        if (updated.isEmpty()) {
+            map.remove(owner);
+        } else {
+            map.put(owner, updated);
+        }
+        return new AiVoiceConfig(model, configuredProviders, map);
     }
 
     @NonNull
-    private AiVoiceConfig copy(
-            AiVoiceModel nextModel,
-            Map<AiVoiceModel, String> nextKeys,
-            String nextBaseUrl,
-            String nextRealtimeModelId,
-            AiRealtimeDialect nextDialect,
-            List<String> nextModels) {
-        return new AiVoiceConfig(nextModel, nextKeys, nextBaseUrl, nextRealtimeModelId, nextDialect, nextModels);
-    }
-
-    @NonNull
-    private static String normalizeBaseUrl(@NonNull String url) {
-        String trimmed = url == null ? "" : url.strip();
-        while (trimmed.endsWith("/")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 1);
+    private AiVoiceConfig withProvider(@NonNull AiVoiceProvider next) {
+        EnumMap<AiVoiceModel, AiVoiceProvider> map = new EnumMap<>(AiVoiceModel.class);
+        map.putAll(providers);
+        if (next.isEmpty()) {
+            map.remove(model);
+        } else {
+            map.put(model, next);
         }
-        return trimmed;
-    }
-
-    @NonNull
-    private static List<String> cleanIds(@NonNull List<String> ids) {
-        List<String> cleaned = new ArrayList<>();
-        for (String id : ids) {
-            if (id == null) {
-                continue;
-            }
-            String trimmed = id.strip();
-            if (!trimmed.isEmpty() && !cleaned.contains(trimmed)) {
-                cleaned.add(trimmed);
-            }
-        }
-        return List.copyOf(cleaned);
+        return new AiVoiceConfig(model, configuredProviders, map);
     }
 }

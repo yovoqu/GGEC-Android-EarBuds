@@ -18,24 +18,22 @@ public enum AiVoiceModel {
 
     /** OpenAI Realtime。 */
     CHATGPT("chatgpt", "ChatGPT", "https://api.openai.com",
-            "gpt-4o-realtime-preview", "sk-…"),
+            "gpt-4o-realtime-preview"),
 
     /** 阿里云百炼的 Qwen Omni 实时模型，走 OpenAI 兼容模式。 */
     QWEN("qwen", "Qwen", "https://dashscope.aliyuncs.com/compatible-mode",
-            "qwen3-omni-flash-realtime", "sk-…");
+            "qwen3-omni-flash-realtime");
 
     private final String id;
     private final String displayName;
     private final String baseUrl;
     private final String realtimeModel;
-    private final String keyHint;
 
-    AiVoiceModel(String id, String displayName, String baseUrl, String realtimeModel, String keyHint) {
+    AiVoiceModel(String id, String displayName, String baseUrl, String realtimeModel) {
         this.id = id;
         this.displayName = displayName;
         this.baseUrl = baseUrl;
         this.realtimeModel = realtimeModel;
-        this.keyHint = keyHint;
     }
 
     /** 存进设置文档的稳定标识；改显示名不会让用户的选择失效。 */
@@ -59,11 +57,6 @@ public enum AiVoiceModel {
     @NonNull
     public String realtimeModel() {
         return realtimeModel;
-    }
-
-    @NonNull
-    public String keyHint() {
-        return keyHint;
     }
 
     /** 新装或旧文档读不出选择时的起点：ChatGPT 的实时接口最通用。 */

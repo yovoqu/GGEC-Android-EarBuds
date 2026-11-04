@@ -5,10 +5,12 @@ import androidx.annotation.Nullable;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
+import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiValidationError;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
 import com.ggec.earbuds.domain.ai.port.AiPlatformCatalog;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
@@ -42,18 +44,21 @@ public final class SavePlatform {
     private final AiApiKeyPolicy keyPolicy;
     private final AiBaseUrlPolicy urlPolicy;
     private final AiIdGenerator ids;
+    private final AiCredentialStore credentials;
 
     public SavePlatform(
             AiSettingsRepository repository,
             AiPlatformCatalog catalog,
             AiApiKeyPolicy keyPolicy,
             AiBaseUrlPolicy urlPolicy,
-            AiIdGenerator ids) {
+            AiIdGenerator ids,
+            AiCredentialStore credentials) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.keyPolicy = Objects.requireNonNull(keyPolicy, "keyPolicy");
         this.urlPolicy = Objects.requireNonNull(urlPolicy, "urlPolicy");
         this.ids = Objects.requireNonNull(ids, "ids");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
     }
 
     public AiPlatformConfig execute(Command command) {
@@ -66,24 +71,33 @@ public final class SavePlatform {
             throw new AiValidationException(AiValidationError.PROTOCOL_UNSUPPORTED);
         }
         String name = displayName(template, command.name());
+        AiSettings existing = repository.load();
+        String platformId = resolveId(command, template, existing);
+        // 密钥先进凭证库；配置对象只记录"已配置"这个事实。
+        credentials.putPlatformKey(platformId, key);
+        boolean configured = !key.isBlank();
         AtomicReference<AiPlatformConfig> saved = new AtomicReference<>();
         repository.update(settings -> {
-            AiPlatformConfig base;
-            if (command.platformId() != null) {
-                base = settings.platform(command.platformId())
-                        .orElseThrow(() -> new AiValidationException(AiValidationError.PLATFORM_UNKNOWN));
-            } else if (template.custom()) {
-                String id = newCustomId(settings.platforms());
-                base = AiPlatformConfig.create(id, template.id(), name, protocol);
-            } else {
-                base = settings.platform(template.id())
-                        .orElseGet(() -> AiPlatformConfig.create(template.id(), template.id(), name, protocol));
-            }
-            AiPlatformConfig updated = base.withCredentials(name, key, baseUrl, protocol);
+            AiPlatformConfig base = settings.platform(platformId)
+                    .orElseGet(() -> AiPlatformConfig.create(platformId, template.id(), name, protocol));
+            AiPlatformConfig updated = base.withConnection(name, configured, baseUrl, protocol);
             saved.set(updated);
             return settings.withPlatform(updated);
         });
         return saved.get();
+    }
+
+    private String resolveId(Command command, AiPlatformTemplate template, AiSettings existing) {
+        if (command.platformId() != null) {
+            if (existing.platform(command.platformId()).isEmpty()) {
+                throw new AiValidationException(AiValidationError.PLATFORM_UNKNOWN);
+            }
+            return command.platformId();
+        }
+        if (template.custom()) {
+            return newCustomId(existing.platforms());
+        }
+        return template.id();
     }
 
     private static String displayName(AiPlatformTemplate template, @Nullable String requested) {
