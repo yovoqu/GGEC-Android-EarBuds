@@ -152,17 +152,16 @@ final class VoiceHeroCard {
         modelValue.setText(voice.realtimeModelId().isEmpty()
                 ? context.getString(R.string.ai_settings_voice_models_empty)
                 : voice.realtimeModelId());
+        orbIcon.setImageResource(providerIcon(voice.modelId()));
 
         if (voice.configured()) {
             status.setText(R.string.ai_settings_voice_status_ready);
             status.setTextColor(theme.brand);
             status.setBackground(theme.rounded(theme.brandSoft, 10f));
-            orbIcon.setImageResource(R.drawable.ic_ai_call_entry);
         } else {
             status.setText(R.string.ai_settings_voice_status_key_missing);
             status.setTextColor(theme.warning);
             status.setBackground(theme.rounded(theme.warningSoft, 10f));
-            orbIcon.setImageResource(R.drawable.ic_ai_warning);
         }
     }
 
@@ -187,10 +186,7 @@ final class VoiceHeroCard {
             if (option.current()) {
                 selectedId = i;
             }
-            String title = option.name() + " · " + context.getString(option.configured()
-                    ? R.string.ai_settings_voice_provider_ready
-                    : R.string.ai_settings_voice_provider_needs_key);
-            builder.addItem(i, title, R.drawable.ic_ai_globe);
+            builder.addItem(i, option.name(), providerIcon(option.id()));
         }
         YoMenu menu = builder.build();
         if (selectedId >= 0) {
@@ -198,6 +194,15 @@ final class VoiceHeroCard {
         }
         menu.setOnDismissListener(menu::destroy);
         menu.show();
+    }
+
+    /** 服务商图标：对话/语音设置里的身份标记；未知服务商退回通用地球图标。 */
+    private static int providerIcon(@NonNull String modelId) {
+        return switch (modelId) {
+            case "chatgpt" -> R.drawable.ic_ai_provider_chatgpt;
+            case "qwen" -> R.drawable.ic_ai_provider_qwen;
+            default -> R.drawable.ic_ai_globe;
+        };
     }
 
     @NonNull
