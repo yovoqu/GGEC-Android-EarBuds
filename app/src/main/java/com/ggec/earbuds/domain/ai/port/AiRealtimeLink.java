@@ -1,9 +1,6 @@
 package com.ggec.earbuds.domain.ai.port;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 
 /**
  * 实时语音链路。一条长连接同时承担上行音频、下行音频和文本增量。
@@ -27,14 +24,7 @@ public interface AiRealtimeLink {
      * 属于协议细节，留在 lib_ai 里；领域只说"连这个平台的这个模型"。
      */
     record Config(@NonNull String baseUrl, @NonNull String apiKey, @NonNull String model,
-                  int inputSampleRateHz, int outputSampleRateHz,
-                  @Nullable AiRealtimeDialect dialect) {
-
-        /** 没指定方言时由实现按厂商默认线路连接。ChatGPT 的选择走六参构造。 */
-        public Config(@NonNull String baseUrl, @NonNull String apiKey, @NonNull String model,
-                      int inputSampleRateHz, int outputSampleRateHz) {
-            this(baseUrl, apiKey, model, inputSampleRateHz, outputSampleRateHz, null);
-        }
+                  int inputSampleRateHz, int outputSampleRateHz) {
     }
 
     interface Listener {

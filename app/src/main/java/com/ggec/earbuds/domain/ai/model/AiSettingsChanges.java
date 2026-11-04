@@ -35,7 +35,7 @@ public final class AiSettingsChanges {
 
     @NonNull
     public static UnaryOperator<AiSettings> voiceApiKey(@NonNull String apiKey) {
-        return settings -> settings.withVoice(settings.voice().withApiKey(apiKey));
+        return settings -> settings.withVoice(settings.voice().withConfigured(!apiKey.isBlank()));
     }
 
     /** 空串恢复官方地址；非法地址抛 {@link IllegalArgumentException}。 */
@@ -48,10 +48,5 @@ public final class AiSettingsChanges {
     @NonNull
     public static UnaryOperator<AiSettings> voiceRealtimeModel(@NonNull String modelId) {
         return settings -> settings.withVoice(settings.voice().withRealtimeModel(modelId));
-    }
-
-    @NonNull
-    public static UnaryOperator<AiSettings> voiceDialect(@NonNull AiRealtimeDialect dialect) {
-        return settings -> settings.withVoice(settings.voice().withDialect(dialect));
     }
 }

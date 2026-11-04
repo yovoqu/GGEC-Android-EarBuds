@@ -1,6 +1,7 @@
 package com.ggec.earbuds.domain.ai.usecase;
 
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiValidationError;
@@ -28,8 +29,8 @@ public final class SelectModel {
             AiPlatformConfig platform = PlatformLookup.configured(settings, platformId);
             AiModel model = platform.model(modelId)
                     .orElseThrow(() -> new AiValidationException(AiValidationError.MODEL_UNKNOWN));
-            if (model.realtime()) {
-                // 实时模型接不上 Chat Completions；在这里拦住，错误落在用户刚做的动作上。
+            AiModelCategory category = model.category();
+            if (category != null && !category.conversational()) {
                 throw new AiValidationException(AiValidationError.REALTIME_MODEL_NOT_CHAT);
             }
             return settings.withTextSelection(new AiSelection(platformId, modelId));
