@@ -10,11 +10,11 @@ import static org.junit.Assert.fail;
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
 import com.ggec.earbuds.data.ai.store.AiStorageException;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
@@ -52,13 +52,14 @@ public class AiSettingsRepositoryImplTest {
 
     @Test
     public void updatesPersistAndSurviveARestart() {
+        secrets.secrets.put("apikey.deepseek", "sk-one");
         AiSettingsRepositoryImpl first = repository();
-        first.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "sk-one", "m1", "m2"))
+        first.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "", "m1", "m2"))
                 .withTextSelection(new AiSelection("deepseek", "m2")));
 
         AiSettings reloaded = repository().load();
 
-        assertEquals("sk-one", reloaded.platform("deepseek").orElseThrow().apiKey());
+        assertTrue(reloaded.platform("deepseek").orElseThrow().configured());
         assertEquals(2, reloaded.platform("deepseek").orElseThrow().models().size());
         assertEquals(new AiSelection("deepseek", "m2"), reloaded.textSelection());
         assertTrue(reloaded.textModel().isPresent());
@@ -66,31 +67,31 @@ public class AiSettingsRepositoryImplTest {
 
     @Test
     public void keysLiveOnlyInTheSecretStore() {
-        repository().update(s -> s.withPlatform(AiFixtures.platform("deepseek", "sk-very-secret", "m1")));
+        secrets.secrets.put("apikey.deepseek", "sk-very-secret");
+        repository().update(s -> s.withPlatform(AiFixtures.platform("deepseek", "", "m1")));
 
         assertEquals("sk-very-secret", secrets.secrets.get("apikey.deepseek"));
         assertFalse(documents.documents.get("settings.json").contains("sk-very-secret"));
     }
 
     @Test
-    public void changingAKeyUpdatesItAndBlankingItRemovesIt() {
+    public void configuredFlagFollowsTheSecretStore() {
+        secrets.secrets.put("apikey.deepseek", "k1");
         AiSettingsRepositoryImpl repository = repository();
-        repository.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "k1", "m1")));
+        repository.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "", "m1")));
+        assertTrue(repository.load().platform("deepseek").orElseThrow().configured());
 
-        repository.update(s -> s.withPlatform(s.platform("deepseek").orElseThrow()
-                .withCredentials("deepseek", "k2", null, com.ggec.earbuds.domain.ai.model.AiProtocol.CHAT_COMPLETIONS)));
-        assertEquals("k2", secrets.secrets.get("apikey.deepseek"));
-
-        repository.update(s -> s.withPlatform(s.platform("deepseek").orElseThrow().withoutKey()));
-        assertNull(secrets.secrets.get("apikey.deepseek"));
+        secrets.secrets.remove("apikey.deepseek");
         assertFalse(repository.load().platform("deepseek").orElseThrow().configured());
     }
 
     @Test
     public void removingAPlatformRemovesItsSecret() {
+        secrets.secrets.put("apikey.a", "ka");
+        secrets.secrets.put("apikey.b", "kb");
         AiSettingsRepositoryImpl repository = repository();
-        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "ka", "m"))
-                .withPlatform(AiFixtures.platform("b", "kb", "m")));
+        repository.update(s -> s.withPlatform(AiFixtures.platform("a", "", "m"))
+                .withPlatform(AiFixtures.platform("b", "", "m")));
 
         repository.update(s -> s.withoutPlatform("a"));
 
@@ -99,40 +100,44 @@ public class AiSettingsRepositoryImplTest {
     }
 
     @Test
-    public void voiceKeysLiveOnlyInTheSecretStoreAndSurviveARestart() {
+    public void voiceKeysLiveOnlyInTheSecretStoreAndDriveConfiguredFlag() {
+        secrets.secrets.put("voicekey.qwen", "sk-qwen-secret");
         AiSettingsRepositoryImpl repository = repository();
-        repository.update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen-secret")));
+        repository.update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.QWEN, "")));
 
-        assertEquals("sk-qwen-secret", secrets.secrets.get("voicekey.qwen"));
         assertFalse(documents.documents.get("settings.json").contains("sk-qwen-secret"));
+        assertFalse("文档里连密钥键都不该有", documents.documents.get("settings.json").contains("voicekey"));
         assertTrue(repository().load().voiceReady());
         assertEquals(AiVoiceModel.QWEN, repository().load().voice().model());
 
-        repository.update(s -> s.withVoice(s.voice().withApiKey("")));
-        assertNull(secrets.secrets.get("voicekey.qwen"));
+        secrets.secrets.remove("voicekey.qwen");
         assertFalse(repository().load().voiceReady());
     }
 
     @Test
     public void chatGptRealtimeChoicesSurviveARestartBesideTheKey() {
-        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
+        secrets.secrets.put("voicekey.chatgpt", "sk-gpt");
+        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "")
                 .withBaseUrl("https://gw.example.com")
-                .withDialect(AiRealtimeDialect.GA)
-                .withRealtimeModels(List.of("gpt-realtime"))));
+                .withRealtimeModels(List.of(new AiModel("gpt-realtime", "gpt-realtime",
+                        null, null, java.util.Set.of(), false,
+                        com.ggec.earbuds.domain.ai.model.AiModelCategory.REALTIME)))));
 
         AiVoiceConfig voice = repository().load().voice();
 
-        assertEquals("sk-gpt", voice.apiKey());
+        assertTrue("配置状态来自凭证存储", voice.configured());
         assertEquals("https://gw.example.com", voice.baseUrl());
-        assertEquals(AiRealtimeDialect.GA, voice.dialect());
-        assertEquals(List.of("gpt-realtime"), voice.realtimeModels());
+        assertEquals(List.of(new AiModel("gpt-realtime", "gpt-realtime", null, null,
+                java.util.Set.of(), false, com.ggec.earbuds.domain.ai.model.AiModelCategory.REALTIME)),
+                voice.realtimeModels());
         assertEquals("gpt-realtime", voice.resolvedRealtimeModel());
         assertFalse(documents.documents.get("settings.json").contains("sk-gpt"));
     }
 
     @Test
     public void aLostVoiceKeyLeavesTheModelSelectedButUnready() {
-        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
+        secrets.secrets.put("voicekey.chatgpt", "sk-gpt");
+        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "")));
         secrets.secrets.clear();
 
         AiSettings reloaded = repository().load();
@@ -143,9 +148,10 @@ public class AiSettingsRepositoryImplTest {
 
     @Test
     public void removingAPlatformKeepsTheVoiceKey() {
+        secrets.secrets.put("voicekey.chatgpt", "sk-gpt");
         AiSettingsRepositoryImpl repository = repository();
         repository.update(s -> s.withPlatform(AiFixtures.platform("deepseek", "sk-one", "m"))
-                .withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
+                .withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "")));
 
         repository.update(s -> s.withoutPlatform("deepseek"));
 

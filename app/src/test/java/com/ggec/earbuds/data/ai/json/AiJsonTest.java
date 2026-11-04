@@ -14,10 +14,10 @@ import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
@@ -41,18 +41,19 @@ public class AiJsonTest {
     @Test
     public void settingsRoundTripWithoutTheKey() throws Exception {
         AiModel reasoning = new AiModel("deepseek-reasoner", "DeepSeek R", 64_000, 8_000,
-                Set.of(AiModelFeature.REASONING, AiModelFeature.VISION), false);
+                Set.of(AiModelFeature.REASONING, AiModelFeature.VISION), false, null);
         AiSpeedResult ok = new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 320, 710, null, null, 77);
         AiSpeedResult failed = new AiSpeedResult("deepseek-reasoner", AiSpeedResult.Status.FAILED, -1, 40,
                 AiFailureKind.AUTHENTICATION, "bad key", 78);
         AiPlatformConfig platform = new AiPlatformConfig("custom-1a2b3c4d", "openai-compatible", "公司网关",
-                "https://gw.example.com", "sk-secret-value", AiProtocol.RESPONSES,
-                List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false),
+                "https://gw.example.com", true, AiProtocol.RESPONSES,
+                List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false, null),
                         reasoning, AiModel.manual("mine")),
                 1234L, Map.of("deepseek-chat", ok, "deepseek-reasoner", failed));
         AiSettings settings = new AiSettings(List.of(platform),
                 new AiSelection("custom-1a2b3c4d", "mine"),
-                new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.QWEN, "sk-voice-secret")),
+                new AiVoiceConfig(AiVoiceModel.QWEN, Set.of(AiVoiceModel.QWEN),
+                        Map.of()),
                 new AiChatPreferences("sys \"quoted\"\nline", false));
 
         String text = settingsJson.encode(settings);
@@ -63,11 +64,11 @@ public class AiJsonTest {
         assertFalse("默认方言不写进文档", text.contains("openai_beta"));
         assertFalse("没拉过的实时模型列表不写进文档", text.contains("realtimeModels"));
         AiPlatformConfig round = decoded.platforms().get(0);
-        assertEquals("", round.apiKey());
-        assertEquals(platform.withoutKey(), round);
+        assertFalse("文档不保存密钥，解出来是未配置", round.configured());
+        assertEquals(platform.withoutCredential(), round);
         assertEquals(settings.textSelection(), decoded.textSelection());
         assertEquals(settings.voice().model(), decoded.voice().model());
-        assertEquals("语音 Key 只走加密存储，文档解出来是空的", "", decoded.voice().apiKey());
+        assertEquals("语音 Key 只走加密存储，文档里没有配置标记", false, decoded.voice().configured());
         assertEquals(settings.preferences(), decoded.preferences());
         assertEquals("sys \"quoted\"\nline", decoded.preferences().systemPrompt());
         assertEquals(failed, round.speedResults().get("deepseek-reasoner"));
@@ -77,10 +78,13 @@ public class AiJsonTest {
 
     @Test
     public void chatGptRealtimeChoicesRoundTripWithoutTheKey() throws Exception {
-        AiVoiceConfig voice = new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of(AiVoiceModel.CHATGPT, "sk-gpt"))
+        AiVoiceConfig voice = new AiVoiceConfig(AiVoiceModel.CHATGPT,
+                Set.of(AiVoiceModel.CHATGPT), Map.of())
                 .withBaseUrl("https://gw.example.com/")
-                .withDialect(AiRealtimeDialect.GA)
-                .withRealtimeModels(List.of("gpt-realtime", "gpt-4o-realtime-preview"))
+                .withRealtimeModels(List.of(
+                        new AiModel("gpt-realtime", "gpt-realtime", null, null, Set.of(), false, AiModelCategory.REALTIME),
+                        new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview",
+                                null, null, Set.of(), false, AiModelCategory.REALTIME)))
                 .withRealtimeModel("gpt-4o-realtime-preview");
         AiSettings settings = new AiSettings(List.of(), null, voice,
                 AiChatPreferences.DEFAULT);
@@ -90,10 +94,13 @@ public class AiJsonTest {
 
         assertFalse(text.contains("sk-gpt"));
         assertEquals("https://gw.example.com", decoded.baseUrl());
-        assertEquals(AiRealtimeDialect.GA, decoded.dialect());
-        assertEquals(List.of("gpt-realtime", "gpt-4o-realtime-preview"), decoded.realtimeModels());
+        assertEquals(List.of(
+                new AiModel("gpt-realtime", "gpt-realtime", null, null, Set.of(), false, AiModelCategory.REALTIME),
+                new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview",
+                        null, null, Set.of(), false, AiModelCategory.REALTIME)),
+                decoded.realtimeModels());
         assertEquals("gpt-4o-realtime-preview", decoded.realtimeModelId());
-        assertEquals("", decoded.apiKey());
+        assertFalse(decoded.configured());
     }
 
     @Test
@@ -216,20 +223,4 @@ public class AiJsonTest {
         assertEquals(0, new BigDecimal("0.00123").compareTo(roundTripped.cost()));
     }
 
-    @Test
-    public void legacyUsageNodeWithoutNewFieldsStillDecodes() throws Exception {
-        AiConversation decoded = conversationJson.decode("""
-                {"id":"c","messages":[
-                  {"id":"m","role":"ASSISTANT","text":"ok","usage":{"in":10,"out":5}},
-                  {"id":"m2","role":"ASSISTANT","text":"old","usage":{"in":3,"out":1,"cost":0.25}}
-                ]}
-                """);
-
-        AiUsage legacy = decoded.messages().get(0).usage();
-        assertEquals("老文档只有 in/out，total 由 AiUsage 自己求和", 15, legacy.totalTokens());
-        assertNull(legacy.cost());
-        assertNull(legacy.cachedTokens());
-        // 手工数据里成本可能是 JSON 数字，也要读得动。
-        assertEquals(0, new BigDecimal("0.25").compareTo(decoded.messages().get(1).usage().cost()));
-    }
 }

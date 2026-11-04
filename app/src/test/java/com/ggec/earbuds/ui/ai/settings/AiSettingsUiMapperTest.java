@@ -8,7 +8,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
-import com.ggec.earbuds.domain.ai.model.AiModelFeature;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
@@ -149,19 +149,21 @@ public class AiSettingsUiMapperTest {
     }
 
     @Test
-    public void fetchedVoiceModelsKeepEveryIdAndOnlyBadgeRealtimeOnes() {
+    public void fetchedVoiceModelsBecomeIdOnlyOptions() {
         AiVoiceConfig voice = AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")
-                .withRealtimeModels(List.of("gpt-4o", "gpt-4o-realtime-preview",
-                        "qwen3-omni-flash-realtime"))
+                .withRealtimeModels(List.of(
+                        new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview",
+                                null, null, Set.of(), false, AiModelCategory.REALTIME),
+                        new AiModel("qwen-audio-3.1-realtime-flash", "qwen-audio-3.1-realtime-flash",
+                                null, null, Set.of(), false, AiModelCategory.REALTIME)))
                 .withRealtimeModel("gpt-4o-realtime-preview");
 
         AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice),
                 AiInteractionMode.VOICE).voice();
 
-        assertEquals(3, state.models().size());
-        assertFalse("普通文本模型不该被标成实时", state.models().get(0).realtime());
-        assertTrue(state.models().get(1).realtime());
-        assertTrue("名字带 omni/realtime 的也算实时", state.models().get(2).realtime());
+        assertEquals(2, state.models().size());
+        assertEquals("gpt-4o-realtime-preview", state.models().get(0).id());
+        assertEquals("qwen-audio-3.1-realtime-flash", state.models().get(1).id());
         assertEquals("gpt-4o-realtime-preview", state.realtimeModelId());
     }
 
@@ -230,10 +232,9 @@ public class AiSettingsUiMapperTest {
     private static AiPlatformConfig platform(String id, String apiKey, String baseUrl, String... modelIds) {
         List<AiModel> models = new ArrayList<>();
         for (String modelId : modelIds) {
-            Set<AiModelFeature> features = modelId.contains("realtime")
-                    ? Set.of(AiModelFeature.REALTIME_AUDIO) : Set.of();
-            models.add(new AiModel(modelId, modelId, null, null, features, false));
+            models.add(new AiModel(modelId, modelId, null, null, Set.of(), false, null));
         }
-        return new AiPlatformConfig(id, id, id, baseUrl, apiKey, AiProtocol.CHAT_COMPLETIONS, models, 0L, Map.of());
+        return new AiPlatformConfig(id, id, id, baseUrl, apiKey != null && !apiKey.isBlank(),
+                AiProtocol.CHAT_COMPLETIONS, models, 0L, Map.of());
     }
 }

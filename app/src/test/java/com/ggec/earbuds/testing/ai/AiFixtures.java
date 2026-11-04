@@ -2,6 +2,7 @@ package com.ggec.earbuds.testing.ai;
 
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
@@ -20,12 +21,11 @@ public final class AiFixtures {
     }
 
     public static AiModel model(String id) {
-        return new AiModel(id, id, null, null, Set.of(), false);
+        return new AiModel(id, id, null, null, Set.of(), false, null);
     }
 
     public static AiModel realtimeModel(String id) {
-        return new AiModel(id, id, null, null, Set.of(com.ggec.earbuds.domain.ai.model.AiModelFeature.REALTIME_AUDIO),
-                false);
+        return new AiModel(id, id, null, null, Set.of(), false, AiModelCategory.REALTIME);
     }
 
     public static AiPlatformConfig platform(String id, String apiKey, String... modelIds) {
@@ -37,7 +37,8 @@ public final class AiFixtures {
     }
 
     public static AiPlatformConfig platformOf(String id, String apiKey, AiModel... models) {
-        return new AiPlatformConfig(id, id, id, null, apiKey, AiProtocol.CHAT_COMPLETIONS,
+        boolean configured = apiKey != null && !apiKey.isBlank();
+        return new AiPlatformConfig(id, id, id, null, configured, AiProtocol.CHAT_COMPLETIONS,
                 List.of(models), 0L, Map.of());
     }
 
@@ -54,7 +55,7 @@ public final class AiFixtures {
 
     /** 涓€涓厤濂?Key 鐨勮闊虫ā鍨嬶紝鐢ㄦ潵婕旂粌閫氳瘽涓庡叆鍙ｅ彲瑙佹€с€?*/
     public static AiVoiceConfig voice(AiVoiceModel model, String apiKey) {
-        return new AiVoiceConfig(model, Map.of(model, apiKey));
+        return new AiVoiceConfig(model, apiKey == null || apiKey.isBlank() ? Set.of() : Set.of(model), Map.of());
     }
 
     /** 涓€涓凡閰嶇疆瀵嗛挜銆侀€変腑浜?{@code deepseek-chat} 鐨勮缃細瀵硅瘽椤靛浜庡彲鍙戦€佺姸鎬併€?*/

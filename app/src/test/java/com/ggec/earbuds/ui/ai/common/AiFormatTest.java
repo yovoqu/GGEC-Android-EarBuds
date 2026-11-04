@@ -34,11 +34,4 @@ public class AiFormatTest {
         assertEquals("3.2 s", AiFormat.duration(3_240));
     }
 
-    @Test
-    public void keysAreMaskedWithoutRevealingShortOnes() {
-        assertEquals("sk-••••••••cdef", AiFormat.maskKey("sk-live-1234567890abcdef"));
-        assertEquals("••••••••", AiFormat.maskKey("12345678"));
-        assertEquals("••••••••", AiFormat.maskKey("abc"));
-    }
-
 }

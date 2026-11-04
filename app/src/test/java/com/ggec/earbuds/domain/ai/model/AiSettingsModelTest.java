@@ -13,6 +13,7 @@ import com.ggec.earbuds.testing.ai.AiFixtures;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 public class AiSettingsModelTest {
@@ -46,7 +47,7 @@ public class AiSettingsModelTest {
 
         AiSettings replaced = settings.withPlatform(platform("a", "changed"));
         assertEquals(List.of("a", "b"), replaced.platforms().stream().map(AiPlatformConfig::id).toList());
-        assertEquals("changed", replaced.platform("a").orElseThrow().apiKey());
+        assertTrue(replaced.platform("a").orElseThrow().configured());
 
         AiSettings appended = settings.withPlatform(platform("c", "k3"));
         assertEquals(List.of("a", "b", "c"), appended.platforms().stream().map(AiPlatformConfig::id).toList());
@@ -80,28 +81,63 @@ public class AiSettingsModelTest {
     }
 
     @Test
-    public void eachVoiceModelKeepsItsOwnKeyWhenSwitching() {
-        AiVoiceConfig config = new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of())
-                .withApiKey("sk-gpt")
+    public void switchingProvidersKeepsEachProvidersOwnState() {
+        AiVoiceConfig qwen = AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")
+                .withBaseUrl("https://qwen.example.com")
+                .withRealtimeModels(List.of(
+                        new AiModel("qwen-audio-3.1-realtime-flash", "qwen-audio-3.1-realtime-flash",
+                                null, null, Set.of(), false, AiModelCategory.REALTIME)));
+
+        AiVoiceConfig switched = qwen.withModel(AiVoiceModel.CHATGPT).withModel(AiVoiceModel.QWEN);
+
+        assertEquals("切走再切回，Qwen 的地址还在", "https://qwen.example.com",
+                switched.effectiveBaseUrl());
+        assertEquals("切走再切回，Qwen 的模型还在", 1, switched.realtimeModels().size());
+        assertEquals("qwen-audio-3.1-realtime-flash", switched.realtimeModelId());
+        assertEquals("切到 ChatGPT 时 Qwen 的模型不能串过去", 0,
+                qwen.withModel(AiVoiceModel.CHATGPT).realtimeModels().size());
+    }
+
+    @Test
+    public void lateFetchResultsLandOnTheProviderThatStartedTheFetch() {
+        AiVoiceConfig config = AiFixtures.voice(AiVoiceModel.CHATGPT, "")
+                .withModel(AiVoiceModel.QWEN);
+        // 用户已切到 ChatGPT，此时 Qwen 的拉取结果才回来。
+        AiVoiceConfig switched = config.withModel(AiVoiceModel.CHATGPT)
+                .withRealtimeModelsFor(AiVoiceModel.QWEN, List.of(
+                        new AiModel("qwen-audio-3.1-realtime-flash", "qwen-audio-3.1-realtime-flash",
+                                null, null, Set.of(), false, AiModelCategory.REALTIME)));
+
+        assertEquals("当前选中的 ChatGPT 不能被写入", 0, switched.realtimeModels().size());
+        assertEquals("Qwen 名下的结果必须落到 Qwen", 1,
+                switched.withModel(AiVoiceModel.QWEN).realtimeModels().size());
+    }
+
+    @Test
+    public void eachVoiceModelKeepsItsOwnConfiguredFlagWhenSwitching() {
+        AiVoiceConfig config = new AiVoiceConfig(AiVoiceModel.CHATGPT, Set.of(),
+                Map.of())
+                .withConfigured(true)
                 .withModel(AiVoiceModel.QWEN)
-                .withApiKey("sk-qwen");
+                .withConfigured(true);
 
-        assertEquals("sk-qwen", config.apiKey());
         assertTrue(config.configured());
-        assertEquals("sk-gpt", config.withModel(AiVoiceModel.CHATGPT).apiKey());
+        assertTrue(config.withModel(AiVoiceModel.CHATGPT).configured());
 
-        AiVoiceConfig cleared = config.withApiKey("");
+        AiVoiceConfig cleared = config.withConfigured(false);
         assertFalse(cleared.configured());
-        assertEquals("清掉 Qwen 的 Key 不该动 ChatGPT 的",
-                "sk-gpt", cleared.withModel(AiVoiceModel.CHATGPT).apiKey());
+        assertTrue("清掉 Qwen 的配置不该动 ChatGPT 的",
+                cleared.withModel(AiVoiceModel.CHATGPT).configured());
     }
 
     @Test
     public void voiceIsOnlyReadyWhenItsOwnKeyIsFilled() {
         assertFalse(AiVoiceConfig.DEFAULT.configured());
-        assertTrue(new AiVoiceConfig(AiVoiceModel.CHATGPT, Map.of(AiVoiceModel.CHATGPT, "k")).configured());
+        assertTrue(new AiVoiceConfig(AiVoiceModel.CHATGPT, Set.of(AiVoiceModel.CHATGPT),
+                Map.of()).configured());
         assertFalse("没有 Key 的模型不算配好",
-                new AiVoiceConfig(AiVoiceModel.QWEN, Map.of(AiVoiceModel.CHATGPT, "k")).configured());
+                new AiVoiceConfig(AiVoiceModel.QWEN, Set.of(AiVoiceModel.CHATGPT),
+                        Map.of()).configured());
     }
 
     @Test
@@ -129,12 +165,12 @@ public class AiSettingsModelTest {
         AiPlatformConfig cached = platform("deepseek", "k", "m1", "m2").withModels(
                 List.of(model("m1"), model("m2")), 99L).withSpeedResult(result);
 
-        AiPlatformConfig newKey = cached.withCredentials("DeepSeek", "other-key", null, AiProtocol.CHAT_COMPLETIONS);
+        AiPlatformConfig newKey = cached.withConnection("DeepSeek", true, null, AiProtocol.CHAT_COMPLETIONS);
         assertEquals(2, newKey.models().size());
         assertEquals(99L, newKey.modelsFetchedAtMillis());
         assertEquals(result, newKey.speedResults().get("m1"));
 
-        AiPlatformConfig newHost = cached.withCredentials("DeepSeek", "k", "https://proxy.example.com",
+        AiPlatformConfig newHost = cached.withConnection("DeepSeek", true, "https://proxy.example.com",
                 AiProtocol.CHAT_COMPLETIONS);
         assertTrue(newHost.models().isEmpty());
         assertEquals(0L, newHost.modelsFetchedAtMillis());
@@ -157,7 +193,7 @@ public class AiSettingsModelTest {
     public void platformConfigNeverPrintsItsKey() {
         String text = platform("deepseek", "sk-super-secret-key", "m").toString();
         assertFalse(text.contains("sk-super-secret-key"));
-        assertTrue(text.contains("redacted"));
+        assertTrue(text.contains("configured="));
     }
 
     @Test

@@ -28,6 +28,7 @@ import com.ggec.earbuds.domain.ai.port.AiSpeedTestGateway;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
+import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 
@@ -42,21 +43,25 @@ public class PlatformUseCasesTest {
     private final MemorySettingsRepository repository = new MemorySettingsRepository();
     private final ManualClock clock = new ManualClock();
     private final FakeCatalog catalog = new FakeCatalog();
+    private final FakeCredentialStore credentials = new FakeCredentialStore();
     private final SavePlatform save = new SavePlatform(repository, catalog, new AiApiKeyPolicy(),
-            new AiBaseUrlPolicy(catalog), clock);
+            new AiBaseUrlPolicy(catalog), clock, credentials);
 
     @Test
     public void savingABuiltInPlatformCreatesItOnceUnderItsTemplateId() {
         AiPlatformConfig first = save.execute(command(null, "deepseek", null, " sk-one ", null, null));
+        String firstKey = credentials.platformKey("deepseek");
         AiPlatformConfig second = save.execute(command(null, "deepseek", null, "sk-two", "https://proxy.example.com/v1", null));
 
         assertEquals("deepseek", first.id());
         assertEquals("DeepSeek", first.name());
-        assertEquals("sk-one", first.apiKey());
+        assertEquals("sk-one", firstKey);
+        assertTrue(first.configured());
         assertEquals(AiProtocol.CHAT_COMPLETIONS, first.protocol());
         assertNull(first.baseUrl());
         assertEquals(1, repository.load().platforms().size());
-        assertEquals("sk-two", second.apiKey());
+        assertEquals("sk-two", credentials.platformKey("deepseek"));
+        assertTrue(second.configured());
         assertEquals("https://proxy.example.com", second.baseUrl());
     }
 
@@ -289,7 +294,7 @@ public class PlatformUseCasesTest {
 
     @Test
     public void featuresSurviveTheMerge() {
-        AiModel reasoning = new AiModel("r1", "R1", 64_000, 8_000, Set.of(AiModelFeature.REASONING), false);
+        AiModel reasoning = new AiModel("r1", "R1", 64_000, 8_000, Set.of(AiModelFeature.REASONING), false, null);
         repository.update(settings -> settings.withPlatform(platform("deepseek", "k")));
 
         AiPlatformConfig result = new FetchPlatformModels(repository, gateway(List.of(reasoning)), clock)

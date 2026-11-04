@@ -23,6 +23,7 @@ import com.ggec.earbuds.domain.ai.port.AiChatRequest;
 import com.ggec.earbuds.domain.ai.port.AiChatResult;
 import com.ggec.earbuds.domain.ai.port.AiChatTurn;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
+import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.yovo.lib_ai.api.YoAiClient;
 import com.yovo.lib_ai.completion.YoCompletionRequest;
 
@@ -50,6 +51,9 @@ public class LibAiGatewayTest {
 
     private MockWebServer server;
     private LibAiClientPool pool;
+    private final FakeCredentialStore credentials = new FakeCredentialStore()
+            .withPlatformKey("custom-test", KEY)
+            .withPlatformKey("custom-dead", KEY);
 
     @Before
     public void setUp() throws Exception {
@@ -64,7 +68,7 @@ public class LibAiGatewayTest {
     }
 
     @Test
-    public void voiceFetchKeepsEveryModelAndOnlyMarksRealtimeOnes() throws Exception {
+    public void voiceFetchReturnsEveryModelRawForTheDomainPolicy() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[
                   {"id":"gpt-4o","created":1715367049},
@@ -76,13 +80,9 @@ public class LibAiGatewayTest {
         List<AiModel> models = new LibAiVoiceModelGateway()
                 .fetch(server.url("/").toString().replaceAll("/+$", ""), KEY);
 
-        assertEquals("全部模型都要回来，不再只留实时模型",
+        assertEquals("网关只做 I/O，原样交回；筛选属于领域策略",
                 List.of("gpt-4o", "gpt-4o-realtime-preview", "text-embedding-3-small"),
                 models.stream().map(AiModel::id).toList());
-        assertTrue(models.stream().anyMatch(model ->
-                model.id().equals("gpt-4o-realtime-preview") && model.realtime()));
-        assertFalse(models.stream().anyMatch(model ->
-                model.id().equals("gpt-4o") && model.realtime()));
     }
 
     @Test
@@ -94,7 +94,7 @@ public class LibAiGatewayTest {
                 ]}
                 """));
 
-        List<AiModel> models = new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
+        List<AiModel> models = new LibAiModelGateway(pool, credentials).fetch(config(AiProtocol.CHAT_COMPLETIONS));
 
         assertEquals(List.of("gpt-4o"), models.stream().map(AiModel::id).toList());
     }
@@ -112,7 +112,7 @@ public class LibAiGatewayTest {
                 ]}
                 """));
 
-        List<AiModel> models = new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
+        List<AiModel> models = new LibAiModelGateway(pool, credentials).fetch(config(AiProtocol.CHAT_COMPLETIONS));
 
         assertEquals(List.of("gpt-new", "o3-mini", "gpt-old", "no-date-a", "no-date-b"),
                 models.stream().map(AiModel::id).toList());
@@ -133,7 +133,7 @@ public class LibAiGatewayTest {
                         + "\"type\":\"invalid_request_error\"}}"));
 
         try {
-            new LibAiModelGateway(pool).fetch(config(AiProtocol.CHAT_COMPLETIONS));
+            new LibAiModelGateway(pool, credentials).fetch(config(AiProtocol.CHAT_COMPLETIONS));
             fail("a rejected key must surface");
         } catch (AiFailure failure) {
             assertEquals(AiFailureKind.AUTHENTICATION, failure.kind());
@@ -149,7 +149,7 @@ public class LibAiGatewayTest {
         server.close();
 
         try {
-            new LibAiModelGateway(pool).fetch(config("custom-dead", dead, AiProtocol.CHAT_COMPLETIONS));
+            new LibAiModelGateway(pool, credentials).fetch(config("custom-dead", dead, AiProtocol.CHAT_COMPLETIONS));
             fail("nothing is listening");
         } catch (AiFailure failure) {
             assertEquals(AiFailureKind.NETWORK, failure.kind());
@@ -173,7 +173,7 @@ public class LibAiGatewayTest {
                 """));
         Recorder recorder = new Recorder();
 
-        new LibAiChatGateway(pool).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
+        new LibAiChatGateway(pool, credentials).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
         recorder.await();
 
         assertEquals(List.of("reasoning:想", "text:你", "text:好", "complete:你好:想:STOP:4/2"), recorder.log);
@@ -192,7 +192,7 @@ public class LibAiGatewayTest {
         }
         Recorder recorder = new Recorder();
 
-        new LibAiChatGateway(pool).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
+        new LibAiChatGateway(pool, credentials).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
         recorder.await();
 
         assertEquals(List.of("failure:RATE_LIMITED:slow down"), recorder.log);
@@ -206,7 +206,7 @@ public class LibAiGatewayTest {
                 .setBody("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"late\"}}]}\n\ndata: [DONE]\n\n"));
         Recorder recorder = new Recorder();
 
-        AiCancellable handle = new LibAiChatGateway(pool).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
+        AiCancellable handle = new LibAiChatGateway(pool, credentials).stream(chatRequest(AiProtocol.CHAT_COMPLETIONS), recorder);
         assertEquals(1, pool.leasesInUse());
         handle.cancel();
         handle.cancel();
@@ -219,7 +219,7 @@ public class LibAiGatewayTest {
     @Test
     public void aRequestTheLibraryRejectsFailsSynchronouslyAndReleasesTheLease() {
         try {
-            new LibAiChatGateway(pool).stream(chatRequest(AiProtocol.MESSAGES), new Recorder());
+            new LibAiChatGateway(pool, credentials).stream(chatRequest(AiProtocol.MESSAGES), new Recorder());
             fail("an OpenAI compatible platform has no messages protocol");
         } catch (AiFailure failure) {
             assertEquals(AiFailureKind.BAD_REQUEST, failure.kind());
@@ -258,7 +258,7 @@ public class LibAiGatewayTest {
         Map<String, AiSpeedResult> results = new java.util.concurrent.ConcurrentHashMap<>();
         CountDownLatch done = new CountDownLatch(1);
 
-        new LibAiSpeedTestGateway(pool).run(config(AiProtocol.CHAT_COMPLETIONS), List.of("fast", "missing"),
+        new LibAiSpeedTestGateway(pool, credentials).run(config(AiProtocol.CHAT_COMPLETIONS), List.of("fast", "missing"),
                 new AiSpeedTestListener() {
                     @Override
                     public void onStarted(String modelId) {
@@ -291,7 +291,7 @@ public class LibAiGatewayTest {
     @Test
     public void speedTestRejectedUpFrontReleasesTheLease() {
         try {
-            new LibAiSpeedTestGateway(pool).run(config(AiProtocol.MESSAGES), List.of("m"),
+            new LibAiSpeedTestGateway(pool, credentials).run(config(AiProtocol.MESSAGES), List.of("m"),
                     done -> { });
             fail("an OpenAI compatible platform has no messages protocol");
         } catch (AiFailure failure) {
@@ -303,14 +303,14 @@ public class LibAiGatewayTest {
     @Test
     public void poolReusesAClientUntilTheConnectionDetailsChange() {
         AiPlatformConfig original = config(AiProtocol.CHAT_COMPLETIONS);
-        LibAiClientPool.Lease first = pool.acquire(original);
-        LibAiClientPool.Lease second = pool.acquire(original);
+        LibAiClientPool.Lease first = pool.acquire(original, KEY);
+        LibAiClientPool.Lease second = pool.acquire(original, KEY);
         assertSame(first.client(), second.client());
         assertEquals(2, pool.leasesInUse());
 
-        AiPlatformConfig newKey = original.withCredentials(original.name(), "sk-rotated-key-9999",
+        AiPlatformConfig newKey = original.withConnection(original.name(), true,
                 original.baseUrl(), original.protocol());
-        LibAiClientPool.Lease third = pool.acquire(newKey);
+        LibAiClientPool.Lease third = pool.acquire(newKey, "sk-rotated-key-9999");
         assertNotSame(first.client(), third.client());
 
         YoAiClient stale = first.client();
@@ -327,8 +327,8 @@ public class LibAiGatewayTest {
     @Test
     public void protocolChangesDoNotRebuildTheClient() {
         AiPlatformConfig chat = config(AiProtocol.CHAT_COMPLETIONS);
-        LibAiClientPool.Lease a = pool.acquire(chat);
-        LibAiClientPool.Lease b = pool.acquire(config(AiProtocol.RESPONSES));
+        LibAiClientPool.Lease a = pool.acquire(chat, KEY);
+        LibAiClientPool.Lease b = pool.acquire(config(AiProtocol.RESPONSES), KEY);
 
         assertSame(a.client(), b.client());
         a.close();
@@ -371,8 +371,8 @@ public class LibAiGatewayTest {
     }
 
     private static AiPlatformConfig config(String id, String baseUrl, AiProtocol protocol) {
-        return new AiPlatformConfig(id, "openai-compatible", "测试平台", baseUrl, KEY, protocol,
-                List.of(new AiModel("gpt-test", "gpt-test", null, null, java.util.Set.of(), false)), 0L, Map.of());
+        return new AiPlatformConfig(id, "openai-compatible", "测试平台", baseUrl, true, protocol,
+                List.of(new AiModel("gpt-test", "gpt-test", null, null, java.util.Set.of(), false, null)), 0L, Map.of());
     }
 
     private AiChatRequest chatRequest(AiProtocol protocol) {
