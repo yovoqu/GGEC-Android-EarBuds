@@ -42,7 +42,6 @@ public final class AiSettingsScreen {
         void onEditPrompt();
         void onSelectVoiceModel(@NonNull String modelId);
         void onSelectRealtimeModel(@NonNull String modelId);
-        void onSelectDialect(@NonNull String dialectId);
         void onEditVoiceKey();
         void onEditVoiceUrl();
         void onFetchRealtimeModels();
@@ -289,7 +288,7 @@ public final class AiSettingsScreen {
     @NonNull
     private VoiceSettingsView voicePanel() {
         if (voicePanel == null) {
-            voicePanel = new VoiceSettingsView(context, theme, components,
+            voicePanel = new VoiceSettingsView(context, theme,
                     new VoiceSettingsView.Listener() {
                 @Override
                 public void onSelectVoiceModel(@NonNull String modelId) {
@@ -299,11 +298,6 @@ public final class AiSettingsScreen {
                 @Override
                 public void onSelectRealtimeModel(@NonNull String modelId) {
                     listener.onSelectRealtimeModel(modelId);
-                }
-
-                @Override
-                public void onSelectDialect(@NonNull String dialectId) {
-                    listener.onSelectDialect(dialectId);
                 }
 
                 @Override

@@ -9,7 +9,6 @@ import androidx.annotation.NonNull;
 
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
-import com.ggec.earbuds.ui.common.YoComponents;
 
 /**
  * 语音交流模式的设置视图（整页右侧面板）。
@@ -18,9 +17,8 @@ import com.ggec.earbuds.ui.common.YoComponents;
  * <ol>
  *   <li>{@link VoiceHeroCard} —— 现在会连到哪、能不能用（唯一的阻塞项直接可点）；</li>
  *   <li>{@link VoiceProviderPicker} —— 服务商二选一瓦片；</li>
- *   <li>{@link VoiceConnectionCard} —— 接口地址（仅 ChatGPT）与 API Key；</li>
- *   <li>{@link VoiceModelCard} —— 拉取全部模型并挑一个；</li>
- *   <li>{@link VoiceDialectCard} —— 线路方言（仅 ChatGPT）。</li>
+ *   <li>{@link VoiceConnectionCard} —— 接口地址与 API Key；</li>
+ *   <li>{@link VoiceModelCard} —— 拉取实时模型并挑一个。</li>
  * </ol>
  *
  * <p>视图只做"状态 → 图纸"，不包含任何业务判断；状态来自 MVVM 的 {@code Voice} 不可变快照。
@@ -31,7 +29,6 @@ public final class VoiceSettingsView {
     public interface Listener {
         void onSelectVoiceModel(@NonNull String modelId);
         void onSelectRealtimeModel(@NonNull String modelId);
-        void onSelectDialect(@NonNull String dialectId);
         void onEditVoiceKey();
         void onEditVoiceUrl();
         void onFetchVoiceModels();
@@ -43,10 +40,9 @@ public final class VoiceSettingsView {
     private final VoiceProviderPicker providerPicker;
     private final VoiceConnectionCard connectionCard;
     private final VoiceModelCard modelCard;
-    private final VoiceDialectCard dialectCard;
 
     public VoiceSettingsView(@NonNull Context context, @NonNull AiTheme theme,
-                             @NonNull YoComponents components, @NonNull Listener listener) {
+                             @NonNull Listener listener) {
         this.theme = theme;
         view = new LinearLayout(context);
         view.setOrientation(LinearLayout.VERTICAL);
@@ -83,9 +79,6 @@ public final class VoiceSettingsView {
         });
         view.addView(modelCard.view(), VoiceCard.matchWrap());
 
-        dialectCard = new VoiceDialectCard(context, theme, components, listener::onSelectDialect);
-        view.addView(dialectCard.view(), VoiceCard.matchWrap());
-
         View tail = new View(context);
         tail.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(AiTheme.SPACE_L)));
@@ -107,11 +100,6 @@ public final class VoiceSettingsView {
         connectionCard.bind(voice);
         modelCard.bind(voice);
         modelCard.setVisible(true);
-        boolean chatGpt = voice.chatGpt();
-        dialectCard.setVisible(chatGpt);
-        if (chatGpt) {
-            dialectCard.bind(voice);
-        }
     }
 
     private void addInset(@NonNull View child, float topMarginDp) {

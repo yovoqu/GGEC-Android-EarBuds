@@ -19,6 +19,8 @@ import com.yohu.youi.api.containers.list.ListSuffixSpec;
 import com.yohu.youi.api.containers.list.ListTextSpec;
 import com.yohu.youi.api.controls.YoTextInput;
 
+import java.util.List;
+
 /** 平台模型区：搜索、测速动作和模型行。控件只创建一次。 */
 final class PlatformModelsSection {
 
@@ -96,10 +98,11 @@ final class PlatformModelsSection {
         current = next;
         title.setText(context.getString(R.string.ai_settings_models_section) + " · " + next.count());
         action.setText(next.count() == 0
-                ? context.getString(R.string.ai_settings_models_fetch) : next.actionLabel());
+                ? context.getString(R.string.ai_settings_models_fetch)
+                : next.actionLabel().resolve(context));
         summary.setVisibility(next.summary() == null ? View.GONE : View.VISIBLE);
         if (next.summary() != null) {
-            summary.setText(next.summary());
+            summary.setText(next.summary().resolve(context));
         }
         if (shownQuery == null || !next.query().equals(shownQuery)) {
             shownQuery = next.query();
@@ -115,7 +118,7 @@ final class PlatformModelsSection {
         for (AiPlatformUiState.Row row : next.rows()) {
             String facts = row.state() == AiPlatformUiState.RowState.TESTING
                     ? context.getString(R.string.ai_settings_speed_testing)
-                    : String.join(" · ", row.facts());
+                    : join(row.facts());
             ListTextSpec text = facts.isEmpty()
                     ? ListTextSpec.of(row.name()) : ListTextSpec.of(row.name(), facts);
             list.addItem(ListPrefixSpec.iconTinted(
@@ -170,17 +173,30 @@ final class PlatformModelsSection {
     }
 
     @NonNull
-    private static String signature(@NonNull AiPlatformUiState.Models models) {
+    private String join(@NonNull List<AiText> facts) {
+        StringBuilder text = new StringBuilder();
+        for (AiText fact : facts) {
+            if (text.length() > 0) {
+                text.append(" · ");
+            }
+            text.append(fact.resolve(context));
+        }
+        return text.toString();
+    }
+
+    @NonNull
+    private String signature(@NonNull AiPlatformUiState.Models models) {
         StringBuilder result = new StringBuilder()
                 .append(models.count()).append('\u0000')
-                .append(models.actionLabel()).append('\u0000')
-                .append(models.summary()).append('\u0000')
+                .append(models.actionLabel().resolve(context)).append('\u0000')
+                .append(models.summary() == null ? "" : models.summary().resolve(context))
+                .append('\u0000')
                 .append(models.query()).append('\u0000')
                 .append(models.searchable()).append('\u0000');
         for (AiPlatformUiState.Row row : models.rows()) {
             result.append(row.id()).append(':').append(row.name()).append(':')
                     .append(row.selected()).append(':').append(row.state()).append(':')
-                    .append(String.join("|", row.facts())).append('\u0000');
+                    .append(join(row.facts())).append('\u0000');
         }
         return result.toString();
     }

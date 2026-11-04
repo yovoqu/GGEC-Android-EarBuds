@@ -118,8 +118,6 @@ final class VoiceHeroCard {
             subtitle.setText(theme.context.getString(R.string.ai_settings_voice_status_subtitle,
                     voice.realtimeModelId()));
         }
-        subtitle.setText(theme.context.getString(R.string.ai_settings_voice_status_subtitle,
-                voice.realtimeModelId()));
         if (voice.configured()) {
             status.setText(R.string.ai_settings_voice_status_ready);
             status.setTextColor(theme.brand);

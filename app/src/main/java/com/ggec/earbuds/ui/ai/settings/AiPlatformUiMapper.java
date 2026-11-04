@@ -3,12 +3,15 @@ package com.ggec.earbuds.ui.ai.settings;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
+import com.ggec.earbuds.ui.ai.common.AiMessages;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,31 +63,34 @@ public final class AiPlatformUiMapper {
     }
 
     @Nullable
-    static String badge(@Nullable AiPlatformTemplate template) {
-        return template != null && !template.custom() ? "官方" : null;
+    static AiText badge(@Nullable AiPlatformTemplate template) {
+        return template != null && !template.custom()
+                ? AiText.of(R.string.ai_settings_voice_url_official) : null;
     }
 
     @NonNull
     static AiPlatformUiState.Connection connection(@NonNull AiPlatformConfig platform,
                                                    @Nullable String selectedModelId) {
-        boolean filled = !platform.apiKey().isBlank();
-        String keyText = filled
-                ? com.ggec.earbuds.ui.ai.common.AiFormat.maskKey(platform.apiKey())
-                : "未填写";
+        boolean filled = platform.configured();
+        AiText keyText = filled
+                ? AiText.of(R.string.ai_settings_voice_provider_ready)
+                : AiText.of(R.string.ai_settings_value_not_set);
         if (!filled) {
             return new AiPlatformUiState.Connection(
-                    new AiPlatformUiState.Key(false, keyText), null, false, "先填 API Key");
+                    new AiPlatformUiState.Key(false, keyText), null, false,
+                    AiText.of(R.string.ai_settings_connection_need_key));
         }
         if (selectedModelId == null) {
             return new AiPlatformUiState.Connection(
-                    new AiPlatformUiState.Key(true, keyText), null, false, "先选一个模型");
+                    new AiPlatformUiState.Key(true, keyText), null, false,
+                    AiText.of(R.string.ai_settings_connection_need_model));
         }
         AiSpeedResult result = platform.speedResults().get(selectedModelId);
-        String text = result == null ? null : switch (result.status()) {
-            case OK -> "连接正常 · 首字 "
-                    + com.ggec.earbuds.ui.ai.common.AiFormat.duration(result.firstTokenMillis());
-            case TIMEOUT -> "连接超时";
-            case FAILED -> "连接失败";
+        AiText text = result == null ? null : switch (result.status()) {
+            case OK -> AiText.of(R.string.ai_settings_connection_ok,
+                    AiFormat.duration(result.firstTokenMillis()));
+            case TIMEOUT -> AiText.of(R.string.ai_settings_connection_timeout);
+            case FAILED -> AiText.of(R.string.ai_settings_connection_failed);
         };
         return new AiPlatformUiState.Connection(
                 new AiPlatformUiState.Key(true, keyText), text, false, null);
@@ -96,7 +102,7 @@ public final class AiPlatformUiMapper {
                                            @NonNull Set<String> testing,
                                            boolean speedRunning,
                                            @NonNull String query) {
-        // 平台页只服务文本对话：实时模型接不上 Chat Completions，列出来只会让人选中后收到 404。
+        // 平台页只列 SDK 标成可对话的类别。
         List<AiModel> candidates = platform.chatModels();
         List<AiPlatformUiState.Row> all = new ArrayList<>(candidates.size());
         for (AiModel model : candidates) {
@@ -109,7 +115,9 @@ public final class AiPlatformUiMapper {
         boolean searchable = all.size() > SEARCH_THRESHOLD;
         String applied = searchable ? query.strip() : "";
         return new AiPlatformUiState.Models(all.size(), filter(all, applied),
-                speedRunning ? "停止" : "全部测速", speedRunning,
+                AiText.of(speedRunning
+                        ? R.string.ai_settings_speed_stop : R.string.ai_settings_speed_all),
+                speedRunning,
                 // 结论要覆盖平台上的全部模型，不能只在筛选结果里比谁快。
                 summary(all), searchable, applied);
     }
@@ -139,18 +147,17 @@ public final class AiPlatformUiMapper {
 
     /** 事实片段：首字 → 上下文 → （手动添加且没有别的可说时）手动。 */
     @NonNull
-    static List<String> facts(@NonNull AiModel model, @Nullable AiSpeedResult speed) {
-        List<String> facts = new ArrayList<>(2);
+    static List<AiText> facts(@NonNull AiModel model, @Nullable AiSpeedResult speed) {
+        List<AiText> facts = new ArrayList<>(2);
         if (speed != null && speed.ok()) {
-            facts.add("首字 "
-                    + com.ggec.earbuds.ui.ai.common.AiFormat.duration(speed.firstTokenMillis()));
+            facts.add(AiText.of(R.string.ai_settings_speed_first,
+                    AiFormat.duration(speed.firstTokenMillis())));
         }
         if (model.contextWindow() != null) {
-            facts.add(com.ggec.earbuds.ui.ai.common.AiFormat.tokens(model.contextWindow())
-                    + " 上下文");
+            facts.add(AiText.of(R.string.ai_model_context, AiFormat.tokens(model.contextWindow())));
         }
         if (facts.isEmpty() && model.manual()) {
-            facts.add("手动添加");
+            facts.add(AiText.of(R.string.ai_settings_model_manual));
         }
         return facts;
     }
@@ -169,7 +176,7 @@ public final class AiPlatformUiMapper {
 
     /** 测速结束后区块头的结论：只报最快的一个——平均值会掩盖差异。 */
     @Nullable
-    static String summary(@NonNull List<AiPlatformUiState.Row> rows) {
+    static AiText summary(@NonNull List<AiPlatformUiState.Row> rows) {
         String fastest = null;
         long best = Long.MAX_VALUE;
         for (AiPlatformUiState.Row row : rows) {
@@ -181,18 +188,19 @@ public final class AiPlatformUiMapper {
                 fastest = row.name();
             }
         }
-        return fastest == null ? null : "最快：" + fastest;
+        return fastest == null ? null : AiText.of(R.string.ai_settings_speed_fastest, fastest);
     }
 
     @NonNull
     static AiPlatformUiState.Advanced advanced(@NonNull AiPlatformConfig platform,
                                                @Nullable AiPlatformTemplate template) {
-        String url = platform.baseUrl() == null || platform.baseUrl().isBlank()
-                ? (template == null ? "未设置" : template.defaultBaseUrl())
-                : platform.baseUrl();
+        AiText url = platform.baseUrl() == null || platform.baseUrl().isBlank()
+                ? (template == null ? AiText.of(R.string.ai_settings_url_unset)
+                : AiText.raw(template.defaultBaseUrl()))
+                : AiText.raw(platform.baseUrl());
         return new AiPlatformUiState.Advanced(platform.name(),
                 template != null && template.custom(), url,
-                com.ggec.earbuds.ui.ai.common.AiMessages.protocol(platform.protocol()),
+                AiMessages.protocol(platform.protocol()),
                 template != null && template.protocols().size() > 1);
     }
 }

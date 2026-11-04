@@ -59,16 +59,17 @@ final class PlatformHeader {
         return root;
     }
 
-    void bind(@NonNull String nextTitle, @Nullable String nextBadge) {
-        String nextSignature = nextTitle + "\u0000" + nextBadge;
+    void bind(@NonNull String nextTitle, @Nullable AiText nextBadge) {
+        String resolved = nextBadge == null ? null : nextBadge.resolve(context);
+        String nextSignature = nextTitle + "\u0000" + resolved;
         if (nextSignature.equals(signature)) {
             return;
         }
         signature = nextSignature;
         title.setText(nextTitle);
-        badge.setVisibility(nextBadge == null ? View.GONE : View.VISIBLE);
-        if (nextBadge != null) {
-            badge.setText(nextBadge);
+        badge.setVisibility(resolved == null ? View.GONE : View.VISIBLE);
+        if (resolved != null) {
+            badge.setText(resolved);
         }
     }
 }

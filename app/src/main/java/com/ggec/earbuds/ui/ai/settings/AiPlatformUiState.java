@@ -16,7 +16,7 @@ import java.util.List;
 public record AiPlatformUiState(
         boolean loaded,
         @NonNull String title,
-        @Nullable String badge,
+        @Nullable AiText badge,
         @NonNull Connection connection,
         @NonNull Models models,
         @NonNull Advanced advanced,
@@ -24,11 +24,11 @@ public record AiPlatformUiState(
         boolean canDelete) {
 
     /** 连接区：只回答"通不通"。 */
-    public record Connection(@NonNull Key key, @Nullable String result, boolean testing,
-                             @Nullable String blockedReason) {
+    public record Connection(@NonNull Key key, @Nullable AiText result, boolean testing,
+                             @Nullable AiText blockedReason) {
     }
 
-    public record Key(boolean filled, @NonNull String display) {
+    public record Key(boolean filled, @NonNull AiText display) {
     }
 
     /**
@@ -39,8 +39,8 @@ public record AiPlatformUiState(
      * @param searchable 模型超过 8 个才给搜索框
      * @param query      当前搜索词（已 trim）；空串表示没在搜
      */
-    public record Models(int count, @NonNull List<Row> rows, @NonNull String actionLabel,
-                         boolean speedRunning, @Nullable String summary,
+    public record Models(int count, @NonNull List<Row> rows, @NonNull AiText actionLabel,
+                         boolean speedRunning, @Nullable AiText summary,
                          boolean searchable, @NonNull String query) {
         public Models {
             rows = List.copyOf(rows);
@@ -54,7 +54,7 @@ public record AiPlatformUiState(
      * @param state 这一行处于哪一步
      */
     public record Row(@NonNull String id, @NonNull String name, boolean selected,
-                      @NonNull List<String> facts, @NonNull RowState state,
+                      @NonNull List<AiText> facts, @NonNull RowState state,
                       /** 首字毫秒，未测或失败为 -1。区块头比较用它——不能拿展示文本去比。 */
                       long firstTokenMillis) {
         public Row {
@@ -70,7 +70,7 @@ public record AiPlatformUiState(
     }
 
     /** 高级区：收起时只显示一行摘要。 */
-    public record Advanced(@NonNull String name, boolean nameEditable, @NonNull String baseUrl,
+    public record Advanced(@NonNull String name, boolean nameEditable, @NonNull AiText baseUrl,
                            @androidx.annotation.StringRes int protocolRes,
                            boolean protocolChoosable) {
     }
@@ -78,9 +78,9 @@ public record AiPlatformUiState(
     @NonNull
     public static AiPlatformUiState empty() {
         return new AiPlatformUiState(false, "", null,
-                new Connection(new Key(false, ""), null, false, null),
-                new Models(0, List.of(), "", false, null, false, ""),
-                new Advanced("", false, "", 0, false),
+                new Connection(new Key(false, AiText.raw("")), null, false, null),
+                new Models(0, List.of(), AiText.raw(""), false, null, false, ""),
+                new Advanced("", false, AiText.raw(""), 0, false),
                 false, false);
     }
 }

@@ -14,10 +14,10 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
 
 /**
- * 连接卡：接口地址（仅 ChatGPT）与 API Key。
+ * 连接卡：接口地址与 API Key。
  *
- * <p>Key 是这一页唯一的阻塞项，尾部值直说"已填写/未填写"，未填写用警示色。地址只在
- * ChatGPT 这家出现，尾部一句"官方/自定义"回答"到底连的是哪"。</p>
+ * <p>Key 是这一页唯一的阻塞项，尾部值直说"已填写/未填写"，未填写用警示色。接口地址对每一家
+ * 都出现（Qwen 也显示它预设的兼容模式地址），尾部一句"官方/自定义"回答"到底连的是哪"。</p>
  */
 final class VoiceConnectionCard {
 
@@ -56,18 +56,16 @@ final class VoiceConnectionCard {
     }
 
     void bind(@NonNull AiSettingsUiState.Voice voice) {
-        String next = voice.chatGpt() + "\u0000" + voice.baseUrl() + "\u0000"
+        String next = voice.baseUrl() + "\u0000"
                 + voice.baseUrlCustom() + "\u0000" + voice.configured();
         if (next.equals(signature)) {
             return;
         }
         signature = next;
         card.removeAllViews();
-        boolean hasUrl = voice.chatGpt();
-        if (hasUrl) {
-            card.addView(baseUrlRow(voice));
-            VoiceCard.addDivider(card, context, theme);
-        }
+        // 接口地址对每一家都显示：Qwen 走的是百炼兼容模式地址，用户同样要看得见自己连的是哪。
+        card.addView(baseUrlRow(voice));
+        VoiceCard.addDivider(card, context, theme);
         card.addView(keyRow(voice));
     }
 
