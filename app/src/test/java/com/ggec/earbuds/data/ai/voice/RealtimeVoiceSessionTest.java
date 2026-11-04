@@ -12,6 +12,7 @@ import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeAudioCapture;
 import com.ggec.earbuds.testing.ai.FakeAudioPlayback;
+import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.FakeRealtimeLink;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
@@ -49,7 +50,9 @@ public class RealtimeVoiceSessionTest {
 
     @Before
     public void setUp() {
-        session = new RealtimeVoiceSession(settings, capture, playback, link, clock, Runnable::run);
+        session = new RealtimeVoiceSession(settings,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                capture, playback, link, clock, Runnable::run);
         session.start(snapshots::add);
     }
 
@@ -182,7 +185,8 @@ public class RealtimeVoiceSessionTest {
         List<AiVoiceSnapshot> events = new ArrayList<>();
         MemorySettingsRepository noKey = new MemorySettingsRepository(AiSettings.EMPTY);
 
-        new RealtimeVoiceSession(noKey, new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
+        new RealtimeVoiceSession(noKey, new FakeCredentialStore(),
+                new FakeAudioCapture(), new FakeAudioPlayback(), untouched,
                 clock, Runnable::run)
                 .start(events::add);
 
@@ -200,7 +204,9 @@ public class RealtimeVoiceSessionTest {
         MemorySettingsRepository gpt = new MemorySettingsRepository(
                 AiFixtures.settings(null, AiFixtures.voice(AiVoiceModel.CHATGPT, "sk-gpt")));
 
-        new RealtimeVoiceSession(gpt, new FakeAudioCapture(), new FakeAudioPlayback(), other,
+        new RealtimeVoiceSession(gpt, new FakeCredentialStore()
+                .withVoiceKey(AiVoiceModel.CHATGPT, "sk-gpt"),
+                new FakeAudioCapture(), new FakeAudioPlayback(), other,
                 clock, Runnable::run)
                 .start(events::add);
 

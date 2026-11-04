@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -35,7 +36,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Connection connection = mapper.map(
                 settings(config, null), config, null, Set.of(), false, false, "").connection();
 
-        assertEquals("先填 API Key", connection.blockedReason());
+        assertEquals(AiText.of(R.string.ai_settings_connection_need_key), connection.blockedReason());
         assertNull(connection.result());
     }
 
@@ -46,7 +47,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Connection connection = mapper.map(
                 settings(config, null), config, null, Set.of(), false, false, "").connection();
 
-        assertEquals("先选一个模型", connection.blockedReason());
+        assertEquals(AiText.of(R.string.ai_settings_connection_need_model), connection.blockedReason());
     }
 
     @Test
@@ -59,7 +60,7 @@ public final class AiPlatformUiMapperTest {
                 settings(config, "chat"), config, null, Set.of(), false, false, "").connection();
 
         assertNull(connection.blockedReason());
-        assertEquals("连接正常 · 首字 829 ms", connection.result());
+        assertEquals(AiText.of(R.string.ai_settings_connection_ok, "829 ms"), connection.result());
     }
 
     // ---- 模型行 ----
@@ -74,7 +75,9 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
                 Set.of(), false, false, "").models().rows().get(0);
 
-        assertEquals(List.of("首字 645 ms", "128K 上下文"), row.facts());
+        assertEquals(List.of(
+                AiText.of(R.string.ai_settings_speed_first, "645 ms"),
+                AiText.of(R.string.ai_model_context, "128K")), row.facts());
         assertEquals(AiPlatformUiState.RowState.OK, row.state());
     }
 
@@ -107,13 +110,13 @@ public final class AiPlatformUiMapperTest {
 
     @Test
     public void aManualModelWithoutAnythingElseSaysManual() {
-        AiModel manual = new AiModel("mine", "mine", null, null, Set.of(), true);
+        AiModel manual = new AiModel("mine", "mine", null, null, Set.of(), true, null);
         AiPlatformConfig config = config("sk-abc", List.of(manual));
 
         AiPlatformUiState.Row row = mapper.map(settings(config, "mine"), config, null,
                 Set.of(), false, false, "").models().rows().get(0);
 
-        assertEquals(List.of("手动添加"), row.facts());
+        assertEquals(List.of(AiText.of(R.string.ai_settings_model_manual)), row.facts());
     }
 
     // ---- 区块头与结论 ----
@@ -129,8 +132,8 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Models models = mapper.map(settings(config, "fast"), config, null,
                 Set.of(), false, false, "").models();
 
-        assertEquals("最快：fast", models.summary());
-        assertEquals("全部测速", models.actionLabel());
+        assertEquals(AiText.of(R.string.ai_settings_speed_fastest, "fast"), models.summary());
+        assertEquals(AiText.of(R.string.ai_settings_speed_all), models.actionLabel());
     }
 
     @Test
@@ -140,7 +143,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Models models = mapper.map(settings(config, "chat"), config, null,
                 Set.of("chat"), true, false, "").models();
 
-        assertEquals("停止", models.actionLabel());
+        assertEquals(AiText.of(R.string.ai_settings_speed_stop), models.actionLabel());
     }
 
     // ---- 搜索 ----
@@ -172,7 +175,7 @@ public final class AiPlatformUiMapperTest {
     public void searchFiltersByNameOrIdAndKeepsTheTotal() {
         AiModel chat = model("deepseek-chat", null);
         AiModel reasoner = model("deepseek-reasoner", null);
-        AiModel image = new AiModel("sd-xl", "画图模型", null, null, Set.of(), false);
+        AiModel image = new AiModel("sd-xl", "画图模型", null, null, Set.of(), false, null);
         AiPlatformConfig config = config("sk-abc", List.of(chat, reasoner, image,
                 model("a", null), model("b", null), model("c", null), model("d", null),
                 model("e", null), model("f", null)));
@@ -203,7 +206,7 @@ public final class AiPlatformUiMapperTest {
                 Set.of(), false, false, "m0").models();
 
         assertEquals(1, models.rows().size());
-        assertEquals("结论比的是平台上全部模型，不是筛选结果", "最快：m8", models.summary());
+        assertEquals(AiText.of(R.string.ai_settings_speed_fastest, "m8"), models.summary());
     }
 
     @Test
@@ -222,7 +225,7 @@ public final class AiPlatformUiMapperTest {
     public void textModeListsChatModelsOnly() {
         AiModel chat = model("deepseek-chat", null);
         AiModel realtime = new AiModel("gpt-4o-realtime-preview", "gpt-4o-realtime-preview", null, null,
-                Set.of(com.ggec.earbuds.domain.ai.model.AiModelFeature.REALTIME_AUDIO), false);
+                Set.of(), false, com.ggec.earbuds.domain.ai.model.AiModelCategory.REALTIME);
         AiPlatformConfig config = config("sk-abc", List.of(chat, realtime));
 
         AiPlatformUiState.Models models = mapper.map(settings(config, "deepseek-chat"), config, null, Set.of(), false, false, "").models();
@@ -239,7 +242,7 @@ public final class AiPlatformUiMapperTest {
         AiPlatformUiState.Advanced advanced = mapper.map(settings(config, "chat"), config, null,
                 Set.of(), false, false, "").advanced();
 
-        assertTrue(advanced.baseUrl().startsWith("https://"));
+        assertTrue(advanced.baseUrl().raw().startsWith("https://"));
         assertEquals("Chat Completions", activityProtocolLabel(advanced));
     }
 
@@ -252,7 +255,7 @@ public final class AiPlatformUiMapperTest {
     // ---- 夹具 ----
 
     private static AiModel model(String id, Integer context) {
-        return new AiModel(id, id, context, null, Set.of(), false);
+        return new AiModel(id, id, context, null, Set.of(), false, null);
     }
 
     private static List<AiModel> models(int count) {
@@ -270,7 +273,7 @@ public final class AiPlatformUiMapperTest {
 
     private static AiPlatformConfig config(String key, List<AiModel> models) {
         return new AiPlatformConfig("p1", "deepseek", "DeepSeek", "https://api.deepseek.com",
-                key, AiProtocol.CHAT_COMPLETIONS, models, 0L, Map.of());
+                key != null && !key.isBlank(), AiProtocol.CHAT_COMPLETIONS, models, 0L, Map.of());
     }
 
     private static AiSettings settings(AiPlatformConfig config, String modelId) {

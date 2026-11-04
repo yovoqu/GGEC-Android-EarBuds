@@ -9,8 +9,7 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
-import com.ggec.earbuds.domain.ai.model.AiModelFeature;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
@@ -20,6 +19,7 @@ import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
 import com.ggec.earbuds.testing.ai.AiFixtures;
+import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
 import com.ggec.earbuds.testing.ai.MemoryAiUiPreferences;
@@ -45,6 +45,7 @@ public class AiSettingsViewModelTest {
     private final FakeCatalog catalog = new FakeCatalog();
     private final List<AiModel> voiceCatalog = new ArrayList<>();
     private final MemoryAiUiPreferences uiPreferences = new MemoryAiUiPreferences();
+    private final FakeCredentialStore credentials = new FakeCredentialStore();
     private AiSettingsViewModel viewModel;
 
     @Before
@@ -59,11 +60,12 @@ public class AiSettingsViewModelTest {
                 new LoadAiSettings(repository),
                 new ObserveAiSettings(repository),
                 new ObserveAiSettingsPersistence(repository),
-                new FetchVoiceModels(repository, (baseUrl, apiKey) -> List.copyOf(voiceCatalog)),
+                new FetchVoiceModels(repository, (baseUrl, apiKey) -> List.copyOf(voiceCatalog), credentials),
                 new SaveAiSettings(repository),
                 Runnable::run,
                 new LoadPlatformTemplates(catalog),
                 preferences,
+                credentials,
                 new AiSettingsUiMapper());
     }
 
@@ -116,12 +118,10 @@ public class AiSettingsViewModelTest {
     @Test
     public void consecutiveChangesLandInOrder() {
         viewModel.saveVoiceBaseUrl("https://gw.example.com");
-        viewModel.selectChatGptDialect(AiRealtimeDialect.GA.id());
         viewModel.saveVoiceApiKey("sk-gpt");
 
         AiSettings stored = settings.load();
         assertEquals("https://gw.example.com", stored.voice().baseUrl());
-        assertEquals(AiRealtimeDialect.GA, stored.voice().dialect());
         assertTrue(stored.voice().configured());
     }
 
@@ -141,7 +141,7 @@ public class AiSettingsViewModelTest {
         viewModel.saveVoiceApiKey("sk-qwen");
 
         assertEquals(AiVoiceModel.QWEN, settings.load().voice().model());
-        assertEquals("sk-qwen", settings.load().voice().apiKey());
+        assertTrue(settings.load().voice().configured());
         AiSettingsUiState.Voice voice = viewModel.uiState().getValue().voice();
         assertEquals("Qwen", voice.modelName());
         assertTrue(voice.configured());
@@ -167,26 +167,22 @@ public class AiSettingsViewModelTest {
     @Test
     public void voiceChoicesAreStoredAndShown() {
         voiceCatalog.add(new AiModel("gpt-realtime", "GPT Realtime", null, null,
-                Set.of(AiModelFeature.REALTIME_AUDIO), false));
+                Set.of(), false, AiModelCategory.REALTIME));
         voiceCatalog.add(new AiModel("gpt-4o-realtime-preview", "Preview", null, null,
-                Set.of(AiModelFeature.REALTIME_AUDIO), false));
+                Set.of(), false, AiModelCategory.REALTIME));
 
         viewModel.saveVoiceApiKey("sk-gpt");
         viewModel.saveVoiceBaseUrl("https://gw.example.com/");
-        viewModel.selectChatGptDialect("openai_ga");
         viewModel.saveVoiceBaseUrl("ftp://nope");
         viewModel.fetchVoiceModels();
-        viewModel.selectChatGptModel("gpt-4o-realtime-preview");
+        viewModel.selectRealtimeModel("gpt-4o-realtime-preview");
 
         assertEquals("https://gw.example.com", settings.load().voice().baseUrl());
-        assertEquals(AiRealtimeDialect.GA, settings.load().voice().dialect());
         assertEquals("gpt-4o-realtime-preview", settings.load().voice().resolvedRealtimeModel());
         AiSettingsUiState.Voice voice = viewModel.uiState().getValue().voice();
-        assertTrue(voice.chatGpt());
         assertEquals("https://gw.example.com", voice.baseUrl());
         assertEquals("gpt-4o-realtime-preview", voice.realtimeModelId());
         assertEquals(2, voice.models().size());
-        assertEquals("openai_ga", voice.dialectId());
         assertFalse(voice.fetching());
     }
 
@@ -214,9 +210,9 @@ public class AiSettingsViewModelTest {
         AiSettingsViewModel loading = new AiSettingsViewModel(
                 new LoadAiSettings(deferred), new ObserveAiSettings(deferred),
                 new ObserveAiSettingsPersistence(deferred),
-                new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of()),
+                new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of(), new FakeCredentialStore()),
                 new SaveAiSettings(deferred), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(), new AiSettingsUiMapper());
+                new MemoryAiUiPreferences(), new FakeCredentialStore(), new AiSettingsUiMapper());
 
         loading.start();
 
