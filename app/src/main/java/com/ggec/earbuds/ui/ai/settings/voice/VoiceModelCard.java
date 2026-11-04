@@ -16,10 +16,10 @@ import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
 import java.util.List;
 
 /**
- * 语音模型卡：一个「拉取/重新拉取」动作 + 拉回来的全部模型。
+ * 语音模型卡：一个「拉取/重新拉取」动作 + 拉回来的实时模型。
  *
- * <p>拉取不再只留实时模型；每一行右侧用能力胶囊说明"实时 / 普通"，让用户自己挑一个能接
- * 实时会话的。选中行以实心圆点作主信号，胶囊只描述能力，不重复表示选中。</p>
+ * <p>只列能接实时会话的模型（服务商目录里的聊天/向量/合成等已在网关筛掉）。
+ * 每一行右侧的胶囊是 SDK 类别。选中行以实心圆点作主信号，胶囊不重复表示选中。</p>
  */
 final class VoiceModelCard {
 
@@ -109,16 +109,8 @@ final class VoiceModelCard {
         VoiceCard.Row row = VoiceCard.row(context, theme, 0);
         row.view.addView(VoiceCard.dot(context, theme, selected), 0);
         row.title.setText(model.id());
-        row.trailing.addView(VoiceCard.chip(context, theme,
-                context.getString(model.realtime()
-                        ? R.string.ai_settings_voice_model_realtime_short
-                        : R.string.ai_settings_voice_model_plain_short),
-                model.realtime() ? theme.brand : theme.text3,
-                model.realtime() ? theme.brandSoft : theme.fill));
         row.view.setOnClickListener(v -> listener.onSelectModel(model.id()));
-        row.view.setContentDescription(model.id() + " " + context.getString(model.realtime()
-                ? R.string.ai_settings_voice_model_realtime
-                : R.string.ai_settings_voice_model_plain));
+        row.view.setContentDescription(model.id());
         return row.view;
     }
 
@@ -142,7 +134,7 @@ final class VoiceModelCard {
     private static String rowsSignature(@NonNull List<AiSettingsUiState.VoiceModelOption> models) {
         StringBuilder result = new StringBuilder();
         for (AiSettingsUiState.VoiceModelOption model : models) {
-            result.append(model.id()).append(':').append(model.realtime()).append('\u0000');
+            result.append(model.id()).append('\u0000');
         }
         return result.toString();
     }

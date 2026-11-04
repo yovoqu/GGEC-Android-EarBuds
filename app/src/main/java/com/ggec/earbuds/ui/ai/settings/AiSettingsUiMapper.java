@@ -11,7 +11,6 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 
@@ -111,8 +110,8 @@ public final class AiSettingsUiMapper {
     // ---- 语音模型 ----
 
     /**
-     * 服务商下拉来自 {@link AiVoiceModel} 的预设顺序。地址、模型与方言原样交给界面，
-     * 映射层不决定选哪一个；拉到的模型全部交给界面，只按能力位标一个"实时"。
+     * 服务商下拉来自 {@link AiVoiceModel} 的预设顺序。地址、模型原样交给界面，
+     * 映射层不决定选哪一个；拉到的模型都是实时类别，类别保持 SDK 的原值。
      */
     @NonNull
     private static AiSettingsUiState.Voice voice(@NonNull AiVoiceConfig config) {
@@ -120,29 +119,17 @@ public final class AiSettingsUiMapper {
         for (AiVoiceModel model : AiVoiceModel.values()) {
             options.add(new AiSettingsUiState.VoiceOption(model.id(), model.displayName(),
                     model == config.model(),
-                    !config.apiKeys().getOrDefault(model, "").isBlank()));
-        }
-        List<AiSettingsUiState.DialectOption> dialects = new ArrayList<>(AiRealtimeDialect.values().length);
-        for (AiRealtimeDialect dialect : AiRealtimeDialect.values()) {
-            dialects.add(new AiSettingsUiState.DialectOption(dialect.id(), dialectLabel(dialect),
-                    dialect == config.dialect()));
+                    config.configuredProviders().contains(model)));
         }
         List<AiSettingsUiState.VoiceModelOption> models =
                 new ArrayList<>(config.realtimeModels().size());
-        for (String id : config.realtimeModels()) {
-            models.add(new AiSettingsUiState.VoiceModelOption(id, AiModel.looksRealtime(id)));
+        for (AiModel listed : config.realtimeModels()) {
+            models.add(new AiSettingsUiState.VoiceModelOption(listed.id()));
         }
         return new AiSettingsUiState.Voice(config.model().id(), config.model().displayName(),
-                config.configured(), options, config.model() == AiVoiceModel.CHATGPT,
+                config.configured(), options,
                 config.effectiveBaseUrl(), !config.baseUrl().isEmpty(),
-                config.realtimeModelId(), models, config.dialect().id(), dialects, false);
-    }
-
-    private static int dialectLabel(AiRealtimeDialect dialect) {
-        return switch (dialect) {
-            case BETA -> R.string.ai_settings_dialect_beta;
-            case GA -> R.string.ai_settings_dialect_ga;
-        };
+                config.realtimeModelId(), models, false);
     }
 
     // ---- 回答风格 ----

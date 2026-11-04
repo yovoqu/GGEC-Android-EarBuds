@@ -10,12 +10,12 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSettingsChanges;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
@@ -53,6 +53,7 @@ public final class AiSettingsViewModel extends ViewModel {
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
     private final AiUiPreferences uiPreferences;
+    private final AiCredentialStore credentials;
     private final AiSettingsUiMapper mapper;
 
     private final MutableLiveData<AiSettingsUiState> uiState =
@@ -80,6 +81,7 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiUiPreferences uiPreferences,
+                               @NonNull AiCredentialStore credentials,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
@@ -89,6 +91,7 @@ public final class AiSettingsViewModel extends ViewModel {
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.uiPreferences = Objects.requireNonNull(uiPreferences, "uiPreferences");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -182,6 +185,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     public void saveVoiceApiKey(@NonNull String apiKey) {
+        credentials.putVoiceKey(latest.voice().model(), apiKey);
         apply(AiSettingsChanges.voiceApiKey(apiKey));
     }
 
@@ -189,17 +193,8 @@ public final class AiSettingsViewModel extends ViewModel {
         apply(AiSettingsChanges.voiceBaseUrl(baseUrl));
     }
 
-    public void selectChatGptModel(@NonNull String modelId) {
+    public void selectRealtimeModel(@NonNull String modelId) {
         apply(AiSettingsChanges.voiceRealtimeModel(modelId));
-    }
-
-    public void selectChatGptDialect(@NonNull String dialectId) {
-        AiRealtimeDialect dialect = AiRealtimeDialect.fromId(dialectId);
-        if (dialect == null) {
-            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
-            return;
-        }
-        apply(AiSettingsChanges.voiceDialect(dialect));
     }
 
     public void fetchVoiceModels() {

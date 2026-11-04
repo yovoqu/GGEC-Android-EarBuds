@@ -120,12 +120,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
         @Override
         public void onSelectRealtimeModel(@NonNull String modelId) {
-            viewModel.selectChatGptModel(modelId);
-        }
-
-        @Override
-        public void onSelectDialect(@NonNull String dialectId) {
-            viewModel.selectChatGptDialect(dialectId);
+            viewModel.selectRealtimeModel(modelId);
         }
 
         @Override

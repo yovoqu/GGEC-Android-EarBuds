@@ -4,6 +4,7 @@ import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
 import com.ggec.earbuds.domain.ai.model.AiValidationError;
 
@@ -55,6 +56,24 @@ public final class AiMessages {
             case MODEL_UNKNOWN -> R.string.ai_error_model_unknown;
             case PROMPT_TOO_LONG -> R.string.ai_error_prompt_too_long;
             case REALTIME_MODEL_NOT_CHAT -> R.string.ai_error_realtime_model_not_chat;
+        };
+    }
+
+    @StringRes
+    public static int category(AiModelCategory category) {
+        return switch (category) {
+            case TEXT -> R.string.ai_model_category_text;
+            case VISION -> R.string.ai_model_category_vision;
+            case OMNI -> R.string.ai_model_category_omni;
+            case SPEECH_RECOGNITION -> R.string.ai_model_category_speech_recognition;
+            case SPEECH_SYNTHESIS -> R.string.ai_model_category_speech_synthesis;
+            case EMBEDDING -> R.string.ai_model_category_embedding;
+            case REALTIME -> R.string.ai_model_category_realtime;
+            case IMAGE_GENERATION -> R.string.ai_model_category_image_generation;
+            case VIDEO_GENERATION -> R.string.ai_model_category_video_generation;
+            case RERANK -> R.string.ai_model_category_rerank;
+            case MODERATION -> R.string.ai_model_category_moderation;
+            case OTHER -> R.string.ai_model_category_other;
         };
     }
 

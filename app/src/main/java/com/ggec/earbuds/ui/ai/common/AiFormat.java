@@ -46,13 +46,6 @@ public final class AiFormat {
         return (int) Math.round(outputTokens * 1000d / elapsedMillis);
     }
 
-    public static String maskKey(String key) {
-        if (key.length() <= 8) {
-            return "••••••••";
-        }
-        return key.substring(0, 3) + "••••••••" + key.substring(key.length() - 4);
-    }
-
     private static String trim(double value) {
         if (value == Math.rint(value)) {
             return String.valueOf((long) value);

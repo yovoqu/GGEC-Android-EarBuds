@@ -53,7 +53,8 @@ final class PlatformAdvancedSection {
     }
 
     void bind(@NonNull AiPlatformUiState.Advanced next, boolean expanded) {
-        String nextSignature = expanded + "\u0000" + next.name() + "\u0000" + next.baseUrl()
+        String url = next.baseUrl().resolve(context);
+        String nextSignature = expanded + "\u0000" + next.name() + "\u0000" + url
                 + "\u0000" + next.protocolRes();
         if (nextSignature.equals(signature)) {
             return;
@@ -63,7 +64,7 @@ final class PlatformAdvancedSection {
         if (!expanded) {
             list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_swap, theme.text2),
                     ListTextSpec.of(context.getString(R.string.ai_settings_advanced_section),
-                            context.getString(next.protocolRes()) + " · " + next.baseUrl()),
+                            context.getString(next.protocolRes()) + " · " + url),
                     ListSuffixSpec.icon(R.drawable.ic_ai_chevron_down, theme.text3));
             return;
         }
@@ -71,7 +72,7 @@ final class PlatformAdvancedSection {
                 ListTextSpec.of(context.getString(R.string.ai_settings_field_name), next.name()),
                 ListSuffixSpec.none());
         list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_globe, theme.text2),
-                ListTextSpec.of(context.getString(R.string.ai_settings_field_base_url), next.baseUrl()),
+                ListTextSpec.of(context.getString(R.string.ai_settings_field_base_url), url),
                 ListSuffixSpec.none());
         list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_swap, theme.text2),
                 ListTextSpec.of(context.getString(R.string.ai_settings_field_protocol),
