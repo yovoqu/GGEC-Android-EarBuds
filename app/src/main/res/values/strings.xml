@@ -110,4 +110,153 @@
     <string name="ai_history_loading">正在读取对话…</string>
     <string name="ai_history_load_failed_title">没能读取对话记录</string>
     <string name="ai_history_load_failed_action">重试</string>
+
+    <!-- 设备 -->
+    <string name="device_header_subtitle">管理已连接的耳机</string>
+    <string name="device_add">添加设备</string>
+    <string name="device_back">返回</string>
+    <string name="device_select_model">选择项目</string>
+    <string name="device_connected_title">当前设备</string>
+    <string name="device_battery_left">左耳</string>
+    <string name="device_battery_right">右耳</string>
+    <string name="device_battery_case">充电盒</string>
+    <string name="device_charging_on">充电中</string>
+    <string name="device_wear_none">未佩戴</string>
+    <string name="device_wear_left">左耳佩戴中</string>
+    <string name="device_wear_right">右耳佩戴中</string>
+    <string name="device_wear_both">双耳佩戴中</string>
+    <string name="device_state_idle">未连接</string>
+    <string name="device_state_scanning">搜索中</string>
+    <string name="device_state_connecting">连接中</string>
+    <string name="device_state_connected_not_ready">已连接·准备中</string>
+    <string name="device_state_ready">已连接</string>
+    <string name="device_state_disconnected">已断开</string>
+    <string name="device_toggle_game">游戏模式</string>
+    <string name="device_toggle_wear">佩戴检测</string>
+    <string name="device_toggle_voice">语音唤醒</string>
+    <string name="device_entry_music">音乐与音效</string>
+    <string name="device_entry_control">控制设置</string>
+    <string name="device_entry_function">功能设置</string>
+    <string name="device_entry_dual">双连接</string>
+    <string name="device_entry_record">录音</string>
+    <string name="device_entry_about">关于设备</string>
+    <string name="device_empty_title">还没有连接耳机</string>
+    <string name="device_empty_body">打开耳机并靠近手机，然后开始搜索。</string>
+    <string name="device_empty_action">添加设备</string>
+
+    <!-- 扫描 -->
+    <string name="device_scan_title">添加设备</string>
+    <string name="device_scan_start">开始搜索</string>
+    <string name="device_scan_stop">停止搜索</string>
+    <string name="device_scan_searching">正在搜索附近的耳机…</string>
+    <string name="device_scan_hint">点击开始搜索附近的耳机。</string>
+    <string name="device_scan_empty">没有发现设备，换个位置再试。</string>
+    <string name="device_scan_paired">已配对</string>
+
+    <!-- 设置分组 -->
+    <string name="device_section_eq">均衡器</string>
+    <string name="device_section_quality">音质</string>
+    <string name="device_section_long">长按</string>
+    <string name="device_section_short">轻点</string>
+    <string name="device_section_double">双触</string>
+    <string name="device_section_tap">双击 / 三击</string>
+    <string name="device_section_find">查找耳机</string>
+    <string name="device_section_paired">已配对设备</string>
+    <string name="device_section_record">录音控制</string>
+    <string name="device_section_files">录音文件</string>
+    <string name="device_section_info">设备信息</string>
+    <string name="device_section_actions">设备操作</string>
+    <string name="device_section_caps">支持的能力</string>
+
+    <!-- 设置行 -->
+    <string name="device_row_eq_mode">均衡器模式</string>
+    <string name="device_row_custom_eq">自定义均衡器</string>
+    <string name="device_row_ldac">LDAC</string>
+    <string name="device_row_volume_adaptive">音量自适应</string>
+    <string name="device_row_sound_quality">音质模式</string>
+    <string name="device_row_long">长按功能</string>
+    <string name="device_row_long_left">左耳长按</string>
+    <string name="device_row_long_right">右耳长按</string>
+    <string name="device_row_short">轻点功能</string>
+    <string name="device_row_short_left">左耳轻点</string>
+    <string name="device_row_short_right">右耳轻点</string>
+    <string name="device_row_double_left">左耳双触</string>
+    <string name="device_row_double_right">右耳双触</string>
+    <string name="device_row_tap_twice">双击功能</string>
+    <string name="device_row_tap_triple">三击功能</string>
+    <string name="device_row_tap_twice_left">左耳双击</string>
+    <string name="device_row_tap_triple_left">左耳三击</string>
+    <string name="device_row_tap_twice_right">右耳双击</string>
+    <string name="device_row_tap_triple_right">右耳三击</string>
+    <string name="device_row_reset">恢复默认设置</string>
+    <string name="device_row_fall_alert">掉落提醒</string>
+    <string name="device_row_volume_remind">听力保护</string>
+    <string name="device_row_beginner">新手模式</string>
+    <string name="device_row_interpret">同声传译</string>
+    <string name="device_row_find_left">找左耳</string>
+    <string name="device_row_find_right">找右耳</string>
+    <string name="device_row_find_stop">停止响铃</string>
+    <string name="device_row_dual_unsupported">当前设备不支持双连接</string>
+    <string name="device_row_dual_switch">双连接开关</string>
+    <string name="device_row_priority">优先设备</string>
+    <string name="device_paired_empty">暂无已配对设备</string>
+    <string name="device_row_record_start">开始本地录音</string>
+    <string name="device_row_record_stop">结束本地录音</string>
+    <string name="device_row_record_count">录音数量</string>
+    <string name="device_row_record_capacity">存储容量</string>
+    <string name="device_row_record_sync">同步最后一条录音</string>
+    <string name="device_row_model">产品型号</string>
+    <string name="device_row_firmware">固件版本</string>
+    <string name="device_row_mac">蓝牙地址</string>
+    <string name="device_row_color">颜色</string>
+    <string name="device_row_rename">设备名称</string>
+    <string name="device_row_clear_pairing">清除配对</string>
+    <string name="device_row_cap_count">能力数量</string>
+
+    <!-- 提示 -->
+    <string name="device_toast_reset_done">已恢复默认设置</string>
+    <string name="device_toast_find">已发送响铃指令</string>
+    <string name="device_toast_record">已发送录音指令</string>
+    <string name="device_toast_cleared">已清除配对</string>
+    <string name="device_toast_eq">已保存均衡器</string>
+
+    <!-- 自定义均衡器 -->
+    <string name="device_eq_save">保存</string>
+    <string name="device_eq_cancel">取消</string>
+    <string name="device_firmware_footer">固件版本 %1$s</string>
+
+    <!-- 音乐与音效：官方预置音效 -->
+    <string name="device_eq_presets_section">官方预置音效</string>
+    <string name="device_eq_modes_section">音效模式</string>
+    <string name="device_eq_add_section">添加音效</string>
+    <string name="device_eq_custom_section">自定义音效</string>
+    <string name="device_eq_add_custom">添加自定义音效</string>
+    <string name="device_eq_custom_title">自定义音效</string>
+    <string name="device_eq_custom_name">我的自定义音效</string>
+    <string name="device_eq_name_label">音效名称</string>
+    <string name="device_eq_hint">建议根据播放音乐时的实时感受调整效果</string>
+    <string name="device_eq_reset">重置</string>
+    <string name="device_eq_sub_music">真实还原的均衡音效</string>
+    <string name="device_eq_sub_movie">更具包围感的影音音效</string>
+    <string name="device_eq_sub_news">更清晰的人声播报</string>
+    <string name="device_eq_sub_elder">更突出的中高频</string>
+    <string name="device_eq_sub_sport">更节奏明快的运动音效</string>
+    <string name="device_eq_music">音乐</string>
+    <string name="device_eq_movie">电影</string>
+    <string name="device_eq_news">新闻</string>
+    <string name="device_eq_elder">老人</string>
+    <string name="device_eq_sport">运动</string>
+    <string name="device_eq_custom">自定义</string>
+    <string name="device_quality_hifi">高音质</string>
+    <string name="device_quality_endurance">高续航</string>
+    <string name="device_gesture_record">录音</string>
+    <string name="device_gesture_voice">语音助手</string>
+    <string name="device_gesture_eq">EQ切换</string>
+    <string name="device_gesture_game">游戏模式</string>
+    <string name="device_gesture_play">播放/暂停</string>
+    <string name="device_gesture_previous">上一首</string>
+    <string name="device_gesture_next">下一首</string>
+    <string name="device_gesture_volume_up">音量加</string>
+    <string name="device_gesture_volume_down">音量减</string>
+    <string name="device_gesture_none">无</string>
 </resources>

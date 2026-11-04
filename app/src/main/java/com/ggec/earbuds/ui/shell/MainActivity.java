@@ -31,6 +31,7 @@ public class MainActivity extends AppCompatActivity {
         shellViewModel = new ViewModelProvider(this, container().shell().factory())
                 .get(ShellViewModel.class);
         ShellScreen screen = new ShellScreen(this, shellViewModel, container().ai().factory(),
+                container().device().homeFactory(),
                 new ShellScreen.Listener() {
                     @Override
                     public void onSelect(@NonNull String key) {
