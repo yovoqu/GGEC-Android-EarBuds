@@ -48,7 +48,7 @@ public final class ChatCodec {
         json.put("messages", messages);
         Jsons.put(json, "temperature", request.temperature());
         Jsons.put(json, "top_p", request.topP());
-        Jsons.put(json, "max_completion_tokens", request.maxCompletionTokens());
+        Jsons.put(json, partEncoder.maxOutputTokensField(), request.maxCompletionTokens());
         Jsons.put(json, "frequency_penalty", request.frequencyPenalty());
         Jsons.put(json, "presence_penalty", request.presencePenalty());
         Jsons.put(json, "n", request.n());

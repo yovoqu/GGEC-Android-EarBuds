@@ -12,4 +12,13 @@ public interface YoChatPartEncoder {
 
     @NonNull
     JSONObject encode(@NonNull YoChatContentPart part) throws JSONException;
+
+    /**
+     * 单次输出上限的字段名。官方 Chat Completions 用 {@code max_completion_tokens}；
+     * 仍只认 {@code max_tokens} 的主机在自己的编码器里改掉，避免上限被静默忽略。
+     */
+    @NonNull
+    default String maxOutputTokensField() {
+        return "max_completion_tokens";
+    }
 }

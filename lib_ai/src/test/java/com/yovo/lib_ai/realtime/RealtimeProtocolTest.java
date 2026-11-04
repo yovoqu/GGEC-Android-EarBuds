@@ -241,6 +241,10 @@ public final class RealtimeProtocolTest {
         assertEquals("wss://gw.example.com/v1/realtime?model=org%2Frt",
                 RealtimeProtocol.webSocketUrl(
                         base().baseUrl("https://gw.example.com").model("org/rt").build()));
+        // 聊天配置经常已经带 /v1，不能再拼成 /v1/v1/realtime。
+        assertEquals("wss://api.example.com/v1/realtime?model=m",
+                RealtimeProtocol.webSocketUrl(
+                        base().baseUrl("https://api.example.com/v1").model("m").build()));
     }
 
     @Test

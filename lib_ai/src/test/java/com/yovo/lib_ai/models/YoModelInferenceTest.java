@@ -36,9 +36,11 @@ public final class YoModelInferenceTest {
                 "dall-e-3", "gpt-image-1", "black-forest-labs/FLUX.1-dev", "sensenova-u1-fast");
         assertCategory(YoModelCategory.VIDEO_GENERATION, "sora-2", "veo-3", "kling-v2");
         assertCategory(YoModelCategory.SPEECH_RECOGNITION,
-                "whisper-1", "gpt-4o-transcribe", "acme-whisper-large", "acme-asr-v1");
+                "whisper-1", "gpt-4o-transcribe", "acme-whisper-large", "acme-asr-v1",
+                "speech-to-text", "acme-speech-recognition");
         assertCategory(YoModelCategory.SPEECH_SYNTHESIS,
-                "gpt-4o-mini-tts", "tts-1", "acme-speech-synth");
+                "gpt-4o-mini-tts", "tts-1", "acme-speech-synth", "text-to-speech");
+        assertCategory(YoModelCategory.TEXT, "face-recognition-v1");
         assertCategory(YoModelCategory.MODERATION, "omni-moderation-latest", "text-moderation-stable");
         assertCategory(YoModelCategory.REALTIME, "gpt-4o-realtime-preview", "acme-realtime-v2");
         assertCategory(YoModelCategory.OTHER, "davinci-002", "gpt-3.5-turbo-instruct");

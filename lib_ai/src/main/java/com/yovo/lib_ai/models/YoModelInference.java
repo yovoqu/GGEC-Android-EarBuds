@@ -79,7 +79,9 @@ public final class YoModelInference {
         if (hasToken(tokens, MODERATION)) {
             return YoModelCategory.MODERATION;
         }
-        if (hasToken(tokens, RECOGNITION)) {
+        if (hasToken(tokens, RECOGNITION)
+                || speechBefore(tokens, "text")
+                || (hasToken(tokens, Set.of("speech")) && hasToken(tokens, Set.of("recognition")))) {
             return YoModelCategory.SPEECH_RECOGNITION;
         }
         if (hasToken(tokens, SYNTHESIS)) {
@@ -109,6 +111,23 @@ public final class YoModelInference {
      */
     public static boolean looksLikeReasoning(@NonNull String id) {
         return hasToken(id.toLowerCase(Locale.ROOT).split("[^a-z0-9]+"), REASONING);
+    }
+
+    /**
+     * {@code speech-to-text} 里 speech 在 text 前面，是识别；{@code text-to-speech} 相反，留给合成词表。
+     */
+    private static boolean speechBefore(@NonNull String[] tokens, @NonNull String later) {
+        int speech = -1;
+        int other = -1;
+        for (int index = 0; index < tokens.length; index++) {
+            if (speech < 0 && "speech".equals(tokens[index])) {
+                speech = index;
+            }
+            if (other < 0 && later.equals(tokens[index])) {
+                other = index;
+            }
+        }
+        return speech >= 0 && other > speech;
     }
 
     private static boolean hasToken(@NonNull String[] tokens, @NonNull Set<String> wanted) {

@@ -300,17 +300,17 @@ final class ModelReports {
         inputFlag(flags, spec, YoModality.VIDEO, VIDEO_INPUT);
         inputFlag(flags, spec, YoModality.DOCUMENT, DOCUMENT_INPUT);
         if (flags.supports(AUDIO_OUTPUT)) {
-            spec.output(YoModality.AUDIO, YoSupport.YES, YoSpecSource.REPORTED);
+            spec.outputIfAbsent(YoModality.AUDIO, YoSupport.YES, YoSpecSource.REPORTED);
         } else if (flags.denies(AUDIO_OUTPUT)) {
-            spec.output(YoModality.AUDIO, YoSupport.NO, YoSpecSource.REPORTED);
+            spec.outputIfAbsent(YoModality.AUDIO, YoSupport.NO, YoSpecSource.REPORTED);
         }
     }
 
     private static void inputFlag(Flags flags, YoModelSpec.Builder spec, YoModality modality, Set<String> aliases) {
         if (flags.supports(aliases)) {
-            spec.input(modality, YoSupport.YES, YoSpecSource.REPORTED);
+            spec.inputIfAbsent(modality, YoSupport.YES, YoSpecSource.REPORTED);
         } else if (flags.denies(aliases)) {
-            spec.input(modality, YoSupport.NO, YoSpecSource.REPORTED);
+            spec.inputIfAbsent(modality, YoSupport.NO, YoSpecSource.REPORTED);
         }
     }
 
@@ -332,17 +332,17 @@ final class ModelReports {
     private static YoModelCategory category(@NonNull JSONObject json, @NonNull Modalities modalities) {
         Set<String> outputs = modalities.rawOutputs;
         if (!outputs.isEmpty()) {
-            if (outputs.contains("embedding") || outputs.contains("embeddings") || outputs.contains("vector")) {
+            if (namesModality(outputs, YoModality.VECTOR)) {
                 return YoModelCategory.EMBEDDING;
             }
-            if (!outputs.contains("text")) {
-                if (outputs.contains("audio")) {
+            if (!namesModality(outputs, YoModality.TEXT)) {
+                if (namesModality(outputs, YoModality.AUDIO)) {
                     return YoModelCategory.SPEECH_SYNTHESIS;
                 }
-                if (outputs.contains("image")) {
+                if (namesModality(outputs, YoModality.IMAGE)) {
                     return YoModelCategory.IMAGE_GENERATION;
                 }
-                if (outputs.contains("video")) {
+                if (namesModality(outputs, YoModality.VIDEO)) {
                     return YoModelCategory.VIDEO_GENERATION;
                 }
                 return YoModelCategory.OTHER;
@@ -380,6 +380,15 @@ final class ModelReports {
             }
         }
         return names;
+    }
+
+    private static boolean namesModality(@NonNull Set<String> raw, @NonNull YoModality modality) {
+        for (String name : raw) {
+            if (YoModality.fromName(name) == modality) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @NonNull

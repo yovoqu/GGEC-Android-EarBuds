@@ -334,6 +334,18 @@ public final class YoModelSpec {
         }
 
         /**
+         * 只补还没人说过的输入。穷举清单已经写过的项，特性开关不能再改。
+         */
+        @NonNull
+        public Builder inputIfAbsent(@NonNull YoModality modality, @NonNull YoSupport support,
+                                      @NonNull YoSpecSource source) {
+            if (inputs.fact(modality).known()) {
+                return this;
+            }
+            return input(modality, support, source);
+        }
+
+        /**
          * 写一份完整的输入清单：列出的支持，其余全部不支持。仅用于语义上穷举的字段。
          */
         @NonNull
@@ -347,6 +359,16 @@ public final class YoModelSpec {
                               @NonNull YoSpecSource source) {
             this.outputs = outputs.with(modality, support, source);
             return this;
+        }
+
+        /** 只补还没人说过的输出。口径同 {@link #inputIfAbsent}。 */
+        @NonNull
+        public Builder outputIfAbsent(@NonNull YoModality modality, @NonNull YoSupport support,
+                                       @NonNull YoSpecSource source) {
+            if (outputs.fact(modality).known()) {
+                return this;
+            }
+            return output(modality, support, source);
         }
 
         @NonNull

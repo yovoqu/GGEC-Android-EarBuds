@@ -8,6 +8,7 @@ import com.yovo.lib_ai.api.YoChatCompletions;
 import com.yovo.lib_ai.api.YoCompletions;
 import com.yovo.lib_ai.api.YoLatencyProbe;
 import com.yovo.lib_ai.api.YoModels;
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.api.YoResponses;
 import com.yovo.lib_ai.internal.chat.ChatCompletionsResource;
 import com.yovo.lib_ai.internal.completion.CompletionsResource;
@@ -20,6 +21,7 @@ import com.yovo.lib_ai.internal.runtime.OrderedCallbacks;
 import com.yovo.lib_ai.internal.transport.OkHttpTransport;
 import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.YoPlatform;
+import com.yovo.lib_ai.platform.YoServiceTarget;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -133,37 +135,46 @@ public final class YoAiAssembly {
             CallRegistry registry,
             long connectTimeoutMillis) {
         Protocols protocols = new Protocols();
-        if (platform.chatTarget() != null) {
+        if (platform.protocols().contains(YoProtocol.CHAT_COMPLETIONS)) {
             protocols.chat = new ChatCompletionsResource(
                     transport,
-                    platform.chatTarget(),
+                    requiredTarget(platform, YoProtocol.CHAT_COMPLETIONS, platform.chatTarget()),
                     platform.chatPartEncoder(),
                     platform.chatPolicy(),
                     network,
                     ordered,
                     registry);
         }
-        if (platform.responsesTarget() != null) {
+        if (platform.protocols().contains(YoProtocol.RESPONSES)) {
             protocols.responses = new ResponsesResource(
                     transport,
                     httpClient,
-                    platform.responsesTarget(),
+                    requiredTarget(platform, YoProtocol.RESPONSES, platform.responsesTarget()),
                     platform.responsesPolicy(),
                     network,
                     ordered,
                     registry,
                     connectTimeoutMillis);
         }
-        if (platform.messagesTarget() != null) {
+        if (platform.protocols().contains(YoProtocol.MESSAGES)) {
             protocols.messages = new MessagesResource(
                     transport,
-                    platform.messagesTarget(),
+                    requiredTarget(platform, YoProtocol.MESSAGES, platform.messagesTarget()),
                     platform.messagesPolicy(),
                     network,
                     ordered,
                     registry);
         }
         return protocols;
+    }
+
+    private static YoServiceTarget requiredTarget(
+            YoPlatform platform, YoProtocol protocol, @Nullable YoServiceTarget target) {
+        if (target == null) {
+            throw new IllegalArgumentException(
+                    platform.id() + " offers " + protocol.id() + " but has no target");
+        }
+        return target;
     }
 
     private static void shutdown(

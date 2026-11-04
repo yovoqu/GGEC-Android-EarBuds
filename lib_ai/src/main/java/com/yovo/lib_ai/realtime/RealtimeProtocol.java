@@ -5,13 +5,13 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.error.YoAiProtocolException;
+import com.yovo.lib_ai.internal.protocol.UsageFields;
+import com.yovo.lib_ai.models.YoServiceEndpoints;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -72,9 +72,6 @@ final class RealtimeProtocol {
     static final String TYPE_ITEM_CREATE = "conversation.item.create";
     /** 服务端报错。 */
     static final String TYPE_ERROR = "error";
-
-    /** Realtime 端点路径，接在平台基址后面（基址本身不含 {@code /v1}）。 */
-    static final String REALTIME_PATH = "/v1/realtime";
 
     /** 上行格式。Realtime 只认这一档，采样率不在协议里表达。 */
     static final String INPUT_AUDIO_FORMAT = "pcm16";
@@ -219,27 +216,12 @@ final class RealtimeProtocol {
     }
 
     /**
-     * 平台基址 → WebSocket 地址：{@code wss://{host}/v1/realtime?model={model}}。
-     *
-     * <p>baseUrl 来自用户配置，是 {@code https://…} 的普通地址（聊天和转写都用它），
-     * 这里把协议换掉而不是让用户再填一个 {@code wss://} 地址——同一台主机两次配置，早晚会不一致。</p>
+     * 平台基址 → WebSocket 地址。规则与 {@link YoServiceEndpoints#realtime} 是同一份：
+     * 基址已经带 {@code /v1} 时不再拼第二段，明文 http 只留给本机调试。
      */
     @NonNull
     static String webSocketUrl(@NonNull YoRealtimeConfig config) {
-        String base = config.baseUrl();
-        String prefix;
-        String host;
-        if (base.startsWith("https://")) {
-            prefix = "wss://";
-            host = base.substring("https://".length());
-        } else if (base.startsWith("http://")) {
-            // 明文只在本机调试有意义；真机上必须 https，否则密钥会明文过网。
-            prefix = "ws://";
-            host = base.substring("http://".length());
-        } else {
-            throw new IllegalArgumentException("baseUrl must start with http:// or https://");
-        }
-        return prefix + host + REALTIME_PATH + "?model=" + encodeQueryValue(config.model());
+        return YoServiceEndpoints.realtime(config.baseUrl(), config.model());
     }
 
     /**
@@ -635,7 +617,7 @@ final class RealtimeProtocol {
         if (usage == null) {
             usage = frame.optJSONObject("usage");
         }
-        return YoRealtimeEvent.responseDone(status.isEmpty() ? null : status, YoRealtimeUsage.fromJson(usage));
+        return YoRealtimeEvent.responseDone(status.isEmpty() ? null : status, readUsage(usage));
     }
 
     // ---------------------------------------------------------------- 内部
@@ -692,14 +674,23 @@ final class RealtimeProtocol {
         return String.valueOf(value);
     }
 
-    @NonNull
-    private static String encodeQueryValue(@NonNull String value) {
-        try {
-            // 表单编码对 query 值合法（空格变 +），模型名里通常只有字母数字和连字符。
-            return URLEncoder.encode(value, "UTF-8");
-        } catch (UnsupportedEncodingException exception) {
-            throw new IllegalStateException("UTF-8 is always supported", exception);
+    /**
+     * 用量字段名各家不统一，读取口径在 {@link UsageFields}。公开的用量类型只留已经对齐的数。
+     */
+    @Nullable
+    private static YoRealtimeUsage readUsage(@Nullable JSONObject usage) {
+        if (usage == null) {
+            return null;
         }
+        int input = UsageFields.intOrZero(usage, "input_tokens", "prompt_tokens");
+        int output = UsageFields.intOrZero(usage, "output_tokens", "completion_tokens");
+        Integer total = UsageFields.firstInt(usage, "total_tokens");
+        return new YoRealtimeUsage(
+                input,
+                output,
+                total == null ? input + output : total,
+                UsageFields.cachedTokens(usage),
+                UsageFields.cost(usage));
     }
 
     @NonNull
