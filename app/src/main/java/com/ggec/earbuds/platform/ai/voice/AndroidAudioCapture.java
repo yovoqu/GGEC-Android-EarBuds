@@ -72,7 +72,7 @@ public final class AndroidAudioCapture implements AiAudioCapture {
     public void start(int sampleRateHz, @NonNull Listener target) {
         Objects.requireNonNull(target, "listener");
         if (sampleRateHz <= 0) {
-            target.onFailure(AiFailureKind.BAD_REQUEST, "采集采样率不合法：" + sampleRateHz);
+            target.onFailure(AiFailureKind.BAD_REQUEST, Integer.toString(sampleRateHz));
             return;
         }
         synchronized (lock) {
@@ -81,36 +81,32 @@ public final class AndroidAudioCapture implements AiAudioCapture {
                 return;
             }
             if (!canRecord()) {
-                target.onFailure(AiFailureKind.PERMISSION,
-                        "没有麦克风权限，通话听不到你说话。请在系统设置里允许本应用录音后再试。");
+                target.onFailure(AiFailureKind.PERMISSION, "");
                 return;
             }
             int minBufferBytes = AudioRecord.getMinBufferSize(
                     sampleRateHz, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (minBufferBytes <= 0) {
-                target.onFailure(AiFailureKind.UNSUPPORTED_CAPABILITY,
-                        "这台设备的麦克风不支持单声道 16bit " + sampleRateHz + "Hz 采集。");
+                target.onFailure(AiFailureKind.UNSUPPORTED_CAPABILITY, Integer.toString(sampleRateHz));
                 return;
             }
             int frame = Math.max(BYTES_PER_SAMPLE,
                     sampleRateHz / 1000 * FRAME_MILLIS * BYTES_PER_SAMPLE);
             AudioRecord created = open(sampleRateHz, Math.max(minBufferBytes, frame * 4));
             if (created == null) {
-                target.onFailure(AiFailureKind.UNSUPPORTED_CAPABILITY,
-                        "麦克风被占用或无法打开（可能正在通话中）。");
+                target.onFailure(AiFailureKind.UNSUPPORTED_CAPABILITY, "");
                 return;
             }
             try {
                 created.startRecording();
             } catch (RuntimeException unavailable) {
                 created.release();
-                target.onFailure(AiFailureKind.UNKNOWN,
-                        "麦克风无法开始录音：" + message(unavailable));
+                target.onFailure(AiFailureKind.UNKNOWN, message(unavailable));
                 return;
             }
             if (created.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
                 created.release();
-                target.onFailure(AiFailureKind.UNKNOWN, "麦克风没有进入录音状态。");
+                target.onFailure(AiFailureKind.UNKNOWN, "");
                 return;
             }
             record = created;
@@ -197,11 +193,11 @@ public final class AndroidAudioCapture implements AiAudioCapture {
                 try {
                     read = active.read(frame, 0, frame.length);
                 } catch (RuntimeException broken) {
-                    report(AiFailureKind.UNKNOWN, "读取麦克风失败：" + message(broken));
+                    report(AiFailureKind.UNKNOWN, message(broken));
                     return;
                 }
                 if (read < 0) {
-                    report(AiFailureKind.UNKNOWN, "麦克风在录音中断开了（错误码 " + read + "）。");
+                    report(AiFailureKind.UNKNOWN, Integer.toString(read));
                     return;
                 }
                 if (read == 0) {
