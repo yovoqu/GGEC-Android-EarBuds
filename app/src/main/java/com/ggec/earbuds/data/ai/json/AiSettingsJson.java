@@ -3,15 +3,16 @@ package com.ggec.earbuds.data.ai.json;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.model.AiVoiceProvider;
 
 import androidx.annotation.Nullable;
 
@@ -20,7 +21,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,11 +34,12 @@ import java.util.Set;
  *
  * <p>v4 移除了 {@code mode}：设置页当前分段是视图偏好，存 {@code AiUiPreferences}，
  * 不再进入配置文档。v3 的语音预设 id（{@code chatgpt} / {@code qwen}）保持不变。
- * 解码尽量宽容：未知的枚举取默认值，坏掉的单条模型或测速结果直接跳过，不连累整份设置。</p>
+ * v5 把语音配置从"一组公共字段"改成按服务商分组的 {@code providers}：每家自己的地址、
+ * 选中模型、方言和已拉列表互不影响；旧文档的单组字段在解码时迁移到当前那一家的名下。</p>
  */
 public final class AiSettingsJson {
 
-    static final int VERSION = 4;
+    static final int VERSION = 5;
 
     public String encode(AiSettings settings) {
         JSONObject root = new JSONObject();
@@ -93,29 +97,44 @@ public final class AiSettingsJson {
     }
 
     /**
-     * 厂商 id 一定写。ChatGPT 改过的地址、选中的实时模型和方言只在不是默认值时写。
-     * Key 仍只在加密存储里。
+     * 厂商 id 一定写；每一家的地址、选中模型、方言和已拉列表都在 {@code providers} 里各存一份。
+     * 只写非默认值，Key 仍只在加密存储里。
      */
     private static void putVoice(JSONObject root, AiVoiceConfig voice) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "model", voice.model().id());
-        if (!voice.baseUrl().isEmpty()) {
-            JsonValues.put(json, "baseUrl", voice.baseUrl());
-        }
-        if (!voice.realtimeModelId().isEmpty()) {
-            JsonValues.put(json, "realtimeModel", voice.realtimeModelId());
-        }
-        if (voice.dialect() != AiRealtimeDialect.defaultDialect()) {
-            JsonValues.put(json, "dialect", voice.dialect().id());
-        }
-        if (!voice.realtimeModels().isEmpty()) {
-            JSONArray models = new JSONArray();
-            for (String id : voice.realtimeModels()) {
-                models.put(id);
+        JSONObject providers = new JSONObject();
+        for (Map.Entry<AiVoiceModel, AiVoiceProvider> entry : voice.providers().entrySet()) {
+            JSONObject state = encodeProvider(entry.getValue());
+            if (state.length() > 0) {
+                JsonValues.put(providers, entry.getKey().id(), state);
             }
-            JsonValues.put(json, "realtimeModels", models);
+        }
+        if (providers.length() > 0) {
+            JsonValues.put(json, "providers", providers);
         }
         JsonValues.put(root, "voice", json);
+    }
+
+    private static JSONObject encodeProvider(AiVoiceProvider state) {
+        JSONObject json = new JSONObject();
+        if (!state.baseUrl().isEmpty()) {
+            JsonValues.put(json, "baseUrl", state.baseUrl());
+        }
+        if (!state.realtimeModelId().isEmpty()) {
+            JsonValues.put(json, "realtimeModel", state.realtimeModelId());
+        }
+        if (!state.realtimeModels().isEmpty()) {
+            JSONArray models = new JSONArray();
+            for (AiModel listed : state.realtimeModels()) {
+                JSONObject item = new JSONObject();
+                JsonValues.put(item, "id", listed.id());
+                JsonValues.put(item, "category", listed.category() == null ? null : listed.category().id());
+                models.put(item);
+            }
+            JsonValues.put(json, "models", models);
+        }
+        return json;
     }
 
     private static AiVoiceConfig decodeVoice(@Nullable JSONObject root) {
@@ -125,28 +144,64 @@ public final class AiSettingsJson {
             model = AiVoiceModel.defaultModel();
         }
         if (json == null) {
-            return new AiVoiceConfig(model, Map.of());
+            return AiVoiceConfig.DEFAULT;
         }
-        AiRealtimeDialect dialect = AiRealtimeDialect.fromId(JsonValues.string(json, "dialect"));
-        if (dialect == null) {
-            dialect = AiRealtimeDialect.defaultDialect();
+        Map<AiVoiceModel, AiVoiceProvider> providers = new EnumMap<>(AiVoiceModel.class);
+        JSONObject grouped = json.optJSONObject("providers");
+        if (grouped != null) {
+            for (Iterator<String> keys = grouped.keys(); keys.hasNext(); ) {
+                String id = keys.next();
+                AiVoiceModel owner = AiVoiceModel.fromId(id);
+                JSONObject state = grouped.optJSONObject(id);
+                if (owner == null || state == null) {
+                    continue;
+                }
+                AiVoiceProvider decoded = decodeProvider(state);
+                if (!decoded.isEmpty()) {
+                    providers.put(owner, decoded);
+                }
+            }
+        } else {
+            // v4 及更早：一组公共字段，迁移到当前选中的那一家的名下。
+            AiVoiceProvider legacy = decodeProvider(json);
+            if (!legacy.isEmpty()) {
+                providers.put(model, legacy);
+            }
         }
-        List<String> models = new ArrayList<>();
-        JSONArray listed = json.optJSONArray("realtimeModels");
+        return new AiVoiceConfig(model, Set.of(), providers);
+    }
+
+    private static AiVoiceProvider decodeProvider(@Nullable JSONObject json) {
+        if (json == null) {
+            return AiVoiceProvider.EMPTY;
+        }
+        List<AiModel> models = new ArrayList<>();
+        JSONArray listed = json.optJSONArray("models");
+        if (listed == null) {
+            // v4 及更早把这一份列表叫 realtimeModels。
+            listed = json.optJSONArray("realtimeModels");
+        }
         for (int i = 0; listed != null && i < listed.length(); i++) {
-            String id = listed.optString(i, "").strip();
-            if (!id.isEmpty() && !models.contains(id)) {
-                models.add(id);
+            JSONObject object = listed.optJSONObject(i);
+            if (object == null) {
+                continue;
+            }
+            AiModelCategory category = AiModelCategory.fromId(JsonValues.string(object, "category"));
+            if (category == null) {
+                continue;
+            }
+            AiModel item = new AiModel(object.optString("id", ""), object.optString("id", ""),
+                    null, null, Set.of(), false, category);
+            if (!item.id().isEmpty()) {
+                models.add(item);
             }
         }
         String selected = JsonValues.string(json, "realtimeModel", "");
-        AiVoiceConfig voice = new AiVoiceConfig(model, Map.of(), "", selected, dialect, models);
         String baseUrl = JsonValues.string(json, "baseUrl", "");
-        try {
-            return voice.withBaseUrl(baseUrl);
-        } catch (IllegalArgumentException invalid) {
-            return voice;
+        if (!baseUrl.isEmpty() && !baseUrl.startsWith("https://") && !baseUrl.startsWith("http://")) {
+            baseUrl = "";
         }
+        return new AiVoiceProvider(baseUrl, selected, models);
     }
 
     private static JSONObject encodePreferences(AiChatPreferences preferences) {
@@ -219,7 +274,7 @@ public final class AiSettingsJson {
                 templateId,
                 JsonValues.string(json, "name", id),
                 JsonValues.string(json, "baseUrl"),
-                "",
+                false,
                 AiProtocol.fromId(JsonValues.string(json, "protocol"), AiProtocol.CHAT_COMPLETIONS),
                 models,
                 JsonValues.number(json, "fetchedAt", 0L),
@@ -238,6 +293,9 @@ public final class AiSettingsJson {
         }
         JsonValues.put(json, "features", features);
         JsonValues.put(json, "manual", model.manual());
+        if (model.category() != null) {
+            JsonValues.put(json, "category", model.category().id());
+        }
         return json;
     }
 
@@ -257,7 +315,8 @@ public final class AiSettingsJson {
             }
         }
         return new AiModel(id, JsonValues.string(json, "name", id), JsonValues.integer(json, "context"),
-                JsonValues.integer(json, "maxOutput"), features, JsonValues.flag(json, "manual", false));
+                JsonValues.integer(json, "maxOutput"), features, JsonValues.flag(json, "manual", false),
+                AiModelCategory.fromId(JsonValues.string(json, "category")));
     }
 
     private static JSONObject encodeSpeed(AiSpeedResult result) {

@@ -1,9 +1,11 @@
 package com.ggec.earbuds.data.ai.gateway;
 
+import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.port.AiCancellable;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestGateway;
 import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
 import com.yovo.lib_ai.api.YoAiCall;
@@ -25,16 +27,22 @@ public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
     static final long TIMEOUT_MILLIS = 25_000L;
 
     private final LibAiClientPool pool;
+    private final AiCredentialStore credentials;
 
-    public LibAiSpeedTestGateway(LibAiClientPool pool) {
+    public LibAiSpeedTestGateway(LibAiClientPool pool, AiCredentialStore credentials) {
         this.pool = Objects.requireNonNull(pool, "pool");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
     }
 
     @Override
     public AiCancellable run(AiPlatformConfig platform, List<String> modelIds, AiSpeedTestListener listener) {
+        String apiKey = credentials.platformKey(platform.id());
+        if (apiKey == null) {
+            throw new AiFailure(AiFailureKind.AUTHENTICATION, "API key is not configured", null);
+        }
         LibAiClientPool.Lease lease = null;
         try {
-            lease = pool.acquire(platform);
+            lease = pool.acquire(platform, apiKey);
             LibAiClientPool.Lease held = lease;
             YoProbePlan plan = YoProbePlan.builder()
                     .protocol(LibAiPlatformCatalog.protocol(platform.protocol()))
@@ -64,7 +72,7 @@ public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
             if (lease != null) {
                 lease.close();
             }
-            throw LibAiFailures.map(error, platform.apiKey());
+            throw LibAiFailures.map(error, apiKey);
         }
     }
 

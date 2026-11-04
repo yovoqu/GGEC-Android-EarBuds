@@ -16,10 +16,11 @@ import com.ggec.earbuds.domain.ai.port.Subscription;
 import org.json.JSONException;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -82,7 +83,12 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     @Override
     public AiSettings load() {
         synchronized (lock) {
-            return StorageGuard.call(this::loaded);
+            AiSettings stored = StorageGuard.call(this::loaded);
+            AiSettings derived = deriveCredentials(stored);
+            if (derived != stored) {
+                current = derived;
+            }
+            return current;
         }
     }
 
@@ -127,7 +133,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         long nextRevision;
         synchronized (lock) {
             AiSettings before = StorageGuard.call(this::loaded);
-            AiSettings changed = Objects.requireNonNull(change.apply(before), "change");
+            AiSettings changed = deriveCredentials(Objects.requireNonNull(change.apply(before), "change"));
             if (changed.equals(before)) {
                 return before;
             }
@@ -223,51 +229,60 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         List<AiPlatformConfig> platforms = new ArrayList<>();
         for (AiPlatformConfig platform : stored.platforms()) {
             String key = secrets.get(KEY_PREFIX + platform.id());
-            platforms.add(key == null || key.isBlank()
-                    ? platform
-                    : platform.withCredentials(platform.name(), key, platform.baseUrl(), platform.protocol()));
+            boolean configured = key != null && !key.isBlank();
+            platforms.add(platform.withConnection(platform.name(), configured,
+                    platform.baseUrl(), platform.protocol()));
         }
-        Map<AiVoiceModel, String> voiceKeys = new EnumMap<>(AiVoiceModel.class);
+        Set<AiVoiceModel> configuredVoices = EnumSet.noneOf(AiVoiceModel.class);
         for (AiVoiceModel model : AiVoiceModel.values()) {
             String key = secrets.get(VOICE_KEY_PREFIX + model.id());
             if (key != null && !key.isBlank()) {
-                voiceKeys.put(model, key);
+                configuredVoices.add(model);
             }
         }
         AiVoiceConfig storedVoice = stored.voice();
-        AiVoiceConfig voice = new AiVoiceConfig(storedVoice.model(), voiceKeys, storedVoice.baseUrl(),
-                storedVoice.realtimeModelId(), storedVoice.dialect(), storedVoice.realtimeModels());
+        AiVoiceConfig voice = new AiVoiceConfig(storedVoice.model(), configuredVoices, storedVoice.providers());
         return new AiSettings(platforms, stored.textSelection(), voice,
                 stored.preferences());
     }
 
-    private void persist(AiSettings before, AiSettings next) {
-        for (AiPlatformConfig platform : next.platforms()) {
-            String previous = before.platform(platform.id()).map(AiPlatformConfig::apiKey).orElse("");
-            if (platform.apiKey().equals(previous)) {
-                continue;
-            }
-            if (platform.apiKey().isBlank()) {
-                secrets.remove(KEY_PREFIX + platform.id());
-            } else {
-                secrets.put(KEY_PREFIX + platform.id(), platform.apiKey());
+    /** 用密钥存储的真实存在情况重算"已配置"标记，内存快照才不会和磁盘/密钥库脱节。 */
+    private AiSettings deriveCredentials(AiSettings settings) {
+        List<AiPlatformConfig> platforms = new ArrayList<>(settings.platforms().size());
+        boolean platformChanged = false;
+        for (AiPlatformConfig platform : settings.platforms()) {
+            String key = secrets.get(KEY_PREFIX + platform.id());
+            boolean configured = key != null && !key.isBlank();
+            AiPlatformConfig derived = platform.configured() == configured ? platform
+                    : platform.withConnection(platform.name(), configured,
+                    platform.baseUrl(), platform.protocol());
+            platformChanged |= derived != platform;
+            platforms.add(derived);
+        }
+        Set<AiVoiceModel> configured = EnumSet.noneOf(AiVoiceModel.class);
+        for (AiVoiceModel model : AiVoiceModel.values()) {
+            String key = secrets.get(VOICE_KEY_PREFIX + model.id());
+            if (key != null && !key.isBlank()) {
+                configured.add(model);
             }
         }
+        AiVoiceConfig voice = settings.voice();
+        boolean voiceChanged = !voice.configuredProviders().equals(configured);
+        if (voiceChanged) {
+            voice = new AiVoiceConfig(voice.model(), configured, voice.providers());
+        }
+        if (!platformChanged && !voiceChanged) {
+            return settings;
+        }
+        return new AiSettings(platformChanged ? platforms : settings.platforms(),
+                settings.textSelection(), voice, settings.preferences());
+    }
+
+    private void persist(AiSettings before, AiSettings next) {
+        // 删平台时顺手清掉它的密钥；密钥的写入由 SavePlatform 用例负责，仓库从不落明文。
         for (AiPlatformConfig platform : before.platforms()) {
             if (next.platform(platform.id()).isEmpty()) {
                 secrets.remove(KEY_PREFIX + platform.id());
-            }
-        }
-        for (AiVoiceModel model : AiVoiceModel.values()) {
-            String previous = before.voice().apiKeys().getOrDefault(model, "");
-            String current = next.voice().apiKeys().getOrDefault(model, "");
-            if (current.equals(previous)) {
-                continue;
-            }
-            if (current.isBlank()) {
-                secrets.remove(VOICE_KEY_PREFIX + model.id());
-            } else {
-                secrets.put(VOICE_KEY_PREFIX + model.id(), current);
             }
         }
         documents.write(DOCUMENT, json.encode(next));

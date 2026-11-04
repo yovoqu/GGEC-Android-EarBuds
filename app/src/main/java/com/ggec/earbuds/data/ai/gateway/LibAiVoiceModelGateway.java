@@ -11,11 +11,8 @@ import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
 import java.util.List;
 
 /**
- * 按 APP 给出的地址和密钥向服务商拉 {@code /v1/models}，把<b>全部</b>模型交回。
- *
- * <p>旧实现用 {@code YoChatGptRealtime.offered(...)} 只留实时模型，结果官方 {@code /v1/models}
- * 里没有能力位、名字又不带 {@code realtime} 的实时模型会被静默丢掉，用户配好的模型在列表里
- * 找不到。现在不筛：文本、向量、实时各回各家，由界面按能力位标注，让用户自己挑。</p>
+ * 按 APP 给出的地址和密钥向服务商拉 {@code /v1/models}，原样交回全部模型和 SDK 类别。
+ * 这里不做筛选：实时语音要不要哪些模型，由领域策略决定。
  */
 public final class LibAiVoiceModelGateway implements AiVoiceModelGateway {
 
