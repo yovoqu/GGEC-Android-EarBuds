@@ -1,5 +1,7 @@
 package com.ggec.earbuds.data.ai.gateway;
 
+import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -12,6 +14,7 @@ import com.ggec.earbuds.domain.ai.port.AiChatListener;
 import com.ggec.earbuds.domain.ai.port.AiChatRequest;
 import com.ggec.earbuds.domain.ai.port.AiChatResult;
 import com.ggec.earbuds.domain.ai.port.AiChatTurn;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 
 import java.util.List;
 import com.yovo.lib_ai.api.YoAiCall;
@@ -32,17 +35,23 @@ import java.util.Objects;
 public final class LibAiChatGateway implements AiChatGateway {
 
     private final LibAiClientPool pool;
+    private final AiCredentialStore credentials;
 
-    public LibAiChatGateway(LibAiClientPool pool) {
+    public LibAiChatGateway(LibAiClientPool pool, AiCredentialStore credentials) {
         this.pool = Objects.requireNonNull(pool, "pool");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
     }
 
     @Override
     public AiCancellable stream(AiChatRequest request, AiChatListener listener) {
         AiPlatformConfig platform = request.platform();
+        String apiKey = credentials.platformKey(platform.id());
+        if (apiKey == null) {
+            throw new AiFailure(AiFailureKind.AUTHENTICATION, "API key is not configured", null);
+        }
         LibAiClientPool.Lease lease = null;
         try {
-            lease = pool.acquire(platform);
+            lease = pool.acquire(platform, apiKey);
             LibAiClientPool.Lease held = lease;
             YoAiCall call = lease.client().completions(platform.id()).stream(toRequest(request),
                     new YoCompletionListener() {
@@ -64,7 +73,7 @@ public final class LibAiChatGateway implements AiChatGateway {
                         @Override
                         public void onFailure(YoAiException error) {
                             held.close();
-                            listener.onFailure(LibAiFailures.map(error, platform.apiKey()));
+                            listener.onFailure(LibAiFailures.map(error, apiKey));
                         }
                     });
             return () -> {
@@ -75,7 +84,7 @@ public final class LibAiChatGateway implements AiChatGateway {
             if (lease != null) {
                 lease.close();
             }
-            throw LibAiFailures.map(error, platform.apiKey());
+            throw LibAiFailures.map(error, apiKey);
         }
     }
 

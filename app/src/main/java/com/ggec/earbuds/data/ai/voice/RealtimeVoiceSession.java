@@ -5,13 +5,13 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiClock;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
@@ -62,6 +62,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     private static final float LEVEL_EPSILON = 0.01f;
 
     private final AiSettingsRepository settings;
+    private final AiCredentialStore credentials;
     private final AiAudioCapture capture;
     private final AiAudioPlayback playback;
     private final AiRealtimeLink link;
@@ -99,12 +100,14 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
     public RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
+            @NonNull AiCredentialStore credentials,
             @NonNull AiAudioCapture capture,
             @NonNull AiAudioPlayback playback,
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor) {
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
         this.capture = Objects.requireNonNull(capture, "capture");
         this.playback = Objects.requireNonNull(playback, "playback");
         this.link = Objects.requireNonNull(link, "link");
@@ -118,7 +121,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
             @Override
             public void onFailure(@NonNull AiFailureKind kind, @NonNull String detail) {
-                executor.execute(() -> fail(new AiFailure(kind, "麦克风出错：" + detail)));
+                executor.execute(() -> fail(new AiFailure(kind, detail.isEmpty() ? null : detail)));
             }
         };
         this.linkListener = output -> executor.execute(() -> onLinkOutput(output));
@@ -174,10 +177,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             // 地址只给到平台主机基址：wss 的拼法（/v1/realtime、模型名转义）属于协议细节，
             // 留在 lib_ai 那一侧，这一层不重复拼一遍。
             link.open(new AiRealtimeLink.Config(plan.baseUrl(), plan.apiKey(), plan.model(),
-                    INPUT_SAMPLE_RATE_HZ, OUTPUT_SAMPLE_RATE_HZ, plan.dialect()), linkListener);
+                    INPUT_SAMPLE_RATE_HZ, OUTPUT_SAMPLE_RATE_HZ), linkListener);
         } catch (RuntimeException broken) {
-            fail(new AiFailure(AiFailureKind.UNKNOWN,
-                    "实时语音通道打不开：" + detailOf(broken), broken));
+            fail(new AiFailure(AiFailureKind.UNKNOWN, detailOf(broken), broken));
         }
     }
 
@@ -336,8 +338,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
                 playback.start(sampleRateHz);
                 playbackStarted = true;
             } catch (RuntimeException broken) {
-                fail(new AiFailure(AiFailureKind.UNKNOWN,
-                        "音频输出通道打不开：" + detailOf(broken), broken));
+                fail(new AiFailure(AiFailureKind.UNKNOWN, detailOf(broken), broken));
                 return;
             }
         }
@@ -483,18 +484,16 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         try {
             current = settings.load();
         } catch (RuntimeException unreadable) {
-            throw new AiFailure(AiFailureKind.STORAGE, "读取 AI 设置失败，通话无法开始。", unreadable);
+            throw new AiFailure(AiFailureKind.STORAGE, null, unreadable);
         }
         AiVoiceConfig voice = current.voice();
-        if (!voice.configured()) {
-            throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED,
-                    "语音模型「" + voice.model().displayName() + "」还没有填 API Key。");
+        String apiKey = credentials.voiceKey(voice.model());
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED, null);
         }
         // 地址与模型都走同一套取值：改过地址用改过的，选过某个模型用选中的，否则用厂商预设。
-        // 方言只有 ChatGPT 这条线有；别的服务商传 null，由传输层按厂商默认线路处理。
-        return new RealtimePlan(voice.effectiveBaseUrl(), voice.apiKey(),
-                voice.resolvedRealtimeModel(),
-                voice.model() == AiVoiceModel.CHATGPT ? voice.dialect() : null);
+        return new RealtimePlan(voice.effectiveBaseUrl(), apiKey,
+                voice.resolvedRealtimeModel());
     }
 
     /**
@@ -515,9 +514,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         return detail == null || detail.isBlank() ? error.getClass().getSimpleName() : detail;
     }
 
-    /** 一次通话要连的目标。方言为空表示按厂商默认线路。只在开工前算一次，之后不再读设置。 */
-    private record RealtimePlan(String baseUrl, String apiKey, String model,
-                                @Nullable AiRealtimeDialect dialect) {
+    /** 一次通话要连的目标。只在开工前算一次，之后不再读设置。 */
+    private record RealtimePlan(String baseUrl, String apiKey, String model) {
     }
 
     /** 内部阶段。对外只暴露 {@link AiVoiceSnapshot.State}，这个枚举不进领域。 */

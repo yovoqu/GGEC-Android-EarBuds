@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * 对话文档与历史索引的编解码。同样宽容：坏掉的单条消息跳过，不让整段对话打不开。
- * 用量的费用写成字符串、合计与缓存可缺省，所以新旧文档能互相读。
+ * 费用写成字符串，避免 JSON 数字经 double 往返丢精度。合计与缓存可以缺省。
  */
 public final class AiConversationJson {
 
@@ -91,8 +91,7 @@ public final class AiConversationJson {
      */
     public List<AiConversationSummary> decodeIndex(String text) throws JSONException {
         JSONObject root = new JSONObject(text);
-        // 摘要格式变过（现在存的是去掉 Markdown 记号的纯文本）。旧索引里的 preview 是原文，
-        // 直接沿用会一直显示「## 标题 **加粗…」；版本对不上就返回空，交给上层按会话文件重建。
+        // 版本对不上就返回空，交给上层按会话文件重建。
         if (JsonValues.integer(root, "v") == null || JsonValues.integer(root, "v") < INDEX_VERSION) {
             return List.of();
         }
@@ -131,7 +130,6 @@ public final class AiConversationJson {
             JSONObject usage = new JSONObject();
             JsonValues.put(usage, "in", message.usage().inputTokens());
             JsonValues.put(usage, "out", message.usage().outputTokens());
-            // 合计、缓存、费用都是后加的字段：老文档里没有它们，老版本读新文档时也只是当没有。
             JsonValues.put(usage, "total", message.usage().totalTokens());
             if (message.usage().cost() != null) {
                 // 写成字符串：JSON 数字经 double 往返会掉分，钱不能这么丢。
@@ -161,7 +159,6 @@ public final class AiConversationJson {
         if (usageJson != null) {
             Integer input = JsonValues.integer(usageJson, "in");
             Integer output = JsonValues.integer(usageJson, "out");
-            // 旧文档只有 in/out：total 交给 AiUsage 自己求和，费用和缓存保持未知。
             Integer total = JsonValues.integer(usageJson, "total");
             usage = new AiUsage(input == null ? 0 : input, output == null ? 0 : output,
                     total == null ? 0 : total, cost(usageJson),
@@ -182,25 +179,16 @@ public final class AiConversationJson {
                 usage);
     }
 
-    /**
-     * 费用可能是我们自己写的字符串，也可能是手工数据里的数字。
-     */
     @Nullable
     private static BigDecimal cost(JSONObject usage) {
-        if (!usage.has("cost") || usage.isNull("cost")) {
+        String text = JsonValues.string(usage, "cost");
+        if (text == null || text.isBlank()) {
             return null;
         }
-        Object value = usage.opt("cost");
-        if (value instanceof Number number) {
-            return BigDecimal.valueOf(number.doubleValue());
+        try {
+            return new BigDecimal(text.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
         }
-        if (value instanceof String text) {
-            try {
-                return new BigDecimal(text.trim());
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
     }
 }

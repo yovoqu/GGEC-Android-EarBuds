@@ -5,14 +5,12 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
-import com.ggec.earbuds.domain.ai.model.AiRealtimeDialect;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
 import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.realtime.YoRealtime;
 import com.yovo.lib_ai.realtime.YoRealtimeConfig;
-import com.yovo.lib_ai.realtime.YoRealtimeDialect;
 import com.yovo.lib_ai.realtime.YoRealtimeInput;
 import com.yovo.lib_ai.realtime.YoRealtimeOutput;
 
@@ -62,7 +60,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .model(config.model())
-                    .dialect(wireDialect(config.dialect()))
                     .inputSampleRateHz(config.inputSampleRateHz())
                     .outputSampleRateHz(config.outputSampleRateHz())
                     .build();
@@ -140,7 +137,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             case YoRealtimeOutput.Failed failed -> failOnce(listener, new AiFailure(
                     kindOf(failed.kind()), redact(failed.message(), apiKey)));
             case YoRealtimeOutput.Closed ignored -> failOnce(listener,
-                    new AiFailure(AiFailureKind.NETWORK, "实时链路已经断开。"));
+                    new AiFailure(AiFailureKind.NETWORK, null));
         }
     }
 
@@ -157,18 +154,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             return;
         }
         listener.onOutput(output);
-    }
-
-    /**
-     * 领域方言换成 SDK 线路。没指定时仍走 OpenAI beta，和改方言之前的通话一致。
-     * 通义这一阶段不从设置里选方言，继续用这条默认线路。
-     */
-    @NonNull
-    private static YoRealtimeDialect wireDialect(@Nullable AiRealtimeDialect dialect) {
-        if (dialect == AiRealtimeDialect.GA) {
-            return YoRealtimeDialect.OPENAI_GA;
-        }
-        return YoRealtimeDialect.OPENAI_BETA;
     }
 
     /**

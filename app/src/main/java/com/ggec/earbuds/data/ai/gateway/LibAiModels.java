@@ -1,6 +1,7 @@
 package com.ggec.earbuds.data.ai.gateway;
 
 import com.ggec.earbuds.domain.ai.model.AiModel;
+import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
 import com.yovo.lib_ai.models.YoModelInfo;
 import com.yovo.lib_ai.models.spec.YoModelCategory;
@@ -15,15 +16,12 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 平台的模型列表混着向量、图片、语音模型。APP 只留能走对话协议的：
- * 平台页是文本模式的配置页。ChatGPT 的实时模型由语音页另拉一份，
- * 经 {@code YoChatGptRealtime} 筛选，不混进这里的文本计数。
+ * 把 SDK 的 {@link YoModelSpec} 抄成领域模型。文本页只留 {@code conversational} 的类别，
+ * 语音页保留全部类别。类别原样写入 {@link com.ggec.earbuds.domain.ai.model.AiModelCategory}，
+ * 不按名字改判。
  *
  * <p>模型清单只有两个来源：平台 {@code /models} 的真实返回，或用户手填的 id。
- * 这里不补任何"厂商默认模型"——平台没返回的模型，APP 不该替它出现。</p>
- *
- * <p>类别、模态、限额、推理全部来自 SDK 的 {@link YoModelSpec}：APP 不再按 id 猜能力，
- * 只把规格翻译成界面需要的四个字段。排序：发布时间新的在前，没有发布时间的排在最后，再按名字。</p>
+ * 这里不补任何厂商默认模型。排序：发布时间新的在前，没有发布时间的排在最后，再按名字。</p>
  */
 final class LibAiModels {
 
@@ -46,13 +44,7 @@ final class LibAiModels {
         return models;
     }
 
-    /**
-     * 语音设置要的"全部模型"：不按类别过滤，文本、向量、实时都回来。
-     *
-     * <p>实时能力只做标注、不做筛选：类别是 {@link YoModelCategory#REALTIME}，或名字本身
-     * 带 realtime/omni 的，标上 {@link AiModelFeature#REALTIME_AUDIO}。界面据此打「实时」角标，
-     * 但用户仍可以选任何一个——平台没报能力位的实时模型不会因此被藏起来。</p>
-     */
+    /** 语音设置要的全部模型：不按类别过滤，类别随规格一起回去。 */
     static List<AiModel> all(List<YoModelInfo> infos) {
         List<YoModelInfo> selectable = new ArrayList<>();
         for (YoModelInfo info : infos) {
@@ -82,10 +74,24 @@ final class LibAiModels {
         if (spec.reasoning().reasons()) {
             features.add(AiModelFeature.REASONING);
         }
-        if (spec.category() == YoModelCategory.REALTIME || AiModel.looksRealtime(info.id())) {
-            features.add(AiModelFeature.REALTIME_AUDIO);
-        }
         return new AiModel(info.id(), info.displayName(), spec.limits().contextWindow(),
-                spec.limits().maxOutputTokens(), features, false);
+                spec.limits().maxOutputTokens(), features, false, category(spec.category()));
+    }
+
+    private static AiModelCategory category(YoModelCategory category) {
+        return switch (category) {
+            case TEXT -> AiModelCategory.TEXT;
+            case VISION -> AiModelCategory.VISION;
+            case OMNI -> AiModelCategory.OMNI;
+            case SPEECH_RECOGNITION -> AiModelCategory.SPEECH_RECOGNITION;
+            case SPEECH_SYNTHESIS -> AiModelCategory.SPEECH_SYNTHESIS;
+            case EMBEDDING -> AiModelCategory.EMBEDDING;
+            case REALTIME -> AiModelCategory.REALTIME;
+            case IMAGE_GENERATION -> AiModelCategory.IMAGE_GENERATION;
+            case VIDEO_GENERATION -> AiModelCategory.VIDEO_GENERATION;
+            case RERANK -> AiModelCategory.RERANK;
+            case MODERATION -> AiModelCategory.MODERATION;
+            case OTHER -> AiModelCategory.OTHER;
+        };
     }
 }

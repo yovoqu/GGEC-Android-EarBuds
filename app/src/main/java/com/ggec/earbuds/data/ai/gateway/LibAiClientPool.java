@@ -46,14 +46,14 @@ public final class LibAiClientPool {
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
     }
 
-    public Lease acquire(AiPlatformConfig config) {
-        String fingerprint = fingerprint(config);
+    public Lease acquire(AiPlatformConfig config, String apiKey) {
+        String fingerprint = fingerprint(config, apiKey);
         List<YoAiClient> closing = new ArrayList<>();
         Entry entry;
         synchronized (lock) {
             entry = entries.get(fingerprint);
             if (entry == null) {
-                entry = new Entry(config.id(), fingerprint, create(config));
+                entry = new Entry(config.id(), fingerprint, create(config, apiKey));
                 entries.put(fingerprint, entry);
                 retireOtherClientsOf(entry, closing);
             }
@@ -87,11 +87,11 @@ public final class LibAiClientPool {
         closeAll(closing);
     }
 
-    private YoAiClient create(AiPlatformConfig config) {
+    private YoAiClient create(AiPlatformConfig config, String apiKey) {
         YoPlatform platform = YoPlatformCatalog.standard().create(
                 YoPlatformSettings.builder(config.templateId())
                         .instanceId(config.id())
-                        .apiKey(config.apiKey())
+                        .apiKey(apiKey)
                         .baseUrl(config.baseUrl())
                         .build());
         return YoAiClient.builder()
@@ -137,8 +137,8 @@ public final class LibAiClientPool {
     }
 
     /** 密钥只参与哈希，不会作为缓存键的明文留在内存里。 */
-    static String fingerprint(AiPlatformConfig config) {
-        String source = config.id() + '\n' + config.templateId() + '\n' + config.baseUrl() + '\n' + sha256(config.apiKey());
+    static String fingerprint(AiPlatformConfig config, String apiKey) {
+        String source = config.id() + '\n' + config.templateId() + '\n' + config.baseUrl() + '\n' + sha256(apiKey);
         return source;
     }
 
