@@ -48,6 +48,40 @@ final class VoiceCard {
         card.addView(line, params);
     }
 
+    /** 概览卡里的整宽水平线。 */
+    @NonNull
+    static View horizontalLine(@NonNull Context context, @NonNull AiTheme theme) {
+        View line = new View(context);
+        line.setBackgroundColor(theme.divider);
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, theme.dp(1))));
+        return line;
+    }
+
+    /** 事实网格里的竖线：占满所在行的高度。 */
+    @NonNull
+    static View verticalLine(@NonNull Context context, @NonNull AiTheme theme) {
+        View line = new View(context);
+        line.setBackgroundColor(theme.divider);
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+                Math.max(1, theme.dp(1)), ViewGroup.LayoutParams.MATCH_PARENT));
+        return line;
+    }
+
+    /** 副标题里不放协议头：一段 https:// 会把地址挤到看不见，而它从来不变。 */
+    @NonNull
+    static String host(@NonNull String baseUrl) {
+        String value = baseUrl.strip();
+        int scheme = value.indexOf("://");
+        if (scheme >= 0) {
+            value = value.substring(scheme + 3);
+        }
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
+
     /** 一行：可选行首图标 + 标题/副标题 + 尾部容器。 */
     static final class Row {
         final LinearLayout view;

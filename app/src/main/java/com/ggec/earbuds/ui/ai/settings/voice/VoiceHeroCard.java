@@ -1,6 +1,7 @@
 package com.ggec.earbuds.ui.ai.settings.voice;
 
 import android.content.Context;
+import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -12,56 +13,62 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
+import com.yohu.youi.api.navigation.YoMenu;
 
 /**
- * 语音设置顶部的身份卡：现在会连哪一个模型、能不能用。
+ * 语音设置的概览卡：一张卡里回答"用哪家、能不能用、连到哪、哪个模型"。
  *
- * <p>先给身份面（品牌渐变底 + 声波图标 + 服务商名），再把"这次会连哪个模型、是否就绪"
- * 压在同一张卡里。模型 id 可能很长，所以它独占第二行并单行省略，不去和右侧状态胶囊抢宽度。</p>
+ * <p>原来"服务商"是卡片外单独的一块瓦片区，与概览重复、又占一屏。现在服务商收进本卡：
+ * 顶部是服务商名 + 下拉箭头（点击展开菜单切换），下面用一条整宽水平线分出事实网格，
+ * 地址 / Key / 实时模型三列之间用竖线分隔，信息一眼扫完。</p>
  */
 final class VoiceHeroCard {
 
     interface Listener {
+        void onSelectProvider(@NonNull String modelId);
+        void onEditUrl();
         void onEditKey();
     }
 
     private static final float ORB = 52f;
 
+    private final Context context;
     private final AiTheme theme;
     private final Listener listener;
     private final LinearLayout card;
     private final ImageView orbIcon;
     private final TextView name;
-    private final TextView subtitle;
+    private final TextView chevron;
     private final TextView status;
+    private final LinearLayout top;
+    private final TextView addressValue;
+    private final TextView keyValue;
+    private final TextView modelValue;
 
     @Nullable
     private AiSettingsUiState.Voice current;
-    @Nullable
-    private String signature;
 
     VoiceHeroCard(@NonNull Context context, @NonNull AiTheme theme, @NonNull Listener listener) {
+        this.context = context;
         this.theme = theme;
         this.listener = listener;
         card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(theme.dp(18f), theme.dp(18f), theme.dp(18f), theme.dp(18f));
+        card.setPadding(theme.dp(18f), theme.dp(18f), theme.dp(18f), theme.dp(16f));
         card.setBackground(theme.gradientStroke(theme.brandSoft, theme.card,
                 AiTheme.RADIUS_SHEET, theme.cardStroke, 1));
         card.setClipToOutline(true);
-        card.setOnClickListener(view -> {
-            if (current != null && !current.configured()) {
-                listener.onEditKey();
-            }
-        });
 
-        LinearLayout top = new LinearLayout(context);
+        top = new LinearLayout(context);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
         card.addView(top, VoiceCard.matchWrap());
 
         FrameLayout orb = new FrameLayout(context);
@@ -79,22 +86,51 @@ final class VoiceHeroCard {
         nameParams.setMarginStart(theme.dp(14f));
         top.addView(name, nameParams);
 
+        chevron = theme.text(16f, theme.text3);
+        chevron.setText("▾");
+        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chevronParams.setMarginStart(theme.dp(AiTheme.SPACE_XS));
+        chevronParams.setMarginEnd(theme.dp(AiTheme.SPACE_S));
+        top.addView(chevron, chevronParams);
+
         status = theme.text(AiTheme.TEXT_CAPTION, theme.brand, AiTheme.Weight.MEDIUM);
         status.setGravity(Gravity.CENTER);
         status.setPadding(theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS),
                 theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS));
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusParams.setMarginStart(theme.dp(AiTheme.SPACE_S));
-        top.addView(status, statusParams);
+        top.addView(status, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        subtitle = theme.text(AiTheme.TEXT_CAPTION, theme.text2);
-        subtitle.setMaxLines(1);
-        subtitle.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams subParams = VoiceCard.matchWrap();
-        subParams.topMargin = theme.dp(4f);
-        subParams.setMarginStart(theme.dp(ORB + 14f));
-        card.addView(subtitle, subParams);
+        top.setOnClickListener(view -> showProviderMenu());
+
+        LinearLayout.LayoutParams lineParams = VoiceCard.matchWrap();
+        lineParams.topMargin = theme.dp(14f);
+        lineParams.bottomMargin = theme.dp(10f);
+        card.addView(VoiceCard.horizontalLine(context, theme), lineParams);
+
+        LinearLayout facts = new LinearLayout(context);
+        facts.setOrientation(LinearLayout.VERTICAL);
+        card.addView(facts, VoiceCard.matchWrap());
+
+        LinearLayout firstRow = new LinearLayout(context);
+        firstRow.setOrientation(LinearLayout.HORIZONTAL);
+        firstRow.setGravity(Gravity.TOP);
+        facts.addView(firstRow, VoiceCard.matchWrap());
+
+        addressValue = addFact(firstRow, R.string.ai_settings_voice_url, 1.7f, () -> listener.onEditUrl());
+        firstRow.addView(verticalSpacer());
+        keyValue = addFact(firstRow, R.string.ai_settings_voice_key, 1f, () -> listener.onEditKey());
+
+        LinearLayout.LayoutParams rowLine = VoiceCard.matchWrap();
+        rowLine.topMargin = theme.dp(8f);
+        rowLine.bottomMargin = theme.dp(6f);
+        facts.addView(VoiceCard.horizontalLine(context, theme), rowLine);
+
+        LinearLayout secondRow = new LinearLayout(context);
+        secondRow.setOrientation(LinearLayout.HORIZONTAL);
+        secondRow.setGravity(Gravity.TOP);
+        facts.addView(secondRow, VoiceCard.matchWrap());
+        modelValue = addFact(secondRow, R.string.ai_settings_voice_realtime_model, 1f, null);
     }
 
     @NonNull
@@ -104,20 +140,19 @@ final class VoiceHeroCard {
 
     void bind(@NonNull AiSettingsUiState.Voice voice) {
         current = voice;
-        String next = voice.configured() + "\u0000" + voice.modelName()
-                + "\u0000" + voice.realtimeModelId();
-        if (next.equals(signature)) {
-            return;
-        }
-        signature = next;
         name.setText(voice.modelName());
-        if (voice.realtimeModelId().isEmpty()) {
-            // 还没拉取/选中模型时，只说"尚未拉取"，不把厂商预设伪装成已选模型。
-            subtitle.setText(R.string.ai_settings_voice_status_subtitle_empty);
-        } else {
-            subtitle.setText(theme.context.getString(R.string.ai_settings_voice_status_subtitle,
-                    voice.realtimeModelId()));
-        }
+        chevron.setVisibility(voice.options().size() > 1 ? View.VISIBLE : View.GONE);
+        top.setContentDescription(context.getString(R.string.ai_settings_voice_section_provider)
+                + " " + voice.modelName());
+        addressValue.setText(VoiceCard.host(voice.baseUrl()));
+        keyValue.setText(voice.configured()
+                ? R.string.ai_settings_voice_key_set
+                : R.string.ai_settings_voice_key_empty);
+        keyValue.setTextColor(voice.configured() ? theme.text1 : theme.warning);
+        modelValue.setText(voice.realtimeModelId().isEmpty()
+                ? context.getString(R.string.ai_settings_voice_models_empty)
+                : voice.realtimeModelId());
+
         if (voice.configured()) {
             status.setText(R.string.ai_settings_voice_status_ready);
             status.setTextColor(theme.brand);
@@ -129,5 +164,78 @@ final class VoiceHeroCard {
             status.setBackground(theme.rounded(theme.warningSoft, 10f));
             orbIcon.setImageResource(R.drawable.ic_ai_warning);
         }
+    }
+
+    /** 服务商下拉：YoUI 的 YoMenu，只在点击时展开；选项来自 MVVM 的 Voice.options。 */
+    private void showProviderMenu() {
+        AiSettingsUiState.Voice voice = current;
+        if (voice == null || voice.options().isEmpty() || !(context instanceof AppCompatActivity activity)) {
+            return;
+        }
+        YoMenu.Builder builder = YoMenu.create(activity)
+                .setAnchorView(top)
+                .setPlacement(YoMenu.Placement.BOTTOM_LEFT)
+                .setSelectedMark(YoMenu.SelectedMark.CHECK)
+                .setOnItemClickListener(id -> {
+                    if (id >= 0 && id < voice.options().size()) {
+                        listener.onSelectProvider(voice.options().get(id).id());
+                    }
+                });
+        int selectedId = -1;
+        for (int i = 0; i < voice.options().size(); i++) {
+            AiSettingsUiState.VoiceOption option = voice.options().get(i);
+            if (option.current()) {
+                selectedId = i;
+            }
+            String title = option.name() + " · " + context.getString(option.configured()
+                    ? R.string.ai_settings_voice_provider_ready
+                    : R.string.ai_settings_voice_provider_needs_key);
+            builder.addItem(i, title, R.drawable.ic_ai_globe);
+        }
+        YoMenu menu = builder.build();
+        if (selectedId >= 0) {
+            menu.setSelectedItemId(selectedId);
+        }
+        menu.setOnDismissListener(menu::destroy);
+        menu.show();
+    }
+
+    @NonNull
+    private TextView addFact(@NonNull LinearLayout parent, @StringRes int labelRes,
+                             float weight, @Nullable Runnable onClick) {
+        LinearLayout column = new LinearLayout(context);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(theme.dp(AiTheme.SPACE_S), theme.dp(2f),
+                theme.dp(AiTheme.SPACE_S), theme.dp(2f));
+        if (onClick != null) {
+            column.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
+            column.setOnClickListener(view -> onClick.run());
+        }
+
+        TextView label = theme.text(11f, theme.text3);
+        label.setText(labelRes);
+        column.addView(label, VoiceCard.matchWrap());
+
+        TextView value = theme.text(AiTheme.TEXT_CAPTION, theme.text1, AiTheme.Weight.MEDIUM);
+        value.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+        value.setMaxLines(2);
+        value.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams valueParams = VoiceCard.matchWrap();
+        valueParams.topMargin = theme.dp(3f);
+        column.addView(value, valueParams);
+
+        parent.addView(column, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, weight));
+        return value;
+    }
+
+    @NonNull
+    private View verticalSpacer() {
+        View line = VoiceCard.verticalLine(context, theme);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                Math.max(1, theme.dp(1)), theme.dp(44f));
+        params.topMargin = theme.dp(2f);
+        line.setLayoutParams(params);
+        return line;
     }
 }

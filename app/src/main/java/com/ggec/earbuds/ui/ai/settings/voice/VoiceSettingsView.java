@@ -15,14 +15,11 @@ import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
  *
  * <p>信息结构自上而下：</p>
  * <ol>
- *   <li>{@link VoiceHeroCard} —— 现在会连到哪、能不能用（唯一的阻塞项直接可点）；</li>
- *   <li>{@link VoiceProviderPicker} —— 服务商二选一瓦片；</li>
- *   <li>{@link VoiceConnectionCard} —— 接口地址与 API Key；</li>
+ *   <li>{@link VoiceHeroCard} —— 概览：服务商下拉、状态，以及用横/竖线组织的地址、Key、实时模型；</li>
  *   <li>{@link VoiceModelCard} —— 拉取实时模型并挑一个。</li>
  * </ol>
  *
- * <p>视图只做"状态 → 图纸"，不包含任何业务判断；状态来自 MVVM 的 {@code Voice} 不可变快照。
- * 每个区块只建一次控件、只在自身签名变化时重绑；模式切换只切可见性，不重建子树。</p>
+ * <p>视图只做"状态 → 图纸"，不包含任何业务判断；状态来自 MVVM 的 {@code Voice} 不可变快照。</p>
  */
 public final class VoiceSettingsView {
 
@@ -37,8 +34,6 @@ public final class VoiceSettingsView {
     private final AiTheme theme;
     private final LinearLayout view;
     private final VoiceHeroCard heroCard;
-    private final VoiceProviderPicker providerPicker;
-    private final VoiceConnectionCard connectionCard;
     private final VoiceModelCard modelCard;
 
     public VoiceSettingsView(@NonNull Context context, @NonNull AiTheme theme,
@@ -47,15 +42,14 @@ public final class VoiceSettingsView {
         view = new LinearLayout(context);
         view.setOrientation(LinearLayout.VERTICAL);
 
-        heroCard = new VoiceHeroCard(context, theme, listener::onEditVoiceKey);
-        addInset(heroCard.view(), AiTheme.SPACE_L);
-
-        providerPicker = new VoiceProviderPicker(context, theme, listener::onSelectVoiceModel);
-        view.addView(providerPicker.view(), VoiceCard.matchWrap());
-
-        connectionCard = new VoiceConnectionCard(context, theme, new VoiceConnectionCard.Listener() {
+        heroCard = new VoiceHeroCard(context, theme, new VoiceHeroCard.Listener() {
             @Override
-            public void onEditBaseUrl() {
+            public void onSelectProvider(@NonNull String modelId) {
+                listener.onSelectVoiceModel(modelId);
+            }
+
+            @Override
+            public void onEditUrl() {
                 listener.onEditVoiceUrl();
             }
 
@@ -64,7 +58,7 @@ public final class VoiceSettingsView {
                 listener.onEditVoiceKey();
             }
         });
-        view.addView(connectionCard.view(), VoiceCard.matchWrap());
+        addInset(heroCard.view(), AiTheme.SPACE_L);
 
         modelCard = new VoiceModelCard(context, theme, new VoiceModelCard.Listener() {
             @Override
@@ -96,8 +90,6 @@ public final class VoiceSettingsView {
 
     public void bind(@NonNull AiSettingsUiState.Voice voice) {
         heroCard.bind(voice);
-        providerPicker.bind(voice);
-        connectionCard.bind(voice);
         modelCard.bind(voice);
         modelCard.setVisible(true);
     }
