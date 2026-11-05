@@ -14,12 +14,11 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
-import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
-import com.yohu.youi.api.navigation.YoMenu;
+import com.yohu.youi.api.controls.YoSelect;
 
 /**
  * 语音设置的概览卡：一张卡里回答"用哪家、能不能用、连到哪、哪个模型"。
@@ -43,10 +42,8 @@ final class VoiceHeroCard {
     private final Listener listener;
     private final LinearLayout card;
     private final ImageView orbIcon;
-    private final TextView name;
-    private final TextView chevron;
+    private final YoSelect providerSelect;
     private final TextView status;
-    private final LinearLayout providerSwitch;
     private final TextView addressValue;
     private final TextView keyValue;
     private final TextView modelValue;
@@ -79,30 +76,22 @@ final class VoiceHeroCard {
         orb.addView(orbIcon, iconParams);
         top.addView(orb, new LinearLayout.LayoutParams(theme.dp(ORB), theme.dp(ORB)));
 
-        // 只有"名称 + 箭头"这一小块是下拉触发器，图标与右侧状态都不参与点击。
-        providerSwitch = new LinearLayout(context);
-        providerSwitch.setOrientation(LinearLayout.HORIZONTAL);
-        providerSwitch.setGravity(Gravity.CENTER_VERTICAL);
-        providerSwitch.setBackground(theme.pressable(AiTheme.RADIUS_ROW));
-        providerSwitch.setPadding(theme.dp(AiTheme.SPACE_S), theme.dp(2f),
-                theme.dp(AiTheme.SPACE_S), theme.dp(2f));
-        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+        // 图标固定在最左；中间直接用 YoUI 的 YoSelect 下拉按钮；右侧是状态。
+        providerSelect = YoSelect.create(context)
+                .setControlSize(YoSelect.ControlSize.SMALL)
+                .setArrowPosition(YoSelect.ArrowPosition.END)
+                .setShowDefaultSelectedIcon(true)
+                .setOnSelectListener((id, label, position) -> {
+                    AiSettingsUiState.Voice voice = current;
+                    if (voice != null && id >= 0 && id < voice.options().size()) {
+                        listener.onSelectProvider(voice.options().get(id).id());
+                    }
+                })
+                .build();
+        LinearLayout.LayoutParams selectParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        switchParams.setMarginStart(theme.dp(14f));
-        top.addView(providerSwitch, switchParams);
-
-        name = theme.text(AiTheme.TEXT_TITLE, theme.text1, AiTheme.Weight.MEDIUM);
-        providerSwitch.addView(name, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        chevron = theme.text(16f, theme.text3);
-        chevron.setText("▾");
-        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        chevronParams.setMarginStart(theme.dp(AiTheme.SPACE_XS));
-        providerSwitch.addView(chevron, chevronParams);
-
-        providerSwitch.setOnClickListener(view -> showProviderMenu());
+        selectParams.setMarginStart(theme.dp(14f));
+        top.addView(providerSelect.getView(), selectParams);
 
         View spacer = new View(context);
         top.addView(spacer, new LinearLayout.LayoutParams(
@@ -152,10 +141,23 @@ final class VoiceHeroCard {
 
     void bind(@NonNull AiSettingsUiState.Voice voice) {
         current = voice;
-        name.setText(voice.modelName());
-        chevron.setVisibility(voice.options().size() > 1 ? View.VISIBLE : View.GONE);
-        providerSwitch.setContentDescription(context.getString(R.string.ai_settings_voice_section_provider)
-                + " " + voice.modelName());
+        providerSelect.clearOptions();
+        int selectedId = -1;
+        for (int i = 0; i < voice.options().size(); i++) {
+            AiSettingsUiState.VoiceOption option = voice.options().get(i);
+            providerSelect.addOption(i, option.name(), providerIcon(option.id()));
+            if (option.current()) {
+                selectedId = i;
+            }
+        }
+        providerSelect.setValue(voice.modelName());
+        if (selectedId >= 0) {
+            providerSelect.setSelectedItemId(selectedId);
+        }
+        providerSelect.setEnabled(voice.options().size() > 1);
+        providerSelect.getView().setContentDescription(
+                context.getString(R.string.ai_settings_voice_section_provider)
+                        + " " + voice.modelName());
         addressValue.setText(VoiceCard.host(voice.baseUrl()));
         keyValue.setText(voice.configured()
                 ? R.string.ai_settings_voice_key_set
@@ -175,37 +177,6 @@ final class VoiceHeroCard {
             status.setTextColor(theme.warning);
             status.setBackground(theme.rounded(theme.warningSoft, 10f));
         }
-    }
-
-    /** 服务商下拉：YoUI 的 YoMenu，只在点击时展开；选项来自 MVVM 的 Voice.options。 */
-    private void showProviderMenu() {
-        AiSettingsUiState.Voice voice = current;
-        if (voice == null || voice.options().isEmpty() || !(context instanceof AppCompatActivity activity)) {
-            return;
-        }
-        YoMenu.Builder builder = YoMenu.create(activity)
-                .setAnchorView(providerSwitch)
-                .setPlacement(YoMenu.Placement.BOTTOM_LEFT)
-                .setSelectedMark(YoMenu.SelectedMark.CHECK)
-                .setOnItemClickListener(id -> {
-                    if (id >= 0 && id < voice.options().size()) {
-                        listener.onSelectProvider(voice.options().get(id).id());
-                    }
-                });
-        int selectedId = -1;
-        for (int i = 0; i < voice.options().size(); i++) {
-            AiSettingsUiState.VoiceOption option = voice.options().get(i);
-            if (option.current()) {
-                selectedId = i;
-            }
-            builder.addItem(i, option.name(), providerIcon(option.id()));
-        }
-        YoMenu menu = builder.build();
-        if (selectedId >= 0) {
-            menu.setSelectedItemId(selectedId);
-        }
-        menu.setOnDismissListener(menu::destroy);
-        menu.show();
     }
 
     /** 服务商图标：对话/语音设置里的身份标记；未知服务商退回通用地球图标。 */
