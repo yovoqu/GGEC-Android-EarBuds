@@ -8,6 +8,7 @@ import org.json.JSONObject;
 
 /**
  * Messages 的一条内容块。图片源的媒体类型和载荷分开存放。
+ * 解码出来的服务端工具块保留原始 JSON，便于无损回放。
  */
 public final class YoMessageContent {
 
@@ -18,7 +19,12 @@ public final class YoMessageContent {
         TOOL_USE,
         TOOL_RESULT,
         THINKING,
-        REDACTED_THINKING
+        REDACTED_THINKING,
+        SERVER_TOOL_USE,
+        WEB_SEARCH_TOOL_RESULT,
+        WEB_FETCH_TOOL_RESULT,
+        CODE_EXECUTION_TOOL_RESULT,
+        MCP_TOOL_RESULT
     }
 
     private final Type type;
@@ -38,6 +44,10 @@ public final class YoMessageContent {
     private final String mediaType;
     @Nullable
     private final String payload;
+    @Nullable
+    private final JSONObject cacheControl;
+    @Nullable
+    private final String rawJson;
 
     private YoMessageContent(
             Type type,
@@ -48,7 +58,9 @@ public final class YoMessageContent {
             @Nullable String signature,
             @Nullable String sourceType,
             @Nullable String mediaType,
-            @Nullable String payload) {
+            @Nullable String payload,
+            @Nullable JSONObject cacheControl,
+            @Nullable String rawJson) {
         this.type = type;
         this.text = text;
         this.id = id;
@@ -58,11 +70,13 @@ public final class YoMessageContent {
         this.sourceType = sourceType;
         this.mediaType = mediaType;
         this.payload = payload;
+        this.cacheControl = cacheControl;
+        this.rawJson = rawJson;
     }
 
     @NonNull
     public static YoMessageContent text(@NonNull String text) {
-        return new YoMessageContent(Type.TEXT, text, null, null, null, null, null, null, null);
+        return new YoMessageContent(Type.TEXT, text, null, null, null, null, null, null, null, null, null);
     }
 
     @NonNull
@@ -105,7 +119,7 @@ public final class YoMessageContent {
         if (id.isBlank() || name.isBlank()) {
             throw new IllegalArgumentException("tool use id and name are required");
         }
-        return new YoMessageContent(Type.TOOL_USE, null, id, name, copy(input), null, null, null, null);
+        return new YoMessageContent(Type.TOOL_USE, null, id, name, copy(input), null, null, null, null, null, null);
     }
 
     @NonNull
@@ -113,7 +127,7 @@ public final class YoMessageContent {
         if (toolUseId.isBlank()) {
             throw new IllegalArgumentException("toolUseId is required");
         }
-        return new YoMessageContent(Type.TOOL_RESULT, content, toolUseId, null, null, null, null, null, null);
+        return new YoMessageContent(Type.TOOL_RESULT, content, toolUseId, null, null, null, null, null, null, null, null);
     }
 
     @NonNull
@@ -123,13 +137,77 @@ public final class YoMessageContent {
 
     @NonNull
     public static YoMessageContent thinking(@NonNull String thinking, @Nullable String signature) {
-        return new YoMessageContent(Type.THINKING, thinking, null, null, null, signature, null, null, null);
+        return new YoMessageContent(Type.THINKING, thinking, null, null, null, signature, null, null, null, null, null);
     }
 
     @NonNull
     public static YoMessageContent redactedThinking(@NonNull String data) {
         return new YoMessageContent(
-                Type.REDACTED_THINKING, null, null, null, null, null, null, null, required(data, "data"));
+                Type.REDACTED_THINKING, null, null, null, null, null, null, null, required(data, "data"), null, null);
+    }
+
+    /**
+     * 服务端工具调用块（{@code server_tool_use}），保留原始 JSON。
+     */
+    @NonNull
+    public static YoMessageContent serverToolUse(
+            @NonNull String id,
+            @NonNull String name,
+            @NonNull JSONObject input,
+            @NonNull String rawJson) {
+        if (id.isBlank() || name.isBlank()) {
+            throw new IllegalArgumentException("server tool use id and name are required");
+        }
+        return new YoMessageContent(
+                Type.SERVER_TOOL_USE, null, id, name, copy(input), null, null, null, null, null, rawJson);
+    }
+
+    /**
+     * 服务端工具结果块（{@code web_search_tool_result} 等），保留原始 JSON。
+     */
+    @NonNull
+    public static YoMessageContent serverToolResult(
+            @NonNull Type type,
+            @NonNull String toolUseId,
+            @NonNull String rawJson) {
+        if (!isServerToolResult(type)) {
+            throw new IllegalArgumentException("type must be a server tool result type");
+        }
+        if (toolUseId.isBlank()) {
+            throw new IllegalArgumentException("toolUseId is required");
+        }
+        return new YoMessageContent(type, null, toolUseId, null, null, null, null, null, null, null, rawJson);
+    }
+
+    @NonNull
+    public static YoMessageContent webSearchToolResult(@NonNull String toolUseId, @NonNull String rawJson) {
+        return serverToolResult(Type.WEB_SEARCH_TOOL_RESULT, toolUseId, rawJson);
+    }
+
+    public static boolean isServerToolResult(@NonNull Type type) {
+        return type == Type.WEB_SEARCH_TOOL_RESULT
+                || type == Type.WEB_FETCH_TOOL_RESULT
+                || type == Type.CODE_EXECUTION_TOOL_RESULT
+                || type == Type.MCP_TOOL_RESULT;
+    }
+
+    /**
+     * 返回带块级 prompt-cache 标记的副本。
+     */
+    @NonNull
+    public YoMessageContent withCache(@Nullable JSONObject cacheControl) {
+        return new YoMessageContent(
+                type,
+                text,
+                id,
+                name,
+                input == null ? null : copy(input),
+                signature,
+                sourceType,
+                mediaType,
+                payload,
+                cacheControl == null ? null : copy(cacheControl),
+                rawJson);
     }
 
     @NonNull
@@ -173,12 +251,22 @@ public final class YoMessageContent {
     }
 
     @Nullable
+    public JSONObject cacheControl() {
+        return cacheControl == null ? null : copy(cacheControl);
+    }
+
+    @Nullable
+    public String rawJson() {
+        return rawJson;
+    }
+
+    @Nullable
     public JSONObject input() {
         return input == null ? null : copy(input);
     }
 
     private static YoMessageContent source(Type type, String sourceType, @Nullable String mediaType, String payload) {
-        return new YoMessageContent(type, null, null, null, null, null, sourceType, mediaType, payload);
+        return new YoMessageContent(type, null, null, null, null, null, sourceType, mediaType, payload, null, null);
     }
 
     @NonNull

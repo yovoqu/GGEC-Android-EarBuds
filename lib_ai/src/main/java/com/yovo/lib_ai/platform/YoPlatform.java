@@ -39,6 +39,17 @@ public interface YoPlatform {
     @Nullable
     YoServiceTarget messagesTarget();
 
+    /**
+     * 检索/媒体等非对话服务的主机（F21 装配用）。默认回落到已声明的对话目标；
+     * 像 Qwen 这样对话走 {@code /compatible-mode/v1}、检索媒体走 {@code /api/v1} 的平台
+     * 需要覆盖它。
+     */
+    @Nullable
+    default YoServiceTarget apiTarget() {
+        YoServiceTarget chat = chatTarget();
+        return chat != null ? chat : messagesTarget();
+    }
+
     @NonNull
     YoChatPartEncoder chatPartEncoder();
 

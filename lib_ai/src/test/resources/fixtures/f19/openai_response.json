@@ -1,0 +1,7 @@
+{
+  "created": 1730000000,
+  "data": [
+    {"url": "https://api.openai.com/v1/images/1.png", "revised_prompt": "a cinematic shiba inu astronaut"},
+    {"b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PzWvWQAAAABJRU5ErkJggg=="}
+  ]
+}

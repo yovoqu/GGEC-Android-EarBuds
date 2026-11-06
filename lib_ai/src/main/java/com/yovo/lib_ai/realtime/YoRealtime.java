@@ -1,6 +1,7 @@
 package com.yovo.lib_ai.realtime;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.Objects;
 
@@ -24,7 +25,10 @@ public final class YoRealtime {
     public static Connection open(@NonNull YoRealtimeConfig config, @NonNull YoRealtimeListener listener) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(listener, "listener");
-        YoRealtimeSession session = new YoRealtimeSession(new RealtimeWebSocketLink());
+        YoRealtimePlayback playback = config.countPlaybackOnArrival()
+                ? YoRealtimePlayback.onArrival() : YoRealtimePlayback.manual();
+        YoRealtimeSession session = new YoRealtimeSession(
+                new RealtimeWebSocketLink(), playback, config.interruptOnSpeech());
         session.open(config, event -> {
             YoRealtimeOutput output = YoRealtimeOutputs.from(event);
             if (output != null) {
@@ -41,6 +45,20 @@ public final class YoRealtime {
 
         private Connection(YoRealtimeSession session) {
             this.session = session;
+        }
+
+
+        /**
+         * 手动记播放进度。只在 {@code countPlaybackOnArrival(false)} 时使用：
+         * 播放线程真正写出一段 PCM 之后调这里，打断时截断的毫秒数才是"用户听到的"。
+         */
+        public void notePlayed(@Nullable String itemId, int contentIndex, int pcmBytes) {
+            session.notePlayed(itemId, contentIndex, pcmBytes);
+        }
+
+        /** 把对话史里用户没听到的那一段截掉（{@code conversation.item.truncate}）。 */
+        public void truncate(@NonNull String itemId, int contentIndex, int audioEndMs) {
+            session.truncate(itemId, contentIndex, audioEndMs);
         }
 
         public void send(@NonNull YoRealtimeInput input) {

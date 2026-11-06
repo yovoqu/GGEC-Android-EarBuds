@@ -1,0 +1,14 @@
+{
+  "id": "batch_abc123",
+  "object": "batch",
+  "endpoint": "/v1/chat/completions",
+  "input_file_id": "file-abc123",
+  "output_file_id": "file-out-1",
+  "error_file_id": "file-err-1",
+  "completion_window": "24h",
+  "status": "completed",
+  "created_at": 1710000000,
+  "completed_at": 1710000600,
+  "request_counts": {"total": 2, "completed": 1, "failed": 1},
+  "errors": [{"code": "invalid_request", "message": "line 2 is malformed"}]
+}

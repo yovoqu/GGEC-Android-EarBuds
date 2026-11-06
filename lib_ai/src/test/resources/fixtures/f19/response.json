@@ -1,0 +1,19 @@
+{
+  "request_id": "req_img_1",
+  "output": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {"image": "https://dashscope-result.oss.aliyuncs.com/img/1.png"}
+          ]
+        }
+      }
+    ]
+  },
+  "usage": {
+    "image_count": 1
+  }
+}

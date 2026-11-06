@@ -4,24 +4,48 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiClient;
 import com.yovo.lib_ai.api.YoAnthropicMessages;
+import com.yovo.lib_ai.api.YoBatch;
 import com.yovo.lib_ai.api.YoChatCompletions;
 import com.yovo.lib_ai.api.YoCompletions;
+import com.yovo.lib_ai.api.YoEmbeddings;
+import com.yovo.lib_ai.api.YoFiles;
+import com.yovo.lib_ai.api.YoImageGeneration;
 import com.yovo.lib_ai.api.YoLatencyProbe;
+import com.yovo.lib_ai.api.YoModeration;
 import com.yovo.lib_ai.api.YoModels;
 import com.yovo.lib_ai.api.YoProtocol;
+import com.yovo.lib_ai.api.YoRerank;
 import com.yovo.lib_ai.api.YoResponses;
+import com.yovo.lib_ai.api.YoSynthesis;
+import com.yovo.lib_ai.api.YoTokenCounter;
+import com.yovo.lib_ai.api.YoVideoGeneration;
 import com.yovo.lib_ai.internal.chat.ChatCompletionsResource;
 import com.yovo.lib_ai.internal.completion.CompletionsResource;
 import com.yovo.lib_ai.internal.messages.MessagesResource;
 import com.yovo.lib_ai.internal.models.ModelDirectoryResource;
 import com.yovo.lib_ai.internal.probe.LatencyProbeResource;
 import com.yovo.lib_ai.internal.responses.ResponsesResource;
+import com.yovo.lib_ai.internal.retrieval.AnthropicTokenCounterResource;
+import com.yovo.lib_ai.internal.retrieval.BatchResource;
+import com.yovo.lib_ai.internal.retrieval.FilesResource;
+import com.yovo.lib_ai.internal.retrieval.OpenAiEmbeddingsResource;
+import com.yovo.lib_ai.internal.retrieval.OpenAiModerationResource;
+import com.yovo.lib_ai.internal.retrieval.OpenAiTokenCounterResource;
+import com.yovo.lib_ai.internal.retrieval.QwenEmbeddingsResource;
+import com.yovo.lib_ai.internal.retrieval.QwenRerankResource;
 import com.yovo.lib_ai.internal.runtime.CallRegistry;
 import com.yovo.lib_ai.internal.runtime.OrderedCallbacks;
 import com.yovo.lib_ai.internal.transport.OkHttpTransport;
+import com.yovo.lib_ai.media.YoImageServiceImpl;
+import com.yovo.lib_ai.media.YoVideoServiceImpl;
 import com.yovo.lib_ai.models.YoModelListing;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.YoServiceTarget;
+import com.yovo.lib_ai.platform.anthropic.AnthropicPlatform;
+import com.yovo.lib_ai.platform.deepseek.DeepSeekPlatform;
+import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
+import com.yovo.lib_ai.platform.qwen.QwenPlatform;
+import com.yovo.lib_ai.speech.YoSpeechSynthesis;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,6 +109,13 @@ public final class YoAiAssembly {
         Map<String, YoModels> models = new LinkedHashMap<>();
         Map<String, YoCompletions> completions = new LinkedHashMap<>();
         Map<String, YoLatencyProbe> probes = new LinkedHashMap<>();
+        Map<String, YoEmbeddings> embeddings = new LinkedHashMap<>();
+        Map<String, YoRerank> rerank = new LinkedHashMap<>();
+        Map<String, YoFiles> files = new LinkedHashMap<>();
+        Map<String, YoBatch> batch = new LinkedHashMap<>();
+        Map<String, YoTokenCounter> tokenCounters = new LinkedHashMap<>();
+        Map<String, YoModeration> moderation = new LinkedHashMap<>();
+
         for (YoPlatform platform : platforms) {
             Protocols standard = protocols(
                     platform, transport, httpClient, network, ordered, registry, connectTimeoutMillis);
@@ -103,10 +134,9 @@ public final class YoAiAssembly {
             }
             CompletionsResource completion = new CompletionsResource(
                     standard.chat, standard.responses, standard.messages);
-            if (completion.protocols().isEmpty()) {
-                continue;
+            if (!completion.protocols().isEmpty()) {
+                completions.put(platform.id(), completion);
             }
-            completions.put(platform.id(), completion);
             Protocols unretried = protocols(
                     platform, probeTransport, httpClient, network, ordered, registry, connectTimeoutMillis);
             probes.put(platform.id(), new LatencyProbeResource(
@@ -114,7 +144,35 @@ public final class YoAiAssembly {
                     network,
                     ordered,
                     registry));
+
+            registerRetrievalServices(
+                    platform,
+                    httpClient,
+                    registry,
+                    embeddings,
+                    rerank,
+                    files,
+                    batch,
+                    tokenCounters,
+                    moderation);
         }
+
+        YoSpeechSynthesis synthesis = YoSpeechSynthesis.builder()
+                .connectTimeoutMillis(connectTimeoutMillis)
+                .readTimeoutMillis(Math.max(readTimeoutMillis, 120_000L))
+                .writeTimeoutMillis(writeTimeoutMillis)
+                .build();
+        YoImageServiceImpl imageGeneration = YoImageServiceImpl.builder()
+                .connectTimeoutMillis(connectTimeoutMillis)
+                .readTimeoutMillis(Math.max(readTimeoutMillis, 120_000L))
+                .writeTimeoutMillis(writeTimeoutMillis)
+                .build();
+        YoVideoServiceImpl videoGeneration = YoVideoServiceImpl.builder()
+                .connectTimeoutMillis(connectTimeoutMillis)
+                .readTimeoutMillis(Math.max(readTimeoutMillis, 120_000L))
+                .writeTimeoutMillis(writeTimeoutMillis)
+                .build();
+
         ExecutorService callbackToClose = ownedCallback;
         return new YoAiClient(
                 chat,
@@ -123,7 +181,55 @@ public final class YoAiAssembly {
                 models,
                 completions,
                 probes,
-                () -> shutdown(registry, network, httpClient, callbackToClose));
+                embeddings,
+                rerank,
+                files,
+                batch,
+                tokenCounters,
+                moderation,
+                synthesis,
+                imageGeneration,
+                videoGeneration,
+                () -> {
+                    synthesis.close();
+                    imageGeneration.close();
+                    videoGeneration.close();
+                    shutdown(registry, network, httpClient, callbackToClose);
+                });
+    }
+
+    private static void registerRetrievalServices(
+            YoPlatform platform,
+            OkHttpClient httpClient,
+            CallRegistry registry,
+            Map<String, YoEmbeddings> embeddings,
+            Map<String, YoRerank> rerank,
+            Map<String, YoFiles> files,
+            Map<String, YoBatch> batch,
+            Map<String, YoTokenCounter> tokenCounters,
+            Map<String, YoModeration> moderation) {
+        YoServiceTarget target = platform.apiTarget();
+        if (target == null) {
+            return;
+        }
+        if (platform instanceof OpenAiPlatform) {
+            embeddings.put(platform.id(), new OpenAiEmbeddingsResource(httpClient, target, registry));
+            files.put(platform.id(), new FilesResource(httpClient, target, registry, FilesResource.Dialect.OPENAI));
+            batch.put(platform.id(), new BatchResource(httpClient, target, registry, BatchResource.Dialect.OPENAI));
+            tokenCounters.put(platform.id(), new OpenAiTokenCounterResource(httpClient, target, registry));
+            moderation.put(platform.id(), new OpenAiModerationResource(httpClient, target, registry));
+        } else if (platform instanceof QwenPlatform) {
+            embeddings.put(platform.id(), new QwenEmbeddingsResource(httpClient, target, registry));
+            rerank.put(platform.id(), new QwenRerankResource(httpClient, target, registry));
+            files.put(platform.id(), new FilesResource(httpClient, target, registry, FilesResource.Dialect.QWEN));
+            batch.put(platform.id(), new BatchResource(httpClient, target, registry, BatchResource.Dialect.QWEN));
+        } else if (platform instanceof AnthropicPlatform) {
+            files.put(platform.id(), new FilesResource(httpClient, target, registry, FilesResource.Dialect.ANTHROPIC));
+            batch.put(platform.id(), new BatchResource(httpClient, target, registry, BatchResource.Dialect.ANTHROPIC));
+            tokenCounters.put(platform.id(), new AnthropicTokenCounterResource(httpClient, target, registry));
+        } else if (platform instanceof DeepSeekPlatform) {
+            files.put(platform.id(), new FilesResource(httpClient, target, registry, FilesResource.Dialect.DEEPSEEK));
+        }
     }
 
     private static Protocols protocols(

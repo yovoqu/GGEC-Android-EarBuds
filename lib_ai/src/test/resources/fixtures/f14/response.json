@@ -1,0 +1,10 @@
+{
+  "output": {
+    "results": [
+      {"index": 1, "relevance_score": 0.2, "document": "今天天气不错"},
+      {"index": 0, "relevance_score": 0.9, "document": "文本排序模型用于对候选文档排序"}
+    ]
+  },
+  "usage": {"prompt_tokens": 12, "total_tokens": 12},
+  "request_id": "req-rerank-1"
+}

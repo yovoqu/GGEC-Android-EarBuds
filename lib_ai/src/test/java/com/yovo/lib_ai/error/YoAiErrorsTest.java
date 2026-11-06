@@ -22,7 +22,7 @@ public final class YoAiErrorsTest {
         assertEquals(YoAiErrorKind.BAD_REQUEST, http(400, "invalid_request_error"));
         assertEquals(YoAiErrorKind.BAD_REQUEST, http(422, null));
         assertEquals(YoAiErrorKind.SERVER, http(500, null));
-        assertEquals(YoAiErrorKind.SERVER, http(529, "overloaded_error"));
+        assertEquals(YoAiErrorKind.OVERLOADED, http(529, "overloaded_error"));
     }
 
     @Test

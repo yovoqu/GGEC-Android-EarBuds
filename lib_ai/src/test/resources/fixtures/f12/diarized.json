@@ -1,0 +1,27 @@
+{
+  "task": "transcribe",
+  "duration": 3.0,
+  "text": "Hello. Hi.",
+  "segments": [
+    {
+      "id": "seg_0",
+      "start": 0.0,
+      "end": 1.4,
+      "text": "Hello.",
+      "speaker": "A",
+      "words": [
+        {"word": "Hello", "start": 0.0, "end": 1.4, "speaker": "A"}
+      ]
+    },
+    {
+      "id": "seg_1",
+      "start": 1.4,
+      "end": 3.0,
+      "text": "Hi.",
+      "speaker": "B",
+      "words": [
+        {"word": "Hi", "start": 1.4, "end": 3.0, "speaker": "B"}
+      ]
+    }
+  ]
+}

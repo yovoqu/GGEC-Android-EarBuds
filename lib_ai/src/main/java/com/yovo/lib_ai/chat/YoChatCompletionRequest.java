@@ -3,6 +3,8 @@ package com.yovo.lib_ai.chat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoRequestOptions;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -44,6 +46,10 @@ public final class YoChatCompletionRequest {
     @Nullable
     private final JSONObject metadata;
     private final List<String> modalities;
+    @Nullable
+    private final YoChatOptions options;
+    @Nullable
+    private final YoRequestOptions requestOptions;
 
     private YoChatCompletionRequest(
             String model,
@@ -64,7 +70,9 @@ public final class YoChatCompletionRequest {
             @Nullable Boolean store,
             @Nullable String serviceTier,
             @Nullable JSONObject metadata,
-            List<String> modalities) {
+            List<String> modalities,
+            @Nullable YoChatOptions options,
+            @Nullable YoRequestOptions requestOptions) {
         this.model = model;
         this.messages = messages;
         this.temperature = temperature;
@@ -84,6 +92,8 @@ public final class YoChatCompletionRequest {
         this.serviceTier = serviceTier;
         this.metadata = metadata;
         this.modalities = modalities;
+        this.options = options;
+        this.requestOptions = requestOptions;
     }
 
     @NonNull
@@ -186,6 +196,17 @@ public final class YoChatCompletionRequest {
         return modalities;
     }
 
+    @Nullable
+    public YoChatOptions options() {
+        return options;
+    }
+
+    /** 单次请求的传输选项（超时/幂等键/额外头）；为空时用客户端默认。 */
+    @Nullable
+    public YoRequestOptions requestOptions() {
+        return requestOptions;
+    }
+
     private static JSONObject copy(JSONObject json) {
         try {
             return new JSONObject(json.toString());
@@ -214,6 +235,8 @@ public final class YoChatCompletionRequest {
         private String serviceTier;
         private JSONObject metadata;
         private final List<String> modalities = new ArrayList<>();
+        private YoChatOptions options;
+        private YoRequestOptions requestOptions;
 
         @NonNull
         public Builder model(@NonNull String model) {
@@ -357,6 +380,18 @@ public final class YoChatCompletionRequest {
         }
 
         @NonNull
+        public Builder options(@Nullable YoChatOptions options) {
+            this.options = options;
+            return this;
+        }
+
+        @NonNull
+        public Builder requestOptions(@Nullable YoRequestOptions requestOptions) {
+            this.requestOptions = requestOptions;
+            return this;
+        }
+
+        @NonNull
         public YoChatCompletionRequest build() {
             if (model == null) {
                 throw new IllegalArgumentException("model is required");
@@ -383,7 +418,10 @@ public final class YoChatCompletionRequest {
                     store,
                     serviceTier,
                     metadata,
-                    List.copyOf(modalities));
+                    List.copyOf(modalities),
+                    options,
+                    requestOptions);
         }
     }
 }
+

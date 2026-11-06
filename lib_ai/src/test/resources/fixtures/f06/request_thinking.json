@@ -1,0 +1,7 @@
+{
+  "model": "deepseek-reasoner",
+  "messages": [
+    {"role": "user", "content": "你好"}
+  ],
+  "thinking": {"type": "enabled"}
+}

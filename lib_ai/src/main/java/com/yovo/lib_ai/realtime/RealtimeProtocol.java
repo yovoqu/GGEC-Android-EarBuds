@@ -58,6 +58,10 @@ final class RealtimeProtocol {
     static final String TYPE_SESSION_UPDATED = "session.updated";
     /** 用户音频转写完成。 */
     static final String TYPE_INPUT_TRANSCRIPT = "conversation.item.input_audio_transcription.completed";
+    /** Qwen realtime 翻译增量（译文）。 */
+    static final String TYPE_TRANSLATION_DELTA = "response.translation.delta";
+    /** 少数方言把翻译挂在 output_text 通道下。 */
+    static final String TYPE_OUTPUT_TRANSLATION_DELTA = "response.output_text.translation.delta";
     /** 函数参数到齐。 */
     static final String TYPE_FUNCTION_CALL_DONE = "response.function_call_arguments.done";
     /** 请模型现在生成。 */
@@ -204,6 +208,15 @@ final class RealtimeProtocol {
                 String transcript = frame.optString("transcript", "");
                 return transcript.isEmpty() ? null : YoRealtimeEvent.userTranscript(transcript, itemIdOf(frame));
             }
+            case TYPE_TRANSLATION_DELTA:
+            case TYPE_OUTPUT_TRANSLATION_DELTA: {
+                String delta = frame.optString("delta", "");
+                if (delta.isEmpty()) {
+                    return null;
+                }
+                String target = frame.optString("target_language", "");
+                return YoRealtimeEvent.translationDelta(delta, target.isEmpty() ? null : target);
+            }
             case TYPE_FUNCTION_CALL_DONE:
                 return toolCallOf(frame);
             case TYPE_RESPONSE_DONE:
@@ -221,6 +234,9 @@ final class RealtimeProtocol {
      */
     @NonNull
     static String webSocketUrl(@NonNull YoRealtimeConfig config) {
+        if (config.dialect() == YoRealtimeDialect.QWEN) {
+            return YoServiceEndpoints.qwenRealtime(config.baseUrl(), config.model());
+        }
         return YoServiceEndpoints.realtime(config.baseUrl(), config.model());
     }
 
@@ -413,17 +429,23 @@ final class RealtimeProtocol {
         session.put("modalities", modalityArray(
                 config.outputModalities(), YoRealtimeOutputModality.TEXT, YoRealtimeOutputModality.AUDIO));
         putIfPresent(session, "instructions", config.instructions());
+        // 通义默认音色不是 OpenAI 的 Chelsie；不显式给会被 400 拒绝。
+        String voice = config.voice() == null ? "Tina" : config.voice();
         // 旧版通义只读 session.voice；新版读 audio.output.voice。两边写同一个值。
-        putIfPresent(session, "voice", config.voice());
+        session.put("voice", voice);
         JSONObject input = new JSONObject();
         input.put("format", encodeQwenFormat(config.inputWireFormat()));
         input.put("turn_detection", encodeTurn(config.turnDetection(), false));
         putTranscription(input, config.transcription());
         JSONObject output = new JSONObject();
         output.put("format", encodeQwenFormat(config.outputWireFormat()));
-        putIfPresent(output, "voice", config.voice());
+        output.put("voice", voice);
         session.put("audio", new JSONObject().put("input", input).put("output", output));
         putTools(session, config);
+        if (config.translationTarget() != null) {
+            // 只在显式请求翻译时下发；不设置时保持旧 JSON 字节不变。
+            session.put("translation", new JSONObject().put("target_language", config.translationTarget()));
+        }
         return session;
     }
 
@@ -456,47 +478,86 @@ final class RealtimeProtocol {
     }
 
     /**
+     * 断句配置的编码入口：按变体分派，而不是按方言打布尔开关。
+     *
+     * <p>每个变体只可能产出自己那套字段，所以"把 OpenAI 的 create_response 发给通义"
+     * 这种事在类型层面就不成立。</p>
+     *
      * @param gaDefaults GA 在调用方没写 create/interrupt 时也要显式打开，
      *                    否则插话不会停掉正在生成的回答。beta 不写这两个字段，保持旧网关看到的 JSON 不变。
      */
     @NonNull
-    private static Object encodeTurn(@Nullable YoRealtimeTurnDetection turn, boolean gaDefaults) throws JSONException {
-        if (turn != null && turn.isDisabled()) {
-            return JSONObject.NULL;
+    private static Object encodeTurn(@Nullable YoRealtimeTurnDetection turn,
+                                     boolean gaDefaults) throws JSONException {
+        if (turn == null) {
+            return encodeOpenAiTurn(new YoRealtimeTurnDetection.OpenAi(
+                    YoRealtimeTurnDetection.Kind.SERVER_VAD, null, null, null, null, null, null),
+                    gaDefaults);
         }
-        YoRealtimeTurnDetection.Kind kind = turn == null || turn.kind() == null
+        return switch (turn) {
+            case YoRealtimeTurnDetection.Disabled ignored -> JSONObject.NULL;
+            case YoRealtimeTurnDetection.OpenAi openAi -> encodeOpenAiTurn(openAi, gaDefaults);
+            case YoRealtimeTurnDetection.Qwen qwen -> encodeQwenTurn(qwen);
+        };
+    }
+
+    /** OpenAI 字段集：threshold[0,1] + prefix_padding_ms + silence_duration_ms + eagerness + create/interrupt。 */
+    @NonNull
+    private static JSONObject encodeOpenAiTurn(@NonNull YoRealtimeTurnDetection.OpenAi turn,
+                                               boolean gaDefaults) throws JSONException {
+        YoRealtimeTurnDetection.Kind kind = turn.kind() == null
                 ? YoRealtimeTurnDetection.Kind.SERVER_VAD
                 : turn.kind();
         JSONObject json = new JSONObject().put("type", kind.wireName());
-        if (turn != null) {
-            if (turn.threshold() != null) {
-                json.put("threshold", turn.threshold());
-            }
-            if (turn.prefixPaddingMs() != null) {
-                json.put("prefix_padding_ms", turn.prefixPaddingMs());
-            }
-            if (turn.silenceDurationMs() != null) {
-                json.put("silence_duration_ms", turn.silenceDurationMs());
-            }
-            if (turn.eagerness() != null) {
-                json.put("eagerness", turn.eagerness());
-            }
+        if (turn.threshold() != null) {
+            json.put("threshold", turn.threshold());
         }
-        Boolean create = turn == null ? null : turn.createResponse();
-        Boolean interrupt = turn == null ? null : turn.interruptResponse();
+        if (turn.prefixPaddingMs() != null) {
+            json.put("prefix_padding_ms", turn.prefixPaddingMs());
+        }
+        if (turn.silenceDurationMs() != null) {
+            json.put("silence_duration_ms", turn.silenceDurationMs());
+        }
+        if (turn.eagerness() != null) {
+            json.put("eagerness", turn.eagerness());
+        }
         if (gaDefaults) {
-            json.put("create_response", create == null || create);
-            json.put("interrupt_response", interrupt == null || interrupt);
+            json.put("create_response", turn.createResponse() == null || turn.createResponse());
+            json.put("interrupt_response",
+                    turn.interruptResponse() == null || turn.interruptResponse());
         } else {
-            if (create != null) {
-                json.put("create_response", create);
+            if (turn.createResponse() != null) {
+                json.put("create_response", turn.createResponse());
             }
-            if (interrupt != null) {
-                json.put("interrupt_response", interrupt);
+            if (turn.interruptResponse() != null) {
+                json.put("interrupt_response", turn.interruptResponse());
             }
         }
         return json;
     }
+
+    /**
+     * 通义字段集：type + threshold[-1.0,1.0] + silence_duration_ms[200,6000] + idle_timeout_ms[5000,30000]。
+     *
+     * <p>没有 create_response / interrupt_response / prefix_padding_ms / eagerness——
+     * 写进去会被判非法参数（百炼「客户端事件」文档）。</p>
+     */
+    @NonNull
+    private static JSONObject encodeQwenTurn(@NonNull YoRealtimeTurnDetection.Qwen turn)
+            throws JSONException {
+        JSONObject json = new JSONObject().put("type", turn.type());
+        if (turn.threshold() != null) {
+            json.put("threshold", turn.threshold());
+        }
+        if (turn.silenceDurationMs() != null) {
+            json.put("silence_duration_ms", turn.silenceDurationMs());
+        }
+        if (turn.idleTimeoutMs() != null) {
+            json.put("idle_timeout_ms", turn.idleTimeoutMs());
+        }
+        return json;
+    }
+
 
     private static void putBetaTranscription(
             @NonNull JSONObject session,

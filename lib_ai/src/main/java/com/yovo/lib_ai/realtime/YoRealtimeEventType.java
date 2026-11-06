@@ -59,6 +59,15 @@ enum YoRealtimeEventType {
     TOOL_CALL,
 
     /**
+     * 翻译增量（Qwen realtime 翻译模式）。{@link YoRealtimeEvent#text()} 是译文的一小段，
+     * {@link YoRealtimeEvent#targetLanguage()} 是目标语种（对端没给时为 {@code null}）。
+     *
+     * <p>与 {@link #ASSISTANT_TEXT_DELTA} 分开：译文不是助手回答本身，界面通常要显示在另一个区域；
+     * 合流会让"原文/译文"无法区分。
+     */
+    TRANSLATION_DELTA,
+
+    /**
      * 出错了，{@link YoRealtimeEvent#errorKind()} 给出分类，{@link YoRealtimeEvent#message()} 给出可读原因。
      *
      * <p>{@code ERROR} 不一定终结链路：服务端可以在会话中途报一次可恢复的错误

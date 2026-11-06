@@ -1,0 +1,19 @@
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 512,
+  "messages": [
+    {"role": "user", "content": "hi"}
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "lookup",
+      "input_schema": {"type": "object"},
+      "strict": true,
+      "input_examples": [{"city": "SZ"}],
+      "defer_loading": true
+    },
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
+    {"type": "web_fetch_20250910", "name": "web_fetch", "allowed_domains": ["example.com"]}
+  ]
+}

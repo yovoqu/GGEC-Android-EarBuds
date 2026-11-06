@@ -28,7 +28,7 @@ public final class PlatformCatalogTest {
     @Test
     public void listsBuiltInPlatformsFollowedByTheCompatibleTemplates() {
         assertEquals(
-                List.of("openai", "anthropic", "deepseek", "sensenova",
+                List.of("openai", "anthropic", "deepseek", "sensenova", "qwen",
                         YoPlatformCatalog.OPENAI_COMPATIBLE, YoPlatformCatalog.ANTHROPIC_COMPATIBLE),
                 catalog.descriptors().stream().map(YoPlatformDescriptor::templateId).toList());
 

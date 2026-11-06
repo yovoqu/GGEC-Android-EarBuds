@@ -1,0 +1,14 @@
+{
+  "id": "resp_tools_1",
+  "object": "response",
+  "status": "completed",
+  "model": "gpt-5",
+  "output": [
+    {"type": "web_search_call", "id": "ws_1", "status": "completed", "action": {"type": "search", "query": "openai"}},
+    {"type": "file_search_call", "id": "fs_1", "status": "completed", "queries": ["q1"]},
+    {"type": "code_interpreter_call", "id": "ci_1", "status": "completed", "code": "print(1)", "container_id": "cnt_1"},
+    {"type": "computer_call", "id": "cc_1", "status": "completed", "call_id": "call_c", "action": {"type": "screenshot"}},
+    {"type": "mcp_call", "id": "mcp_1", "status": "completed", "server_label": "deepwiki", "name": "query", "arguments": "{\"q\":\"z\"}"},
+    {"type": "unknown_future_call", "id": "u_1", "status": "completed"}
+  ]
+}

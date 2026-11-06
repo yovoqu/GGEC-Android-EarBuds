@@ -1,0 +1,12 @@
+{
+  "request_id": "req_vid_2",
+  "output": {
+    "task_id": "task_abc123",
+    "task_status": "SUCCEEDED",
+    "video_url": "https://dashscope-result.oss.aliyuncs.com/video/out.mp4"
+  },
+  "usage": {
+    "video_count": 1,
+    "duration": 20
+  }
+}

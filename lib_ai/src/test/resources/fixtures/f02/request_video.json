@@ -1,0 +1,12 @@
+{
+  "model": "qwen3.8-omni-flash",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "这段视频讲了什么？"},
+        {"type": "video_url", "video_url": {"url": "https://example.com/demo.mp4"}, "fps": 2.0, "prompt_cache_breakpoint": {"mode": "explicit", "ttl": "30m"}}
+      ]
+    }
+  ]
+}

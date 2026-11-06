@@ -3,6 +3,9 @@ package com.yovo.lib_ai.responses;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +36,29 @@ public final class YoResponseRequest {
     private final YoResponseTextFormat textFormat;
     @Nullable
     private final Boolean generate;
+    @Nullable
+    private final Boolean background;
+    @Nullable
+    private final JSONObject contextManagement;
+    @Nullable
+    private final Object conversation;
+    private final List<String> include;
+    @Nullable
+    private final JSONObject promptCacheOptions;
+    @Nullable
+    private final JSONObject reasoning;
+    @Nullable
+    private final String textVerbosity;
+    @Nullable
+    private final String truncation;
+    @Nullable
+    private final Integer maxToolCalls;
+    @Nullable
+    private final String safetyIdentifier;
+    @Nullable
+    private final String serviceTier;
+    @Nullable
+    private final JSONObject metadata;
 
     private YoResponseRequest(
             String model,
@@ -48,7 +74,19 @@ public final class YoResponseRequest {
             @Nullable Double topP,
             @Nullable Boolean store,
             @Nullable YoResponseTextFormat textFormat,
-            @Nullable Boolean generate) {
+            @Nullable Boolean generate,
+            @Nullable Boolean background,
+            @Nullable JSONObject contextManagement,
+            @Nullable Object conversation,
+            List<String> include,
+            @Nullable JSONObject promptCacheOptions,
+            @Nullable JSONObject reasoning,
+            @Nullable String textVerbosity,
+            @Nullable String truncation,
+            @Nullable Integer maxToolCalls,
+            @Nullable String safetyIdentifier,
+            @Nullable String serviceTier,
+            @Nullable JSONObject metadata) {
         this.model = model;
         this.inputText = inputText;
         this.inputItems = inputItems;
@@ -63,6 +101,18 @@ public final class YoResponseRequest {
         this.store = store;
         this.textFormat = textFormat;
         this.generate = generate;
+        this.background = background;
+        this.contextManagement = contextManagement;
+        this.conversation = conversation;
+        this.include = include;
+        this.promptCacheOptions = promptCacheOptions;
+        this.reasoning = reasoning;
+        this.textVerbosity = textVerbosity;
+        this.truncation = truncation;
+        this.maxToolCalls = maxToolCalls;
+        this.safetyIdentifier = safetyIdentifier;
+        this.serviceTier = serviceTier;
+        this.metadata = metadata;
     }
 
     @NonNull
@@ -143,6 +193,72 @@ public final class YoResponseRequest {
         return generate;
     }
 
+    @Nullable
+    public Boolean background() {
+        return background;
+    }
+
+    @Nullable
+    public JSONObject contextManagement() {
+        return copy(contextManagement);
+    }
+
+    /**
+     * {@code conversation} 既可以是会话 id 字符串，也可以是对象。
+     */
+    @Nullable
+    public Object conversation() {
+        if (conversation instanceof JSONObject json) {
+            return copy(json);
+        }
+        return conversation;
+    }
+
+    @NonNull
+    public List<String> include() {
+        return include;
+    }
+
+    @Nullable
+    public JSONObject promptCacheOptions() {
+        return copy(promptCacheOptions);
+    }
+
+    @Nullable
+    public JSONObject reasoning() {
+        return copy(reasoning);
+    }
+
+    @Nullable
+    public String textVerbosity() {
+        return textVerbosity;
+    }
+
+    @Nullable
+    public String truncation() {
+        return truncation;
+    }
+
+    @Nullable
+    public Integer maxToolCalls() {
+        return maxToolCalls;
+    }
+
+    @Nullable
+    public String safetyIdentifier() {
+        return safetyIdentifier;
+    }
+
+    @Nullable
+    public String serviceTier() {
+        return serviceTier;
+    }
+
+    @Nullable
+    public JSONObject metadata() {
+        return copy(metadata);
+    }
+
     public static final class Builder {
         private String model;
         private String inputText;
@@ -159,6 +275,18 @@ public final class YoResponseRequest {
         private Boolean store;
         private YoResponseTextFormat textFormat;
         private Boolean generate;
+        private Boolean background;
+        private JSONObject contextManagement;
+        private Object conversation;
+        private final List<String> include = new ArrayList<>();
+        private JSONObject promptCacheOptions;
+        private JSONObject reasoning;
+        private String textVerbosity;
+        private String truncation;
+        private Integer maxToolCalls;
+        private String safetyIdentifier;
+        private String serviceTier;
+        private JSONObject metadata;
 
         @NonNull
         public Builder model(@NonNull String model) {
@@ -264,6 +392,91 @@ public final class YoResponseRequest {
         }
 
         @NonNull
+        public Builder background(boolean background) {
+            this.background = background;
+            return this;
+        }
+
+        @NonNull
+        public Builder contextManagement(@Nullable JSONObject contextManagement) {
+            this.contextManagement = copyOrNull(contextManagement);
+            return this;
+        }
+
+        @NonNull
+        public Builder conversation(@Nullable String conversationId) {
+            this.conversation = conversationId;
+            return this;
+        }
+
+        @NonNull
+        public Builder conversation(@Nullable JSONObject conversation) {
+            this.conversation = copyOrNull(conversation);
+            return this;
+        }
+
+        @NonNull
+        public Builder include(@NonNull List<String> include) {
+            this.include.clear();
+            this.include.addAll(include);
+            return this;
+        }
+
+        @NonNull
+        public Builder addInclude(@NonNull String include) {
+            this.include.add(include);
+            return this;
+        }
+
+        @NonNull
+        public Builder promptCacheOptions(@Nullable JSONObject promptCacheOptions) {
+            this.promptCacheOptions = copyOrNull(promptCacheOptions);
+            return this;
+        }
+
+        @NonNull
+        public Builder reasoning(@Nullable JSONObject reasoning) {
+            this.reasoning = copyOrNull(reasoning);
+            return this;
+        }
+
+        @NonNull
+        public Builder textVerbosity(@Nullable String textVerbosity) {
+            this.textVerbosity = textVerbosity;
+            return this;
+        }
+
+        @NonNull
+        public Builder truncation(@Nullable String truncation) {
+            this.truncation = truncation;
+            return this;
+        }
+
+        @NonNull
+        public Builder maxToolCalls(int maxToolCalls) {
+            this.maxToolCalls = maxToolCalls;
+            return this;
+        }
+
+        @NonNull
+        public Builder safetyIdentifier(@Nullable String safetyIdentifier) {
+            this.safetyIdentifier = safetyIdentifier;
+            return this;
+        }
+
+        @NonNull
+        public Builder serviceTier(@Nullable String serviceTier) {
+            this.serviceTier = serviceTier;
+            return this;
+        }
+
+        @NonNull
+        public Builder metadata(@Nullable JSONObject metadata) {
+            this.metadata = copyOrNull(metadata);
+            return this;
+        }
+
+        @NonNull
         public YoResponseRequest build() {
             if (model == null) {
                 throw new IllegalArgumentException("model is required");
@@ -285,7 +498,44 @@ public final class YoResponseRequest {
                     topP,
                     store,
                     textFormat,
-                    generate);
+                    generate,
+                    background,
+                    copyOrNull(contextManagement),
+                    copyConversation(conversation),
+                    List.copyOf(include),
+                    copyOrNull(promptCacheOptions),
+                    copyOrNull(reasoning),
+                    textVerbosity,
+                    truncation,
+                    maxToolCalls,
+                    safetyIdentifier,
+                    serviceTier,
+                    copyOrNull(metadata));
+        }
+
+        @Nullable
+        private static Object copyConversation(@Nullable Object conversation) {
+            if (conversation instanceof JSONObject json) {
+                return copyOrNull(json);
+            }
+            return conversation;
+        }
+    }
+
+    @Nullable
+    private static JSONObject copy(@Nullable JSONObject json) {
+        return copyOrNull(json);
+    }
+
+    @Nullable
+    private static JSONObject copyOrNull(@Nullable JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        try {
+            return new JSONObject(json.toString());
+        } catch (JSONException exception) {
+            throw new IllegalArgumentException("Invalid JSON object", exception);
         }
     }
 }

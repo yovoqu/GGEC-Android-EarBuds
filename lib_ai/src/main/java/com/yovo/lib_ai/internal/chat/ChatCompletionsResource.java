@@ -157,13 +157,23 @@ public final class ChatCompletionsResource implements YoChatCompletions {
     private HttpRequestSpec spec(YoChatCompletionRequest request, boolean stream, CancelToken token) {
         policy.check(request);
         try {
+            org.json.JSONObject body = ChatCodec.encode(request, stream, partEncoder);
+            policy.apply(body);
+            java.util.Map<String, String> headers =
+                    new java.util.LinkedHashMap<>(ProtocolSupport.jsonHeaders(target.headers(), stream));
+            com.yovo.lib_ai.api.YoRequestOptions requestOptions = request.requestOptions();
+            if (requestOptions != null) {
+                headers.putAll(requestOptions.headers());
+            }
             return new HttpRequestSpec(
                     "POST",
                     ProtocolSupport.url(target.baseUrl(), WirePaths.CHAT_COMPLETIONS),
-                    ProtocolSupport.jsonHeaders(target.headers(), stream),
-                    ChatCodec.encode(request, stream, partEncoder).toString(),
+                    headers,
+                    body.toString(),
                     stream,
-                    token);
+                    token,
+                    requestOptions == null ? null : requestOptions.timeoutMillis(),
+                    requestOptions == null ? null : requestOptions.idempotencyKey());
         } catch (JSONException exception) {
             throw new com.yovo.lib_ai.error.YoAiProtocolException("Failed to encode chat request", null, exception);
         }

@@ -1,0 +1,20 @@
+{
+  "model": "qwen-image-3.0-pro",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"text": "一只戴宇航头盔的柴犬，电影感"}
+        ]
+      }
+    ]
+  },
+  "parameters": {
+    "size": "2048*2048",
+    "n": 1,
+    "prompt_extend": true,
+    "seed": 123,
+    "watermark": false
+  }
+}

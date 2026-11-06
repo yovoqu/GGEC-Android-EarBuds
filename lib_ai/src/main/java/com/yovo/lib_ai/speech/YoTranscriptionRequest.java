@@ -3,6 +3,8 @@ package com.yovo.lib_ai.speech;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -37,18 +39,35 @@ public final class YoTranscriptionRequest {
     private final String model;
     @Nullable
     private final String prompt;
+    private final String responseFormat;
+    @NonNull
+    private final List<String> timestampGranularities;
+    private final boolean stream;
+    private final boolean diarizationEnabled;
+    @NonNull
+    private final List<String> knownSpeakers;
 
     private YoTranscriptionRequest(
             byte[] audio,
             String mimeType,
             @Nullable String language,
             String model,
-            @Nullable String prompt) {
+            @Nullable String prompt,
+            String responseFormat,
+            @NonNull List<String> timestampGranularities,
+            boolean stream,
+            boolean diarizationEnabled,
+            @NonNull List<String> knownSpeakers) {
         this.audio = audio;
         this.mimeType = mimeType;
         this.language = language;
         this.model = model;
         this.prompt = prompt;
+        this.responseFormat = responseFormat;
+        this.timestampGranularities = List.copyOf(timestampGranularities);
+        this.stream = stream;
+        this.diarizationEnabled = diarizationEnabled;
+        this.knownSpeakers = List.copyOf(knownSpeakers);
     }
 
     @NonNull
@@ -90,6 +109,34 @@ public final class YoTranscriptionRequest {
     @Nullable
     public String prompt() {
         return prompt;
+    }
+
+    /** 响应格式：{@code json}（默认）、{@code verbose_json}、{@code diarized_json} 等。 */
+    @NonNull
+    public String responseFormat() {
+        return responseFormat;
+    }
+
+    /** 时间戳粒度：{@code word} / {@code segment}；为空表示不请求细粒度时间戳。 */
+    @NonNull
+    public List<String> timestampGranularities() {
+        return timestampGranularities;
+    }
+
+    /** 是否请求 SSE 流式转写。 */
+    public boolean stream() {
+        return stream;
+    }
+
+    /** 是否请求说话人分离。 */
+    public boolean diarizationEnabled() {
+        return diarizationEnabled;
+    }
+
+    /** 已知说话人名称（OpenAI {@code known_speaker_names}）；为空表示不声明。 */
+    @NonNull
+    public List<String> knownSpeakers() {
+        return knownSpeakers;
     }
 
     /** 防御性拷贝：请求对象可能在另一条线程上被读取，不能让调用方后续改动影响上传内容。 */
@@ -140,6 +187,11 @@ public final class YoTranscriptionRequest {
         private String model;
         @Nullable
         private String prompt;
+        private String responseFormat = "json";
+        private final List<String> timestampGranularities = new ArrayList<>();
+        private boolean stream;
+        private boolean diarizationEnabled;
+        private final List<String> knownSpeakers = new ArrayList<>();
 
         private Builder() {
         }
@@ -184,6 +236,76 @@ public final class YoTranscriptionRequest {
             return this;
         }
 
+        /** 响应格式；默认 {@code json}。{@code verbose_json}/{@code diarized_json} 会带回分段与说话人。 */
+        @NonNull
+        public Builder responseFormat(@Nullable String responseFormat) {
+            String normalized = trimToNull(responseFormat);
+            this.responseFormat = normalized == null ? "json" : normalized;
+            return this;
+        }
+
+        /** 追加一个时间戳粒度（{@code word} 或 {@code segment}）。 */
+        @NonNull
+        public Builder timestampGranularity(@NonNull String granularity) {
+            String normalized = trimToNull(Objects.requireNonNull(granularity, "granularity"));
+            if (normalized != null) {
+                this.timestampGranularities.add(normalized);
+            }
+            return this;
+        }
+
+        @NonNull
+        public Builder timestampGranularities(@Nullable List<String> granularities) {
+            this.timestampGranularities.clear();
+            if (granularities != null) {
+                for (String granularity : granularities) {
+                    String normalized = trimToNull(granularity);
+                    if (normalized != null) {
+                        this.timestampGranularities.add(normalized);
+                    }
+                }
+            }
+            return this;
+        }
+
+        /** 请求 SSE 流式转写。 */
+        @NonNull
+        public Builder stream(boolean stream) {
+            this.stream = stream;
+            return this;
+        }
+
+        /** 请求说话人分离。 */
+        @NonNull
+        public Builder diarizationEnabled(boolean diarizationEnabled) {
+            this.diarizationEnabled = diarizationEnabled;
+            return this;
+        }
+
+        /** 声明已知说话人名称（用于把 speaker 标签对齐到实名）。 */
+        @NonNull
+        public Builder knownSpeaker(@NonNull String name) {
+            String normalized = trimToNull(Objects.requireNonNull(name, "name"));
+            if (normalized != null) {
+                this.knownSpeakers.add(normalized);
+            }
+            return this;
+        }
+
+        @NonNull
+        public Builder knownSpeakers(@Nullable List<String> names) {
+            this.knownSpeakers.clear();
+            if (names != null) {
+                for (String name : names) {
+                    String normalized = trimToNull(name);
+                    if (normalized != null) {
+                        this.knownSpeakers.add(normalized);
+                    }
+                }
+            }
+            return this;
+        }
+
         /**
          * @throws IllegalArgumentException 没给音频、给了空音频、没给模型，
          *                                  或语种里出现换行等控制字符
@@ -207,7 +329,12 @@ public final class YoTranscriptionRequest {
                     mimeType,
                     language,
                     model,
-                    prompt);
+                    prompt,
+                    responseFormat,
+                    timestampGranularities,
+                    stream,
+                    diarizationEnabled,
+                    knownSpeakers);
         }
 
         @Nullable

@@ -1,0 +1,36 @@
+{
+  "id": "chatcmpl-f01",
+  "object": "chat.completion",
+  "created": 1735120033,
+  "model": "deepseek-v4-pro",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "答案是 42。",
+        "reasoning_content": "先读题，再计算 6*7。",
+        "name": "assistant-a",
+        "audio": {"id": "audio_abc"}
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 22,
+    "completion_tokens": 17,
+    "total_tokens": 39,
+    "prompt_tokens_details": {
+      "cached_tokens": 8,
+      "cache_write_tokens": 4,
+      "audio_tokens": 2,
+      "image_tokens": 3
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 11,
+      "audio_tokens": 5,
+      "accepted_prediction_tokens": 1,
+      "rejected_prediction_tokens": 2
+    }
+  }
+}

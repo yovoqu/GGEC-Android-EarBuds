@@ -46,12 +46,28 @@ public final class YoAiErrors {
     public static boolean retryable(@NonNull YoAiErrorKind kind) {
         return kind == YoAiErrorKind.RATE_LIMITED
                 || kind == YoAiErrorKind.SERVER
+                || kind == YoAiErrorKind.OVERLOADED
                 || kind == YoAiErrorKind.NETWORK
                 || kind == YoAiErrorKind.TIMEOUT;
     }
 
     private static YoAiErrorKind fromHttp(int status, @Nullable String type) {
         String lowered = type == null ? "" : type.toLowerCase(Locale.ROOT);
+        if (lowered.contains("content_filter") || lowered.contains("content_policy")
+                || lowered.contains("data_inspection") || status == 451) {
+            return YoAiErrorKind.CONTENT_FILTERED;
+        }
+        if (lowered.contains("context_length") || lowered.contains("context_window")
+                || lowered.contains("too_many_tokens") || status == 413) {
+            return YoAiErrorKind.CONTEXT_LENGTH;
+        }
+        if (lowered.contains("unsupported") || lowered.contains("not_supported")
+                || lowered.contains("unknown_parameter")) {
+            return YoAiErrorKind.UNSUPPORTED_PARAM;
+        }
+        if (lowered.contains("overloaded") || status == 529) {
+            return YoAiErrorKind.OVERLOADED;
+        }
         if (status == 402 || lowered.contains("quota") || lowered.contains("balance")
                 || lowered.contains("billing")) {
             return YoAiErrorKind.QUOTA;

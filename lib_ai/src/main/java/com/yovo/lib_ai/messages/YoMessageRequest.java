@@ -3,6 +3,9 @@ package com.yovo.lib_ai.messages;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,6 +17,7 @@ public final class YoMessageRequest {
     @Nullable
     private final String system;
     private final List<YoMessageTool> tools;
+    private final List<YoMessageServerTool> serverTools;
     @Nullable
     private final YoMessageToolChoice toolChoice;
     @Nullable
@@ -25,6 +29,16 @@ public final class YoMessageRequest {
     private final String userId;
     @Nullable
     private final Integer topK;
+    @Nullable
+    private final YoThinkingConfig thinking;
+    @Nullable
+    private final JSONObject cacheControl;
+    @Nullable
+    private final JSONObject outputConfig;
+    @Nullable
+    private final JSONObject metadata;
+    @Nullable
+    private final String serviceTier;
 
     private YoMessageRequest(
             String model,
@@ -32,23 +46,35 @@ public final class YoMessageRequest {
             List<YoMessageTurn> messages,
             @Nullable String system,
             List<YoMessageTool> tools,
+            List<YoMessageServerTool> serverTools,
             @Nullable YoMessageToolChoice toolChoice,
             @Nullable Double temperature,
             @Nullable Double topP,
             List<String> stopSequences,
             @Nullable String userId,
-            @Nullable Integer topK) {
+            @Nullable Integer topK,
+            @Nullable YoThinkingConfig thinking,
+            @Nullable JSONObject cacheControl,
+            @Nullable JSONObject outputConfig,
+            @Nullable JSONObject metadata,
+            @Nullable String serviceTier) {
         this.model = model;
         this.maxTokens = maxTokens;
         this.messages = messages;
         this.system = system;
         this.tools = tools;
+        this.serverTools = serverTools;
         this.toolChoice = toolChoice;
         this.temperature = temperature;
         this.topP = topP;
         this.stopSequences = stopSequences;
         this.userId = userId;
         this.topK = topK;
+        this.thinking = thinking;
+        this.cacheControl = cacheControl;
+        this.outputConfig = outputConfig;
+        this.metadata = metadata;
+        this.serviceTier = serviceTier;
     }
 
     @NonNull
@@ -78,6 +104,11 @@ public final class YoMessageRequest {
     @NonNull
     public List<YoMessageTool> tools() {
         return tools;
+    }
+
+    @NonNull
+    public List<YoMessageServerTool> serverTools() {
+        return serverTools;
     }
 
     @Nullable
@@ -110,18 +141,52 @@ public final class YoMessageRequest {
         return topK;
     }
 
+    @Nullable
+    public YoThinkingConfig thinking() {
+        return thinking;
+    }
+
+    /**
+     * 请求级 cache_control；编码时挂到 system 文本块上。
+     */
+    @Nullable
+    public JSONObject cacheControl() {
+        return cacheControl == null ? null : copy(cacheControl);
+    }
+
+    @Nullable
+    public JSONObject outputConfig() {
+        return outputConfig == null ? null : copy(outputConfig);
+    }
+
+    @Nullable
+    public JSONObject metadata() {
+        return metadata == null ? null : copy(metadata);
+    }
+
+    @Nullable
+    public String serviceTier() {
+        return serviceTier;
+    }
+
     public static final class Builder {
         private String model;
         private Integer maxTokens;
         private final List<YoMessageTurn> messages = new ArrayList<>();
         private String system;
         private final List<YoMessageTool> tools = new ArrayList<>();
+        private final List<YoMessageServerTool> serverTools = new ArrayList<>();
         private YoMessageToolChoice toolChoice;
         private Double temperature;
         private Double topP;
         private final List<String> stopSequences = new ArrayList<>();
         private String userId;
         private Integer topK;
+        private YoThinkingConfig thinking;
+        private JSONObject cacheControl;
+        private JSONObject outputConfig;
+        private JSONObject metadata;
+        private String serviceTier;
 
         @NonNull
         public Builder model(@NonNull String model) {
@@ -165,6 +230,12 @@ public final class YoMessageRequest {
         }
 
         @NonNull
+        public Builder addServerTool(@NonNull YoMessageServerTool tool) {
+            serverTools.add(tool);
+            return this;
+        }
+
+        @NonNull
         public Builder toolChoice(@NonNull YoMessageToolChoice toolChoice) {
             this.toolChoice = toolChoice;
             return this;
@@ -204,6 +275,36 @@ public final class YoMessageRequest {
         }
 
         @NonNull
+        public Builder thinking(@Nullable YoThinkingConfig thinking) {
+            this.thinking = thinking;
+            return this;
+        }
+
+        @NonNull
+        public Builder cacheControl(@Nullable JSONObject cacheControl) {
+            this.cacheControl = cacheControl == null ? null : copy(cacheControl);
+            return this;
+        }
+
+        @NonNull
+        public Builder outputConfig(@Nullable JSONObject outputConfig) {
+            this.outputConfig = outputConfig == null ? null : copy(outputConfig);
+            return this;
+        }
+
+        @NonNull
+        public Builder metadata(@Nullable JSONObject metadata) {
+            this.metadata = metadata == null ? null : copy(metadata);
+            return this;
+        }
+
+        @NonNull
+        public Builder serviceTier(@Nullable String serviceTier) {
+            this.serviceTier = serviceTier;
+            return this;
+        }
+
+        @NonNull
         public YoMessageRequest build() {
             if (model == null) {
                 throw new IllegalArgumentException("model is required");
@@ -220,12 +321,26 @@ public final class YoMessageRequest {
                     List.copyOf(messages),
                     system,
                     List.copyOf(tools),
+                    List.copyOf(serverTools),
                     toolChoice,
                     temperature,
                     topP,
                     List.copyOf(stopSequences),
                     userId,
-                    topK);
+                    topK,
+                    thinking,
+                    cacheControl == null ? null : copy(cacheControl),
+                    outputConfig == null ? null : copy(outputConfig),
+                    metadata == null ? null : copy(metadata),
+                    serviceTier);
+        }
+    }
+
+    private static JSONObject copy(JSONObject json) {
+        try {
+            return new JSONObject(json.toString());
+        } catch (JSONException exception) {
+            throw new IllegalArgumentException("Invalid JSON object", exception);
         }
     }
 }

@@ -1,0 +1,12 @@
+{
+  "model": "gte-rerank-v2",
+  "input": {
+    "query": "什么是文本排序模型",
+    "documents": ["文本排序模型用于对候选文档排序", "今天天气不错"]
+  },
+  "parameters": {
+    "top_n": 1,
+    "return_documents": true,
+    "instruct": "Given a web search query, retrieve relevant passages that answer the query."
+  }
+}

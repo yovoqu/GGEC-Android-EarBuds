@@ -1,0 +1,14 @@
+{
+  "model": "dialect-model",
+  "messages": [
+    {"role": "user", "content": "你好"}
+  ],
+  "temperature": 0.6,
+  "top_p": 0.9,
+  "max_tokens": 256,
+  "frequency_penalty": 0.5,
+  "presence_penalty": 0.3,
+  "top_k": 40,
+  "stop": ["END"],
+  "enable_thinking": true
+}

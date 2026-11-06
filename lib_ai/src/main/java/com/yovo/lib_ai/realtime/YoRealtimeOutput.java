@@ -36,10 +36,19 @@ public sealed interface YoRealtimeOutput {
 
     /**
      * 助手的一段 PCM16。字节速率是打开会话时声明的下行线格式，默认 24kHz。
+     *
+     * @param itemId 服务端给这一条回答的 id，打断时用它定位要截断的条目；老网关可能为空
+     * @param contentIndex 同一 item 内的音频内容序号
      */
-    record AssistantAudio(@NonNull byte[] pcm16) implements YoRealtimeOutput {
+    record AssistantAudio(@NonNull byte[] pcm16, @Nullable String itemId, int contentIndex)
+            implements YoRealtimeOutput {
         public AssistantAudio {
             Objects.requireNonNull(pcm16, "pcm16");
+        }
+
+        /** 兼容：没有 item id 的旧网关，无法截断。 */
+        public AssistantAudio(@NonNull byte[] pcm16) {
+            this(pcm16, null, 0);
         }
     }
 
@@ -62,6 +71,15 @@ public sealed interface YoRealtimeOutput {
 
     /** 一轮回答结束。 */
     record ResponseDone(@Nullable String status, @Nullable YoRealtimeUsage usage) implements YoRealtimeOutput {
+    }
+
+    /**
+     * 翻译增量（Qwen realtime 翻译模式）。{@code delta} 是一小段译文。
+     */
+    record TranslationDelta(@NonNull String delta, @Nullable String targetLanguage) implements YoRealtimeOutput {
+        public TranslationDelta {
+            Objects.requireNonNull(delta, "delta");
+        }
     }
 
     /** 会话失败。{@code message} 可以直接给人看，不含密钥。 */

@@ -253,7 +253,8 @@ public final class ResponsesTest {
     public void webSocketSendsWhileAResponseIsOpen() throws Exception {
         AtomicBoolean plannerCompleted = new AtomicBoolean();
         AtomicBoolean sentWhileOpen = new AtomicBoolean();
-        try (MockWebServer server = new MockWebServer()) {
+        MockWebServer server = new MockWebServer();
+        try {
             server.start();
             server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
                 @Override
@@ -316,8 +317,16 @@ public final class ResponsesTest {
                 assertEquals("planner", planner.get());
                 assertEquals("research", research.get());
                 connection.close();
+                // MockWebServer 的 WebSocket 关闭是异步的；给它一点时间收尾，避免 shutdown 偶发超时。
+                Thread.sleep(500);
             } finally {
                 client.close();
+            }
+        } finally {
+            try {
+                server.shutdown();
+            } catch (java.io.IOException ignored) {
+                // 测试断言已经完成；MockWebServer 的 WebSocket 队列偶尔收尾超时，不让清理掩盖结果。
             }
         }
     }
