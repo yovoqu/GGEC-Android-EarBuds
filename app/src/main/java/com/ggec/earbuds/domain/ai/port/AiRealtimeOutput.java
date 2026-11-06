@@ -45,6 +45,13 @@ public sealed interface AiRealtimeOutput {
     record UserSpeechStopped() implements AiRealtimeOutput {
     }
 
+    /** 用户发言转写文本。 */
+    record UserTranscript(@NonNull String transcript, @Nullable String itemId) implements AiRealtimeOutput {
+        public UserTranscript {
+            Objects.requireNonNull(transcript, "transcript");
+        }
+    }
+
     record ResponseDone() implements AiRealtimeOutput {
     }
 

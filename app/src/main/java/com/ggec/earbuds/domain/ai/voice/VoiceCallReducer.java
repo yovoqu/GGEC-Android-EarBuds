@@ -286,6 +286,24 @@ public final class VoiceCallReducer {
             return new Transition(next, effects);
         }
 
+        if (event instanceof VoiceCallEvent.UserTranscript user) {
+            String text = user.transcript().trim();
+            if (text.isEmpty()) {
+                return same(model);
+            }
+            int created = model.turnsCreated() + 1;
+            String turnId = user.itemId() != null && !user.itemId().isBlank()
+                    ? user.itemId()
+                    : "user-" + created;
+            List<AiVoiceSnapshot.Turn> turns = appendUserTurn(model.turns(), turnId, text, now);
+            Model next = new Model(model.state(), turns, model.level(), model.failure(),
+                    model.assistantTurnId(), model.audioBytes(), model.muted(),
+                    model.playbackStarted(), created, model.duplex(),
+                    model.uplinkEnabled());
+            effects.add(new VoiceCallEffect.Publish());
+            return new Transition(next, effects);
+        }
+
         if (event instanceof VoiceCallEvent.Muted muted) {
             VoiceCallState state = model.state();
             if (state == VoiceCallState.LISTENING || state == VoiceCallState.MUTED) {
@@ -394,6 +412,22 @@ public final class VoiceCallReducer {
             @NonNull String text, long now) {
         List<AiVoiceSnapshot.Turn> next = new ArrayList<>(turns);
         next.add(new AiVoiceSnapshot.Turn(id, false, text, false, now));
+        return next;
+    }
+
+    @NonNull
+    private static List<AiVoiceSnapshot.Turn> appendUserTurn(
+            @NonNull List<AiVoiceSnapshot.Turn> turns, @NonNull String id,
+            @NonNull String text, long now) {
+        List<AiVoiceSnapshot.Turn> next = new ArrayList<>(turns);
+        for (int i = 0; i < next.size(); i++) {
+            AiVoiceSnapshot.Turn existing = next.get(i);
+            if (existing.id().equals(id)) {
+                next.set(i, new AiVoiceSnapshot.Turn(id, true, text, true, existing.atMillis()));
+                return next;
+            }
+        }
+        next.add(new AiVoiceSnapshot.Turn(id, true, text, true, now));
         return next;
     }
 

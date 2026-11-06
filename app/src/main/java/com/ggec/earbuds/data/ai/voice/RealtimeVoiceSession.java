@@ -242,6 +242,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
                     apply(new VoiceCallEvent.SpeechStarted());
             case AiRealtimeOutput.UserSpeechStopped ignored ->
                     apply(new VoiceCallEvent.SpeechStopped());
+            case AiRealtimeOutput.UserTranscript transcript ->
+                    apply(new VoiceCallEvent.UserTranscript(transcript.transcript(), transcript.itemId()));
             case AiRealtimeOutput.ResponseDone ignored -> apply(new VoiceCallEvent.ResponseDone());
             case AiRealtimeOutput.Failed failed -> apply(new VoiceCallEvent.Failed(failed.failure()));
         }

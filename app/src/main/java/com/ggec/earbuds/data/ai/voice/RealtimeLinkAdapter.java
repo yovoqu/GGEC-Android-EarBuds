@@ -159,8 +159,11 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
                 }
             }
             case YoRealtimeOutput.ResponseDone ignored -> emit(listener, new AiRealtimeOutput.ResponseDone());
-            case YoRealtimeOutput.UserTranscript ignored -> {
-                // 通话页还没有转写行。类型留在 SDK 输出里，等页面要显示再译。
+            case YoRealtimeOutput.UserTranscript user -> {
+                if (!user.transcript().isBlank()) {
+                    emit(listener, new AiRealtimeOutput.UserTranscript(
+                            user.transcript(), user.itemId()));
+                }
             }
             case YoRealtimeOutput.ToolCall ignored -> {
                 // 通话页还没有工具调用。

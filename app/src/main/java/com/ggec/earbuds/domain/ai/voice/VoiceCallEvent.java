@@ -5,6 +5,8 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 
+import java.util.Objects;
+
 /**
  * 通话状态机唯一的输入事件。所有事件都走同一串行执行器。
  *
@@ -37,6 +39,13 @@ public sealed interface VoiceCallEvent {
 
     /** 服务端判定这一句说完了。 */
     record SpeechStopped() implements VoiceCallEvent {
+    }
+
+    /** 用户发言转写文本。 */
+    record UserTranscript(@NonNull String transcript, @Nullable String itemId) implements VoiceCallEvent {
+        public UserTranscript {
+            Objects.requireNonNull(transcript, "transcript");
+        }
     }
 
     /** 助手文字增量。 */
