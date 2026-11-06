@@ -293,3 +293,28 @@ tasks.register('checkExplicitImports') {
 tasks.named('preBuild').configure {
     dependsOn 'checkExplicitImports'
 }
+
+tasks.register('checkFrameworkToastForbidden') {
+    group = 'verification'
+    description = 'Fail if any Java code uses android.widget.Toast instead of YoUI YoToast.'
+    doLast {
+        def offenders = []
+        fileTree(project.file('src/main/java')) {
+            include '**/*.java'
+        }.each { File file ->
+            def rel = rootProject.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                if (line.contains('android.widget.Toast')) {
+                    offenders << "${rel}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Direct android.widget.Toast usage is forbidden. Use YoToast from YoUI instead:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkFrameworkToastForbidden'
+}
