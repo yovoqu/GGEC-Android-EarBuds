@@ -22,4 +22,13 @@ public sealed interface AiRealtimeInput {
     /** 打断正在生成的回答。连接保持。 */
     record Cancel() implements AiRealtimeInput {
     }
+
+    /**
+     * 丢掉还没被服务端断句的上行缓冲。
+     *
+     * <p>用户插话时用它：已经送上去了半句话，如果不丢，服务端会把这段和下一段拼在一起，
+     * 于是下一轮的回答里出现上一句的残余。</p>
+     */
+    record Clear() implements AiRealtimeInput {
+    }
 }

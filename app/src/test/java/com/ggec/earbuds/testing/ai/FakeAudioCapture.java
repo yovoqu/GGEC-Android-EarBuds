@@ -15,9 +15,10 @@ public final class FakeAudioCapture implements AiAudioCapture {
 
     public int starts;
     public int stops;
-    public int mutedCalls;
+    public int gateChanges;
     public int sampleRateHz;
-    public boolean muted;
+    public boolean uplinkEnabled = true;
+    public boolean echoCancellationActive;
 
     private Listener listener;
 
@@ -34,16 +35,21 @@ public final class FakeAudioCapture implements AiAudioCapture {
     }
 
     @Override
-    public void setMuted(boolean value) {
-        mutedCalls++;
-        muted = value;
+    public void setUplinkEnabled(boolean enabled) {
+        gateChanges++;
+        uplinkEnabled = enabled;
     }
 
-    /** 送一帧。{@code pcm} 用 {@link #pcm(int)} 造。 */
+    @Override
+    public boolean echoCancellationActive() {
+        return echoCancellationActive;
+    }
+
+    /** 送一帧。闸门关闭时真实实现会把 PCM 换成空数组，这里照做。 */
     public void emit(@NonNull byte[] pcm, float level) {
         Listener target = listener;
         if (target != null) {
-            target.onFrame(pcm, level);
+            target.onFrame(uplinkEnabled ? pcm : new byte[0], level);
         }
     }
 

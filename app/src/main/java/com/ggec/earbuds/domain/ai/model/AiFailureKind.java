@@ -11,6 +11,14 @@ public enum AiFailureKind {
     RATE_LIMITED,
     NOT_FOUND,
     BAD_REQUEST,
+    /** 内容被安全策略过滤。 */
+    CONTENT_FILTERED,
+    /** 输入超过上下文窗口。 */
+    CONTEXT_LENGTH,
+    /** 参数/能力不被模型支持。 */
+    UNSUPPORTED_PARAM,
+    /** 服务端过载。 */
+    OVERLOADED,
     SERVER,
     NETWORK,
     TIMEOUT,
@@ -22,7 +30,7 @@ public enum AiFailureKind {
     UNKNOWN;
 
     public boolean retryable() {
-        return this == RATE_LIMITED || this == SERVER || this == NETWORK || this == TIMEOUT;
+        return this == RATE_LIMITED || this == SERVER || this == OVERLOADED || this == NETWORK || this == TIMEOUT;
     }
 
     public static AiFailureKind fromName(String name) {
@@ -34,3 +42,4 @@ public enum AiFailureKind {
         return UNKNOWN;
     }
 }
+

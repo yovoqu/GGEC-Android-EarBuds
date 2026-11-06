@@ -34,6 +34,7 @@ import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
@@ -50,6 +51,7 @@ import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
+import com.ggec.earbuds.platform.ai.voice.AndroidAudioRoute;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
 import com.ggec.earbuds.ui.ai.call.AiCallViewModel;
 import com.ggec.earbuds.ui.ai.call.AiCallUiMapper;
@@ -153,9 +155,18 @@ public final class AiGraph {
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
-        return () -> new RealtimeVoiceSession(settings, credentials,
-                new AndroidAudioCapture(context), new AndroidAudioPlayback(context),
-                new RealtimeLinkAdapter(), clock, voiceState);
+        return () -> {
+            AndroidAudioCapture capture = new AndroidAudioCapture(context);
+            // 双工按输出路由决定：
+            //  - 耳机/蓝牙/USB（私密路由）：声音不进麦克风，可以全双工，支持语音打断；
+            //  - 外放/听筒：有回声风险，默认半双工（实测本机 AEC 不足以支撑外放全双工）。
+            boolean privateOutput = new AndroidAudioRoute(context).hasPrivateOutput();
+            VoiceDuplex requested = privateOutput
+                    ? VoiceDuplex.FULL_DUPLEX : VoiceDuplex.HALF_DUPLEX;
+            return new RealtimeVoiceSession(settings, credentials,
+                    capture, new AndroidAudioPlayback(context),
+                    new RealtimeLinkAdapter(), clock, voiceState, requested, privateOutput);
+        };
     }
 
     private final class Factory implements ViewModelProvider.Factory {
