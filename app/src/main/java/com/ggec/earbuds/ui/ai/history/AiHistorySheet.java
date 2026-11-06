@@ -9,14 +9,12 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.view.ViewCompat;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoSheet;
 import com.yohu.youi.api.feedback.YoToast;
-import com.yohu.youi.api.platform.YoSystemBar;
 
 /**
  * AI 会话历史面板：{@link YoSheet}（large）里的一列会话，管新建 / 切换 / 重命名 / 删除 / 清空。
@@ -66,10 +64,9 @@ public final class AiHistorySheet {
 
         FrameLayout root = new FrameLayout(activity);
         // 面板在 Sheet 里，不再套窗口壳：这一层只管"头 / 体 / 脚"三段。
-        // 底部先按"20dp 页边距 + 24dp 手势条 + 4dp 余量"给足，inset 到了再按真实值收放（见 applyBottomInset）。
-        root.setPadding(0, theme.dp(AiTheme.SPACE_S), 0,
-                theme.dp(AiTheme.PAGE_INSET + AiTheme.SPACE_XL + AiTheme.SPACE_XS));
-        applyBottomInset(root);
+        // 底部安全区（导航条/手势）由 YoSheet 按 WindowInsets 统一注入（SheetContentInsets +
+        // SheetPageHost padding），页面不得再补，否则双份内边距；这里只留 8dp 视觉余量。
+        root.setPadding(0, theme.dp(AiTheme.SPACE_S), 0, theme.dp(AiTheme.SPACE_S));
 
         FrameLayout body = new FrameLayout(activity);
         FrameLayout.LayoutParams bodyParams = new FrameLayout.LayoutParams(
@@ -128,29 +125,6 @@ public final class AiHistorySheet {
         if (sheet != null) {
             sheet.dismiss();
         }
-    }
-
-    /**
-     * 面板底部要让开系统手势条与板子的圆角。
-     *
-     * <p>Sheet 的呈现树由库自持：它把内容铺到窗口底，而白色圆角板只画到安全区上沿，
-     * 于是"贴底"的元素会被板子的下边缘切掉——「清空全部」原先只露出半行红字。
-     * 留白由三块相加：20dp 页边距（规格 §0）＋ 手势条高度（inset 报得小时按 24dp 兜底）
-     * ＋ 4dp 圆角裁剪的余量。</p>
-     */
-    private void applyBottomInset(@NonNull View root) {
-        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
-            int bar = YoSystemBar.systemBarsAndCutout(insets).bottom;
-            int bottom = theme.dp(AiTheme.PAGE_INSET)
-                    + Math.max(bar, theme.dp(AiTheme.SPACE_XL))
-                    + theme.dp(AiTheme.SPACE_XS);
-            if (view.getPaddingBottom() != bottom) {
-                view.setPadding(view.getPaddingLeft(), view.getPaddingTop(),
-                        view.getPaddingRight(), bottom);
-            }
-            return insets;
-        });
-        ViewCompat.requestApplyInsets(root);
     }
 
     private void startNewChat() {
