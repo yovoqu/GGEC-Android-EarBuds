@@ -46,9 +46,11 @@
     <string name="ai_call_earpiece_label">听筒</string>
     <string name="ai_call_mic_label">麦克风</string>
     <string name="ai_call_mic_muted_label">已静音</string>
-    <string name="ai_call_earbuds_duplex">GGEC 耳机 · 全双工</string>
-    <string name="ai_call_speaker_duplex">扬声器模式 · 半双工</string>
-    <string name="ai_call_earpiece_duplex">听筒模式 · 半双工</string>
+    <string name="ai_call_duplex_full">全双工</string>
+    <string name="ai_call_duplex_half">半双工</string>
+    <string name="ai_call_duplex_full_hint">已开启全双工 · 支持随时插话</string>
+    <string name="ai_call_duplex_half_hint">已开启半双工 · 依次轮流发言</string>
+    <string name="ai_call_duplex_toggle_desc">切换双工模式，当前：%1$s</string>
     <string name="ai_call_tag_user">你</string>
     <string name="ai_call_tag_ai">AI</string>
     <string name="ai_call_transcript_empty">开始说话，实时字幕将在此显示</string>

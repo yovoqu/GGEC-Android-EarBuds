@@ -6,6 +6,9 @@ import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+
+import java.util.Objects;
 
 /**
  * 通话页可直接绘制的状态。会话快照到文案、出口、状态阶段和可用性的取舍都在
@@ -22,7 +25,14 @@ public record AiCallUiState(
         boolean speakerOn,
         boolean ended,
         int durationSeconds,
-        boolean captionsVisible) {
+        boolean captionsVisible,
+        @NonNull VoiceDuplex duplex) {
+
+    public AiCallUiState {
+        Objects.requireNonNull(phase, "phase");
+        Objects.requireNonNull(action, "action");
+        Objects.requireNonNull(duplex, "duplex");
+    }
 
     public enum Phase {
         CONNECTING,
@@ -39,6 +49,22 @@ public record AiCallUiState(
         RETRY
     }
 
+    /** 兼容旧版 11 参数构造器（默认全双工） */
+    public AiCallUiState(@NonNull Phase phase,
+                         @StringRes int title,
+                         @Nullable @StringRes Integer reason,
+                         @NonNull Action action,
+                         boolean live,
+                         boolean interruptible,
+                         boolean muted,
+                         boolean speakerOn,
+                         boolean ended,
+                         int durationSeconds,
+                         boolean captionsVisible) {
+        this(phase, title, reason, action, live, interruptible, muted, speakerOn, ended,
+                durationSeconds, captionsVisible, VoiceDuplex.FULL_DUPLEX);
+    }
+
     /** 兼容旧版 9 参数构造器 */
     public AiCallUiState(@NonNull Phase phase,
                          @StringRes int title,
@@ -49,19 +75,22 @@ public record AiCallUiState(
                          boolean muted,
                          boolean speakerOn,
                          boolean ended) {
-        this(phase, title, reason, action, live, interruptible, muted, speakerOn, ended, 0, true);
+        this(phase, title, reason, action, live, interruptible, muted, speakerOn, ended,
+                0, true, VoiceDuplex.FULL_DUPLEX);
     }
 
     public static AiCallUiState connecting() {
         return new AiCallUiState(Phase.CONNECTING,
                 com.ggec.earbuds.R.string.ai_call_phase_connecting,
-                null, Action.NONE, false, false, false, true, false, 0, true);
+                null, Action.NONE, false, false, false, true, false,
+                0, true, VoiceDuplex.FULL_DUPLEX);
     }
 
     public static AiCallUiState permissionDenied() {
         return new AiCallUiState(Phase.OFFLINE,
                 com.ggec.earbuds.R.string.ai_call_no_permission,
-                null, Action.NONE, false, false, false, true, false, 0, true);
+                null, Action.NONE, false, false, false, true, false,
+                0, true, VoiceDuplex.FULL_DUPLEX);
     }
 
     /** 失败出口只有一种：可恢复错误重试，其余去设置。 */
@@ -87,7 +116,8 @@ public record AiCallUiState(
                 true,
                 failed || ended,
                 0,
-                true);
+                true,
+                snapshot.duplex());
     }
 
     @NonNull
@@ -100,25 +130,31 @@ public record AiCallUiState(
     @NonNull
     public AiCallUiState withSpeakerOn(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                muted, value, ended, durationSeconds, captionsVisible);
+                muted, value, ended, durationSeconds, captionsVisible, duplex);
     }
 
     @NonNull
     public AiCallUiState withDurationSeconds(int value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                muted, speakerOn, ended, value, captionsVisible);
+                muted, speakerOn, ended, value, captionsVisible, duplex);
     }
 
     @NonNull
     public AiCallUiState withCaptionsVisible(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                muted, speakerOn, ended, durationSeconds, value);
+                muted, speakerOn, ended, durationSeconds, value, duplex);
     }
 
     @NonNull
     public AiCallUiState withMuted(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                value, speakerOn, ended, durationSeconds, captionsVisible);
+                value, speakerOn, ended, durationSeconds, captionsVisible, duplex);
+    }
+
+    @NonNull
+    public AiCallUiState withDuplex(@NonNull VoiceDuplex value) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                muted, speakerOn, ended, durationSeconds, captionsVisible, value);
     }
 
     @NonNull

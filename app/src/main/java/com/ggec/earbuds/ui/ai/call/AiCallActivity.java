@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -15,6 +16,8 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsActivity;
 import com.ggec.earbuds.ui.common.YoUi;
@@ -165,6 +168,16 @@ public final class AiCallActivity extends AppCompatActivity {
         @Override
         public void onToggleSubtitles() {
             viewModel.toggleCaptions();
+        }
+
+        @Override
+        public void onToggleDuplex() {
+            viewModel.toggleDuplex();
+            VoiceDuplex next = viewModel.duplex();
+            int hintRes = (next == VoiceDuplex.FULL_DUPLEX)
+                    ? R.string.ai_call_duplex_full_hint
+                    : R.string.ai_call_duplex_half_hint;
+            Toast.makeText(AiCallActivity.this, hintRes, Toast.LENGTH_SHORT).show();
         }
 
         @Override

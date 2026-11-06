@@ -39,7 +39,7 @@ import com.ggec.earbuds.ui.ai.AiTheme;
  */
 public final class AiCallSubtitleView extends FrameLayout {
 
-    private static final float MAX_HEIGHT_DP = 180f;
+    private static final float MAX_HEIGHT_DP = 135f;
     private static final float CARD_RADIUS_DP = 20f;
 
     private final AiTheme theme;
@@ -52,16 +52,19 @@ public final class AiCallSubtitleView extends FrameLayout {
         this.theme = theme;
 
         int padH = theme.dp(AiTheme.PAGE_INSET);
-        int padV = theme.dp(14f);
+        int padV = theme.dp(12f);
 
-        // 自适应磨砂质感卡片底座
-        GradientDrawable bg = theme.roundedStroke(theme.card, CARD_RADIUS_DP, theme.cardStroke, 1f);
+        // 自适应磨砂质感卡片底座（高质感半透明防眩卡片）
+        int cardBgColor = theme.isDark()
+                ? ColorUtils.setAlphaComponent(theme.card, 0xD8)
+                : ColorUtils.setAlphaComponent(0xFFFFFFFF, 0xF4);
+        GradientDrawable bg = theme.roundedStroke(cardBgColor, CARD_RADIUS_DP, theme.cardStroke, 1f);
         setBackground(bg);
         setPadding(padH, padV, padH, padV);
 
-        // 柔和微光浮层阴影
-        setClipChildren(false);
-        setClipToPadding(false);
+        // 柔和微光浮层阴影，并启用刚性轮廓裁剪彻底阻断文字溢出
+        setClipChildren(true);
+        setClipToPadding(true);
         setElevation(theme.dp(4f));
         setOutlineProvider(new ViewOutlineProvider() {
             @Override
@@ -70,7 +73,7 @@ public final class AiCallSubtitleView extends FrameLayout {
                 outline.setAlpha(1.0f);
             }
         });
-        setClipToOutline(false);
+        setClipToOutline(true);
 
         int subShadowColor = theme.isDark() ? 0xFF000000 : theme.text1;
         setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(subShadowColor, theme.isDark() ? 0x50 : 0x16));
@@ -79,6 +82,10 @@ public final class AiCallSubtitleView extends FrameLayout {
         scrollView = new ScrollView(context);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
+        scrollView.setClipChildren(true);
+        scrollView.setClipToPadding(true);
+        scrollView.setVerticalFadingEdgeEnabled(true);
+        scrollView.setFadingEdgeLength(theme.dp(16f));
 
         textContainer = new LinearLayout(context);
         textContainer.setOrientation(LinearLayout.VERTICAL);
