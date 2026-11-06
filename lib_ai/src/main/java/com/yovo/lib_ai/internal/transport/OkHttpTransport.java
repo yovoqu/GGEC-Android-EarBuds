@@ -51,6 +51,9 @@ public final class OkHttpTransport {
         while (true) {
             throwIfCancelled(token);
             Call call = client.newCall(build(spec));
+            if (spec.timeoutMillis() != null) {
+                call.timeout().timeout(spec.timeoutMillis(), TimeUnit.MILLISECONDS);
+            }
             token.onCancel(call::cancel);
             try {
                 Response response = call.execute();
@@ -82,6 +85,9 @@ public final class OkHttpTransport {
     private Request build(HttpRequestSpec spec) {
         Request.Builder builder = new Request.Builder().url(spec.url());
         spec.headers().forEach(builder::header);
+        if (spec.idempotencyKey() != null && !spec.headers().containsKey("Idempotency-Key")) {
+            builder.header("Idempotency-Key", spec.idempotencyKey());
+        }
         RequestBody body = spec.body() == null ? null : RequestBody.create(spec.body(), JSON);
         builder.method(spec.method(), body);
         return builder.build();

@@ -86,7 +86,7 @@ public final class OpenAiPlatform implements YoPlatform {
     @NonNull
     @Override
     public YoChatRequestPolicy chatPolicy() {
-        return YoChatRequestPolicy.none();
+        return OpenAiChatPolicy.INSTANCE;
     }
 
     @NonNull

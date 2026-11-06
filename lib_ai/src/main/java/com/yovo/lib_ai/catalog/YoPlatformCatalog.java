@@ -3,10 +3,12 @@ package com.yovo.lib_ai.catalog;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.platform.YoPlatform;
 import com.yovo.lib_ai.platform.anthropic.AnthropicPlatform;
 import com.yovo.lib_ai.platform.deepseek.DeepSeekPlatform;
 import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
+import com.yovo.lib_ai.platform.qwen.QwenPlatform;
 import com.yovo.lib_ai.platform.sensenova.SenseNovaPlatform;
 
 import java.util.ArrayList;
@@ -159,6 +161,11 @@ public final class YoPlatformCatalog {
                 SenseNovaPlatform.OFFERED, false, "sk-…",
                 null),
                 r -> SenseNovaPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
+        register(entries, new YoPlatformDescriptor(
+                QwenPlatform.ID, "Qwen", QwenPlatform.DEFAULT_BASE_URL,
+                List.of(YoProtocol.CHAT_COMPLETIONS), false, "sk-…",
+                "https://bailian.console.aliyun.com/"),
+                r -> QwenPlatform.builder().id(r.instanceId).baseUrl(r.baseUrl).apiKey(r.apiKey).build());
         register(entries, new YoPlatformDescriptor(
                 OPENAI_COMPATIBLE, "OpenAI Compatible", "",
                 OpenAiPlatform.OFFERED, true, "sk-…", null),

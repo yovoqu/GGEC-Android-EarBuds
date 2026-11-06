@@ -3,6 +3,7 @@ package com.yovo.lib_ai.models;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.models.spec.YoSupport;
 import com.yovo.lib_ai.platform.YoServiceTarget;
 
 /**
@@ -22,4 +23,13 @@ public interface YoModelListing {
 
     @NonNull
     YoModelPage decode(@NonNull String body);
+
+    /**
+     * 这台主机对模型能力的声明。默认空表（只能按 id 推断）；需要解析厂商 capabilities 的实现
+     * 可以覆盖它，返回带平台上报的注册表。加默认实现是为不破坏既有实现类。
+     */
+    @NonNull
+    default YoCapabilityRegistry capabilities() {
+        return YoCapabilityRegistry.empty();
+    }
 }

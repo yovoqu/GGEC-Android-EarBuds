@@ -1,0 +1,9 @@
+{
+  "id": "file-abc123",
+  "object": "file",
+  "bytes": 120,
+  "created_at": 1710000000,
+  "filename": "batch.jsonl",
+  "purpose": "batch",
+  "status": "processed"
+}

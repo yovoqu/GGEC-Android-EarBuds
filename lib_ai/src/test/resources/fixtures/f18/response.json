@@ -1,0 +1,12 @@
+{
+  "id": "modr-1",
+  "model": "omni-moderation-latest",
+  "results": [
+    {
+      "flagged": true,
+      "categories": {"hate": false, "violence": true},
+      "category_scores": {"hate": 0.01, "violence": 0.88},
+      "category_applied_input_types": {"hate": ["text"], "violence": ["text", "image"]}
+    }
+  ]
+}

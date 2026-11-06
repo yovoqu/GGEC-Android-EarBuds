@@ -13,8 +13,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 按平台绑定调用 Chat Completions、Responses 和 Messages，
- * 以及建立在它们之上的支持服务：模型列表、统一补全和测速。
+ * 按平台绑定调用 Chat Completions、Responses 和 Messages，以及建立在它们之上的支持服务：
+ * 模型列表、统一补全、测速、向量、重排、语音、图像、视频、批量、文件、Token 计数与内容审核。
  * 一个客户端复用连接池。一次性调用在调用线程阻塞，不要在主线程调用。
  */
 public final class YoAiClient implements AutoCloseable {
@@ -25,6 +25,15 @@ public final class YoAiClient implements AutoCloseable {
     private final Map<String, YoModels> models;
     private final Map<String, YoCompletions> completions;
     private final Map<String, YoLatencyProbe> probes;
+    private final Map<String, YoEmbeddings> embeddings;
+    private final Map<String, YoRerank> rerank;
+    private final Map<String, YoFiles> files;
+    private final Map<String, YoBatch> batch;
+    private final Map<String, YoTokenCounter> tokenCounters;
+    private final Map<String, YoModeration> moderation;
+    private final YoSynthesis synthesis;
+    private final YoImageGeneration imageGeneration;
+    private final YoVideoGeneration videoGeneration;
     private final Closer closer;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -35,6 +44,15 @@ public final class YoAiClient implements AutoCloseable {
             @NonNull Map<String, YoModels> models,
             @NonNull Map<String, YoCompletions> completions,
             @NonNull Map<String, YoLatencyProbe> probes,
+            @NonNull Map<String, YoEmbeddings> embeddings,
+            @NonNull Map<String, YoRerank> rerank,
+            @NonNull Map<String, YoFiles> files,
+            @NonNull Map<String, YoBatch> batch,
+            @NonNull Map<String, YoTokenCounter> tokenCounters,
+            @NonNull Map<String, YoModeration> moderation,
+            @NonNull YoSynthesis synthesis,
+            @NonNull YoImageGeneration imageGeneration,
+            @NonNull YoVideoGeneration videoGeneration,
             @NonNull Closer closer) {
         this.chat = chat;
         this.responses = responses;
@@ -42,6 +60,15 @@ public final class YoAiClient implements AutoCloseable {
         this.models = models;
         this.completions = completions;
         this.probes = probes;
+        this.embeddings = embeddings;
+        this.rerank = rerank;
+        this.files = files;
+        this.batch = batch;
+        this.tokenCounters = tokenCounters;
+        this.moderation = moderation;
+        this.synthesis = synthesis;
+        this.imageGeneration = imageGeneration;
+        this.videoGeneration = videoGeneration;
         this.closer = closer;
     }
 
@@ -108,6 +135,87 @@ public final class YoAiClient implements AutoCloseable {
     @NonNull
     public YoLatencyProbe latencyProbe(@NonNull String platformId) {
         return require(probes, platformId, "latency probe");
+    }
+
+    @NonNull
+    public YoEmbeddings embeddings() {
+        return only(embeddings, "embeddings");
+    }
+
+    @NonNull
+    public YoEmbeddings embeddings(@NonNull String platformId) {
+        return require(embeddings, platformId, "embeddings");
+    }
+
+    @NonNull
+    public YoRerank rerank() {
+        return only(rerank, "rerank");
+    }
+
+    @NonNull
+    public YoRerank rerank(@NonNull String platformId) {
+        return require(rerank, platformId, "rerank");
+    }
+
+    @NonNull
+    public YoFiles files() {
+        return only(files, "files");
+    }
+
+    @NonNull
+    public YoFiles files(@NonNull String platformId) {
+        return require(files, platformId, "files");
+    }
+
+    @NonNull
+    public YoBatch batch() {
+        return only(batch, "batch");
+    }
+
+    @NonNull
+    public YoBatch batch(@NonNull String platformId) {
+        return require(batch, platformId, "batch");
+    }
+
+    @NonNull
+    public YoTokenCounter tokenCounter() {
+        return only(tokenCounters, "token counter");
+    }
+
+    @NonNull
+    public YoTokenCounter tokenCounter(@NonNull String platformId) {
+        return require(tokenCounters, platformId, "token counter");
+    }
+
+    @NonNull
+    public YoModeration moderation() {
+        return only(moderation, "moderation");
+    }
+
+    @NonNull
+    public YoModeration moderation(@NonNull String platformId) {
+        return require(moderation, platformId, "moderation");
+    }
+
+    /** 文本转语音。baseUrl/apiKey 按调用传入，支持同一客户端切换平台。 */
+    @NonNull
+    public YoSynthesis synthesis() {
+        ensureOpen();
+        return synthesis;
+    }
+
+    /** 图像生成。baseUrl/apiKey 按调用传入。 */
+    @NonNull
+    public YoImageGeneration imageGeneration() {
+        ensureOpen();
+        return imageGeneration;
+    }
+
+    /** 视频生成。baseUrl/apiKey 按调用传入。 */
+    @NonNull
+    public YoVideoGeneration videoGeneration() {
+        ensureOpen();
+        return videoGeneration;
     }
 
     @Override

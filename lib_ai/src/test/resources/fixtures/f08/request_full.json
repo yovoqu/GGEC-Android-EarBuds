@@ -1,0 +1,16 @@
+{
+  "model": "gpt-5",
+  "input": "hi",
+  "background": true,
+  "context_management": {"type": "auto"},
+  "conversation": "conv_1",
+  "include": ["web_search_call.action.sources", "message.output_text.logprobs"],
+  "prompt_cache_options": {"mode": "explicit"},
+  "reasoning": {"effort": "high", "summary": "auto"},
+  "text": {"verbosity": "low"},
+  "truncation": "auto",
+  "max_tool_calls": 3,
+  "safety_identifier": "user_hash",
+  "service_tier": "flex",
+  "metadata": {"trace": "abc"}
+}

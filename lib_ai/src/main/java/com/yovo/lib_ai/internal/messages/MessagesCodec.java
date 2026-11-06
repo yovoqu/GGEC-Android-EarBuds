@@ -8,11 +8,13 @@ import com.yovo.lib_ai.internal.protocol.UsageFields;
 import com.yovo.lib_ai.messages.YoMessage;
 import com.yovo.lib_ai.messages.YoMessageContent;
 import com.yovo.lib_ai.messages.YoMessageRequest;
+import com.yovo.lib_ai.messages.YoMessageServerTool;
 import com.yovo.lib_ai.messages.YoMessageStreamEvent;
 import com.yovo.lib_ai.messages.YoMessageTool;
 import com.yovo.lib_ai.messages.YoMessageToolChoice;
 import com.yovo.lib_ai.messages.YoMessageTurn;
 import com.yovo.lib_ai.messages.YoMessageUsage;
+import com.yovo.lib_ai.messages.YoThinkingConfig;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -35,15 +37,34 @@ public final class MessagesCodec {
             messages.put(encodeTurn(turn));
         }
         json.put("messages", messages);
-        Jsons.put(json, "system", request.system());
-        if (!request.tools().isEmpty()) {
+        if (request.system() != null) {
+            if (request.cacheControl() != null) {
+                JSONArray system = new JSONArray();
+                JSONObject block = new JSONObject();
+                block.put("type", "text");
+                block.put("text", request.system());
+                block.put("cache_control", request.cacheControl());
+                system.put(block);
+                json.put("system", system);
+            } else {
+                json.put("system", request.system());
+            }
+        }
+        if (!request.tools().isEmpty() || !request.serverTools().isEmpty()) {
             JSONArray tools = new JSONArray();
             for (YoMessageTool tool : request.tools()) {
                 JSONObject encoded = new JSONObject();
                 encoded.put("name", tool.name());
                 Jsons.put(encoded, "description", tool.description());
                 encoded.put("input_schema", tool.inputSchema());
+                Jsons.put(encoded, "strict", tool.strict());
+                Jsons.put(encoded, "input_examples", tool.inputExamples());
+                Jsons.put(encoded, "defer_loading", tool.deferLoading());
+                Jsons.put(encoded, "cache_control", tool.cacheControl());
                 tools.put(encoded);
+            }
+            for (YoMessageServerTool tool : request.serverTools()) {
+                tools.put(encodeServerTool(tool));
             }
             json.put("tools", tools);
         }
@@ -53,6 +74,11 @@ public final class MessagesCodec {
         Jsons.put(json, "temperature", request.temperature());
         Jsons.put(json, "top_p", request.topP());
         Jsons.put(json, "top_k", request.topK());
+        if (request.thinking() != null) {
+            json.put("thinking", encodeThinking(request.thinking()));
+        }
+        Jsons.put(json, "output_config", request.outputConfig());
+        Jsons.put(json, "service_tier", request.serviceTier());
         if (!request.stopSequences().isEmpty()) {
             JSONArray stop = new JSONArray();
             for (String item : request.stopSequences()) {
@@ -60,9 +86,14 @@ public final class MessagesCodec {
             }
             json.put("stop_sequences", stop);
         }
+        JSONObject metadata = request.metadata();
         if (request.userId() != null) {
-            JSONObject metadata = new JSONObject();
+            if (metadata == null) {
+                metadata = new JSONObject();
+            }
             metadata.put("user_id", request.userId());
+        }
+        if (metadata != null && metadata.length() > 0) {
             json.put("metadata", metadata);
         }
         if (stream) {
@@ -129,6 +160,17 @@ public final class MessagesCodec {
     }
 
     private static JSONObject encodeBlock(YoMessageContent block) throws JSONException {
+        JSONObject json = encodeBlockBody(block);
+        if (block.cacheControl() != null) {
+            json.put("cache_control", block.cacheControl());
+        }
+        return json;
+    }
+
+    private static JSONObject encodeBlockBody(YoMessageContent block) throws JSONException {
+        if (block.rawJson() != null && isRawPassthrough(block.type())) {
+            return new JSONObject(block.rawJson());
+        }
         JSONObject json = new JSONObject();
         switch (block.type()) {
             case TEXT -> {
@@ -175,7 +217,62 @@ public final class MessagesCodec {
                 json.put("type", "redacted_thinking");
                 json.put("data", block.payload());
             }
+            case SERVER_TOOL_USE -> {
+                json.put("type", "server_tool_use");
+                json.put("id", block.id());
+                json.put("name", block.name());
+                json.put("input", block.input());
+            }
+            case WEB_SEARCH_TOOL_RESULT -> {
+                json.put("type", "web_search_tool_result");
+                json.put("tool_use_id", block.id());
+            }
+            case WEB_FETCH_TOOL_RESULT -> {
+                json.put("type", "web_fetch_tool_result");
+                json.put("tool_use_id", block.id());
+            }
+            case CODE_EXECUTION_TOOL_RESULT -> {
+                json.put("type", "code_execution_tool_result");
+                json.put("tool_use_id", block.id());
+            }
+            case MCP_TOOL_RESULT -> {
+                json.put("type", "mcp_tool_result");
+                json.put("tool_use_id", block.id());
+            }
             default -> throw new JSONException("Unsupported content block");
+        }
+        return json;
+    }
+
+    private static boolean isRawPassthrough(YoMessageContent.Type type) {
+        return type == YoMessageContent.Type.SERVER_TOOL_USE
+                || YoMessageContent.isServerToolResult(type);
+    }
+
+    private static JSONObject encodeServerTool(YoMessageServerTool tool) throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("type", tool.wireType());
+        json.put("name", tool.name());
+        JSONObject options = tool.options();
+        java.util.Iterator<String> keys = options.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if ("type".equals(key) || "name".equals(key)) {
+                continue;
+            }
+            json.put(key, options.get(key));
+        }
+        return json;
+    }
+
+    private static JSONObject encodeThinking(YoThinkingConfig thinking) throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("type", thinking.type().wireValue());
+        if (thinking.budgetTokens() != null) {
+            json.put("budget_tokens", thinking.budgetTokens());
+        }
+        if (thinking.display() != null) {
+            json.put("display", thinking.display().wireValue());
         }
         return json;
     }
@@ -211,7 +308,7 @@ public final class MessagesCodec {
 
     private static YoMessageContent decodeBlock(JSONObject block) {
         String type = block.optString("type", "");
-        return switch (type) {
+        YoMessageContent decoded = switch (type) {
             case "text" -> YoMessageContent.text(block.optString("text", ""));
             case "image" -> decodeSource(block, true);
             case "document" -> decodeSource(block, false);
@@ -235,8 +332,38 @@ public final class MessagesCodec {
                     block.optString("thinking", ""),
                     Jsons.optString(block, "signature"));
             case "redacted_thinking" -> YoMessageContent.redactedThinking(block.optString("data", ""));
+            case "server_tool_use" -> {
+                String id = block.optString("id", "");
+                String name = block.optString("name", "");
+                if (id.isBlank() || name.isBlank()) {
+                    throw new YoAiProtocolException("server_tool_use requires id and name", block.toString());
+                }
+                JSONObject input = Jsons.optObject(block, "input");
+                yield YoMessageContent.serverToolUse(
+                        id, name, input == null ? new JSONObject() : input, block.toString());
+            }
+            case "web_search_tool_result" -> decodeServerToolResult(
+                    YoMessageContent.Type.WEB_SEARCH_TOOL_RESULT, block);
+            case "web_fetch_tool_result" -> decodeServerToolResult(
+                    YoMessageContent.Type.WEB_FETCH_TOOL_RESULT, block);
+            case "code_execution_tool_result" -> decodeServerToolResult(
+                    YoMessageContent.Type.CODE_EXECUTION_TOOL_RESULT, block);
+            case "mcp_tool_result" -> decodeServerToolResult(
+                    YoMessageContent.Type.MCP_TOOL_RESULT, block);
             default -> throw new YoAiProtocolException("Unsupported content block: " + type, block.toString());
         };
+        JSONObject cacheControl = Jsons.optObject(block, "cache_control");
+        return cacheControl == null ? decoded : decoded.withCache(cacheControl);
+    }
+
+    private static YoMessageContent decodeServerToolResult(
+            YoMessageContent.Type type,
+            JSONObject block) {
+        String toolUseId = block.optString("tool_use_id", "");
+        if (toolUseId.isBlank()) {
+            throw new YoAiProtocolException(type + " requires tool_use_id", block.toString());
+        }
+        return YoMessageContent.serverToolResult(type, toolUseId, block.toString());
     }
 
     private static YoMessageContent decodeSource(JSONObject block, boolean image) {

@@ -1,0 +1,13 @@
+{
+  "model": "gpt-5",
+  "input": "hi",
+  "tools": [
+    {"type": "web_search", "search_context_size": "medium"},
+    {"type": "file_search", "vector_store_ids": ["vs_1"], "max_num_results": 5},
+    {"type": "code_interpreter", "container": {"type": "auto"}},
+    {"type": "computer", "display_width": 1280, "display_height": 720, "environment": "browser"},
+    {"type": "image_generation", "size": "1024x1024"},
+    {"type": "mcp", "server_label": "deepwiki", "server_url": "https://mcp.example.com/sse", "require_approval": "never"},
+    {"type": "tool_search"}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "object": "list",
+  "data": [
+    {"id": "file-abc123", "object": "file", "bytes": 120, "created_at": 1710000000, "filename": "batch.jsonl", "purpose": "batch", "status": "processed"},
+    {"id": "file-def456", "object": "file", "bytes": 64, "created_at": 1710000100, "filename": "vision.png", "purpose": "vision", "status": "processed"}
+  ]
+}

@@ -38,6 +38,8 @@ final class YoRealtimeEvent {
     private final String responseStatus;
     @Nullable
     private final YoRealtimeUsage usage;
+    @Nullable
+    private final String targetLanguage;
 
     private YoRealtimeEvent(
             @NonNull YoRealtimeEventType type,
@@ -52,6 +54,24 @@ final class YoRealtimeEvent {
             @Nullable String arguments,
             @Nullable String responseStatus,
             @Nullable YoRealtimeUsage usage) {
+        this(type, text, audioPcm16, errorKind, message, itemId, contentIndex,
+                callId, toolName, arguments, responseStatus, usage, null);
+    }
+
+    private YoRealtimeEvent(
+            @NonNull YoRealtimeEventType type,
+            @Nullable String text,
+            @Nullable byte[] audioPcm16,
+            @Nullable YoAiErrorKind errorKind,
+            @Nullable String message,
+            @Nullable String itemId,
+            @Nullable Integer contentIndex,
+            @Nullable String callId,
+            @Nullable String toolName,
+            @Nullable String arguments,
+            @Nullable String responseStatus,
+            @Nullable YoRealtimeUsage usage,
+            @Nullable String targetLanguage) {
         this.type = type;
         this.text = text;
         this.audioPcm16 = audioPcm16;
@@ -64,6 +84,7 @@ final class YoRealtimeEvent {
         this.arguments = arguments;
         this.responseStatus = responseStatus;
         this.usage = usage;
+        this.targetLanguage = targetLanguage;
     }
 
     /**
@@ -175,6 +196,16 @@ final class YoRealtimeEvent {
     }
 
     /**
+     * 翻译增量。{@code delta} 是一小段译文，{@code targetLanguage} 可为空（对端未给）。
+     */
+    @NonNull
+    public static YoRealtimeEvent translationDelta(@NonNull String delta, @Nullable String targetLanguage) {
+        return new YoRealtimeEvent(
+                YoRealtimeEventType.TRANSLATION_DELTA, delta, null, null, null,
+                null, null, null, null, null, null, null, targetLanguage);
+    }
+
+    /**
      * 链路结束。
      */
     @NonNull
@@ -262,6 +293,12 @@ final class YoRealtimeEvent {
     @Nullable
     public YoRealtimeUsage usage() {
         return usage;
+    }
+
+    /** {@link YoRealtimeEventType#TRANSLATION_DELTA} 时的目标语种；对端未给时为 {@code null}。 */
+    @Nullable
+    public String targetLanguage() {
+        return targetLanguage;
     }
 
     @NonNull

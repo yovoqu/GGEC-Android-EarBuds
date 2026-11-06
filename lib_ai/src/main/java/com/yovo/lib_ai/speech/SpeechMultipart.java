@@ -65,12 +65,26 @@ final class SpeechMultipart {
 
         field(out, boundary, "model", request.model());
         // 解码器只认 JSON；显式声明比依赖网关默认值更可靠（各家默认值不一致）。
-        field(out, boundary, "response_format", "json");
+        field(out, boundary, "response_format", request.responseFormat());
         if (request.language() != null) {
             field(out, boundary, "language", request.language());
         }
         if (request.prompt() != null) {
             field(out, boundary, "prompt", request.prompt());
+        }
+        // F12：细粒度时间戳、流式、说话人分离。只有显式请求时才发，未设置时保持基线报文不变。
+        for (String granularity : request.timestampGranularities()) {
+            field(out, boundary, "timestamp_granularities[]", granularity);
+        }
+        if (request.stream()) {
+            field(out, boundary, "stream", "true");
+        }
+        if (request.diarizationEnabled()) {
+            // OpenAI 的 diarized_json 需要 chunking_strategy；auto 让服务端自行切块。
+            field(out, boundary, "chunking_strategy", "auto");
+        }
+        for (String speaker : request.knownSpeakers()) {
+            field(out, boundary, "known_speaker_names[]", speaker);
         }
 
         write(out, "--" + boundary + "--" + CRLF);

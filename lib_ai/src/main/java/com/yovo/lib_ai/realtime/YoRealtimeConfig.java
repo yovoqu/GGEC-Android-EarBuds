@@ -55,6 +55,12 @@ public final class YoRealtimeConfig {
     private final List<YoRealtimeTool> tools;
     @Nullable
     private final List<YoRealtimeOutputModality> outputModalities;
+    @Nullable
+    private final String translationTarget;
+    /** 服务端判定用户开口时是否自动打断。半双工必须关。 */
+    private final boolean interruptOnSpeech;
+    /** 播放进度是否按"到达即算听到"。false 表示调用方自己记。 */
+    private final boolean countPlaybackOnArrival;
 
     private YoRealtimeConfig(
             @NonNull String baseUrl,
@@ -71,7 +77,10 @@ public final class YoRealtimeConfig {
             @Nullable YoRealtimeTranscription transcription,
             @Nullable YoRealtimeNoiseReduction noiseReduction,
             @NonNull List<YoRealtimeTool> tools,
-            @Nullable List<YoRealtimeOutputModality> outputModalities) {
+            @Nullable List<YoRealtimeOutputModality> outputModalities,
+            @Nullable String translationTarget,
+            boolean interruptOnSpeech,
+            boolean countPlaybackOnArrival) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.model = model;
@@ -87,6 +96,9 @@ public final class YoRealtimeConfig {
         this.noiseReduction = noiseReduction;
         this.tools = tools;
         this.outputModalities = outputModalities;
+        this.translationTarget = translationTarget;
+        this.interruptOnSpeech = interruptOnSpeech;
+        this.countPlaybackOnArrival = countPlaybackOnArrival;
     }
 
     @NonNull
@@ -184,6 +196,25 @@ public final class YoRealtimeConfig {
     }
 
     /**
+     * 翻译目标语种（Qwen realtime 翻译模式）；为空表示不做翻译。
+     */
+    @Nullable
+    public String translationTarget() {
+        return translationTarget;
+    }
+
+    /** 服务端判定用户开口时是否自动打断当前回答。 */
+    public boolean interruptOnSpeech() {
+        return interruptOnSpeech;
+    }
+
+    /** 播放进度是否按"到达即算听到"。false 表示由调用方自己记。 */
+    public boolean countPlaybackOnArrival() {
+        return countPlaybackOnArrival;
+    }
+
+
+    /**
      * 故意不带 {@code apiKey}：这个对象很容易被打进日志。
      */
     @NonNull
@@ -199,6 +230,7 @@ public final class YoRealtimeConfig {
                 + ", inputWire=" + inputWireFormat
                 + ", outputWire=" + outputWireFormat
                 + ", tools=" + tools.size()
+                + ", translationTarget=" + translationTarget
                 + '}';
     }
 
@@ -224,6 +256,9 @@ public final class YoRealtimeConfig {
         private YoRealtimeNoiseReduction noiseReduction;
         private final List<YoRealtimeTool> tools = new ArrayList<>();
         private List<YoRealtimeOutputModality> outputModalities;
+        private String translationTarget;
+        private boolean interruptOnSpeech = true;
+        private boolean countPlaybackOnArrival = true;
 
         private Builder() {
         }
@@ -296,7 +331,29 @@ public final class YoRealtimeConfig {
             return this;
         }
 
-        @NonNull
+
+        /**
+         * 服务端判定用户开口时，是否自动打断当前回答。
+         *
+         * <p>默认 true，和以前一样。半双工链路必须传 false：上行关着的时候那条
+         * {@code speech_started} 只可能是自己的外放回授，让它打断就等于让助手自问自答。</p>
+         */
+        public Builder interruptOnSpeech(boolean interruptOnSpeech) {
+            this.interruptOnSpeech = interruptOnSpeech;
+            return this;
+        }
+
+        /**
+         * 播放进度是否按"音频一到就算听到"计。
+         *
+         * <p>默认 true。传 false 表示调用方会自己记进度（{@link YoRealtime#open}
+         * 返回的 {@link YoRealtime.Connection#notePlayed}），截断毫秒数才准。</p>
+         */
+        public Builder countPlaybackOnArrival(boolean countPlaybackOnArrival) {
+            this.countPlaybackOnArrival = countPlaybackOnArrival;
+            return this;
+        }
+
         public Builder turnDetection(@Nullable YoRealtimeTurnDetection turnDetection) {
             this.turnDetection = turnDetection;
             return this;
@@ -331,6 +388,13 @@ public final class YoRealtimeConfig {
             return this;
         }
 
+        /** 翻译目标语种；为空表示不做翻译。 */
+        @NonNull
+        public Builder translationTarget(@Nullable String translationTarget) {
+            this.translationTarget = blankToNull(translationTarget);
+            return this;
+        }
+
         @NonNull
         public YoRealtimeConfig build() {
             String normalizedBaseUrl = YoServiceTarget.normalizeBaseUrl(requireText(baseUrl, "baseUrl"));
@@ -351,6 +415,7 @@ public final class YoRealtimeConfig {
             YoRealtimeAudioFormat outputWire = outputWireFormat == null
                     ? YoRealtimeAudioFormat.pcm16(outputSampleRateHz)
                     : outputWireFormat;
+            requireTurnDetectionMatchesDialect(dialect, turnDetection);
             return new YoRealtimeConfig(
                     normalizedBaseUrl,
                     key,
@@ -366,10 +431,40 @@ public final class YoRealtimeConfig {
                     transcription,
                     noiseReduction,
                     List.copyOf(tools),
-                    outputModalities == null ? null : List.copyOf(outputModalities));
+                    outputModalities == null ? null : List.copyOf(outputModalities),
+                    translationTarget,
+                    interruptOnSpeech,
+                    countPlaybackOnArrival);
         }
 
         @NonNull
+        /**
+         * 断句配置的变体必须与方言匹配。
+         *
+         * <p>把 OpenAI 的 {@code OpenAi} 发给通义，或者反过来，都不会被服务端友好地拒绝：
+         * 通义会把 {@code create_response} 当成非法参数，OpenAI 会把 {@code idle_timeout_ms} 忽略掉。
+         * 两种结果都是"配置看起来生效了、行为却不对"，最难查。这里在构造期就拦住。</p>
+         *
+         * <p>{@code null}（不配置）与 {@link YoRealtimeTurnDetection.Disabled} 对两种方言都合法：
+         * 前者用服务端默认，后者显式关掉。</p>
+         */
+        private static void requireTurnDetectionMatchesDialect(
+                @NonNull YoRealtimeDialect dialect,
+                @Nullable YoRealtimeTurnDetection turnDetection) {
+            if (turnDetection == null || turnDetection instanceof YoRealtimeTurnDetection.Disabled) {
+                return;
+            }
+            boolean qwenDialect = dialect == YoRealtimeDialect.QWEN;
+            boolean qwenConfig = turnDetection instanceof YoRealtimeTurnDetection.Qwen;
+            if (qwenDialect != qwenConfig) {
+                throw new IllegalArgumentException("turnDetection variant "
+                        + turnDetection.getClass().getSimpleName()
+                        + " does not match dialect " + dialect
+                        + "; use YoRealtimeTurnDetection.Qwen for QWEN and "
+                        + "YoRealtimeTurnDetection.OpenAi otherwise");
+            }
+        }
+
         private static String requireText(@Nullable String value, @NonNull String name) {
             if (value == null || value.isBlank()) {
                 throw new IllegalArgumentException(name + " is required");

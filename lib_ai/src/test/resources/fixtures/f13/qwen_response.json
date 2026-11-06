@@ -1,0 +1,11 @@
+{
+  "output": {
+    "embeddings": [
+      {"text_index": 1, "embedding": [0.5, 0.6, 0.7, 0.8]},
+      {"text_index": 0, "embedding": [0.1, 0.2, 0.3, 0.4]}
+    ]
+  },
+  "usage": {"total_tokens": 4},
+  "request_id": "req-emb-1",
+  "model": "text-embedding-v3"
+}

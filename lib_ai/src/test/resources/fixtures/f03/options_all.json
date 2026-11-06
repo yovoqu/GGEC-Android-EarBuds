@@ -1,0 +1,21 @@
+{
+  "model": "gpt-6-astra",
+  "messages": [
+    {"role": "user", "content": "你好"}
+  ],
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "top_k": 40,
+  "max_completion_tokens": 1024,
+  "logprobs": true,
+  "top_logprobs": 4,
+  "logit_bias": {"50256": -100},
+  "user": "user-123",
+  "safety_identifier": "safety-123",
+  "prompt_cache_key": "cache-123",
+  "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
+  "audio": {"format": "wav", "voice": "alloy"},
+  "web_search_options": {"search_context_size": "medium"},
+  "thinking": {"type": "enabled"},
+  "custom_flag": true
+}

@@ -87,6 +87,9 @@ public final class ChatCodec {
             json.put("stop", stop);
         }
         Jsons.put(json, "parallel_tool_calls", request.parallelToolCalls());
+        if (request.options() != null) {
+            request.options().applyTo(json);
+        }
         if (stream) {
             json.put("stream", true);
             JSONObject streamOptions = json.optJSONObject("stream_options");
@@ -156,6 +159,15 @@ public final class ChatCodec {
         }
         Jsons.put(json, "tool_call_id", message.toolCallId());
         Jsons.put(json, "refusal", message.refusal());
+        Jsons.put(json, "name", message.name());
+        if (message.audioId() != null) {
+            JSONObject audio = new JSONObject();
+            audio.put("id", message.audioId());
+            json.put("audio", audio);
+        }
+        if (message.prefix()) {
+            json.put("prefix", true);
+        }
         return json;
     }
 
@@ -267,6 +279,28 @@ public final class ChatCodec {
         if (toolCallId != null) {
             builder.toolCallId(toolCallId);
         }
+        String reasoning = Jsons.optString(message, "reasoning_content");
+        if (reasoning == null) {
+            reasoning = Jsons.optString(message, "reasoning");
+        }
+        if (reasoning != null) {
+            builder.reasoningContent(reasoning);
+        }
+        String refusal = Jsons.optString(message, "refusal");
+        if (refusal != null) {
+            builder.refusal(refusal);
+        }
+        String name = Jsons.optString(message, "name");
+        if (name != null) {
+            builder.name(name);
+        }
+        JSONObject audio = Jsons.optObject(message, "audio");
+        if (audio != null) {
+            String audioId = Jsons.optString(audio, "id");
+            if (audioId != null) {
+                builder.audioId(audioId);
+            }
+        }
         if (builderWouldBeEmpty(message, builder)) {
             builder.content("");
         }
@@ -309,6 +343,14 @@ public final class ChatCodec {
                 UsageFields.intOrZero(usage, "total_tokens"),
                 UsageFields.cachedTokens(usage),
                 UsageFields.cacheCreationTokens(usage),
+                UsageFields.cacheWriteTokens(usage),
+                UsageFields.reasoningTokens(usage),
+                UsageFields.audioInputTokens(usage),
+                UsageFields.audioOutputTokens(usage),
+                UsageFields.imageTokens(usage),
+                UsageFields.acceptedPredictionTokens(usage),
+                UsageFields.rejectedPredictionTokens(usage),
                 UsageFields.cost(usage));
     }
 }
+

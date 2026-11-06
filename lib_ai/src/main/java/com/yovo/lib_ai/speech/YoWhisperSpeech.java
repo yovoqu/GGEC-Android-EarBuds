@@ -189,11 +189,8 @@ public final class YoWhisperSpeech implements YoSpeech, AutoCloseable {
             // 静音会回 ""，但完全没有 text 字段说明地址指到了别的接口，不是"没听到"。
             throw new YoAiProtocolException("Transcription response has no text field", raw);
         }
-        return new YoTranscription(
-                json.optString("text", ""),
-                optText(json, "language"),
-                optDouble(json, "duration"),
-                raw);
+        // 扩展字段（segments/words/speakers/usage）由 parser 解析；旧格式只是这几项为空。
+        return TranscriptionExtParser.decode(json, raw);
     }
 
     @NonNull

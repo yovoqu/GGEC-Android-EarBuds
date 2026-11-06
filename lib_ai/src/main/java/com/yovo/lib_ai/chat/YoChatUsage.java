@@ -23,6 +23,20 @@ public final class YoChatUsage {
     @Nullable
     private final Integer cacheCreationInputTokens;
     @Nullable
+    private final Integer cacheWriteTokens;
+    @Nullable
+    private final Integer reasoningTokens;
+    @Nullable
+    private final Integer audioInputTokens;
+    @Nullable
+    private final Integer audioOutputTokens;
+    @Nullable
+    private final Integer imageTokens;
+    @Nullable
+    private final Integer acceptedPredictionTokens;
+    @Nullable
+    private final Integer rejectedPredictionTokens;
+    @Nullable
     private final BigDecimal cost;
 
     /**
@@ -39,11 +53,36 @@ public final class YoChatUsage {
             @Nullable Integer cachedTokens,
             @Nullable Integer cacheCreationInputTokens,
             @Nullable BigDecimal cost) {
+        this(promptTokens, completionTokens, totalTokens, cachedTokens, cacheCreationInputTokens,
+                null, null, null, null, null, null, null, cost);
+    }
+
+    public YoChatUsage(
+            int promptTokens,
+            int completionTokens,
+            int totalTokens,
+            @Nullable Integer cachedTokens,
+            @Nullable Integer cacheCreationInputTokens,
+            @Nullable Integer cacheWriteTokens,
+            @Nullable Integer reasoningTokens,
+            @Nullable Integer audioInputTokens,
+            @Nullable Integer audioOutputTokens,
+            @Nullable Integer imageTokens,
+            @Nullable Integer acceptedPredictionTokens,
+            @Nullable Integer rejectedPredictionTokens,
+            @Nullable BigDecimal cost) {
         this.promptTokens = promptTokens;
         this.completionTokens = completionTokens;
         this.totalTokens = totalTokens;
         this.cachedTokens = cachedTokens;
         this.cacheCreationInputTokens = cacheCreationInputTokens;
+        this.cacheWriteTokens = cacheWriteTokens;
+        this.reasoningTokens = reasoningTokens;
+        this.audioInputTokens = audioInputTokens;
+        this.audioOutputTokens = audioOutputTokens;
+        this.imageTokens = imageTokens;
+        this.acceptedPredictionTokens = acceptedPredictionTokens;
+        this.rejectedPredictionTokens = rejectedPredictionTokens;
         this.cost = cost;
     }
 
@@ -74,6 +113,46 @@ public final class YoChatUsage {
     @Nullable
     public Integer cacheCreationInputTokens() {
         return cacheCreationInputTokens;
+    }
+
+    /** OpenAI 的 {@code prompt_tokens_details.cache_write_tokens}；与 Anthropic 的写入分开保留。 */
+    @Nullable
+    public Integer cacheWriteTokens() {
+        return cacheWriteTokens;
+    }
+
+    /** 思考过程 token，来自 {@code completion_tokens_details.reasoning_tokens}。 */
+    @Nullable
+    public Integer reasoningTokens() {
+        return reasoningTokens;
+    }
+
+    /** 输入音频 token，来自 {@code prompt_tokens_details.audio_tokens}。 */
+    @Nullable
+    public Integer audioInputTokens() {
+        return audioInputTokens;
+    }
+
+    /** 输出音频 token，来自 {@code completion_tokens_details.audio_tokens}。 */
+    @Nullable
+    public Integer audioOutputTokens() {
+        return audioOutputTokens;
+    }
+
+    /** 输入图片 token，来自 {@code prompt_tokens_details.image_tokens}。 */
+    @Nullable
+    public Integer imageTokens() {
+        return imageTokens;
+    }
+
+    @Nullable
+    public Integer acceptedPredictionTokens() {
+        return acceptedPredictionTokens;
+    }
+
+    @Nullable
+    public Integer rejectedPredictionTokens() {
+        return rejectedPredictionTokens;
     }
 
     /**

@@ -27,6 +27,18 @@ public final class YoCapabilityException extends YoAiException {
         this.kind = kind;
     }
 
+    /**
+     * 参数或能力不被当前模型/厂商支持。用于方言层在发网络前拒绝不支持的参数
+     * （例如把 {@code json_schema} 发给只支持 {@code json_object} 的主机）。
+     */
+    @NonNull
+    public static YoCapabilityException unsupportedParam(@NonNull String message) {
+        return new YoCapabilityException(
+                YoModelRequirement.of(com.yovo.lib_ai.models.spec.YoModelCategory.OTHER),
+                YoAiErrorKind.UNSUPPORTED_PARAM,
+                message);
+    }
+
     @NonNull
     public YoAiErrorKind kind() {
         return kind;

@@ -19,9 +19,15 @@ final class YoRealtimeOutputs {
             case ASSISTANT_TEXT_DELTA -> event.text() == null
                     ? null : new YoRealtimeOutput.AssistantText(event.text());
             case ASSISTANT_AUDIO_CHUNK -> event.audioPcm16() == null
-                    ? null : new YoRealtimeOutput.AssistantAudio(event.audioPcm16());
+                    ? null
+                    : new YoRealtimeOutput.AssistantAudio(
+                            event.audioPcm16(),
+                            event.itemId(),
+                            event.contentIndex() == null ? 0 : event.contentIndex());
             case USER_TRANSCRIPT -> event.text() == null
                     ? null : new YoRealtimeOutput.UserTranscript(event.text(), event.itemId());
+            case TRANSLATION_DELTA -> event.text() == null
+                    ? null : new YoRealtimeOutput.TranslationDelta(event.text(), event.targetLanguage());
             case TOOL_CALL -> event.callId() == null || event.toolName() == null || event.arguments() == null
                     ? null
                     : new YoRealtimeOutput.ToolCall(event.callId(), event.toolName(), event.arguments());

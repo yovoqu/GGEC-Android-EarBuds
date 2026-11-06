@@ -85,13 +85,21 @@ public final class ResponsesCodec {
                 }
             }
         }
+        Boolean background = null;
+        if (json.has("background") && !json.isNull("background")) {
+            background = json.optBoolean("background", false);
+        }
+        JSONObject incomplete = Jsons.optObject(json, "incomplete_details");
+        String incompleteReason = incomplete == null ? null : Jsons.optString(incomplete, "reason");
         return new YoResponseObject(
                 Jsons.optString(json, "id"),
                 Jsons.optString(json, "status"),
                 Jsons.optString(json, "model"),
                 items,
                 decodeUsage(Jsons.optObject(json, "usage")),
-                json.toString());
+                json.toString(),
+                background,
+                incompleteReason);
     }
 
     public static YoResponseStreamEvent decodeEvent(JSONObject json) {
@@ -124,15 +132,35 @@ public final class ResponsesCodec {
         Jsons.put(json, "temperature", request.temperature());
         Jsons.put(json, "top_p", request.topP());
         Jsons.put(json, "store", request.store());
-        if (request.textFormat() != null) {
-            json.put("text", encodeText(request.textFormat()));
+        if (request.textFormat() != null || request.textVerbosity() != null) {
+            json.put("text", encodeText(request.textFormat(), request.textVerbosity()));
         }
+        if (request.background() != null) {
+            json.put("background", request.background());
+        }
+        Jsons.put(json, "context_management", request.contextManagement());
+        if (request.conversation() != null) {
+            json.put("conversation", request.conversation());
+        }
+        if (!request.include().isEmpty()) {
+            JSONArray include = new JSONArray();
+            for (String item : request.include()) {
+                include.put(item);
+            }
+            json.put("include", include);
+        }
+        Jsons.put(json, "prompt_cache_options", request.promptCacheOptions());
+        Jsons.put(json, "reasoning", request.reasoning());
+        Jsons.put(json, "truncation", request.truncation());
+        Jsons.put(json, "max_tool_calls", request.maxToolCalls());
+        Jsons.put(json, "safety_identifier", request.safetyIdentifier());
+        Jsons.put(json, "service_tier", request.serviceTier());
+        Jsons.put(json, "metadata", request.metadata());
         if (stream) {
             json.put("stream", true);
         } else {
             json.remove("stream");
         }
-        json.remove("background");
         return json;
     }
 
@@ -211,6 +239,20 @@ public final class ResponsesCodec {
 
     private static JSONObject encodeTool(YoResponseTool tool) throws JSONException {
         JSONObject json = new JSONObject();
+        YoResponseTool.ServerTool serverTool = tool.serverTool();
+        if (serverTool != null) {
+            json.put("type", serverTool.wireType());
+            JSONObject options = serverTool.options();
+            java.util.Iterator<String> keys = options.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if ("type".equals(key)) {
+                    continue;
+                }
+                json.put(key, options.get(key));
+            }
+            return json;
+        }
         json.put("type", "function");
         json.put("name", tool.name());
         Jsons.put(json, "description", tool.description());
@@ -233,21 +275,27 @@ public final class ResponsesCodec {
         };
     }
 
-    private static JSONObject encodeText(YoResponseTextFormat format) throws JSONException {
+    private static JSONObject encodeText(@Nullable YoResponseTextFormat format, @Nullable String verbosity)
+            throws JSONException {
         JSONObject encoded = new JSONObject();
-        JSONObject inner = new JSONObject();
-        switch (format.kind()) {
-            case TEXT -> inner.put("type", "text");
-            case JSON_OBJECT -> inner.put("type", "json_object");
-            case JSON_SCHEMA -> {
-                inner.put("type", "json_schema");
-                inner.put("name", format.name());
-                inner.put("strict", format.strict());
-                inner.put("schema", format.schema());
+        if (format != null) {
+            JSONObject inner = new JSONObject();
+            switch (format.kind()) {
+                case TEXT -> inner.put("type", "text");
+                case JSON_OBJECT -> inner.put("type", "json_object");
+                case JSON_SCHEMA -> {
+                    inner.put("type", "json_schema");
+                    inner.put("name", format.name());
+                    inner.put("strict", format.strict());
+                    inner.put("schema", format.schema());
+                }
+                default -> throw new JSONException("Unsupported text format");
             }
-            default -> throw new JSONException("Unsupported text format");
+            encoded.put("format", inner);
         }
-        encoded.put("format", inner);
+        if (verbosity != null) {
+            encoded.put("verbosity", verbosity);
+        }
         return encoded;
     }
 

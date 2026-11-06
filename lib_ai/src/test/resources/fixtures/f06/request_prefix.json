@@ -1,0 +1,7 @@
+{
+  "model": "deepseek-chat",
+  "messages": [
+    {"role": "user", "content": "补全这个函数："},
+    {"role": "assistant", "content": "def add(a, b):\n    return ", "prefix": true}
+  ]
+}

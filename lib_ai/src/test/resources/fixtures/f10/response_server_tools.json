@@ -1,0 +1,13 @@
+{
+  "id": "msg_srv",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5",
+  "stop_reason": "end_turn",
+  "content": [
+    {"type": "server_tool_use", "id": "srvtoolu_1", "name": "web_search", "input": {"query": "x"}},
+    {"type": "web_search_tool_result", "tool_use_id": "srvtoolu_1", "content": [{"type": "web_search_result", "title": "t", "url": "https://example.com"}]},
+    {"type": "text", "text": "answer"}
+  ],
+  "usage": {"input_tokens": 3, "output_tokens": 2}
+}

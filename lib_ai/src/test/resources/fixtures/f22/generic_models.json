@@ -1,0 +1,6 @@
+{
+  "data": [
+    {"id": "generic-vision-tool", "capabilities": {"function_calling": true, "vision": true, "structured_output": true}},
+    {"id": "generic-plain", "capabilities": {"vision": false}}
+  ]
+}

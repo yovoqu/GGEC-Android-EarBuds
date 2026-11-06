@@ -86,6 +86,32 @@ public final class YoServiceEndpoints {
     }
 
     /**
+     * 通义 Omni-Realtime 的 WebSocket 地址：{@code wss://host/api-ws/v1/realtime?model=…}。
+     *
+     * <p>通义与 OpenAI 的路径不同（{@code /api-ws/v1/realtime} 而不是 {@code /v1/realtime}）。
+     * 调用方可能把 base 配成 {@code https://dashscope.aliyuncs.com} 或
+     * {@code .../compatible-mode}，这里统一剥到主机再拼真实路径。</p>
+     */
+    @NonNull
+    public static String qwenRealtime(@NonNull String baseUrl, @NonNull String modelId) {
+        if (modelId.isBlank()) {
+            throw new IllegalArgumentException("model id is required for realtime");
+        }
+        String base = webSocketBase(YoServiceTarget.normalizeBaseUrl(baseUrl));
+        for (String suffix : new String[] {
+                "/api-ws/v1/realtime", "/compatible-mode/v1", "/compatible-mode", "/v1"}) {
+            if (endsWithIgnoreCase(base, suffix)) {
+                base = base.substring(0, base.length() - suffix.length());
+                break;
+            }
+        }
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/api-ws/v1/realtime?model=" + encodeQueryValue(modelId.trim());
+    }
+
+    /**
      * {@code wss://host/v1/realtime?model=…}。模型名可能带 {@code :} 或 {@code /}（如 {@code qwen2.5:7b}），
      * 所以要做 query 转义——不转义的话服务端会把它当成路径的一部分。
      */
@@ -153,3 +179,4 @@ public final class YoServiceEndpoints {
         return offset >= 0 && value.regionMatches(true, offset, suffix, 0, suffix.length());
     }
 }
+

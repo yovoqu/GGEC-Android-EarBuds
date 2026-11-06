@@ -1,0 +1,6 @@
+event: response.translation.delta
+data: {"type":"response.translation.delta","delta":"Hello","target_language":"en"}
+
+event: response.translation.delta
+data: {"type":"response.translation.delta","delta":" world","target_language":"en"}
+

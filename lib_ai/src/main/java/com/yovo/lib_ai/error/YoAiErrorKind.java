@@ -16,6 +16,14 @@ public enum YoAiErrorKind {
     NOT_FOUND,
     /** 请求本身被拒绝：参数、长度或内容不合法。 */
     BAD_REQUEST,
+    /** 内容被安全策略过滤（content_filter / data inspection）。 */
+    CONTENT_FILTERED,
+    /** 输入超过上下文窗口。 */
+    CONTEXT_LENGTH,
+    /** 参数或能力不被该模型/厂商支持。 */
+    UNSUPPORTED_PARAM,
+    /** 服务端过载（529 / overloaded）。 */
+    OVERLOADED,
     /** 平台侧故障或过载。 */
     SERVER,
     /** 连不上主机、DNS 或 TLS 失败。 */
@@ -33,3 +41,4 @@ public enum YoAiErrorKind {
     UNSUPPORTED_CAPABILITY,
     UNKNOWN
 }
+

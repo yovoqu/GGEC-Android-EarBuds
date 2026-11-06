@@ -39,8 +39,15 @@ final class ChatCompletionAdapter implements CompletionAdapter {
     @Override
     public YoCompletionResult complete(YoCompletionRequest request) {
         YoChatCompletion completion = chat.complete(toRequest(request));
-        JSONObject message = RawJson.firstChoice(RawJson.parse(completion.rawJson()), "message");
-        return toResult(completion, RawJson.string(message, "reasoning_content", "reasoning"));
+        String reasoning = null;
+        if (!completion.choices().isEmpty() && completion.choices().get(0).message() != null) {
+            reasoning = completion.choices().get(0).message().reasoningContent();
+        }
+        if (reasoning == null) {
+            JSONObject message = RawJson.firstChoice(RawJson.parse(completion.rawJson()), "message");
+            reasoning = RawJson.string(message, "reasoning_content", "reasoning");
+        }
+        return toResult(completion, reasoning);
     }
 
     @Override

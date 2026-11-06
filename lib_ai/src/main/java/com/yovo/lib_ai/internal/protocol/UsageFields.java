@@ -24,6 +24,8 @@ public final class UsageFields {
     private static final String PROMPT_DETAILS = "prompt_tokens_details";
     /** Responses 的输入详情对象。 */
     private static final String INPUT_DETAILS = "input_tokens_details";
+    /** OpenAI 的输出详情对象。 */
+    private static final String COMPLETION_DETAILS = "completion_tokens_details";
     /** 兼容网关可能把费用塞进 cost_details。 */
     private static final String COST_DETAILS = "cost_details";
 
@@ -97,6 +99,48 @@ public final class UsageFields {
             direct = decimalAt(Jsons.optObject(usage, COST_DETAILS), "total_cost");
         }
         return direct;
+    }
+
+    /** 思考过程 token：{@code completion_tokens_details.reasoning_tokens}。 */
+    @Nullable
+    public static Integer reasoningTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, COMPLETION_DETAILS), "reasoning_tokens");
+    }
+
+    /** 输入音频 token：{@code prompt_tokens_details.audio_tokens}。 */
+    @Nullable
+    public static Integer audioInputTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, PROMPT_DETAILS), "audio_tokens");
+    }
+
+    /** 输出音频 token：{@code completion_tokens_details.audio_tokens}。 */
+    @Nullable
+    public static Integer audioOutputTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, COMPLETION_DETAILS), "audio_tokens");
+    }
+
+    /** 输入图片 token：{@code prompt_tokens_details.image_tokens}。 */
+    @Nullable
+    public static Integer imageTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, PROMPT_DETAILS), "image_tokens");
+    }
+
+    /** OpenAI 写缓存 token：{@code prompt_tokens_details.cache_write_tokens}。 */
+    @Nullable
+    public static Integer cacheWriteTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, PROMPT_DETAILS), "cache_write_tokens");
+    }
+
+    /** 预测输出命中 token：{@code completion_tokens_details.accepted_prediction_tokens}。 */
+    @Nullable
+    public static Integer acceptedPredictionTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, COMPLETION_DETAILS), "accepted_prediction_tokens");
+    }
+
+    /** 预测输出未命中 token：{@code completion_tokens_details.rejected_prediction_tokens}。 */
+    @Nullable
+    public static Integer rejectedPredictionTokens(@Nullable JSONObject usage) {
+        return firstInt(Jsons.optObject(usage, COMPLETION_DETAILS), "rejected_prediction_tokens");
     }
 
     @Nullable

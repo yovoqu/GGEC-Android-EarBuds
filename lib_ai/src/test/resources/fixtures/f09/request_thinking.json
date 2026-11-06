@@ -1,0 +1,19 @@
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 1024,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}
+      ]
+    }
+  ],
+  "system": [
+    {"type": "text", "text": "be brief", "cache_control": {"type": "ephemeral"}}
+  ],
+  "thinking": {"type": "adaptive", "display": "summarized"},
+  "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}},
+  "service_tier": "auto",
+  "metadata": {"trace": "t1", "user_id": "u1"}
+}
