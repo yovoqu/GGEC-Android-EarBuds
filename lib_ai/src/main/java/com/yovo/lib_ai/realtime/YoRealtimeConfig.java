@@ -400,8 +400,17 @@ public final class YoRealtimeConfig {
             String normalizedBaseUrl = YoServiceTarget.normalizeBaseUrl(requireText(baseUrl, "baseUrl"));
             String key = requireText(apiKey, "apiKey");
             String modelName = requireText(model, "model");
-            if (dialect == null) {
-                throw new IllegalArgumentException("dialect is required");
+            YoRealtimeDialect resolvedDialect = dialect != null
+                    ? dialect
+                    : YoRealtimeDialect.infer(normalizedBaseUrl, modelName);
+            int inputRate = inputWireFormat != null ? inputWireFormat.sampleRateHz()
+                    : (resolvedDialect == YoRealtimeDialect.QWEN ? 16_000 : DEFAULT_OUTPUT_SAMPLE_RATE_HZ);
+            YoRealtimeAudioFormat resolvedInputWire = inputWireFormat == null
+                    ? YoRealtimeAudioFormat.pcm16(inputRate)
+                    : inputWireFormat;
+            String resolvedVoice = blankToNull(voice);
+            if (resolvedVoice == null && resolvedDialect == YoRealtimeDialect.QWEN) {
+                resolvedVoice = "Tina";
             }
             if (inputSampleRateHz <= 0) {
                 throw new IllegalArgumentException("inputSampleRateHz must be positive");
@@ -409,23 +418,20 @@ public final class YoRealtimeConfig {
             if (outputSampleRateHz <= 0) {
                 throw new IllegalArgumentException("outputSampleRateHz must be positive");
             }
-            if (inputWireFormat == null) {
-                throw new IllegalArgumentException("inputWireFormat is required");
-            }
             YoRealtimeAudioFormat outputWire = outputWireFormat == null
                     ? YoRealtimeAudioFormat.pcm16(outputSampleRateHz)
                     : outputWireFormat;
-            requireTurnDetectionMatchesDialect(dialect, turnDetection);
+            requireTurnDetectionMatchesDialect(resolvedDialect, turnDetection);
             return new YoRealtimeConfig(
                     normalizedBaseUrl,
                     key,
                     modelName,
-                    dialect,
-                    blankToNull(voice),
+                    resolvedDialect,
+                    resolvedVoice,
                     blankToNull(instructions),
                     inputSampleRateHz,
                     outputSampleRateHz,
-                    inputWireFormat,
+                    resolvedInputWire,
                     outputWire,
                     turnDetection,
                     transcription,

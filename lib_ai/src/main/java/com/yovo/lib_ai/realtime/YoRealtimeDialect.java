@@ -1,5 +1,9 @@
 package com.yovo.lib_ai.realtime;
 
+import androidx.annotation.NonNull;
+
+import java.util.Locale;
+
 /**
  * 同一条实时会话在不同厂商线上的写法。
  *
@@ -35,5 +39,20 @@ public enum YoRealtimeDialect {
      */
     public boolean holdsAudioUntilConfigured() {
         return this == OPENAI_GA;
+    }
+
+    /**
+     * 根据端点基址与模型标识推断适用的方言。
+     * 避免调用方在业务层编写厂商特定的字符串嗅探逻辑。
+     */
+    @NonNull
+    public static YoRealtimeDialect infer(@NonNull String baseUrl, @NonNull String model) {
+        String lowerBase = baseUrl.toLowerCase(Locale.ROOT);
+        String lowerModel = model.toLowerCase(Locale.ROOT);
+        if (lowerBase.contains("dashscope") || lowerBase.contains("aliyuncs")
+                || lowerModel.contains("qwen") || lowerModel.contains("omni")) {
+            return QWEN;
+        }
+        return OPENAI_BETA;
     }
 }

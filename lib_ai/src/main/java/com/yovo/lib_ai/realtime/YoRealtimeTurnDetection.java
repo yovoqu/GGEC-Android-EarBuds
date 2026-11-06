@@ -58,6 +58,19 @@ public sealed interface YoRealtimeTurnDetection {
     }
 
     /**
+     * 根据方言构建适用的服务端断句配置，避免调用方依赖厂商私有变体类。
+     */
+    @NonNull
+    static YoRealtimeTurnDetection serverVadFor(@NonNull YoRealtimeDialect dialect, boolean allowBargeIn) {
+        if (dialect == YoRealtimeDialect.QWEN) {
+            return new YoRealtimeTurnDetection.Qwen(
+                    YoRealtimeTurnDetection.Qwen.SERVER_VAD, 0.5, 800, null);
+        }
+        return new YoRealtimeTurnDetection.OpenAi(
+                Kind.SERVER_VAD, 0.5, 300, 800, null, Boolean.TRUE, allowBargeIn);
+    }
+
+    /**
      * OpenAI Realtime 的断句配置（beta 与 GA 共用字段集，差别只在 JSON 嵌套位置）。
      *
      * @param threshold      激活阈值，取值 [0, 1]；越高越抗噪
