@@ -37,6 +37,10 @@ final class LibAiFailures {
             case RATE_LIMITED -> AiFailureKind.RATE_LIMITED;
             case NOT_FOUND -> AiFailureKind.NOT_FOUND;
             case BAD_REQUEST -> AiFailureKind.BAD_REQUEST;
+            case CONTENT_FILTERED -> AiFailureKind.CONTENT_FILTERED;
+            case CONTEXT_LENGTH -> AiFailureKind.CONTEXT_LENGTH;
+            case UNSUPPORTED_PARAM -> AiFailureKind.UNSUPPORTED_PARAM;
+            case OVERLOADED -> AiFailureKind.OVERLOADED;
             case SERVER -> AiFailureKind.SERVER;
             case NETWORK -> AiFailureKind.NETWORK;
             case TIMEOUT -> AiFailureKind.TIMEOUT;

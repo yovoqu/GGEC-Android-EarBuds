@@ -339,7 +339,7 @@ public class LibAiGatewayTest {
     public void catalogExposesTheLibraryPlatformsAsTemplates() {
         LibAiPlatformCatalog catalog = new LibAiPlatformCatalog();
 
-        assertEquals(List.of("openai", "anthropic", "deepseek", "sensenova", "openai-compatible", "anthropic-compatible"),
+        assertEquals(List.of("openai", "anthropic", "deepseek", "sensenova", "qwen", "openai-compatible", "anthropic-compatible"),
                 catalog.templates().stream().map(t -> t.id()).toList());
         assertEquals(AiProtocol.MESSAGES, catalog.find("anthropic").orElseThrow().defaultProtocol());
         assertTrue(catalog.find("openai-compatible").orElseThrow().custom());

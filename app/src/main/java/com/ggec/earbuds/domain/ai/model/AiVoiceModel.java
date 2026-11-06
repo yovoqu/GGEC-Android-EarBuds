@@ -20,9 +20,9 @@ public enum AiVoiceModel {
     CHATGPT("chatgpt", "ChatGPT", "https://api.openai.com",
             "gpt-4o-realtime-preview"),
 
-    /** 阿里云百炼的 Qwen Omni 实时模型，走 OpenAI 兼容模式。 */
-    QWEN("qwen", "Qwen", "https://dashscope.aliyuncs.com/compatible-mode",
-            "qwen3-omni-flash-realtime");
+    /** 阿里云百炼的 Qwen Omni 实时模型，走通义 Realtime 方言（/api-ws/v1/realtime）。 */
+    QWEN("qwen", "Qwen", "https://dashscope.aliyuncs.com",
+            "qwen3.8-omni-flash-realtime");
 
     private final String id;
     private final String displayName;

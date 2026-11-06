@@ -43,10 +43,19 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
 
     private final Context context;
     private final Object lock = new Object();
-    private final Deque<byte[]> queue = new ArrayDeque<>();
+    private final Deque<Chunk> queue = new ArrayDeque<>();
+
+    /** 排队的一段音频：除了字节，还要记住它属于哪一条回答，截断才能落到正确的 item 上。 */
+    private record Chunk(byte[] pcm16, String itemId, int contentIndex) {
+    }
 
     // 以下字段由 lock 保护。
     private AudioTrack track;
+    /** 播放进度：只记真正写进 AudioTrack 的字节，用来算打断时的截断毫秒。 */
+    private String playedItemId;
+    private int playedContentIndex;
+    private long playedBytes;
+    private int playedSampleRateHz = 24_000;
     private Thread writer;
     private int queuedBytes;
     private boolean running;
@@ -87,6 +96,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             }
             created.play();
             track = created;
+            playedSampleRateHz = rate;
             running = true;
             writer = new Thread(this::drainQueue, "ai-voice-playback");
             writer.setDaemon(true);
@@ -95,7 +105,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
     }
 
     @Override
-    public void write(byte[] pcm16) {
+    public void write(byte[] pcm16, String itemId, int contentIndex) {
         if (pcm16 == null || pcm16.length == 0) {
             return;
         }
@@ -104,10 +114,10 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
                 // 没 start 就写：丢掉。排进一个永远不会被排空的队列只会在 start 之后炸出一段旧声音。
                 return;
             }
-            queue.addLast(pcm16.clone());
+            queue.addLast(new Chunk(pcm16.clone(), itemId, contentIndex));
             queuedBytes += pcm16.length;
             while (queuedBytes > MAX_QUEUED_BYTES && !queue.isEmpty()) {
-                queuedBytes -= queue.removeFirst().length;
+                queuedBytes -= queue.removeFirst().pcm16().length;
             }
             lock.notifyAll();
         }
@@ -127,6 +137,23 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
         active.pause();
         active.flush();
         active.play();
+    }
+
+    @Override
+    public Heard captureHeard() {
+        synchronized (lock) {
+            if (playedItemId == null || playedBytes <= 0) {
+                playedItemId = null;
+                playedBytes = 0;
+                return null;
+            }
+            int elapsedMs = (int) Math.min(Integer.MAX_VALUE,
+                    playedBytes / 2L * 1000L / Math.max(1, playedSampleRateHz));
+            Heard heard = new Heard(playedItemId, playedContentIndex, elapsedMs);
+            playedItemId = null;
+            playedBytes = 0;
+            return heard;
+        }
     }
 
     @Override
@@ -194,7 +221,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
     /** 排空线程：队列空就等，有数据就阻塞写。写失败说明设备没了，直接退出，不空转。 */
     private void drainQueue() {
         while (true) {
-            byte[] chunk;
+            Chunk chunk;
             AudioTrack active;
             synchronized (lock) {
                 while (running && queue.isEmpty()) {
@@ -209,15 +236,27 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
                     return;
                 }
                 chunk = queue.removeFirst();
-                queuedBytes -= chunk.length;
+                queuedBytes -= chunk.pcm16().length;
                 active = track;
             }
             if (active == null) {
                 return;
             }
-            int written = active.write(chunk, 0, chunk.length);
+            int written = active.write(chunk.pcm16(), 0, chunk.pcm16().length);
             if (written < 0) {
                 return;
+            }
+            // 只有真正写进设备的字节才算"用户听到的"；队列里的不算。
+            synchronized (lock) {
+                String id = chunk.itemId();
+                if (id != null && !id.equals(playedItemId)) {
+                    playedItemId = id;
+                    playedContentIndex = chunk.contentIndex();
+                    playedBytes = 0;
+                }
+                if (id != null) {
+                    playedBytes += written;
+                }
             }
         }
     }

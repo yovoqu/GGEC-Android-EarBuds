@@ -21,9 +21,17 @@ import java.util.List;
  */
 public final class FakeRealtimeLink implements AiRealtimeLink {
 
+    /** 测试默认的下行 item id；真实服务端每条回答给一个，这里固定即可。 */
+    public static final String DEFAULT_ITEM_ID = "item-test-1";
+
     public int opens;
     public int closes;
     public int cancels;
+    public int clears;
+    public int truncates;
+    @Nullable
+    public String truncatedItemId;
+    public int truncatedAudioEndMs;
     @Nullable
     public Config lastConfig;
     @Nullable
@@ -49,7 +57,20 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
         switch (input) {
             case AiRealtimeInput.Audio audio -> appended.add(audio.pcm16().clone());
             case AiRealtimeInput.Cancel ignored -> cancels++;
+            case AiRealtimeInput.Clear ignored -> clears++;
         }
+    }
+
+    @Override
+    public int inputWireSampleRateHz() {
+        return 24_000;
+    }
+
+    @Override
+    public void truncate(@NonNull String itemId, int contentIndex, int audioEndMs) {
+        truncates++;
+        truncatedItemId = itemId;
+        truncatedAudioEndMs = audioEndMs;
     }
 
     @Override
@@ -74,9 +95,14 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     }
 
     public void audio(@NonNull byte[] pcm16) {
+        audio(pcm16, DEFAULT_ITEM_ID);
+    }
+
+    /** 带 itemId 的下行音频：打断时用它断言截断落到了正确的条目上。 */
+    public void audio(@NonNull byte[] pcm16, @Nullable String itemId) {
         Listener target = listener;
         if (target != null) {
-            target.onOutput(new AiRealtimeOutput.AssistantAudio(pcm16, 24_000));
+            target.onOutput(new AiRealtimeOutput.AssistantAudio(pcm16, 24_000, itemId, 0));
         }
     }
 

@@ -6,6 +6,8 @@ import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.os.Build;
 
 import androidx.annotation.NonNull;
 
@@ -61,8 +63,16 @@ public final class AndroidAudioCapture implements AiAudioCapture {
     private int frameBytes;
     private boolean running;
 
-    /** 只影响回调里的 PCM：静音期间仍然读数，所以电平不断，上行是空的。 */
-    private volatile boolean muted;
+    /**
+     * 上行闸门。关掉时仍然读数、仍然算电平，只是回调里的 PCM 换成空数组。
+     *
+     * <p>默认开。半双工通话里由状态机在助手发声期间关掉：这不是用户静音，
+     * 而是防止扬声器的声音被麦克风收回去再上行（实机会表现为助手自问自答）。</p>
+     */
+    private volatile boolean uplinkEnabled = true;
+
+    /** 回声消除。仅在 {@code VOICE_COMMUNICATION} 音源上可能生效；失败就只靠软件闸门。 */
+    private AcousticEchoCanceler echoCanceler;
 
     public AndroidAudioCapture(@NonNull Context context) {
         this.context = Objects.requireNonNull(context, "context").getApplicationContext();
@@ -147,19 +157,32 @@ public final class AndroidAudioCapture implements AiAudioCapture {
         if (stopping != null) {
             stopping.release();
         }
+        releaseEchoCanceler();
     }
 
     @Override
-    public void setMuted(boolean value) {
-        muted = value;
+    public void setUplinkEnabled(boolean enabled) {
+        uplinkEnabled = enabled;
     }
 
     /**
-     * 打开麦克风。优先用 {@code VOICE_RECOGNITION}：它关掉了给通话做的自动增益和降噪，
-     * 识别模型拿到的就是原声；个别设备不支持这个音源，退回 {@code MIC}。
+     * 打开麦克风。
+     *
+     * <p>音源顺序：{@code VOICE_COMMUNICATION} → {@code VOICE_RECOGNITION} → {@code MIC}。
+     * 把 {@code VOICE_COMMUNICATION} 放第一位是有原因的：只有它允许挂 {@link AcousticEchoCanceler}，
+     * 而回声消除是"助手说话时还能开着麦克风"的唯一硬件前提。前面几轮实测里用
+     * {@code VOICE_RECOGNITION}，它的降噪会把外放声音当成噪声保留下来，服务端 VAD 于是判成用户开口，
+     * 助手自问自答。</p>
+     *
+     * <p>回声消除挂不上（设备不支持或已被别的进程占用）时不算失败：返回的 {@code record}
+     * 照样能用，调用方靠软件上行闸门兜底。</p>
      */
     private AudioRecord open(int sampleRateHz, int bufferBytes) {
-        int[] sources = {MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC};
+        int[] sources = {
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                MediaRecorder.AudioSource.MIC
+        };
         for (int source : sources) {
             AudioRecord candidate;
             try {
@@ -169,11 +192,48 @@ public final class AndroidAudioCapture implements AiAudioCapture {
                 continue;
             }
             if (candidate.getState() == AudioRecord.STATE_INITIALIZED) {
+                attachEchoCanceler(candidate);
                 return candidate;
             }
             candidate.release();
         }
         return null;
+    }
+
+    /** 尽力打开回声消除；失败保持为 null，不影响通话（上层闸门仍在）。 */
+    private void attachEchoCanceler(@NonNull AudioRecord target) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN
+                || !AcousticEchoCanceler.isAvailable()) {
+            return;
+        }
+        try {
+            AcousticEchoCanceler created = AcousticEchoCanceler.create(target.getAudioSessionId());
+            if (created != null && created.getEnabled()) {
+                echoCanceler = created;
+            } else if (created != null) {
+                created.release();
+            }
+        } catch (RuntimeException unavailable) {
+            // 被别的录音占用或厂商实现缺失：退回软件闸门。
+        }
+    }
+
+    private void releaseEchoCanceler() {
+        AcousticEchoCanceler current = echoCanceler;
+        echoCanceler = null;
+        if (current != null) {
+            try {
+                current.setEnabled(false);
+            } catch (RuntimeException ignored) {
+                // 释放路径不抛。
+            }
+            current.release();
+        }
+    }
+
+    @Override
+    public boolean echoCancellationActive() {
+        return echoCanceler != null;
     }
 
     private void readLoop() {
@@ -204,7 +264,7 @@ public final class AndroidAudioCapture implements AiAudioCapture {
                     continue;
                 }
                 float level = levelOf(frame, read);
-                byte[] payload = muted ? NO_AUDIO : Arrays.copyOf(frame, read);
+                byte[] payload = uplinkEnabled ? Arrays.copyOf(frame, read) : NO_AUDIO;
                 target.onFrame(payload, level);
             }
         } finally {
@@ -235,6 +295,7 @@ public final class AndroidAudioCapture implements AiAudioCapture {
             leftover.stop();
         }
         leftover.release();
+        releaseEchoCanceler();
     }
 
     private void report(AiFailureKind kind, String detail) {
@@ -288,3 +349,6 @@ public final class AndroidAudioCapture implements AiAudioCapture {
         return detail == null || detail.isBlank() ? error.getClass().getSimpleName() : detail;
     }
 }
+
+
+
