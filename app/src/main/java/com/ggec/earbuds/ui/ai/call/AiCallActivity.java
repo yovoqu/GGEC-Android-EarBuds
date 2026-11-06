@@ -5,7 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.view.WindowManager;
-import android.widget.Toast;
+import com.yohu.youi.api.feedback.YoToast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -76,6 +76,8 @@ public final class AiCallActivity extends AppCompatActivity {
             }
         });
         viewModel.meter().observe(this, screen::setLevel);
+        viewModel.subtitleItems().observe(this, screen::setSubtitleItems);
+        viewModel.turns().observe(this, screen::setTurns);
         viewModel.transcript().observe(this, screen::setTranscript);
         viewModel.setSpeakerphone(true);
     }
@@ -177,7 +179,7 @@ public final class AiCallActivity extends AppCompatActivity {
             int hintRes = (next == VoiceDuplex.FULL_DUPLEX)
                     ? R.string.ai_call_duplex_full_hint
                     : R.string.ai_call_duplex_half_hint;
-            Toast.makeText(AiCallActivity.this, hintRes, Toast.LENGTH_SHORT).show();
+            YoToast.show(AiCallActivity.this, getString(hintRes));
         }
 
         @Override

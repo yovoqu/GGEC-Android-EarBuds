@@ -4,13 +4,9 @@ import android.content.Context;
 import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.text.SpannableString;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.TextUtils;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -23,29 +19,45 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
+import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItemView;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleScrollEngine;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleTranscriptParser;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleUiState;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * 通话实时流式字幕卡片 (AiCallSubtitleView)：
- * 全面基于 {@link AiTheme} 语义化调色系统构建，严禁硬编码，自适应深浅色模式。
+ * 通话实时流式字幕卡片复合容器 (AiCallSubtitleView)。
  *
- * <p>架构规格：
+ * <p>严格遵循高内聚低耦合与 MVVM 架构：
  * <ul>
- *   <li><b>弹性高度限制</b>：内容少时紧凑包裹，多轮对话最大限制 180dp 并内置平滑滚动，绝不挤压操作栏；</li>
- *   <li><b>多角色富文本排版</b>：区分【● AI】极光蓝与【● 你】次级灰角色徽标，字距与行距舒适易读；</li>
- *   <li><b>悬浮磨砂玻璃底座</b>：20dp 圆角半透明卡片，配超细发光描边与柔和环境微光。</li>
+ *   <li><b>数据层解耦</b>：仅依赖不可变 {@link AiSubtitleItem} / {@link AiSubtitleUiState}，
+ *       领域模型转换由 {@link AiSubtitleMapper} 完成，转写解析由 {@link AiSubtitleTranscriptParser} 完成；</li>
+ *   <li><b>行为层解耦</b>：滚动判定与防弹回状态机交由 {@link AiSubtitleScrollEngine} 独立驱动；</li>
+ *   <li><b>视图层解耦</b>：单条消息卡片由独立组件 {@link AiSubtitleItemView} 负责排版折行；</li>
+ *   <li><b>弹性测量</b>：内容少时紧凑包裹，内容多时最大限制 180dp，永不挤压底部操作舱。</li>
  * </ul>
  * </p>
  */
 public final class AiCallSubtitleView extends FrameLayout {
 
-    private static final float MAX_HEIGHT_DP = 135f;
+    public static final float MAX_HEIGHT_DP = 220f;
     private static final float CARD_RADIUS_DP = 20f;
 
     private final AiTheme theme;
     private final ScrollView scrollView;
     private final LinearLayout textContainer;
-    private final TextView transcriptText;
+    private final TextView scrollPill;
+    private final AiSubtitleScrollEngine scrollEngine;
+    private final List<AiSubtitleItemView> itemViews = new ArrayList<>();
+
+    private List<AiSubtitleItem> lastRenderedItems = List.of();
+    private boolean lastCaptionsEnabled = false;
 
     public AiCallSubtitleView(@NonNull Context context, @NonNull AiTheme theme) {
         super(context);
@@ -54,7 +66,7 @@ public final class AiCallSubtitleView extends FrameLayout {
         int padH = theme.dp(AiTheme.PAGE_INSET);
         int padV = theme.dp(12f);
 
-        // 自适应磨砂质感卡片底座（高质感半透明防眩卡片）
+        // 1. 自适应高质感磨砂质感卡片底座
         int cardBgColor = theme.isDark()
                 ? ColorUtils.setAlphaComponent(theme.card, 0xD8)
                 : ColorUtils.setAlphaComponent(0xFFFFFFFF, 0xF4);
@@ -62,7 +74,7 @@ public final class AiCallSubtitleView extends FrameLayout {
         setBackground(bg);
         setPadding(padH, padV, padH, padV);
 
-        // 柔和微光浮层阴影，并启用刚性轮廓裁剪彻底阻断文字溢出
+        // 2. 柔和微光浮层阴影与刚性轮廓裁剪
         setClipChildren(true);
         setClipToPadding(true);
         setElevation(theme.dp(4f));
@@ -79,6 +91,7 @@ public final class AiCallSubtitleView extends FrameLayout {
         setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(subShadowColor, theme.isDark() ? 0x50 : 0x16));
         setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(subShadowColor, theme.isDark() ? 0x28 : 0x0B));
 
+        // 3. 滚动视图容器
         scrollView = new ScrollView(context);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
@@ -87,28 +100,105 @@ public final class AiCallSubtitleView extends FrameLayout {
         scrollView.setVerticalFadingEdgeEnabled(true);
         scrollView.setFadingEdgeLength(theme.dp(16f));
 
+        // 4. 消息回合垂直列表容器
         textContainer = new LinearLayout(context);
         textContainer.setOrientation(LinearLayout.VERTICAL);
 
-        transcriptText = theme.text(AiTheme.TEXT_BODY, theme.text1);
-        transcriptText.setLineSpacing(theme.dp(4f), 1.25f);
-        transcriptText.setGravity(Gravity.START);
-
-        textContainer.addView(transcriptText, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         scrollView.addView(textContainer, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         addView(scrollView, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // 5. 【↓ 最新】智能悬浮胶囊：在上滑阅读历史时轻巧呼出，支持一键平滑归位
+        scrollPill = new TextView(context);
+        scrollPill.setText("↓ 最新");
+        scrollPill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        scrollPill.setTypeface(Typeface.DEFAULT_BOLD);
+        scrollPill.setTextColor(theme.brand);
+        scrollPill.setGravity(Gravity.CENTER);
+        int pillPadH = theme.dp(10f);
+        int pillPadV = theme.dp(4f);
+        scrollPill.setPadding(pillPadH, pillPadV, pillPadH, pillPadV);
+
+        GradientDrawable pillBg = theme.roundedStroke(
+                theme.isDark() ? 0xEE1E293B : 0xEEFFFFFF,
+                13f,
+                theme.brandSoft,
+                1f
+        );
+        scrollPill.setBackground(pillBg);
+        scrollPill.setElevation(theme.dp(4f));
+        scrollPill.setVisibility(GONE);
+
+        LayoutParams pillParams = new LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pillParams.gravity = Gravity.BOTTOM | Gravity.END;
+        pillParams.bottomMargin = theme.dp(4f);
+        pillParams.rightMargin = theme.dp(4f);
+        addView(scrollPill, pillParams);
+
+        // 6. 构造独立防弹回智能滚动引擎
+        scrollEngine = new AiSubtitleScrollEngine(
+                new AiSubtitleScrollEngine.ScrollTarget() {
+                    @Override
+                    public int getContentHeight() {
+                        View content = scrollView.getChildAt(0);
+                        return content != null ? content.getBottom() : 0;
+                    }
+
+                    @Override
+                    public int getViewportScrollY() {
+                        return scrollView.getScrollY();
+                    }
+
+                    @Override
+                    public int getViewportHeight() {
+                        return scrollView.getHeight();
+                    }
+
+                    @Override
+                    public void scrollToBottomImmediate() {
+                        scrollView.post(() -> {
+                            if (!scrollEngine.isScrolledUp() && !scrollEngine.isUserTouching()) {
+                                scrollView.fullScroll(ScrollView.FOCUS_DOWN);
+                            }
+                            scrollView.post(scrollEngine::onProgrammaticScrollFinished);
+                        });
+                    }
+
+                    @Override
+                    public void smoothScrollToBottom() {
+                        View content = scrollView.getChildAt(0);
+                        if (content != null) {
+                            scrollView.smoothScrollTo(0, content.getBottom());
+                        }
+                        scrollView.postDelayed(scrollEngine::onProgrammaticScrollFinished, 300L);
+                    }
+                },
+                this::animatePillVisibility,
+                theme.dp(24f)
+        );
+
+        scrollPill.setOnClickListener(v -> scrollEngine.onScrollToLatestClicked());
+
+        scrollView.setOnTouchListener((v, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+                scrollEngine.onTouchDownOrMove();
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                scrollEngine.onTouchUpOrCancel();
+            }
+            return false;
+        });
+
+        scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            scrollEngine.onScrollChanged(scrollY);
+        });
+
         setVisibility(GONE);
     }
 
-    /**
-     * 刚性约束最大高度为 180dp，确保无论转写文字多长，
-     * 都绝对不会在垂直维度过度膨胀而挤压或重叠底部控制栏。
-     */
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int maxH = theme.dp(MAX_HEIGHT_DP);
@@ -124,73 +214,93 @@ public final class AiCallSubtitleView extends FrameLayout {
             mode = MeasureSpec.AT_MOST;
         }
         super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(size, mode));
+        if (getMeasuredHeight() > maxH) {
+            setMeasuredDimension(getMeasuredWidth(), maxH);
+        }
     }
 
-    /** 更新实时流字幕与可见性，采用富文本双角色排版 */
-    public void render(@Nullable String rawTranscript, boolean enabled) {
-        String text = rawTranscript == null ? "" : rawTranscript.trim();
+    /**
+     * 响应式 MVVM 主入口：消费完整字幕状态快照。
+     */
+    public void render(@NonNull AiSubtitleUiState state) {
+        renderItems(state.items(), state.visible());
+    }
 
-        if (!enabled || TextUtils.isEmpty(text)) {
+    /**
+     * 渲染结构化字幕项序列。
+     */
+    public void renderItems(@NonNull List<AiSubtitleItem> items, boolean visible) {
+        if (!visible || items.isEmpty()) {
             setVisibility(GONE);
+            lastRenderedItems = List.of();
+            lastCaptionsEnabled = visible;
+            scrollEngine.onContentUpdated(false);
             return;
         }
 
         setVisibility(VISIBLE);
-        CharSequence styled = formatRichTranscript(text);
-        transcriptText.setText(styled);
-        scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
+
+        // 幂等防御：若文本数据与显示状态未变化（如定时器每秒滴答刷新），直接返回，杜绝闪烁与误触滚动
+        if (visible == lastCaptionsEnabled && items.equals(lastRenderedItems)) {
+            return;
+        }
+        lastRenderedItems = List.copyOf(items);
+        lastCaptionsEnabled = visible;
+
+        int count = items.size();
+
+        // 保持复用现存 ItemView，增量多退少补
+        while (itemViews.size() > count) {
+            AiSubtitleItemView extra = itemViews.remove(itemViews.size() - 1);
+            textContainer.removeView(extra);
+        }
+
+        for (int i = 0; i < count; i++) {
+            AiSubtitleItem item = items.get(i);
+            AiSubtitleItemView itemView;
+            if (i < itemViews.size()) {
+                itemView = itemViews.get(i);
+            } else {
+                itemView = new AiSubtitleItemView(getContext(), theme);
+                itemViews.add(itemView);
+                textContainer.addView(itemView);
+            }
+            itemView.bind(item, i == count - 1);
+        }
+
+        scrollEngine.onContentUpdated(true);
     }
 
     /**
-     * 解析转写流中的角色标记，构建高质感富文本气泡排版：
-     * - AI 发言：【● AI】科技青蓝高亮徽标；
-     * - 用户发言：【● 你】低饱和次级色徽标；
-     * - 实时动态流转末尾保留呼吸省略号。
+     * 领域回合数据兼容入口：通过 {@link AiSubtitleMapper} 解耦转换后渲染。
      */
-    @NonNull
-    private CharSequence formatRichTranscript(@NonNull String text) {
-        String[] lines = text.split("\n");
-        SpannableStringBuilder ssb = new SpannableStringBuilder();
+    public void renderTurns(@NonNull List<AiVoiceSnapshot.Turn> domainTurns, boolean enabled) {
+        List<AiSubtitleItem> items = AiSubtitleMapper.fromDomainTurns(domainTurns);
+        renderItems(items, enabled);
+    }
 
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-            if (ssb.length() > 0) {
-                ssb.append("\n\n");
-            }
+    /**
+     * 文本字符串兼容入口：通过 {@link AiSubtitleTranscriptParser} 解耦解析后渲染。
+     */
+    public void render(@Nullable String rawTranscript, boolean enabled) {
+        List<AiSubtitleItem> items = AiSubtitleTranscriptParser.parse(rawTranscript);
+        renderItems(items, enabled);
+    }
 
-            int lineStart = ssb.length();
-            if (line.startsWith("AI：") || line.startsWith("AI:")) {
-                String content = line.substring(3).trim();
-                String prefix = "● AI  ";
-                ssb.append(prefix);
-                int prefixEnd = ssb.length();
-                ssb.append(content);
-
-                // AI 角色徽标：品牌青蓝 + 加粗
-                ssb.setSpan(new ForegroundColorSpan(theme.brand), lineStart, prefixEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.setSpan(new StyleSpan(Typeface.BOLD), lineStart, prefixEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                // AI 正文文字：主色
-                ssb.setSpan(new ForegroundColorSpan(theme.text1), prefixEnd, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else if (line.startsWith("你：") || line.startsWith("你:")) {
-                String content = line.substring(2).trim();
-                String prefix = "● 你  ";
-                ssb.append(prefix);
-                int prefixEnd = ssb.length();
-                ssb.append(content);
-
-                // 用户角色徽标：次级灰 + 加粗
-                ssb.setSpan(new ForegroundColorSpan(theme.text2), lineStart, prefixEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                ssb.setSpan(new StyleSpan(Typeface.BOLD), lineStart, prefixEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                // 用户正文文字：略带柔和的主色
-                ssb.setSpan(new ForegroundColorSpan(theme.text1), prefixEnd, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else {
-                ssb.append(line);
-                ssb.setSpan(new ForegroundColorSpan(theme.text1), lineStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+    private void animatePillVisibility(boolean visible) {
+        if (scrollPill == null) {
+            return;
         }
-        return ssb;
+        if (visible && scrollPill.getVisibility() != VISIBLE) {
+            scrollPill.setAlpha(0f);
+            scrollPill.setVisibility(VISIBLE);
+            scrollPill.animate().cancel();
+            scrollPill.animate().alpha(1f).setDuration(160).start();
+        } else if (!visible && scrollPill.getVisibility() == VISIBLE) {
+            scrollPill.animate().cancel();
+            scrollPill.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                scrollPill.setVisibility(GONE);
+            }).start();
+        }
     }
 }
