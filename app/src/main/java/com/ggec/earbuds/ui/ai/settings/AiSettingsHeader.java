@@ -4,7 +4,6 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -16,16 +15,11 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 
 /**
- * 设置类页面共用的页头：返回箭头 + 页名 20sp + 底部 1px 分隔线。
- *
- * <p>与对话页的标题行同一套尺寸（56dp 高、20sp 页名、页面内边距 20），差别只在于这里多一个返回箭头：
- * 设置页是二级页面，没有返回就没有别的出口。不套 {@code YoPage}／{@code YoTabs}，
- * 因为这两个都是窗口级容器，页面里再嵌一层是库明确禁止的。</p>
- *
- * <p>页头右侧预留一个状态位（保存中 / 保存失败）。它固定在 56dp 行里，显隐不改变页头高度，
- * 因此"改一个值"不会把下面的内容推上推下——这是设置页稳定性的第一道闸。</p>
+ * 设置类页面共用的页头：返回按键 + 页名 20sp + 底部 1px 分隔线。
+ * <p>统一采用 {@link AiHeaderActionButton} 圆形拟物微质感按键体系，自适应深浅色模式。</p>
  */
 final class AiSettingsHeader {
 
@@ -42,19 +36,19 @@ final class AiSettingsHeader {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(theme.dp(AiTheme.HEADER_HEIGHT));
-        row.setPadding(theme.dp(AiTheme.SPACE_M), theme.dp(AiTheme.SPACE_XS), theme.dp(AiTheme.SPACE_L), 0);
+        row.setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.SPACE_XS), theme.dp(AiTheme.PAGE_INSET), 0);
 
-        ImageView back = theme.iconButton(R.drawable.ic_ai_settings_back, theme.text2,
-                AiTheme.TOUCH_TARGET, 10f, activity.getString(R.string.ai_settings_back));
-        back.setOnClickListener(view -> onBack.run());
-        row.addView(back, new LinearLayout.LayoutParams(
-                theme.dp(AiTheme.TOUCH_TARGET), theme.dp(AiTheme.TOUCH_TARGET)));
+        AiHeaderActionButton back = new AiHeaderActionButton(activity, theme, AiHeaderActionButton.Style.NEUTRAL)
+                .icon(R.drawable.ic_ai_back)
+                .contentDesc(R.string.ai_settings_back)
+                .onClick(view -> onBack.run());
+        row.addView(back, AiHeaderActionButton.createLinearLayoutParams(theme));
 
         title = theme.text(AiTheme.TEXT_HEADLINE, theme.text1, AiTheme.Weight.MEDIUM);
         title.setText(titleRes);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.setMarginStart(theme.dp(AiTheme.SPACE_XS));
+        titleParams.setMarginStart(theme.dp(AiTheme.SPACE_M));
         row.addView(title, titleParams);
 
         status = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
