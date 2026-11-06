@@ -46,7 +46,7 @@ import java.util.List;
  */
 public final class AiCallSubtitleView extends FrameLayout {
 
-    public static final float MAX_HEIGHT_DP = 220f;
+    public static final float MAX_HEIGHT_DP = 300f;
     private static final float CARD_RADIUS_DP = 20f;
 
     private final AiTheme theme;

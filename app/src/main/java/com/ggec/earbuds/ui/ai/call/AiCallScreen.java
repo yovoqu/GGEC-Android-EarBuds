@@ -190,7 +190,7 @@ public final class AiCallScreen {
                 headerView.setLayoutParams(hp);
             }
 
-            controlsView.setBottomInset(navInsets.bottom + theme.dp(AiTheme.SPACE_M));
+            controlsView.setBottomInset(navInsets.bottom);
             return insets;
         });
     }
