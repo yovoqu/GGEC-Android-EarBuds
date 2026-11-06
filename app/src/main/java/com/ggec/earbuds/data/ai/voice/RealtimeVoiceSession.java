@@ -174,6 +174,12 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     }
 
     @Override
+    public void setDuplex(@NonNull VoiceDuplex duplex) {
+        Objects.requireNonNull(duplex, "duplex");
+        dispatch(() -> apply(new VoiceCallEvent.SetDuplex(duplex)));
+    }
+
+    @Override
     public void setSpeakerphone(boolean speaker) {
         dispatch(() -> playback.setSpeakerphone(speaker));
     }
@@ -290,10 +296,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             publish();
         } else if (effect instanceof VoiceCallEffect.StartCapture) {
             capture.start(INPUT_SAMPLE_RATE_HZ, captureListener);
-            // 只降不升：请求全双工，且"私密路由 或 AEC 真的生效"才保持 FULL。
-            VoiceDuplex resolved = VoiceDuplexPolicy.confirmRequested(
-                    duplex, privateOutput, capture.echoCancellationActive());
-            apply(new VoiceCallEvent.DuplexResolved(resolved));
+            apply(new VoiceCallEvent.DuplexResolved(duplex));
         } else if (effect instanceof VoiceCallEffect.StopCapture) {
             bestEffort(capture::stop);
         } else if (effect instanceof VoiceCallEffect.SetUplinkEnabled gate) {
@@ -374,7 +377,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             return;
         }
         AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
-                snapshotState(model.state()), model.turns(), model.level(), model.failure());
+                snapshotState(model.state()), model.turns(), model.level(), model.failure(),
+                model.duplex());
         try {
             target.onSnapshot(snapshot);
         } catch (RuntimeException fromPage) {

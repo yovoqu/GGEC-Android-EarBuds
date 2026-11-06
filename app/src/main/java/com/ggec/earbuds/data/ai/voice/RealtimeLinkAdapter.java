@@ -57,41 +57,22 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         closed = false;
         failureReported = false;
         outputSampleRateHz = YoRealtimeConfig.DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
-        // 上行线速率由方言决定：通义默认 16k，OpenAI 的 pcm16 按 24k 解释。
-        inputWireSampleRateHz = dialectFor(config.baseUrl(), config.model()) == YoRealtimeDialect.QWEN
-                ? 16_000 : 24_000;
-
         YoRealtimeConfig realtime;
         try {
-            YoRealtimeDialect dialect = dialectFor(config.baseUrl(), config.model());
-            YoRealtimeConfig.Builder builder = YoRealtimeConfig.builder()
+            YoRealtimeDialect dialect = YoRealtimeDialect.infer(config.baseUrl(), config.model());
+            inputWireSampleRateHz = dialect == YoRealtimeDialect.QWEN ? 16_000 : 24_000;
+            realtime = YoRealtimeConfig.builder()
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .model(config.model())
                     .dialect(dialect)
-                    // 通义服务端默认音色是 OpenAI 的 Chelsie，照抄会被 400 拒绝；显式给 Tina。
-                    .voice(dialect == YoRealtimeDialect.QWEN ? "Tina" : null)
                     .inputSampleRateHz(inputWireSampleRateHz)
                     .inputWireFormat(YoRealtimeAudioFormat.pcm16(inputWireSampleRateHz))
                     .outputSampleRateHz(outputSampleRateHz)
-                    // 播放进度由我们自己的播放队列记账，截断毫秒数才等于"用户听到的"。
                     .countPlaybackOnArrival(false)
-                    // 服务端 VAD 能否打断当前回答。半双工必须关：上行关着时那条
-                    // speech_started 只可能是自己的外放回授。
-                    .interruptOnSpeech(config.bargeIn());
-            if (dialect == YoRealtimeDialect.QWEN) {
-                // 通义字段集：threshold[-1.0,1.0] + silence_duration_ms[200,6000] + idle_timeout_ms。
-                // 不给 idle_timeout_ms：那是"用户长时间沉默后模型主动开口"，通话里会变成自言自语。
-                builder.turnDetection(new YoRealtimeTurnDetection.Qwen(
-                        YoRealtimeTurnDetection.Qwen.SERVER_VAD, 0.5, 800, null));
-            } else {
-                // OpenAI 字段集：threshold[0,1] + prefix_padding_ms + create/interrupt。
-                // interrupt_response 跟 bargeIn 走：半双工下不许服务端 VAD 打断。
-                builder.turnDetection(new YoRealtimeTurnDetection.OpenAi(
-                        YoRealtimeTurnDetection.Kind.SERVER_VAD, 0.5, 300, 800, null,
-                        Boolean.TRUE, config.bargeIn()));
-            }
-            realtime = builder.build();
+                    .interruptOnSpeech(config.bargeIn())
+                    .turnDetection(YoRealtimeTurnDetection.serverVadFor(dialect, config.bargeIn()))
+                    .build();
         } catch (IllegalArgumentException unusable) {
             failureReported = true;
             emit(listener, new AiRealtimeOutput.Failed(new AiFailure(AiFailureKind.BAD_REQUEST,
@@ -148,20 +129,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         }
     }
 
-    /**
-     * 语音模型 → Realtime 方言。Qwen/DashScope 用通义方言（{@code /api-ws/v1/realtime}），
-     * 其余走 OpenAI beta。不要把方言当平台设置暴露给用户：用户只选模型，方言是模型自带属性。
-     */
-    @NonNull
-    private static YoRealtimeDialect dialectFor(@NonNull String baseUrl, @NonNull String model) {
-        String lowerBase = baseUrl.toLowerCase(java.util.Locale.ROOT);
-        String lowerModel = model.toLowerCase(java.util.Locale.ROOT);
-        if (lowerBase.contains("dashscope") || lowerBase.contains("aliyuncs")
-                || lowerModel.contains("qwen") || lowerModel.contains("omni")) {
-            return YoRealtimeDialect.QWEN;
-        }
-        return YoRealtimeDialect.OPENAI_BETA;
-    }
 
     private static YoRealtimeInput toSdk(@NonNull AiRealtimeInput input) {
         return switch (input) {
