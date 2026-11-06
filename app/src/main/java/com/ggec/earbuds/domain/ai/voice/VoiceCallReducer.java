@@ -81,6 +81,12 @@ public final class VoiceCallReducer {
         public boolean generating() {
             return state == VoiceCallState.THINKING || state == VoiceCallState.SPEAKING;
         }
+
+        @NonNull
+        public Model withDuplex(@NonNull VoiceDuplex nextDuplex) {
+            return new Model(state, turns, level, failure, assistantTurnId, audioBytes,
+                    muted, playbackStarted, turnsCreated, nextDuplex, uplinkEnabled);
+        }
     }
 
     public record Transition(@NonNull Model model, @NonNull List<VoiceCallEffect> effects) {
@@ -121,10 +127,21 @@ public final class VoiceCallReducer {
         }
 
         if (event instanceof VoiceCallEvent.DuplexResolved resolved) {
-            Model next = new Model(model.state(), model.turns(), model.level(), model.failure(),
-                    model.assistantTurnId(), model.audioBytes(), model.muted(),
-                    model.playbackStarted(), model.turnsCreated(), resolved.duplex(),
-                    model.uplinkEnabled());
+            if (model.duplex() == resolved.duplex()) {
+                return same(model);
+            }
+            Model next = model.withDuplex(resolved.duplex());
+            effects.add(new VoiceCallEffect.Publish());
+            next = addGateEffect(model, next, effects);
+            return new Transition(next, effects);
+        }
+
+        if (event instanceof VoiceCallEvent.SetDuplex set) {
+            if (model.duplex() == set.duplex()) {
+                return same(model);
+            }
+            Model next = model.withDuplex(set.duplex());
+            effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
         }

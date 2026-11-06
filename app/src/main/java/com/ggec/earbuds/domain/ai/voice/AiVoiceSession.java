@@ -31,6 +31,9 @@ public interface AiVoiceSession {
     /** 静音只停上行，不停正在播放的回答。 */
     void setMuted(boolean muted);
 
+    /** 设置双工通信方式（全双工/半双工）。严格单点控制。 */
+    void setDuplex(@NonNull VoiceDuplex duplex);
+
     /** 切换扬声器/听筒路由。 */
     void setSpeakerphone(boolean speaker);
 
