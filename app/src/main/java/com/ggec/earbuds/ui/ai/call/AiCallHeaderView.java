@@ -1,14 +1,10 @@
 package com.ggec.earbuds.ui.ai.call;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -17,10 +13,11 @@ import androidx.annotation.NonNull;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 
 /**
  * 通话页顶部导航栏 (AiCallHeaderView)：
- * 全面基于 {@link AiTheme} 语义化调色系统构建，严禁硬编码，自适应深浅色模式。
+ * 全面基于 {@link AiTheme} 语义化调色系统与 {@link AiHeaderActionButton} 构建，严禁硬编码，自适应深浅色模式。
  */
 public final class AiCallHeaderView extends RelativeLayout {
 
@@ -29,14 +26,13 @@ public final class AiCallHeaderView extends RelativeLayout {
         void onToggleSubtitles();
     }
 
-    private static final float BUTTON_SIZE = 42f;
     private static final float STATUS_DOT_SIZE = 7f;
 
     private final AiTheme theme;
     private final Listener listener;
 
-    private final ImageView closeButton;
-    private final ImageView subtitlesButton;
+    private final AiHeaderActionButton closeButton;
+    private final AiHeaderActionButton subtitlesButton;
 
     private final View statusDot;
     private final TextView statusText;
@@ -50,12 +46,12 @@ public final class AiCallHeaderView extends RelativeLayout {
         int pad = theme.dp(AiTheme.PAGE_INSET);
         setPadding(pad, theme.dp(AiTheme.SPACE_S), pad, theme.dp(AiTheme.SPACE_S));
 
-        // 1. 左侧：42dp 圆形关闭/最小化按键
-        closeButton = createCircleButton(R.drawable.ic_ai_call_close,
-                context.getString(R.string.ai_call_close),
-                v -> listener.onClose());
-        closeButton.setColorFilter(theme.text1);
-        LayoutParams closeParams = new LayoutParams(theme.dp(BUTTON_SIZE), theme.dp(BUTTON_SIZE));
+        // 1. 左侧：42dp 统一圆形返回/关闭按键 (朝向左侧的返回箭头)
+        closeButton = new AiHeaderActionButton(context, theme, AiHeaderActionButton.Style.NEUTRAL)
+                .icon(R.drawable.ic_ai_back)
+                .contentDesc(R.string.ai_call_close)
+                .onClick(v -> listener.onClose());
+        LayoutParams closeParams = AiHeaderActionButton.createRelativeLayoutParams(theme);
         closeParams.addRule(ALIGN_PARENT_START);
         closeParams.addRule(CENTER_VERTICAL);
         addView(closeButton, closeParams);
@@ -108,11 +104,12 @@ public final class AiCallHeaderView extends RelativeLayout {
         centerParams.addRule(CENTER_IN_PARENT);
         addView(centerPill, centerParams);
 
-        // 3. 右侧：42dp 实时流字幕开关
-        subtitlesButton = createCircleButton(R.drawable.ic_ai_call_subtitles,
-                context.getString(R.string.ai_call_subtitles_toggle),
-                v -> listener.onToggleSubtitles());
-        LayoutParams subParams = new LayoutParams(theme.dp(BUTTON_SIZE), theme.dp(BUTTON_SIZE));
+        // 3. 右侧：42dp 统一圆形双态字幕开关按键
+        subtitlesButton = new AiHeaderActionButton(context, theme, AiHeaderActionButton.Style.TOGGLE)
+                .icon(R.drawable.ic_ai_call_subtitles)
+                .contentDesc(R.string.ai_call_subtitles_toggle)
+                .onClick(v -> listener.onToggleSubtitles());
+        LayoutParams subParams = AiHeaderActionButton.createRelativeLayoutParams(theme);
         subParams.addRule(ALIGN_PARENT_END);
         subParams.addRule(CENTER_VERTICAL);
         addView(subtitlesButton, subParams);
@@ -136,37 +133,6 @@ public final class AiCallHeaderView extends RelativeLayout {
         dotDrawable.setColor(dotColor);
         statusDot.setBackground(dotDrawable);
 
-        updateSubtitleButtonLook(state.captionsVisible());
-    }
-
-    private void updateSubtitleButtonLook(boolean active) {
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        if (active) {
-            bg.setColor(theme.brandSoft);
-            bg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
-            subtitlesButton.setColorFilter(theme.brand);
-        } else {
-            bg.setColor(theme.card);
-            bg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
-            subtitlesButton.setColorFilter(theme.text2);
-        }
-        subtitlesButton.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(theme.brandSoft), bg, null));
-    }
-
-    private ImageView createCircleButton(int iconRes, String desc, OnClickListener onClick) {
-        ImageView iv = new ImageView(getContext());
-        iv.setImageResource(iconRes);
-        iv.setContentDescription(desc);
-        iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        int pad = theme.dp(10f);
-        iv.setPadding(pad, pad, pad, pad);
-
-        GradientDrawable bg = theme.circle(theme.card);
-        bg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
-        iv.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), bg, null));
-        iv.setOnClickListener(onClick);
-        return iv;
+        subtitlesButton.setActive(state.captionsVisible());
     }
 }

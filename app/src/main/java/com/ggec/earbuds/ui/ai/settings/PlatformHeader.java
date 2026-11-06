@@ -4,7 +4,6 @@ import android.content.Context;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -13,8 +12,9 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 
-/** 平台详情页页头：返回、标题与可选徽标。只负责展示。 */
+/** 平台详情页页头：返回、标题与可选徽标。统一采用 {@link AiHeaderActionButton} 圆形拟物微质感按键。 */
 final class PlatformHeader {
 
     private final Context context;
@@ -29,21 +29,19 @@ final class PlatformHeader {
         root = new LinearLayout(context);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setMinimumHeight(theme.dp(AiTheme.HEADER_HEIGHT));
         root.setPadding(theme.dp(AiTheme.PAGE_INSET), 0, theme.dp(AiTheme.PAGE_INSET), 0);
 
-        ImageView back = theme.icon(R.drawable.ic_ai_settings_back, theme.text1);
-        back.setContentDescription(context.getString(R.string.ai_cancel));
-        back.setPadding(theme.dp(AiTheme.SPACE_S), theme.dp(AiTheme.SPACE_S),
-                theme.dp(AiTheme.SPACE_S), theme.dp(AiTheme.SPACE_S));
-        back.setBackground(theme.pressable(AiTheme.TOUCH_TARGET / 2f));
-        back.setOnClickListener(view -> onBack.run());
-        root.addView(back, new LinearLayout.LayoutParams(
-                theme.dp(AiTheme.TOUCH_TARGET), theme.dp(AiTheme.TOUCH_TARGET)));
+        AiHeaderActionButton back = new AiHeaderActionButton(context, theme, AiHeaderActionButton.Style.NEUTRAL)
+                .icon(R.drawable.ic_ai_back)
+                .contentDesc(R.string.ai_cancel)
+                .onClick(view -> onBack.run());
+        root.addView(back, AiHeaderActionButton.createLinearLayoutParams(theme));
 
         title = theme.text(AiTheme.TEXT_HEADLINE, theme.text1, AiTheme.Weight.MEDIUM);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.leftMargin = theme.dp(AiTheme.SPACE_S);
+        titleParams.setMarginStart(theme.dp(AiTheme.SPACE_M));
         root.addView(title, titleParams);
 
         badge = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
