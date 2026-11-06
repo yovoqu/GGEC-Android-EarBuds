@@ -35,6 +35,7 @@ public final class AiCallScreen {
     public interface Listener {
         void onClose();
         void onToggleSubtitles();
+        void onToggleDuplex();
         void onMuted(boolean muted);
         void onSpeaker(boolean speaker);
         void onHangUp();
@@ -42,7 +43,7 @@ public final class AiCallScreen {
         void onAction(@NonNull AiCallUiState.Action action);
     }
 
-    private static final float VISUALIZER_SIZE = 280f;
+    private static final float VISUALIZER_SIZE = 210f;
 
     private final AiTheme theme;
     private final ConstraintLayout root;
@@ -84,6 +85,11 @@ public final class AiCallScreen {
             @Override
             public void onToggleSubtitles() {
                 listener.onToggleSubtitles();
+            }
+
+            @Override
+            public void onToggleDuplex() {
+                listener.onToggleDuplex();
             }
         });
         headerView.setId(View.generateViewId());
@@ -147,7 +153,9 @@ public final class AiCallScreen {
         orbParams.bottomToTop = subtitleView.getId();
         orbParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
         orbParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID;
-        orbParams.verticalBias = 0.45f;
+        orbParams.verticalBias = 0.40f;
+        orbParams.topMargin = theme.dp(8f);
+        orbParams.bottomMargin = theme.dp(8f);
         root.addView(visualizerView, orbParams);
 
         // 5. 异常中断恢复卡片 (ai_call_error)

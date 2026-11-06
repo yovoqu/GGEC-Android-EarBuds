@@ -8,6 +8,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import org.junit.Test;
 
@@ -63,6 +64,17 @@ public class AiCallUiMapperTest {
         assertFalse(state.speakerOn());
         assertEquals(AiCallUiState.Phase.LISTENING, state.phase());
         assertTrue(state.live());
+    }
+
+    @Test
+    public void duplexModeIsProjectedFromSnapshot() {
+        AiCallUiState full = mapper.map(new AiVoiceSnapshot(
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX));
+        assertEquals(VoiceDuplex.FULL_DUPLEX, full.duplex());
+
+        AiCallUiState half = mapper.map(new AiVoiceSnapshot(
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.HALF_DUPLEX));
+        assertEquals(VoiceDuplex.HALF_DUPLEX, half.duplex());
     }
 
     private static AiVoiceSnapshot failed(AiFailureKind kind) {

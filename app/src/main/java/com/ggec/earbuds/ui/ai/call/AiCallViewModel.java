@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import java.util.Objects;
 
@@ -45,6 +46,7 @@ public final class AiCallViewModel extends ViewModel {
     private boolean timerRunning = false;
     private boolean captionsVisible = true;
     private boolean speakerOn = true;
+    private VoiceDuplex duplex = VoiceDuplex.FULL_DUPLEX;
     private long lastMeterAt;
 
     @Nullable
@@ -127,10 +129,12 @@ public final class AiCallViewModel extends ViewModel {
         uiState.setValue(AiCallUiState.connecting()
                 .withSpeakerOn(speakerOn)
                 .withCaptionsVisible(captionsVisible)
+                .withDuplex(duplex)
                 .withDurationSeconds(0));
 
         AiVoiceSession created = factory.create();
         session = created;
+        created.setDuplex(duplex);
         created.start(this::publishSnapshot);
         created.setSpeakerphone(speakerOn);
     }
@@ -143,6 +147,7 @@ public final class AiCallViewModel extends ViewModel {
         uiState.setValue(AiCallUiState.permissionDenied()
                 .withSpeakerOn(speakerOn)
                 .withCaptionsVisible(captionsVisible)
+                .withDuplex(duplex)
                 .withDurationSeconds(durationSeconds));
         stopTimer();
     }
@@ -183,6 +188,32 @@ public final class AiCallViewModel extends ViewModel {
         setSpeakerphone(!speakerOn);
     }
 
+    /** 双工通信方式切换操作（全双工/半双工，严格单点控制） */
+    public void setDuplex(@NonNull VoiceDuplex mode) {
+        Objects.requireNonNull(mode, "mode");
+        duplex = mode;
+        AiCallUiState current = uiState.getValue();
+        if (current != null) {
+            uiState.setValue(current.withDuplex(mode));
+        }
+        AiVoiceSession running = session;
+        if (running != null) {
+            running.setDuplex(mode);
+        }
+    }
+
+    public void toggleDuplex() {
+        AiCallUiState current = uiState.getValue();
+        VoiceDuplex active = current != null ? current.duplex() : duplex;
+        setDuplex(active == VoiceDuplex.FULL_DUPLEX ? VoiceDuplex.HALF_DUPLEX : VoiceDuplex.FULL_DUPLEX);
+    }
+
+    @NonNull
+    public VoiceDuplex duplex() {
+        AiCallUiState current = uiState.getValue();
+        return current != null ? current.duplex() : duplex;
+    }
+
     /** 实时字幕浮层卡片显示/隐藏切换 */
     public void toggleCaptions() {
         captionsVisible = !captionsVisible;
@@ -221,6 +252,7 @@ public final class AiCallViewModel extends ViewModel {
     }
 
     private void publishSnapshot(@NonNull AiVoiceSnapshot snapshot) {
+        this.duplex = snapshot.duplex();
         AiCallUiState mapped = mapper.map(snapshot)
                 .withSpeakerOn(speakerOn)
                 .withDurationSeconds(durationSeconds)

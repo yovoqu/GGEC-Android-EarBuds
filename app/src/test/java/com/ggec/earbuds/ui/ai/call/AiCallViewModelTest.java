@@ -9,6 +9,7 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -123,6 +124,32 @@ public class AiCallViewModelTest {
         assertEquals(expected, viewModel.transcript().getValue());
     }
 
+    @Test
+    public void toggleDuplexInvertsDuplexMode() {
+        viewModel.start();
+        assertEquals(VoiceDuplex.FULL_DUPLEX, viewModel.duplex());
+        assertEquals(VoiceDuplex.FULL_DUPLEX, viewModel.uiState().getValue().duplex());
+
+        viewModel.toggleDuplex();
+        assertEquals(VoiceDuplex.HALF_DUPLEX, viewModel.duplex());
+        assertEquals(VoiceDuplex.HALF_DUPLEX, fakeSession.duplex);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, viewModel.uiState().getValue().duplex());
+
+        viewModel.toggleDuplex();
+        assertEquals(VoiceDuplex.FULL_DUPLEX, viewModel.duplex());
+        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.duplex);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, viewModel.uiState().getValue().duplex());
+    }
+
+    @Test
+    public void setDuplexUpdatesSessionAndState() {
+        viewModel.start();
+        viewModel.setDuplex(VoiceDuplex.HALF_DUPLEX);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, viewModel.duplex());
+        assertEquals(VoiceDuplex.HALF_DUPLEX, fakeSession.duplex);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, viewModel.uiState().getValue().duplex());
+    }
+
     private static final class FakeTicker implements AiCallViewModel.Ticker {
         Runnable scheduled;
         long delay;
@@ -147,6 +174,7 @@ public class AiCallViewModelTest {
         boolean muted = false;
         boolean speakerphone = true;
         boolean interrupted = false;
+        VoiceDuplex duplex = VoiceDuplex.FULL_DUPLEX;
         Listener listener;
 
         @Override
@@ -168,6 +196,11 @@ public class AiCallViewModelTest {
         @Override
         public void setSpeakerphone(boolean speakerphone) {
             this.speakerphone = speakerphone;
+        }
+
+        @Override
+        public void setDuplex(@NonNull VoiceDuplex duplex) {
+            this.duplex = duplex;
         }
 
         @Override
