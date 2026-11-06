@@ -10,6 +10,7 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -122,6 +123,18 @@ public class AiCallViewModelTest {
 
         String expected = "你：你好\nAI：很高兴为你服务…";
         assertEquals(expected, viewModel.transcript().getValue());
+
+        List<AiSubtitleItem> items = viewModel.subtitleItems().getValue();
+        assertEquals(2, items.size());
+        assertEquals("1", items.get(0).id());
+        assertTrue(items.get(0).isUser());
+        assertEquals("你好", items.get(0).text());
+        assertTrue(items.get(0).isFinal());
+
+        assertEquals("2", items.get(1).id());
+        assertFalse(items.get(1).isUser());
+        assertEquals("很高兴为你服务", items.get(1).text());
+        assertFalse(items.get(1).isFinal());
     }
 
     @Test

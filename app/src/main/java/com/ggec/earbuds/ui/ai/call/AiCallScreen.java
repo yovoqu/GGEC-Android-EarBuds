@@ -13,7 +13,11 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
+
+import java.util.List;
 
 /**
  * 通话页全景布局容器 (AiCallScreen)：
@@ -54,6 +58,8 @@ public final class AiCallScreen {
     private final AiCallControlsView controlsView;
 
     private String latestTranscript = "";
+    private List<AiVoiceSnapshot.Turn> latestTurns = List.of();
+    private List<AiSubtitleItem> latestSubtitleItems = List.of();
     private boolean captionsEnabled = true;
     private AiCallUiState.Action currentAction = AiCallUiState.Action.NONE;
 
@@ -217,7 +223,13 @@ public final class AiCallScreen {
             subtitleView.setVisibility(View.GONE);
         } else {
             visualizerView.setVisibility(View.VISIBLE);
-            subtitleView.render(latestTranscript, captionsEnabled);
+            if (!latestSubtitleItems.isEmpty()) {
+                subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
+            } else if (!latestTurns.isEmpty()) {
+                subtitleView.renderTurns(latestTurns, captionsEnabled);
+            } else {
+                subtitleView.render(latestTranscript, captionsEnabled);
+            }
         }
     }
 
@@ -225,9 +237,23 @@ public final class AiCallScreen {
         visualizerView.setAudioLevel(level);
     }
 
+    public void setSubtitleItems(@NonNull List<AiSubtitleItem> items) {
+        this.latestSubtitleItems = items;
+        if (currentAction == AiCallUiState.Action.NONE) {
+            subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
+        }
+    }
+
+    public void setTurns(@NonNull List<AiVoiceSnapshot.Turn> turns) {
+        this.latestTurns = turns;
+        if (currentAction == AiCallUiState.Action.NONE && latestSubtitleItems.isEmpty()) {
+            subtitleView.renderTurns(latestTurns, captionsEnabled);
+        }
+    }
+
     public void setTranscript(@NonNull String transcript) {
         this.latestTranscript = transcript;
-        if (currentAction == AiCallUiState.Action.NONE) {
+        if (currentAction == AiCallUiState.Action.NONE && latestSubtitleItems.isEmpty() && latestTurns.isEmpty()) {
             subtitleView.render(latestTranscript, captionsEnabled);
         }
     }

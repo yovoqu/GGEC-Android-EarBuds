@@ -12,7 +12,10 @@ import androidx.lifecycle.ViewModel;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -41,6 +44,10 @@ public final class AiCallViewModel extends ViewModel {
             new MutableLiveData<>(AiCallUiState.connecting());
     private final MutableLiveData<Float> meter = new MutableLiveData<>(0f);
     private final MutableLiveData<String> transcript = new MutableLiveData<>("");
+    private final MutableLiveData<List<AiVoiceSnapshot.Turn>> turns =
+            new MutableLiveData<>(List.of());
+    private final MutableLiveData<List<AiSubtitleItem>> subtitleItems =
+            new MutableLiveData<>(List.of());
 
     private int durationSeconds = 0;
     private boolean timerRunning = false;
@@ -120,12 +127,26 @@ public final class AiCallViewModel extends ViewModel {
         return transcript;
     }
 
+    /** 结构化回合独立流（多轮对话模型） */
+    @NonNull
+    public LiveData<List<AiVoiceSnapshot.Turn>> turns() {
+        return turns;
+    }
+
+    /** 表现层字幕项独立流（严格解耦领域模型与视图层） */
+    @NonNull
+    public LiveData<List<AiSubtitleItem>> subtitleItems() {
+        return subtitleItems;
+    }
+
     /** 起一路通话会话 */
     public void start() {
         if (session != null) {
             return;
         }
         durationSeconds = 0;
+        turns.setValue(List.of());
+        subtitleItems.setValue(List.of());
         uiState.setValue(AiCallUiState.connecting()
                 .withSpeakerOn(speakerOn)
                 .withCaptionsVisible(captionsVisible)
@@ -277,6 +298,16 @@ public final class AiCallViewModel extends ViewModel {
         if (now - lastMeterAt >= 50L || Math.abs(level - old) >= 0.05f) {
             lastMeterAt = now;
             meter.postValue(level);
+        }
+
+        List<AiVoiceSnapshot.Turn> currentTurns = snapshot.turns();
+        if (!Objects.equals(turns.getValue(), currentTurns)) {
+            turns.postValue(currentTurns);
+        }
+
+        List<AiSubtitleItem> currentItems = AiSubtitleMapper.fromDomainTurns(currentTurns);
+        if (!Objects.equals(subtitleItems.getValue(), currentItems)) {
+            subtitleItems.postValue(currentItems);
         }
 
         String text = transcriptOf(snapshot);
