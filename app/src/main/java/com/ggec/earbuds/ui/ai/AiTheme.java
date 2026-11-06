@@ -20,10 +20,10 @@ import com.yohu.youi.api.theme.YoColors;
 import com.yohu.youi.api.theme.YoFonts;
 
 /**
- * AI 界面的视觉令牌与视图工厂。
+ * AI 界面的视觉令牌与视图工厂�?
  *
  * <p>颜色全部来自 YoUI 主题快照（{@link YoColors#of(Context)}），深浅色切换时随页面重建；
- * 字号/间距按 ui-design.md 的 AI 专用阶梯，与 {@code YoDimens} 数值重合的保持一致，避免两套口径互相打架。</p>
+ * 字号/间距�?ui-design.md �?AI 专用阶梯，与 {@code YoDimens} 数值重合的保持一致，避免两套口径互相打架�?/p>
  */
 public final class AiTheme {
 
@@ -55,21 +55,22 @@ public final class AiTheme {
     // ---- 尺寸 ----
     public static final float PAGE_INSET = 20f;
     /**
-     * 自有 {@code YoList} 卡片离父级的距离。边距写在库里（16dp），页面不要再叠一层页边距；
-     * 分区标题、搜索和分段跟卡片外沿对齐。
+     * 自有 {@code YoList} 卡片离父级的距离。边距写在库里（16dp），页面不要再叠一层页边距�?
+     * 分区标题、搜索和分段跟卡片外沿对齐�?
      */
     public static final float LIST_EDGE = 16f;
-    /** 页内标题行高度；比库的标题栏矮，把高度让给消息。 */
+    /** 页内标题行高度；比库的标题栏矮，把高度让给消息�?*/
     public static final float HEADER_HEIGHT = 56f;
-    /** 建议行的固定行高，与系统列表的两行高度一致。 */
+    /** 建议行的固定行高，与系统列表的两行高度一致�?*/
     public static final float ROW_HEIGHT = 56f;
     public static final float TOUCH_TARGET = 40f;
-    /** 空状态的标题距内容区顶部的高度；三种空状态共用一个起点。 */
+    /** 空状态的标题距内容区顶部的高度；三种空状态共用一个起点�?*/
     public static final float EMPTY_TOP = 88f;
 
     public final Context context;
     public final float density;
-    private final boolean dark;
+    public final boolean dark;
+    public boolean isDark() { return dark; }
 
     @ColorInt public final int page;
     @ColorInt public final int card;
@@ -128,7 +129,7 @@ public final class AiTheme {
         return value * density;
     }
 
-    // ---- 文本与图标 ----
+    // ---- 文本与图�?----
 
     @NonNull
     public TextView text(float sp, @ColorInt int color) {
@@ -158,7 +159,7 @@ public final class AiTheme {
         return view;
     }
 
-    /** 消息操作行上的小图标按钮：固定触控区 + 圆形水波纹。 */
+    /** 消息操作行上的小图标按钮：固定触控区 + 圆形水波纹�?*/
     @NonNull
     public ImageView iconButton(@DrawableRes int resource, @ColorInt int tint,
                                 float sizeDp, float iconPaddingDp, @NonNull CharSequence description) {
@@ -189,7 +190,7 @@ public final class AiTheme {
     }
 
     /**
-     * 对角渐变底：只用于语音状态卡的"身份"面，制造一点光的来源感，不做装饰滥用。
+     * 对角渐变底：只用于语音状态卡�?身份"面，制造一点光的来源感，不做装饰滥用�?
      */
     @NonNull
     public GradientDrawable gradient(@ColorInt int start, @ColorInt int end, float radiusDp) {
@@ -207,7 +208,7 @@ public final class AiTheme {
         return drawable;
     }
 
-    /** 四个角分别指定半径（dp）：左上、右上、右下、左下。 */
+    /** 四个角分别指定半径（dp）：左上、右上、右下、左下�?*/
     @NonNull
     public GradientDrawable corners(@ColorInt int color, float topLeft, float topRight, float bottomRight,
                                     float bottomLeft) {
@@ -227,7 +228,7 @@ public final class AiTheme {
         return drawable;
     }
 
-    /** 空心圆环，用来画次级项目符号。 */
+    /** 空心圆环，用来画次级项目符号�?*/
     @NonNull
     public GradientDrawable ring(@ColorInt int color, float strokeDp) {
         GradientDrawable drawable = new GradientDrawable();
@@ -236,14 +237,14 @@ public final class AiTheme {
         return drawable;
     }
 
-    /** 在内容背景上叠一层按下的水波纹，水波纹被限制在 {@code content} 的形状内。 */
+    /** 在内容背景上叠一层按下的水波纹，水波纹被限制�?{@code content} 的形状内�?*/
     @NonNull
     public Drawable pressable(@NonNull Drawable content, float radiusDp) {
         Drawable mask = rounded(0xFFFFFFFF, radiusDp);
         return new RippleDrawable(ColorStateList.valueOf(ripple), content, mask);
     }
 
-    /** 无底色的可点击背景，只有按下的水波纹。 */
+    /** 无底色的可点击背景，只有按下的水波纹�?*/
     @NonNull
     public Drawable pressable(float radiusDp) {
         Drawable mask = rounded(0xFFFFFFFF, radiusDp);

@@ -35,4 +35,23 @@
     <string name="ai_call_interrupt">打断回答</string>
 
     <string name="ai_call_retry">重试</string>
+
+    <!-- 优秀重构增强文案 -->
+    <string name="ai_call_subtitles">字幕</string>
+    <string name="ai_call_subtitles_toggle">实时字幕开关</string>
+    <string name="ai_call_subtitles_on">实时字幕已开启</string>
+    <string name="ai_call_subtitles_off">实时字幕已关闭</string>
+    <string name="ai_call_interrupt_hint">轻触光晕可打断</string>
+    <string name="ai_call_speaker_label">扬声器</string>
+    <string name="ai_call_earpiece_label">听筒</string>
+    <string name="ai_call_mic_label">麦克风</string>
+    <string name="ai_call_mic_muted_label">已静音</string>
+    <string name="ai_call_earbuds_duplex">GGEC 耳机 · 全双工</string>
+    <string name="ai_call_speaker_duplex">扬声器模式 · 半双工</string>
+    <string name="ai_call_earpiece_duplex">听筒模式 · 半双工</string>
+    <string name="ai_call_tag_user">你</string>
+    <string name="ai_call_tag_ai">AI</string>
+    <string name="ai_call_transcript_empty">开始说话，实时字幕将在此显示</string>
+    <string name="ai_call_failure_title">连接遇到问题</string>
+    <string name="ai_call_back">返回</string>
 </resources>

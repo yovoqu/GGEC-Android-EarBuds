@@ -1,25 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  次世代通话设计系统：专业声学拾音麦克风 (28dp 视口体系)。
+  由 7dp 宽实心声学胶囊、2.4dp 规整悬挂托架与避震底座精密几何构成。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <!-- 拾音胶囊主体 -->
     <path
-        android:pathData="M12,3.9 A2.6,2.6 0 0 1 14.6,6.5 V11.2 A2.6,2.6 0 0 1 9.4,11.2 V6.5 A2.6,2.6 0 0 1 12,3.9 Z"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,3.5 C12.07,3.5 10.5,5.07 10.5,7 L10.5,13.5 C10.5,15.43 12.07,17 14,17 C15.93,17 17.5,15.43 17.5,13.5 L17.5,7 C17.5,5.07 15.93,3.5 14,3.5 Z" />
+    <!-- 弧形集音托架、立柱与底座 -->
     <path
-        android:pathData="M6.8,11.3 V11.9 A5.2,5.2 0 0 0 17.2,11.9 V11.3"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M12,17.1 V19.8"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:strokeLineJoin="round"
+        android:pathData="M6.5,12 C6.5,16.14 9.86,19.5 14,19.5 C18.14,19.5 21.5,16.14 21.5,12 M14,19.5 L14,24.5 M9.5,24.5 L18.5,24.5" />
 </vector>

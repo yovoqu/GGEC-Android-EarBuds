@@ -1,5 +1,8 @@
 package com.ggec.earbuds.ui.ai.call;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
@@ -12,79 +15,158 @@ import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import java.util.Objects;
 
 /**
- * 通话页的 ViewModel：把会话的快照搬给页面、把用户操作搬回会话、挂断时释放会话。
+ * 通话页 ViewModel：严格 MVVM 架构中唯一的业务大脑与状态持有者。
  *
- * <p>这里**不做任何状态推导**。{@link AiVoiceSnapshot} 已经是"页面该画什么"的完整答案，
- * 发言记录、电平、失败原因都在里面；再推导一层就会出现两份状态，动画和文案开始互相打脸。</p>
- *
- * <p>会话由 {@link AiVoiceSessionFactory} 造，所以这一层只知道"有一路会话"，不知道
- * 它背后是 WebSocket 还是别的传输——链路选择属于装配根，不属于界面。</p>
- *
- * <p>生命周期跟着 ViewModel 走而不是 Activity：转屏或深色模式切换会重建页面，
- * 但通话不该断。真正的挂断由 {@link #hangUp()} 和 {@link #onCleared()} 两处触发。</p>
+ * <p>三条单向数据流：
+ * <ul>
+ *   <li>{@link #uiState()}：完整的不可变界面状态快照（相位、标题、原因、通道、时长、字幕可见性）；</li>
+ *   <li>{@link #meter()}：瞬时音频分贝电平（高频 50ms 节流），专供能量球高帧率动效；</li>
+ *   <li>{@link #transcript()}：多轮格式化转写文本，专供实时字幕卡片。</li>
+ * </ul>
+ * </p>
  */
 public final class AiCallViewModel extends ViewModel {
 
+    public interface Ticker {
+        void postDelayed(@NonNull Runnable r, long delayMs);
+        void removeCallbacks(@NonNull Runnable r);
+    }
+
     private final AiVoiceSessionFactory factory;
     private final AiCallUiMapper mapper;
+    private final Ticker ticker;
+
     private final MutableLiveData<AiCallUiState> uiState =
             new MutableLiveData<>(AiCallUiState.connecting());
+    private final MutableLiveData<Float> meter = new MutableLiveData<>(0f);
+    private final MutableLiveData<String> transcript = new MutableLiveData<>("");
+
+    private int durationSeconds = 0;
+    private boolean timerRunning = false;
+    private boolean captionsVisible = true;
+    private boolean speakerOn = true;
+    private long lastMeterAt;
 
     @Nullable
     private AiVoiceSession session;
-    private boolean speakerOn = true;
+
+    private final Runnable timerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!timerRunning) {
+                return;
+            }
+            durationSeconds++;
+            AiCallUiState current = uiState.getValue();
+            if (current != null) {
+                uiState.setValue(current.withDurationSeconds(durationSeconds));
+            }
+            ticker.postDelayed(this, 1000L);
+        }
+    };
 
     public AiCallViewModel(@NonNull AiVoiceSessionFactory factory, @NonNull AiCallUiMapper mapper) {
-        this.factory = factory;
-        this.mapper = mapper;
+        this(factory, mapper, new MainTicker());
     }
 
-    /** 页面唯一的真相来源；{@link #start} 之前是连接中。 */
+    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory,
+                           @NonNull AiCallUiMapper mapper,
+                           @NonNull Ticker ticker) {
+        this.factory = factory;
+        this.mapper = mapper;
+        this.ticker = ticker;
+    }
+
+    private static final class MainTicker implements Ticker {
+        private Handler handler;
+
+        private Handler handler() {
+            if (handler == null) {
+                handler = new Handler(Looper.getMainLooper());
+            }
+            return handler;
+        }
+
+        @Override
+        public void postDelayed(@NonNull Runnable r, long delayMs) {
+            handler().postDelayed(r, delayMs);
+        }
+
+        @Override
+        public void removeCallbacks(@NonNull Runnable r) {
+            if (handler != null) {
+                handler.removeCallbacks(r);
+            }
+        }
+    }
+
+    /** 页面唯一的真相来源 */
     @NonNull
     public LiveData<AiCallUiState> uiState() {
         return uiState;
     }
 
-    /**
-     * 起一路通话。重复调用（例如从后台回来）不会另起一条会话。
-     *
-     * <p>这里在主线程上调用会话，会话契约要求实现方自己把采集与网络的初始化投到 IO 执行器；
-     * 页面不等它，先画"正在连接"。</p>
-     *
-     * <p>用哪个语音模型由会话自己去设置里读：页面不传模型，也就不会出现
-     * "界面记的选择和设置里已经变了"这种两份状态。缺 Key 时会话会报失败快照。</p>
-     */
+    /** 瞬时电平独立流（0..1） */
+    @NonNull
+    public LiveData<Float> meter() {
+        return meter;
+    }
+
+    /** 转写独立流 */
+    @NonNull
+    public LiveData<String> transcript() {
+        return transcript;
+    }
+
+    /** 起一路通话会话 */
     public void start() {
         if (session != null) {
             return;
         }
-        // 先给页面一个确定的起点：没收到第一帧之前它也能画出"正在连接"。
-        uiState.setValue(AiCallUiState.connecting().withSpeakerOn(speakerOn));
+        durationSeconds = 0;
+        uiState.setValue(AiCallUiState.connecting()
+                .withSpeakerOn(speakerOn)
+                .withCaptionsVisible(captionsVisible)
+                .withDurationSeconds(0));
+
         AiVoiceSession created = factory.create();
         session = created;
-        created.start(snapshot -> publish(mapper.map(snapshot).withSpeakerOn(speakerOn)));
+        created.start(this::publishSnapshot);
         created.setSpeakerphone(speakerOn);
     }
 
-    /** 当前是否已经有一条通话会话；页面重建后用来避免重复 start。 */
     public boolean isStarted() {
         return session != null;
     }
 
-    /** 权限拒绝由 View 报告，状态仍只在这里发布。 */
     public void permissionDenied() {
-        uiState.setValue(AiCallUiState.permissionDenied().withSpeakerOn(speakerOn));
+        uiState.setValue(AiCallUiState.permissionDenied()
+                .withSpeakerOn(speakerOn)
+                .withCaptionsVisible(captionsVisible)
+                .withDurationSeconds(durationSeconds));
+        stopTimer();
     }
 
-    /** 静音只停上行；会话用 MUTED 快照确认，页面不自己改按钮状态。 */
+    /** 静音切换操作 */
     public void setMuted(boolean muted) {
         AiVoiceSession current = session;
         if (current != null) {
             current.setMuted(muted);
         }
+        AiCallUiState currentUi = uiState.getValue();
+        if (currentUi != null) {
+            uiState.setValue(currentUi.withMuted(muted));
+        }
     }
 
-    /** 扬声器 / 听筒路由。 */
+    public void toggleMute() {
+        AiCallUiState current = uiState.getValue();
+        if (current != null) {
+            setMuted(!current.muted());
+        }
+    }
+
+    /** 扬声器 / 听筒路由切换 */
     public void setSpeakerphone(boolean speaker) {
         speakerOn = speaker;
         AiCallUiState current = uiState.getValue();
@@ -97,7 +179,20 @@ public final class AiCallViewModel extends ViewModel {
         }
     }
 
-    /** 用户插话：停掉正在生成的回答，回到聆听。 */
+    public void toggleSpeaker() {
+        setSpeakerphone(!speakerOn);
+    }
+
+    /** 实时字幕浮层卡片显示/隐藏切换 */
+    public void toggleCaptions() {
+        captionsVisible = !captionsVisible;
+        AiCallUiState current = uiState.getValue();
+        if (current != null) {
+            uiState.setValue(current.withCaptionsVisible(captionsVisible));
+        }
+    }
+
+    /** 用户轻触光晕或按键插话打断 */
     public void interrupt() {
         AiVoiceSession current = session;
         if (current != null) {
@@ -105,13 +200,15 @@ public final class AiCallViewModel extends ViewModel {
         }
     }
 
-    /** 挂断。幂等：页面点挂断、以及 ViewModel 被清掉时都会走到这里。 */
+    /** 挂断通话 */
     public void hangUp() {
+        stopTimer();
         release();
     }
 
     @Override
     protected void onCleared() {
+        stopTimer();
         release();
     }
 
@@ -123,10 +220,67 @@ public final class AiCallViewModel extends ViewModel {
         }
     }
 
-    private void publish(@NonNull AiCallUiState next) {
-        if (Objects.equals(uiState.getValue(), next)) {
+    private void publishSnapshot(@NonNull AiVoiceSnapshot snapshot) {
+        AiCallUiState mapped = mapper.map(snapshot)
+                .withSpeakerOn(speakerOn)
+                .withDurationSeconds(durationSeconds)
+                .withCaptionsVisible(captionsVisible);
+
+        if (!Objects.equals(uiState.getValue(), mapped)) {
+            uiState.postValue(mapped);
+        }
+
+        // 状态转为活动声态时起计时器；挂断或失败时停止
+        if (mapped.live() && !mapped.ended()) {
+            startTimer();
+        } else if (mapped.ended()) {
+            stopTimer();
+        }
+
+        float level = snapshot.state() == AiVoiceSnapshot.State.LISTENING
+                ? snapshot.inputLevel() : 0f;
+        long now = System.currentTimeMillis();
+        Float previous = meter.getValue();
+        float old = previous == null ? 0f : previous;
+        if (now - lastMeterAt >= 50L || Math.abs(level - old) >= 0.05f) {
+            lastMeterAt = now;
+            meter.postValue(level);
+        }
+
+        String text = transcriptOf(snapshot);
+        if (!text.equals(transcript.getValue())) {
+            transcript.postValue(text);
+        }
+    }
+
+    private void startTimer() {
+        if (timerRunning) {
             return;
         }
-        uiState.postValue(next);
+        timerRunning = true;
+        ticker.postDelayed(timerRunnable, 1000L);
+    }
+
+    private void stopTimer() {
+        timerRunning = false;
+        ticker.removeCallbacks(timerRunnable);
+    }
+
+    @NonNull
+    private static String transcriptOf(@NonNull AiVoiceSnapshot snapshot) {
+        StringBuilder text = new StringBuilder();
+        for (AiVoiceSnapshot.Turn turn : snapshot.turns()) {
+            if (turn.text().isEmpty()) {
+                continue;
+            }
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(turn.user() ? "你：" : "AI：").append(turn.text());
+            if (!turn.finalTranscript()) {
+                text.append('…');
+            }
+        }
+        return text.toString();
     }
 }
