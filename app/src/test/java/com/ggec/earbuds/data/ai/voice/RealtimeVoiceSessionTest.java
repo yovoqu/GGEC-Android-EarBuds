@@ -303,6 +303,20 @@ public class RealtimeVoiceSessionTest {
         assertEquals(AiFailureKind.UNKNOWN, RealtimeLinkAdapter.kindOf(null));
     }
 
+    @Test
+    public void setDuplexSwitchesDuplexModeInSnapshot() {
+        newSession(VoiceDuplex.HALF_DUPLEX);
+        session.start(snapshots::add);
+        link.opened();
+        assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());
+
+        session.setDuplex(VoiceDuplex.FULL_DUPLEX);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, last().duplex());
+
+        session.setDuplex(VoiceDuplex.HALF_DUPLEX);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());
+    }
+
     private AiVoiceSnapshot last() {
         return snapshots.get(snapshots.size() - 1);
     }

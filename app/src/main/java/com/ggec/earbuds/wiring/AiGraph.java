@@ -35,6 +35,7 @@ import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplexPolicy;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
@@ -161,11 +162,10 @@ public final class AiGraph {
             //  - 耳机/蓝牙/USB（私密路由）：声音不进麦克风，可以全双工，支持语音打断；
             //  - 外放/听筒：有回声风险，默认半双工（实测本机 AEC 不足以支撑外放全双工）。
             boolean privateOutput = new AndroidAudioRoute(context).hasPrivateOutput();
-            VoiceDuplex requested = privateOutput
-                    ? VoiceDuplex.FULL_DUPLEX : VoiceDuplex.HALF_DUPLEX;
+            VoiceDuplex initialDuplex = VoiceDuplexPolicy.resolveDefault(privateOutput, false);
             return new RealtimeVoiceSession(settings, credentials,
                     capture, new AndroidAudioPlayback(context),
-                    new RealtimeLinkAdapter(), clock, voiceState, requested, privateOutput);
+                    new RealtimeLinkAdapter(), clock, voiceState, initialDuplex, privateOutput);
         };
     }
 
