@@ -113,6 +113,17 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
         }
     }
 
+    public void userTranscript(@NonNull String transcript) {
+        userTranscript(transcript, "item-user-1");
+    }
+
+    public void userTranscript(@NonNull String transcript, @Nullable String itemId) {
+        Listener target = listener;
+        if (target != null) {
+            target.onOutput(new AiRealtimeOutput.UserTranscript(transcript, itemId));
+        }
+    }
+
     public void speechStopped() {
         Listener target = listener;
         if (target != null) {

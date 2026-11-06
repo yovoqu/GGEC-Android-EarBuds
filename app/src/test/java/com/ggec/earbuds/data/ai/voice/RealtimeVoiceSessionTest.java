@@ -59,6 +59,23 @@ public class RealtimeVoiceSessionTest {
     }
 
     @Test
+    public void userTranscriptFlowsIntoSnapshot() {
+        newSession(VoiceDuplex.FULL_DUPLEX);
+        session.start(snapshots::add);
+        link.opened();
+
+        link.userTranscript("明天的天气如何", "user-123");
+        assertEquals(1, last().turns().size());
+        assertTrue(last().turns().get(0).user());
+        assertEquals("明天的天气如何", last().turns().get(0).text());
+
+        link.text("明天晴转多云");
+        assertEquals(2, last().turns().size());
+        assertFalse(last().turns().get(1).user());
+        assertEquals("明天晴转多云", last().turns().get(1).text());
+    }
+
+    @Test
     public void opensThenListensAndUpsamplesCaptureTo24k() {
         newSession(VoiceDuplex.HALF_DUPLEX);
         session.start(snapshots::add);

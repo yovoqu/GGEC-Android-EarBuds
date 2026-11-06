@@ -24,6 +24,24 @@ public class VoiceCallReducerTest {
     }
 
     @Test
+    public void userTranscriptAppendsUserTurn() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.UserTranscript("今天天气如何", "user-item-1"), 1050);
+
+        assertEquals(1, model.turns().size());
+        AiVoiceSnapshot.Turn turn = model.turns().get(0);
+        assertTrue(turn.user());
+        assertEquals("今天天气如何", turn.text());
+        assertTrue(turn.finalTranscript());
+
+        send(new VoiceCallEvent.AssistantText("今天晴空万里"), 1100);
+        assertEquals(2, model.turns().size());
+        assertFalse(model.turns().get(1).user());
+        assertEquals("今天晴空万里", model.turns().get(1).text());
+    }
+
+    @Test
     public void responseDoneWithAudioGoesThroughDrainingBeforeListening() {
         send(new VoiceCallEvent.Start(), 1000);
         send(new VoiceCallEvent.Opened(), 1000);
