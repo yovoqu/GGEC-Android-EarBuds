@@ -22,17 +22,18 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 
 /**
- * 通话页底部悬浮控制舱 (AiCallControlsView)：
- * 全面基于 {@link AiTheme} 语义化调色系统构建，严禁硬编码，自适应深浅色模式。
+ * 通话页底部控制面板 (AiCallControlsView)：
+ * 全面基于 {@link AiTheme} 语义化调色系统构建，直接贯通全面屏底部导航区，无缝贴底沉浸式操作底座。
  *
  * <p>布局架构与双对齐规范：
  * <ul>
+ *   <li><b>底部全量打通沉浸</b>：彻底移除悬浮胶囊底座与周边留白，面板直接向左右两侧与屏幕底部完全贯通贴底；</li>
+ *   <li><b>安全区自适应内衬</b>：背景自然流淌铺满手势条/导航栏安全区，按钮通过内部动态 Inset 上浮，保证防误触；</li>
  *   <li><b>极简无文本设计</b>：全面移除冗余文本描述标签，释放纵向宝贵空间，聚焦核心操作手势；</li>
- *   <li><b>紧凑高度调优</b>：控制坞整体高度紧凑收敛至 ~76dp，避免挤压中央流体声场与字幕卡片；</li>
  *   <li><b>按键水平轴心对齐</b>：按键槽位高度固定为 64dp，52dp 侧边键垂直居中，
  *       使左【麦克风】、中【挂断】、右【扬声器/听筒】圆心绝对统一于同一水平轴线；</li>
  *   <li><b>独立专业听筒图标</b>：听筒模式配备独立专属的 {@code ic_ai_call_earpiece} 图标，区别于静音符号；</li>
- *   <li><b>高质感悬浮底座</b>：32dp 大圆角磨砂玻璃舱体，带柔和环境微光阴影。</li>
+ *   <li><b>顶部大圆角与微光阴影</b>：顶部双圆角 (24dp) 搭配向上柔和微光环境阴影，视觉分层清晰。</li>
  * </ul>
  * </p>
  */
@@ -46,7 +47,7 @@ public final class AiCallControlsView extends LinearLayout {
 
     private static final float SIDE_BUTTON_SIZE = 52f;
     private static final float HERO_BUTTON_SIZE = 64f;
-    private static final float DOCK_RADIUS = 32f;
+    private static final float TOP_RADIUS_DP = 24f;
     @ColorInt private static final int HANGUP_RED = 0xFFEF4444;
     @ColorInt private static final int HANGUP_RED_END = 0xFFDC2626;
 
@@ -68,63 +69,72 @@ public final class AiCallControlsView extends LinearLayout {
 
         setOrientation(VERTICAL);
         setGravity(Gravity.CENTER_HORIZONTAL);
-        // 关闭容器裁剪，允许子卡片阴影自然向周边发散，彻底消除阴影被裁剪的生硬直角与切边
         setClipChildren(false);
         setClipToPadding(false);
-        setPadding(0, theme.dp(AiTheme.SPACE_XS), 0, theme.dp(AiTheme.SPACE_M));
 
-        // 悬浮式控制坞底座 (Floating Action Capsule Dock)
-        LinearLayout dock = new LinearLayout(context);
-        dock.setOrientation(HORIZONTAL);
-        dock.setGravity(Gravity.CENTER_VERTICAL);
-        dock.setClipChildren(false);
-        dock.setClipToPadding(false);
+        int padH = theme.dp(AiTheme.PAGE_INSET);
+        int padTop = theme.dp(16f);
+        int padBottom = theme.dp(16f);
+        setPadding(padH, padTop, padH, padBottom);
 
-        GradientDrawable dockBg = theme.roundedStroke(theme.card, DOCK_RADIUS, theme.cardStroke, 1f);
-        dock.setBackground(dockBg);
-        dock.setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(6f),
-                theme.dp(AiTheme.PAGE_INSET), theme.dp(6f));
+        // 1. 底部贴底打通面板底座：仅顶部双圆角 (24dp)，底部完全直通
+        int topRadiusPx = theme.dp(TOP_RADIUS_DP);
+        int panelColor = theme.isDark()
+                ? ColorUtils.setAlphaComponent(theme.card, 0xF6)
+                : 0xFFFFFFFF;
 
-        // 柔和环境光悬浮阴影：调校环境光与聚光阴影色相，避免浅色模式下生硬黑斑，阴影自然晕开
-        dock.setElevation(theme.dp(6f));
-        dock.setOutlineProvider(new ViewOutlineProvider() {
+        GradientDrawable panelBg = new GradientDrawable();
+        panelBg.setColor(panelColor);
+        panelBg.setCornerRadii(new float[]{
+                topRadiusPx, topRadiusPx,
+                topRadiusPx, topRadiusPx,
+                0f, 0f,
+                0f, 0f
+        });
+        panelBg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
+        setBackground(panelBg);
+
+        // 2. 向上柔和微光投影（下方打通，阴影仅在上方扩散）
+        setElevation(theme.dp(8f));
+        setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), theme.dp(DOCK_RADIUS));
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight() + topRadiusPx, topRadiusPx);
                 outline.setAlpha(1.0f);
             }
         });
-        dock.setClipToOutline(false);
+        setClipToOutline(false);
 
         int shadowColor = theme.isDark() ? 0xFF000000 : theme.text1;
-        dock.setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x60 : 0x1A));
-        dock.setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x30 : 0x0E));
+        setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x60 : 0x14));
+        setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x30 : 0x0A));
 
-        // 1. 左侧：麦克风静音按键
+        // 3. 核心控制按钮水平排布行
+        LinearLayout buttonsRow = new LinearLayout(context);
+        buttonsRow.setOrientation(HORIZONTAL);
+        buttonsRow.setGravity(Gravity.CENTER_VERTICAL);
+        buttonsRow.setClipChildren(false);
+        buttonsRow.setClipToPadding(false);
+
+        // 左侧：麦克风静音按键
         micButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
         FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMuted(!muted));
 
-        // 2. 正中央英雄位：64dp 核心挂断按键（醒目电话正红）
+        // 正中央英雄位：64dp 核心挂断按键（醒目电话正红）
         hangUpButton = createHeroButton(HERO_BUTTON_SIZE, 15f);
         FrameLayout hangUpSlot = createControlSlot(hangUpButton, v -> listener.onHangUp());
 
-        // 3. 右侧：扬声器/听筒路由按键
+        // 右侧：扬声器/听筒路由按键
         speakerButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
         FrameLayout speakerSlot = createControlSlot(speakerButton, v -> listener.onSpeaker(!speakerOn));
 
         // 黄金比例均匀排布，挂断居中
-        addDockItem(dock, micSlot);
-        addDockItem(dock, hangUpSlot);
-        addDockItem(dock, speakerSlot);
+        addDockItem(buttonsRow, micSlot);
+        addDockItem(buttonsRow, hangUpSlot);
+        addDockItem(buttonsRow, speakerSlot);
 
-        // 采用外边距而不是内边距，配合 setClipChildren(false) 为阴影留足充裕晕染空间
-        LayoutParams dockLp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dockLp.leftMargin = theme.dp(AiTheme.PAGE_INSET);
-        dockLp.rightMargin = theme.dp(AiTheme.PAGE_INSET);
-        dockLp.topMargin = theme.dp(2f);
-        dockLp.bottomMargin = theme.dp(2f);
-        addView(dock, dockLp);
+        addView(buttonsRow, new LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         applyMicLook();
         applySpeakerLook();
@@ -141,8 +151,15 @@ public final class AiCallControlsView extends LinearLayout {
         applyHangUpLook();
     }
 
-    public void setBottomInset(int px) {
-        setPadding(0, getPaddingTop(), 0, px);
+    /**
+     * 响应系统导航栏与全面屏手势条安全区：
+     * 底座背景直接贯穿至物理屏幕最底，通过增加内边距将按钮提升至手势区上方。
+     */
+    public void setBottomInset(int navBottomPx) {
+        int padH = theme.dp(AiTheme.PAGE_INSET);
+        int padTop = theme.dp(16f);
+        int padBottom = Math.max(navBottomPx, 0) + theme.dp(12f);
+        setPadding(padH, padTop, padH, padBottom);
     }
 
     private void applyMicLook() {
