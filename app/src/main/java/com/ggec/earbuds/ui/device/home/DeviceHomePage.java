@@ -14,6 +14,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DevicePage;
 import com.ggec.earbuds.ui.device.DeviceTheme;
@@ -156,7 +157,7 @@ public final class DeviceHomePage {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_M),
-                theme.dp(DeviceTheme.SPACE_M), theme.dp(DeviceTheme.SPACE_S));
+                theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_S));
 
         LinearLayout titles = new LinearLayout(activity);
         titles.setOrientation(LinearLayout.VERTICAL);
@@ -170,11 +171,11 @@ public final class DeviceHomePage {
         row.addView(titles, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        View add = theme.iconButton(R.drawable.ic_ai_plus, theme.text1,
-                DeviceTheme.TOUCH_TARGET, 9f, activity.getString(R.string.device_add));
-        add.setOnClickListener(v -> listener.onOpenScan());
-        row.addView(add, new LinearLayout.LayoutParams(
-                theme.dp(DeviceTheme.TOUCH_TARGET), theme.dp(DeviceTheme.TOUCH_TARGET)));
+        AiHeaderActionButton add = new AiHeaderActionButton(activity)
+                .icon(R.drawable.ic_ai_plus)
+                .contentDesc(R.string.device_add)
+                .onClick(v -> listener.onOpenScan());
+        row.addView(add, add.createLinearLayoutParams());
         return row;
     }
 

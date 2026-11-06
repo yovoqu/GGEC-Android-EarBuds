@@ -13,6 +13,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.platform.YoSystemBar;
@@ -122,19 +123,19 @@ public final class ScanScreen {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(theme.dp(DeviceTheme.HEADER_HEIGHT));
-        row.setPadding(theme.dp(DeviceTheme.SPACE_M), 0, theme.dp(DeviceTheme.SPACE_L), 0);
+        row.setPadding(theme.dp(DeviceTheme.PAGE_INSET), 0, theme.dp(DeviceTheme.PAGE_INSET), 0);
 
-        View back = theme.iconButton(R.drawable.ic_ai_settings_back, theme.text2,
-                DeviceTheme.TOUCH_TARGET, 10f, activity.getString(R.string.device_back));
-        back.setOnClickListener(v -> listener.onBack());
-        row.addView(back, new LinearLayout.LayoutParams(
-                theme.dp(DeviceTheme.TOUCH_TARGET), theme.dp(DeviceTheme.TOUCH_TARGET)));
+        AiHeaderActionButton back = new AiHeaderActionButton(activity)
+                .icon(R.drawable.ic_ai_back)
+                .contentDesc(R.string.device_back)
+                .onClick(v -> listener.onBack());
+        row.addView(back, back.createLinearLayoutParams());
 
         TextView title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
         title.setText(R.string.device_scan_title);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.setMarginStart(theme.dp(DeviceTheme.SPACE_XS));
+        titleParams.setMarginStart(theme.dp(DeviceTheme.SPACE_M));
         row.addView(title, titleParams);
         return row;
     }
