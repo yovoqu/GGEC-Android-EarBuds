@@ -69,6 +69,10 @@ public sealed interface VoiceCallEvent {
     record Muted(boolean muted) implements VoiceCallEvent {
     }
 
+    /** 用户主动切换双工模式（全双工/半双工）。 */
+    record SetDuplex(@NonNull VoiceDuplex duplex) implements VoiceCallEvent {
+    }
+
     /** 用户主动插话（点光晕）。 */
     record Interrupt() implements VoiceCallEvent {
     }

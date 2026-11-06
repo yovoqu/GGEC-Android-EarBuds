@@ -175,6 +175,28 @@ public class VoiceCallReducerTest {
         assertTrue(has(upgraded, VoiceCallEffect.SetUplinkEnabled.class));
     }
 
+    @Test
+    public void setDuplexSwitchesModeAndUpdatesUplinkDynamically() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
+        assertFalse("半双工播放中上行关闭", model.uplinkEnabled());
+
+        VoiceCallReducer.Transition toFull =
+                send(new VoiceCallEvent.SetDuplex(VoiceDuplex.FULL_DUPLEX), 1300);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
+        assertTrue("切换到全双工后上行应开启", model.uplinkEnabled());
+        assertTrue(has(toFull, VoiceCallEffect.SetUplinkEnabled.class));
+        assertTrue(has(toFull, VoiceCallEffect.Publish.class));
+
+        VoiceCallReducer.Transition toHalf =
+                send(new VoiceCallEvent.SetDuplex(VoiceDuplex.HALF_DUPLEX), 1400);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, model.duplex());
+        assertFalse("切换回半双工且在播放中上行应关闭", model.uplinkEnabled());
+        assertTrue(has(toHalf, VoiceCallEffect.SetUplinkEnabled.class));
+        assertTrue(has(toHalf, VoiceCallEffect.Publish.class));
+    }
+
     private static boolean stopAssistantCancels(VoiceCallReducer.Transition transition) {
         return transition.effects().stream()
                 .filter(VoiceCallEffect.StopAssistant.class::isInstance)
