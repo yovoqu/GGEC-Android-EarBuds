@@ -1,25 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  次世代通话设计系统：听筒模式/扬声器关闭 (28dp 视口体系)。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <!-- 实体声学号角主体 -->
     <path
-        android:pathData="M4.8,10 V14 H8.3 L12.6,17.6 V6.4 L8.3,10 Z"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,10.5 C3.72,10.5 3.5,10.72 3.5,11 L3.5,17 C3.5,17.28 3.72,17.5 4,17.5 L8.5,17.5 L14.2,22.8 C14.55,23.12 15.1,22.87 15.1,22.4 L15.1,5.6 C15.1,5.13 14.55,4.88 14.2,5.2 L8.5,10.5 L4,10.5 Z" />
+    <!-- 声学关闭 X 标记 -->
     <path
-        android:pathData="M15.4,9.6 A3.4,3.4 0 0 1 15.4,14.4"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M5,4.8 L19,18.8"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:pathData="M19,11.5 L24,16.5 M24,11.5 L19,16.5" />
 </vector>

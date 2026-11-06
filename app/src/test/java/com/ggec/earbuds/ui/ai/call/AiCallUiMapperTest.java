@@ -25,7 +25,6 @@ public class AiCallUiMapperTest {
 
         assertEquals(AiCallUiState.Phase.LISTENING, state.phase());
         assertEquals(R.string.ai_call_phase_listening, state.title());
-        assertEquals(0.42f, state.level(), 0.001f);
         assertTrue(state.live());
         assertFalse(state.interruptible());
         assertTrue(state.speakerOn());
@@ -39,7 +38,6 @@ public class AiCallUiMapperTest {
                 AiVoiceSnapshot.State.ENDED, List.of(), 0.2f, null));
 
         assertTrue(speaking.interruptible());
-        assertEquals(0f, speaking.level(), 0.001f);
         assertEquals(AiCallUiState.Phase.OFFLINE, ended.phase());
         assertTrue(ended.ended());
         assertFalse(ended.live());

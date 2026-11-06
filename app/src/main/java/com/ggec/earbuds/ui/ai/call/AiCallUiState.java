@@ -8,7 +8,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 
 /**
- * 通话页可直接绘制的状态。会话快照到文案、按钮出口、光晕阶段和可用性的取舍都在
+ * 通话页可直接绘制的状态。会话快照到文案、出口、状态阶段和可用性的取舍都在
  * {@link AiCallUiMapper} 里完成，View 不再根据领域状态做业务分支。
  */
 public record AiCallUiState(
@@ -20,8 +20,9 @@ public record AiCallUiState(
         boolean interruptible,
         boolean muted,
         boolean speakerOn,
-        float level,
-        boolean ended) {
+        boolean ended,
+        int durationSeconds,
+        boolean captionsVisible) {
 
     public enum Phase {
         CONNECTING,
@@ -38,16 +39,29 @@ public record AiCallUiState(
         RETRY
     }
 
+    /** 兼容旧版 9 参数构造器 */
+    public AiCallUiState(@NonNull Phase phase,
+                         @StringRes int title,
+                         @Nullable @StringRes Integer reason,
+                         @NonNull Action action,
+                         boolean live,
+                         boolean interruptible,
+                         boolean muted,
+                         boolean speakerOn,
+                         boolean ended) {
+        this(phase, title, reason, action, live, interruptible, muted, speakerOn, ended, 0, true);
+    }
+
     public static AiCallUiState connecting() {
         return new AiCallUiState(Phase.CONNECTING,
                 com.ggec.earbuds.R.string.ai_call_phase_connecting,
-                null, Action.NONE, false, false, false, true, 0f, false);
+                null, Action.NONE, false, false, false, true, false, 0, true);
     }
 
     public static AiCallUiState permissionDenied() {
         return new AiCallUiState(Phase.OFFLINE,
                 com.ggec.earbuds.R.string.ai_call_no_permission,
-                null, Action.NONE, false, false, false, true, 0f, false);
+                null, Action.NONE, false, false, false, true, false, 0, true);
     }
 
     /** 失败出口只有一种：可恢复错误重试，其余去设置。 */
@@ -71,14 +85,40 @@ public record AiCallUiState(
                         || state == AiVoiceSnapshot.State.SPEAKING,
                 state == AiVoiceSnapshot.State.MUTED,
                 true,
-                state == AiVoiceSnapshot.State.LISTENING ? snapshot.inputLevel() : 0f,
-                failed || ended);
+                failed || ended,
+                0,
+                true);
+    }
+
+    @NonNull
+    public String formattedDuration() {
+        int m = durationSeconds / 60;
+        int s = durationSeconds % 60;
+        return String.format(java.util.Locale.US, "%02d:%02d", m, s);
     }
 
     @NonNull
     public AiCallUiState withSpeakerOn(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                muted, value, level, ended);
+                muted, value, ended, durationSeconds, captionsVisible);
+    }
+
+    @NonNull
+    public AiCallUiState withDurationSeconds(int value) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                muted, speakerOn, ended, value, captionsVisible);
+    }
+
+    @NonNull
+    public AiCallUiState withCaptionsVisible(boolean value) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                muted, speakerOn, ended, durationSeconds, value);
+    }
+
+    @NonNull
+    public AiCallUiState withMuted(boolean value) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                value, speakerOn, ended, durationSeconds, captionsVisible);
     }
 
     @NonNull

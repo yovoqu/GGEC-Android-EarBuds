@@ -28,6 +28,10 @@ public final class AiMessages {
             case RATE_LIMITED -> R.string.ai_failure_rate_limited;
             case NOT_FOUND -> R.string.ai_failure_not_found;
             case BAD_REQUEST -> R.string.ai_failure_bad_request;
+            case CONTENT_FILTERED -> R.string.ai_failure_content_filtered;
+            case CONTEXT_LENGTH -> R.string.ai_failure_context_length;
+            case UNSUPPORTED_PARAM -> R.string.ai_failure_unsupported_param;
+            case OVERLOADED -> R.string.ai_failure_overloaded;
             case SERVER -> R.string.ai_failure_server;
             case NETWORK -> R.string.ai_failure_network;
             case TIMEOUT -> R.string.ai_failure_timeout;

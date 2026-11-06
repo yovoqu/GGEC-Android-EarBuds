@@ -1,31 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  次世代通话设计系统：静音/关闭态麦克风 (28dp 视口体系)。
+  带有规范的 45° 阻断斜划线与声学阻断结构。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <!-- 胶囊上半部分残部 -->
     <path
-        android:pathData="M12,3.9 A2.6,2.6 0 0 1 14.6,6.5 V11.2 A2.6,2.6 0 0 1 9.4,11.2 V6.5 A2.6,2.6 0 0 1 12,3.9 Z"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M17.5,11.5 L17.5,7 C17.5,5.07 15.93,3.5 14,3.5 C12.2,3.5 10.72,4.87 10.53,6.63 L17.5,13.6 Z" />
+    <!-- 胶囊下半部分残部 -->
     <path
-        android:pathData="M6.8,11.3 V11.9 A5.2,5.2 0 0 0 17.2,11.9 V11.3"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.5,10.6 L10.5,13.5 C10.5,15.43 12.07,17 14,17 C14.74,17 15.42,16.77 15.99,16.38 L10.66,11.05 Z" />
+    <!-- 悬挂托架两翼 -->
     <path
-        android:pathData="M12,17.1 V19.8"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:strokeLineJoin="round"
+        android:pathData="M6.5,12 C6.5,14.1 7.37,15.99 8.78,17.36 M19.22,17.36 C20.63,15.99 21.5,14.1 21.5,12 M14,19.5 L14,24.5 M9.5,24.5 L18.5,24.5" />
+    <!-- 45度高精度阻断斜划线 -->
     <path
-        android:pathData="M5,4.8 L19,18.8"
-        android:strokeColor="#FF000000"
-        android:strokeWidth="1.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
         android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:pathData="M4.5,4.5 L23.5,23.5" />
 </vector>

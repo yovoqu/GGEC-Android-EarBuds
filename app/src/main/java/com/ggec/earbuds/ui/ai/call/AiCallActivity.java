@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.ui.ai.AiTheme;
@@ -21,8 +23,9 @@ import com.ggec.earbuds.wiring.AppContainer;
 /**
  * 通话页宿主：只处理权限、生命周期和跨页面导航。
  *
- * <p>快照到页面表现的取舍在 ViewModel/Mapper；页头、舞台、控制排各自是独立 View。
- * Activity 不持有静音、失败出口等业务状态。</p>
+ * <p>遵循严格 MVVM 架构：Activity 不持有业务逻辑与控制状态，
+ * 所有状态由 {@link AiCallViewModel} 持有并通过 LiveData 发布；
+ * 视图事件直接单向委托给 ViewModel 执行。</p>
  */
 public final class AiCallActivity extends AppCompatActivity {
 
@@ -51,17 +54,26 @@ public final class AiCallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         AiTheme theme = AiTheme.of(this);
         YoUi.edgeToEdge(this);
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (controller != null) {
+            boolean dark = theme.isDark();
+            controller.setAppearanceLightStatusBars(!dark);
+            controller.setAppearanceLightNavigationBars(!dark);
+        }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         viewModel = new ViewModelProvider(this, container().ai().factory())
                 .get(AiCallViewModel.class);
         screen = new AiCallScreen(theme, new ScreenListener());
         setContentView(screen.view());
+
         viewModel.uiState().observe(this, state -> {
             if (!finishing && !denied && state != null) {
                 screen.render(state);
             }
         });
+        viewModel.meter().observe(this, screen::setLevel);
+        viewModel.transcript().observe(this, screen::setTranscript);
         viewModel.setSpeakerphone(true);
     }
 
@@ -148,6 +160,11 @@ public final class AiCallActivity extends AppCompatActivity {
         @Override
         public void onSpeaker(boolean speaker) {
             viewModel.setSpeakerphone(speaker);
+        }
+
+        @Override
+        public void onToggleSubtitles() {
+            viewModel.toggleCaptions();
         }
 
         @Override
