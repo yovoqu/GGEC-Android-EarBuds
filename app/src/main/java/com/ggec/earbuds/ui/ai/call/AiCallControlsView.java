@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Outline;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
@@ -14,7 +13,6 @@ import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
@@ -29,11 +27,12 @@ import com.ggec.earbuds.ui.ai.AiTheme;
  *
  * <p>布局架构与双对齐规范：
  * <ul>
- *   <li><b>按键水平轴心对齐</b>：按键舱高度固定为 72dp，58dp 侧边键垂直居中，
- *       使左【麦克风】、中【挂断】、右【扬声器】圆心绝对统一于 Y=36dp 轴线；</li>
- *   <li><b>文本标签基线对齐</b>：标签槽位统一距离按键舱 8dp，三组说明文字绝对基线重合；</li>
- *   <li><b>中央英雄位</b>：72dp 醒目红【挂断】按键，居中统领全局；</li>
- *   <li><b>高质感悬浮底座</b>：36dp 大圆角磨砂玻璃舱体，带柔和环境微光阴影（关闭裁剪，确保全方位阴影通透发散）。</li>
+ *   <li><b>极简无文本设计</b>：全面移除冗余文本描述标签，释放纵向宝贵空间，聚焦核心操作手势；</li>
+ *   <li><b>紧凑高度调优</b>：控制坞整体高度紧凑收敛至 ~76dp，避免挤压中央流体声场与字幕卡片；</li>
+ *   <li><b>按键水平轴心对齐</b>：按键槽位高度固定为 64dp，52dp 侧边键垂直居中，
+ *       使左【麦克风】、中【挂断】、右【扬声器/听筒】圆心绝对统一于同一水平轴线；</li>
+ *   <li><b>独立专业听筒图标</b>：听筒模式配备独立专属的 {@code ic_ai_call_earpiece} 图标，区别于静音符号；</li>
+ *   <li><b>高质感悬浮底座</b>：32dp 大圆角磨砂玻璃舱体，带柔和环境微光阴影。</li>
  * </ul>
  * </p>
  */
@@ -45,9 +44,9 @@ public final class AiCallControlsView extends LinearLayout {
         void onHangUp();
     }
 
-    private static final float SIDE_BUTTON_SIZE = 58f;
-    private static final float HERO_BUTTON_SIZE = 72f;
-    private static final float DOCK_RADIUS = 36f;
+    private static final float SIDE_BUTTON_SIZE = 52f;
+    private static final float HERO_BUTTON_SIZE = 64f;
+    private static final float DOCK_RADIUS = 32f;
     @ColorInt private static final int HANGUP_RED = 0xFFEF4444;
     @ColorInt private static final int HANGUP_RED_END = 0xFFDC2626;
 
@@ -55,13 +54,8 @@ public final class AiCallControlsView extends LinearLayout {
     private final Listener listener;
 
     private final ImageView micButton;
-    private final TextView micLabel;
-
     private final ImageView hangUpButton;
-    private final TextView hangUpLabel;
-
     private final ImageView speakerButton;
-    private final TextView speakerLabel;
 
     private boolean muted = false;
     private boolean speakerOn = true;
@@ -77,7 +71,7 @@ public final class AiCallControlsView extends LinearLayout {
         // 关闭容器裁剪，允许子卡片阴影自然向周边发散，彻底消除阴影被裁剪的生硬直角与切边
         setClipChildren(false);
         setClipToPadding(false);
-        setPadding(0, theme.dp(AiTheme.SPACE_S), 0, theme.dp(AiTheme.SPACE_XL));
+        setPadding(0, theme.dp(AiTheme.SPACE_XS), 0, theme.dp(AiTheme.SPACE_M));
 
         // 悬浮式控制坞底座 (Floating Action Capsule Dock)
         LinearLayout dock = new LinearLayout(context);
@@ -88,8 +82,8 @@ public final class AiCallControlsView extends LinearLayout {
 
         GradientDrawable dockBg = theme.roundedStroke(theme.card, DOCK_RADIUS, theme.cardStroke, 1f);
         dock.setBackground(dockBg);
-        dock.setPadding(theme.dp(AiTheme.SPACE_XL), theme.dp(AiTheme.SPACE_M),
-                theme.dp(AiTheme.SPACE_XL), theme.dp(AiTheme.SPACE_M));
+        dock.setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(6f),
+                theme.dp(AiTheme.PAGE_INSET), theme.dp(6f));
 
         // 柔和环境光悬浮阴影：调校环境光与聚光阴影色相，避免浅色模式下生硬黑斑，阴影自然晕开
         dock.setElevation(theme.dp(6f));
@@ -107,38 +101,34 @@ public final class AiCallControlsView extends LinearLayout {
         dock.setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x30 : 0x0E));
 
         // 1. 左侧：麦克风静音按键
-        micButton = createCircleButton(SIDE_BUTTON_SIZE, 14f);
-        micLabel = createLabel(R.string.ai_call_mic_label);
-        LinearLayout micItem = createAlignedControlItem(micButton, micLabel, v -> listener.onMuted(!muted));
+        micButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
+        FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMuted(!muted));
 
-        // 2. 正中央英雄位：72dp 巨幕挂断按键（醒目电话正红）
-        hangUpButton = createHeroButton(HERO_BUTTON_SIZE, 18f);
-        hangUpLabel = createLabel(R.string.ai_call_hang_up);
-        hangUpLabel.setTypeface(Typeface.DEFAULT_BOLD);
-        hangUpLabel.setTextColor(HANGUP_RED);
-        LinearLayout hangUpItem = createAlignedControlItem(hangUpButton, hangUpLabel, v -> listener.onHangUp());
+        // 2. 正中央英雄位：64dp 核心挂断按键（醒目电话正红）
+        hangUpButton = createHeroButton(HERO_BUTTON_SIZE, 15f);
+        FrameLayout hangUpSlot = createControlSlot(hangUpButton, v -> listener.onHangUp());
 
-        // 3. 右侧：扬声器听筒路由按键
-        speakerButton = createCircleButton(SIDE_BUTTON_SIZE, 14f);
-        speakerLabel = createLabel(R.string.ai_call_speaker_label);
-        LinearLayout speakerItem = createAlignedControlItem(speakerButton, speakerLabel, v -> listener.onSpeaker(!speakerOn));
+        // 3. 右侧：扬声器/听筒路由按键
+        speakerButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
+        FrameLayout speakerSlot = createControlSlot(speakerButton, v -> listener.onSpeaker(!speakerOn));
 
         // 黄金比例均匀排布，挂断居中
-        addDockItem(dock, micItem);
-        addDockItem(dock, hangUpItem);
-        addDockItem(dock, speakerItem);
+        addDockItem(dock, micSlot);
+        addDockItem(dock, hangUpSlot);
+        addDockItem(dock, speakerSlot);
 
         // 采用外边距而不是内边距，配合 setClipChildren(false) 为阴影留足充裕晕染空间
         LayoutParams dockLp = new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         dockLp.leftMargin = theme.dp(AiTheme.PAGE_INSET);
         dockLp.rightMargin = theme.dp(AiTheme.PAGE_INSET);
-        dockLp.topMargin = theme.dp(AiTheme.SPACE_XS);
-        dockLp.bottomMargin = theme.dp(AiTheme.SPACE_XS);
+        dockLp.topMargin = theme.dp(2f);
+        dockLp.bottomMargin = theme.dp(2f);
         addView(dock, dockLp);
 
         applyMicLook();
         applySpeakerLook();
+        applyHangUpLook();
     }
 
     public void render(@NonNull AiCallUiState state) {
@@ -165,16 +155,14 @@ public final class AiCallControlsView extends LinearLayout {
             bg.setStroke(Math.max(1, theme.dp(1.2f)), theme.warning);
             micButton.setImageResource(R.drawable.ic_ai_call_mic_off);
             micButton.setColorFilter(theme.warning);
-            micLabel.setText(R.string.ai_call_mic_muted_label);
-            micLabel.setTextColor(theme.warning);
+            micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_muted_label));
         } else {
             // 正常采音通透态
             bg.setColor(theme.fill);
             bg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
             micButton.setImageResource(R.drawable.ic_ai_call_mic);
             micButton.setColorFilter(theme.text1);
-            micLabel.setText(R.string.ai_call_mic_label);
-            micLabel.setTextColor(theme.text2);
+            micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_label));
         }
         micButton.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), bg, null));
     }
@@ -189,59 +177,37 @@ public final class AiCallControlsView extends LinearLayout {
             bg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
             speakerButton.setImageResource(R.drawable.ic_ai_call_speaker);
             speakerButton.setColorFilter(theme.brand);
-            speakerLabel.setText(R.string.ai_call_speaker_label);
-            speakerLabel.setTextColor(theme.brand);
+            speakerButton.setContentDescription(getContext().getString(R.string.ai_call_speaker_label));
         } else {
-            // 听筒模式
+            // 听筒模式：使用独立专属听筒图标 (ic_ai_call_earpiece)
             bg.setColor(theme.fill);
             bg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
-            speakerButton.setImageResource(R.drawable.ic_ai_call_speaker_off);
-            speakerButton.setColorFilter(theme.text2);
-            speakerLabel.setText(R.string.ai_call_earpiece_label);
-            speakerLabel.setTextColor(theme.text2);
+            speakerButton.setImageResource(R.drawable.ic_ai_call_earpiece);
+            speakerButton.setColorFilter(theme.text1);
+            speakerButton.setContentDescription(getContext().getString(R.string.ai_call_earpiece_label));
         }
         speakerButton.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), bg, null));
     }
 
     private void applyHangUpLook() {
-        if (ended) {
-            hangUpLabel.setText(R.string.ai_call_close);
-        } else {
-            hangUpLabel.setText(R.string.ai_call_hang_up);
-        }
+        hangUpButton.setContentDescription(getContext().getString(
+                ended ? R.string.ai_call_close : R.string.ai_call_hang_up));
     }
 
     /**
-     * 构建双轴线对齐控制项：
-     * 1. 上层按钮槽位高度统一为 72dp，内部按键居中，使得 58dp 与 72dp 按键的圆心完全水平重合；
-     * 2. 下层文字标签统一外边距 8dp，使得三组说明文字严格位于同一水平基线。
+     * 统一 64dp 按钮舱槽位，确保 52dp 侧键与 64dp 主键圆心绝对水平对齐
      */
-    private LinearLayout createAlignedControlItem(View button, TextView label, OnClickListener onClick) {
-        LinearLayout col = new LinearLayout(getContext());
-        col.setOrientation(VERTICAL);
-        col.setGravity(Gravity.CENTER);
-        col.setOnClickListener(onClick);
-
-        // 统一 72dp 按钮舱槽位，确保按键圆心绝对水平对齐
+    private FrameLayout createControlSlot(View button, OnClickListener onClick) {
         FrameLayout buttonSlot = new FrameLayout(getContext());
         int slotPx = theme.dp(HERO_BUTTON_SIZE);
         FrameLayout.LayoutParams slotButtonLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
         buttonSlot.addView(button, slotButtonLp);
-
-        LayoutParams slotLp = new LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, slotPx);
-        col.addView(buttonSlot, slotLp);
-
-        // 统一文字标签外边距，确保文字基线绝对对齐
-        LayoutParams labelLp = new LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        labelLp.topMargin = theme.dp(AiTheme.SPACE_S);
-        col.addView(label, labelLp);
-        return col;
+        buttonSlot.setOnClickListener(onClick);
+        return buttonSlot;
     }
 
-    private void addDockItem(LinearLayout dock, LinearLayout item) {
+    private void addDockItem(LinearLayout dock, View item) {
         LayoutParams lp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         dock.addView(item, lp);
     }
@@ -274,12 +240,5 @@ public final class AiCallControlsView extends LinearLayout {
         heroBg.setShape(GradientDrawable.OVAL);
         iv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), heroBg, null));
         return iv;
-    }
-
-    private TextView createLabel(int textRes) {
-        TextView tv = theme.text(AiTheme.TEXT_CAPTION, theme.text2);
-        tv.setText(textRes);
-        tv.setGravity(Gravity.CENTER);
-        return tv;
     }
 }

@@ -42,8 +42,8 @@ public final class AiCallHeaderView extends RelativeLayout {
         void onToggleDuplex();
     }
 
-    private static final float STATUS_DOT_SIZE = 6f;
-    private static final float DUPLEX_ICON_SIZE = 14f;
+    private static final float STATUS_DOT_SIZE = 7f;
+    private static final float DUPLEX_ICON_SIZE = 15f;
     private static final float BUTTON_SIZE_DP = 40f;
 
     private final AiTheme theme;
@@ -96,12 +96,12 @@ public final class AiCallHeaderView extends RelativeLayout {
         LinearLayout centerPill = new LinearLayout(context);
         centerPill.setId(View.generateViewId());
         centerPill.setOrientation(LinearLayout.HORIZONTAL);
-        centerPill.setGravity(Gravity.CENTER);
+        centerPill.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 胶囊背景：卡片底色 + 细微轮廓描边
-        GradientDrawable pillBg = theme.roundedStroke(theme.card, 18f, theme.cardStroke, 1f);
+        // 胶囊背景：卡片底色 + 细微轮廓描边，圆角半径严格等于高度一半 (20dp)，高度与左右按钮完全对齐 (40dp)
+        GradientDrawable pillBg = theme.roundedStroke(theme.card, BUTTON_SIZE_DP / 2f, theme.cardStroke, 1f);
         centerPill.setBackground(pillBg);
-        centerPill.setPadding(theme.dp(10f), theme.dp(5f), theme.dp(10f), theme.dp(5f));
+        centerPill.setPadding(theme.dp(12f), 0, theme.dp(10f), 0);
 
         // 3.1 呼吸状态指示灯
         statusDot = new View(context);
@@ -112,38 +112,38 @@ public final class AiCallHeaderView extends RelativeLayout {
         int dotPx = theme.dp(STATUS_DOT_SIZE);
         centerPill.addView(statusDot, new LinearLayout.LayoutParams(dotPx, dotPx));
 
-        // 3.2 状态文字
-        statusText = theme.text(AiTheme.TEXT_CAPTION, theme.text1, AiTheme.Weight.MEDIUM);
+        // 3.2 状态文字：自适应字号提升为 TEXT_SUBHEAD (13.5sp)，中等字重
+        statusText = theme.text(AiTheme.TEXT_SUBHEAD, theme.text1, AiTheme.Weight.MEDIUM);
         statusText.setSingleLine(true);
         statusText.setEllipsize(TextUtils.TruncateAt.END);
         statusText.setText(R.string.ai_call_phase_connecting);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusParams.leftMargin = theme.dp(5f);
-        statusParams.rightMargin = theme.dp(3f);
+        statusParams.leftMargin = theme.dp(6f);
+        statusParams.rightMargin = theme.dp(4f);
         centerPill.addView(statusText, statusParams);
 
         // 3.3 分隔圆点
-        TextView dotSeparator = theme.text(AiTheme.TEXT_CAPTION, theme.text3);
+        TextView dotSeparator = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         dotSeparator.setText("·");
         centerPill.addView(dotSeparator, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // 3.4 实时通话时长
-        durationText = theme.text(AiTheme.TEXT_CAPTION, theme.text2);
+        // 3.4 实时通话时长：字号自适应提升为 TEXT_SUBHEAD (13.5sp)
+        durationText = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
         durationText.setSingleLine(true);
         durationText.setText("00:00");
         LinearLayout.LayoutParams durParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        durParams.leftMargin = theme.dp(3f);
+        durParams.leftMargin = theme.dp(4f);
         centerPill.addView(durationText, durParams);
 
         // 3.5 竖向精致微细分隔线
         View divider = new View(context);
         divider.setBackgroundColor(theme.cardStroke);
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
-                theme.dp(1f), theme.dp(12f));
-        divParams.leftMargin = theme.dp(8f);
+                theme.dp(1f), theme.dp(16f));
+        divParams.leftMargin = theme.dp(10f);
         divParams.rightMargin = theme.dp(8f);
         centerPill.addView(divider, divParams);
 
@@ -153,10 +153,10 @@ public final class AiCallHeaderView extends RelativeLayout {
         duplexButton.setGravity(Gravity.CENTER);
         duplexButton.setClickable(true);
         duplexButton.setFocusable(true);
-        duplexButton.setPadding(theme.dp(4f), theme.dp(2f), theme.dp(4f), theme.dp(2f));
+        duplexButton.setPadding(theme.dp(6f), theme.dp(4f), theme.dp(6f), theme.dp(4f));
 
         GradientDrawable duplexRippleMask = new GradientDrawable();
-        duplexRippleMask.setCornerRadius(theme.dp(10f));
+        duplexRippleMask.setCornerRadius(theme.dp(12f));
         duplexRippleMask.setColor(0xFFFFFFFF);
         duplexButton.setBackground(new RippleDrawable(
                 ColorStateList.valueOf(theme.brandSoft), null, duplexRippleMask));
@@ -168,19 +168,19 @@ public final class AiCallHeaderView extends RelativeLayout {
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconPx, iconPx);
         duplexButton.addView(duplexIcon, iconParams);
 
-        duplexText = theme.text(11f, theme.brand, AiTheme.Weight.MEDIUM);
+        duplexText = theme.text(12.5f, theme.brand, AiTheme.Weight.MEDIUM);
         duplexText.setSingleLine(true);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        textParams.leftMargin = theme.dp(3f);
+        textParams.leftMargin = theme.dp(4f);
         duplexButton.addView(duplexText, textParams);
 
         centerPill.addView(duplexButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // 居中对齐，优雅自适应内容宽度 (与左右按键保持黄金呼吸间距)
+        // 居中对齐，高度严格对齐左右按键 40dp (btnSize)，消除落差
         LayoutParams centerParams = new LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ViewGroup.LayoutParams.WRAP_CONTENT, btnSize);
         centerParams.addRule(CENTER_IN_PARENT);
         addView(centerPill, centerParams);
     }
