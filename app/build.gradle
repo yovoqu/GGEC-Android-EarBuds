@@ -130,9 +130,12 @@ tasks.register('checkAiLayerImports') {
         scanTree("${base}/domain/ai", '**/*.java',
                 ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
                  'com.ggec.earbuds.wiring', 'com.ggec.earbuds.data'])
-        // 数据层：只通过端口和 lib_ai 说话，不碰界面、平台实现和装配。
+        // 数据层：只通过端口和 lib_ai 说话，不碰界面、平台实现和装配，严禁依赖 lib_ai 内部实现或具体厂商包。
         scanTree("${base}/data/ai", '**/*.java',
-                ['com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring'])
+                ['com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring',
+                 'com.yovo.lib_ai.internal', 'com.yovo.lib_ai.platform.openai',
+                 'com.yovo.lib_ai.platform.qwen', 'com.yovo.lib_ai.platform.anthropic',
+                 'com.yovo.lib_ai.platform.deepseek', 'com.yovo.lib_ai.platform.sensenova'])
         // 界面层：只依赖用例和领域模型，不直接拿仓库、网关或 lib_ai。
         scanTree("${base}/ui/ai", '**/*.java',
                 ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',

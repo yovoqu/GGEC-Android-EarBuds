@@ -6,7 +6,6 @@ import com.yovo.lib_ai.api.YoAiClient;
 import com.yovo.lib_ai.catalog.YoPlatformCatalog;
 import com.yovo.lib_ai.catalog.YoPlatformSettings;
 import com.yovo.lib_ai.platform.YoPlatform;
-import com.yovo.lib_ai.platform.openai.OpenAiPlatform;
 
 import java.util.List;
 
@@ -24,7 +23,7 @@ public final class LibAiVoiceModelGateway implements AiVoiceModelGateway {
     @Override
     public List<AiModel> fetch(String baseUrl, String apiKey) {
         YoPlatform platform = YoPlatformCatalog.standard().create(
-                YoPlatformSettings.builder(OpenAiPlatform.ID)
+                YoPlatformSettings.builder(YoPlatformCatalog.OPENAI_COMPATIBLE)
                         .instanceId(INSTANCE_ID)
                         .apiKey(apiKey)
                         .baseUrl(baseUrl)
