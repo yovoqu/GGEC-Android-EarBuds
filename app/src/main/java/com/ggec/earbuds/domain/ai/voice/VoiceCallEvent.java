@@ -74,8 +74,8 @@ public sealed interface VoiceCallEvent {
     record CaptureFrame(float level) implements VoiceCallEvent {
     }
 
-    /** 用户切换静音。 */
-    record Muted(boolean muted) implements VoiceCallEvent {
+    /** 本地麦克风收音静音开关控制（独立门禁，不影响 AI 对话）。 */
+    record SetMicMuted(boolean micMuted) implements VoiceCallEvent {
     }
 
     /** 用户主动切换双工模式（全双工/半双工）。 */

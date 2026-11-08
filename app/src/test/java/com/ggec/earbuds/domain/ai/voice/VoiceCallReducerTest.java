@@ -148,14 +148,36 @@ public class VoiceCallReducerTest {
     public void mutedClosesUplinkAndReturnsWhenUnmuted() {
         send(new VoiceCallEvent.Start(), 1000);
         send(new VoiceCallEvent.Opened(), 1000);
-        VoiceCallReducer.Transition muted = send(new VoiceCallEvent.Muted(true), 1100);
-        assertEquals(VoiceCallState.MUTED, model.state());
+        VoiceCallReducer.Transition muted = send(new VoiceCallEvent.SetMicMuted(true), 1100);
+        assertEquals(VoiceCallState.LISTENING, model.state());
+        assertTrue(model.micMuted());
         assertFalse(model.uplinkEnabled());
         assertTrue(has(muted, VoiceCallEffect.SetUplinkEnabled.class));
 
-        send(new VoiceCallEvent.Muted(false), 1200);
+        send(new VoiceCallEvent.SetMicMuted(false), 1200);
         assertEquals(VoiceCallState.LISTENING, model.state());
+        assertFalse(model.micMuted());
         assertTrue(model.uplinkEnabled());
+    }
+
+    @Test
+    public void mutedWhileSpeakingDoesNotAffectSpeakingStateAndPlayback() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1100);
+        assertEquals(VoiceCallState.SPEAKING, model.state());
+
+        VoiceCallReducer.Transition muted = send(new VoiceCallEvent.SetMicMuted(true), 1200);
+        assertEquals("AI说话期间静音麦克风，AI对话状态仍然是SPEAKING", VoiceCallState.SPEAKING, model.state());
+        assertTrue(model.micMuted());
+        assertFalse(model.uplinkEnabled());
+
+        // AI回答结束
+        send(new VoiceCallEvent.ResponseDone(), 1300);
+        assertEquals(VoiceCallState.DRAINING, model.state());
+        send(new VoiceCallEvent.PlaybackDrained(), 1400);
+        assertEquals(VoiceCallState.LISTENING, model.state());
+        assertFalse("由于麦克风仍处于静音状态，回到LISTENING后上行门禁依然关闭", model.uplinkEnabled());
     }
 
     @Test
