@@ -57,15 +57,15 @@ public class AiCallViewModelTest {
     @Test
     public void muteUpdatesSessionAndUiState() {
         viewModel.start();
-        assertFalse(viewModel.uiState().getValue().muted());
+        assertFalse(viewModel.uiState().getValue().micMuted());
 
-        viewModel.setMuted(true);
-        assertTrue(fakeSession.muted);
-        assertTrue(viewModel.uiState().getValue().muted());
+        viewModel.setMicMuted(true);
+        assertTrue(fakeSession.micMuted);
+        assertTrue(viewModel.uiState().getValue().micMuted());
 
-        viewModel.setMuted(false);
-        assertFalse(fakeSession.muted);
-        assertFalse(viewModel.uiState().getValue().muted());
+        viewModel.setMicMuted(false);
+        assertFalse(fakeSession.micMuted);
+        assertFalse(viewModel.uiState().getValue().micMuted());
     }
 
     @Test
@@ -108,21 +108,18 @@ public class AiCallViewModelTest {
     }
 
     @Test
-    public void onSnapshotUpdatesTranscriptFlow() {
+    public void onSnapshotUpdatesSubtitleItemsFlow() {
         viewModel.start();
-        assertEquals("", viewModel.transcript().getValue());
+        assertEquals(List.of(), viewModel.subtitleItems().getValue());
 
         List<AiVoiceSnapshot.Turn> turns = List.of(
                 new AiVoiceSnapshot.Turn("1", true, "你好", true, 1000L),
                 new AiVoiceSnapshot.Turn("2", false, "很高兴为你服务", false, 2000L)
         );
         AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.SPEAKING, turns, 0.5f, null);
+                AiVoiceSnapshot.State.SPEAKING, turns, 0.5f, null, VoiceDuplex.FULL_DUPLEX, false);
 
         fakeSession.listener.onSnapshot(snapshot);
-
-        String expected = "你：你好\nAI：很高兴为你服务…";
-        assertEquals(expected, viewModel.transcript().getValue());
 
         List<AiSubtitleItem> items = viewModel.subtitleItems().getValue();
         assertEquals(2, items.size());
@@ -184,7 +181,7 @@ public class AiCallViewModelTest {
     private static final class FakeVoiceSession implements AiVoiceSession {
         boolean started = false;
         boolean stopped = false;
-        boolean muted = false;
+        boolean micMuted = false;
         boolean speakerphone = true;
         boolean interrupted = false;
         VoiceDuplex duplex = VoiceDuplex.FULL_DUPLEX;
@@ -202,8 +199,8 @@ public class AiCallViewModelTest {
         }
 
         @Override
-        public void setMuted(boolean muted) {
-            this.muted = muted;
+        public void setMicMuted(boolean micMuted) {
+            this.micMuted = micMuted;
         }
 
         @Override

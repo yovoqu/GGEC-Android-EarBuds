@@ -77,8 +77,6 @@ public final class AiCallActivity extends AppCompatActivity {
         });
         viewModel.meter().observe(this, screen::setLevel);
         viewModel.subtitleItems().observe(this, screen::setSubtitleItems);
-        viewModel.turns().observe(this, screen::setTurns);
-        viewModel.transcript().observe(this, screen::setTranscript);
         viewModel.setSpeakerphone(true);
     }
 
@@ -158,8 +156,8 @@ public final class AiCallActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onMuted(boolean muted) {
-            viewModel.setMuted(muted);
+        public void onMicMuted(boolean micMuted) {
+            viewModel.setMicMuted(micMuted);
         }
 
         @Override

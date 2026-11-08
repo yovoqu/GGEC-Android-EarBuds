@@ -16,16 +16,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
-import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItemView;
-import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleScrollEngine;
-import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleTranscriptParser;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleUiState;
 
 import java.util.ArrayList;
@@ -37,7 +33,7 @@ import java.util.List;
  * <p>严格遵循高内聚低耦合与 MVVM 架构：
  * <ul>
  *   <li><b>数据层解耦</b>：仅依赖不可变 {@link AiSubtitleItem} / {@link AiSubtitleUiState}，
- *       领域模型转换由 {@link AiSubtitleMapper} 完成，转写解析由 {@link AiSubtitleTranscriptParser} 完成；</li>
+ *       领域模型转换由 {@link AiSubtitleMapper} 完成，单一真实数据源；</li>
  *   <li><b>行为层解耦</b>：滚动判定与防弹回状态机交由 {@link AiSubtitleScrollEngine} 独立驱动；</li>
  *   <li><b>视图层解耦</b>：单条消息卡片由独立组件 {@link AiSubtitleItemView} 负责排版折行；</li>
  *   <li><b>弹性测量</b>：内容少时紧凑包裹，内容多时最大限制 180dp，永不挤压底部操作舱。</li>
@@ -269,22 +265,6 @@ public final class AiCallSubtitleView extends FrameLayout {
         }
 
         scrollEngine.onContentUpdated(true);
-    }
-
-    /**
-     * 领域回合数据兼容入口：通过 {@link AiSubtitleMapper} 解耦转换后渲染。
-     */
-    public void renderTurns(@NonNull List<AiVoiceSnapshot.Turn> domainTurns, boolean enabled) {
-        List<AiSubtitleItem> items = AiSubtitleMapper.fromDomainTurns(domainTurns);
-        renderItems(items, enabled);
-    }
-
-    /**
-     * 文本字符串兼容入口：通过 {@link AiSubtitleTranscriptParser} 解耦解析后渲染。
-     */
-    public void render(@Nullable String rawTranscript, boolean enabled) {
-        List<AiSubtitleItem> items = AiSubtitleTranscriptParser.parse(rawTranscript);
-        renderItems(items, enabled);
     }
 
     private void animatePillVisibility(boolean visible) {

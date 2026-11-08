@@ -45,7 +45,6 @@ public final class AiFluidVisualizerView extends View {
         LISTENING,
         THINKING,
         SPEAKING,
-        MUTED,
         OFFLINE
     }
 
@@ -248,7 +247,6 @@ public final class AiFluidVisualizerView extends View {
             case SPEAKING -> dark ? (int) (105 + 70 * breathVal) : (int) (70 + 45 * breathVal);
             case THINKING -> dark ? (int) (80 + 55 * breathVal) : (int) (55 + 35 * breathVal);
             case CONNECTING -> dark ? 42 : 28;
-            case MUTED -> dark ? 38 : 24;
             default -> 0;
         };
 
@@ -397,13 +395,6 @@ public final class AiFluidVisualizerView extends View {
                 colorC = dark ? 0xFF3B82F6 : 0xFF1D4ED8;
                 auraGlow = dark ? 0xFF0284C7 : 0xFF0891B2;
             }
-            case MUTED -> {
-                // 琥珀暖金：静音提示
-                colorA = dark ? 0xFFF59E0B : 0xFFD97706;
-                colorB = dark ? 0xFFD97706 : 0xFFB45309;
-                colorC = dark ? 0xFFFBBF24 : 0xFFF59E0B;
-                auraGlow = dark ? 0xFFD97706 : 0xFFB45309;
-            }
             case OFFLINE -> {
                 colorA = theme.text3;
                 colorB = theme.cardStroke;
@@ -449,7 +440,6 @@ public final class AiFluidVisualizerView extends View {
     private boolean isLive() {
         return phase == VisualPhase.LISTENING
                 || phase == VisualPhase.SPEAKING
-                || phase == VisualPhase.THINKING
-                || phase == VisualPhase.MUTED;
+                || phase == VisualPhase.THINKING;
     }
 }

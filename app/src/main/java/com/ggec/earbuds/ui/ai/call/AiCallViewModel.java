@@ -23,9 +23,9 @@ import java.util.Objects;
  *
  * <p>三条单向数据流：
  * <ul>
- *   <li>{@link #uiState()}：完整的不可变界面状态快照（相位、标题、原因、通道、时长、字幕可见性）；</li>
+ *   <li>{@link #uiState()}：完整的不可变界面状态快照（相位、标题、原因、通道、时长、字幕可见性、麦克风静音状态）；</li>
  *   <li>{@link #meter()}：瞬时音频分贝电平（高频 50ms 节流），专供能量球高帧率动效；</li>
- *   <li>{@link #transcript()}：多轮格式化转写文本，专供实时字幕卡片。</li>
+ *   <li>{@link #subtitleItems()}：表现层字幕列表（单一真实数据源），专供实时字幕卡片。</li>
  * </ul>
  * </p>
  */
@@ -43,9 +43,6 @@ public final class AiCallViewModel extends ViewModel {
     private final MutableLiveData<AiCallUiState> uiState =
             new MutableLiveData<>(AiCallUiState.connecting());
     private final MutableLiveData<Float> meter = new MutableLiveData<>(0f);
-    private final MutableLiveData<String> transcript = new MutableLiveData<>("");
-    private final MutableLiveData<List<AiVoiceSnapshot.Turn>> turns =
-            new MutableLiveData<>(List.of());
     private final MutableLiveData<List<AiSubtitleItem>> subtitleItems =
             new MutableLiveData<>(List.of());
 
@@ -53,6 +50,7 @@ public final class AiCallViewModel extends ViewModel {
     private boolean timerRunning = false;
     private boolean captionsVisible = true;
     private boolean speakerOn = true;
+    private boolean micMuted = false;
     private VoiceDuplex duplex = VoiceDuplex.FULL_DUPLEX;
     private long lastMeterAt;
 
@@ -121,18 +119,6 @@ public final class AiCallViewModel extends ViewModel {
         return meter;
     }
 
-    /** 转写独立流 */
-    @NonNull
-    public LiveData<String> transcript() {
-        return transcript;
-    }
-
-    /** 结构化回合独立流（多轮对话模型） */
-    @NonNull
-    public LiveData<List<AiVoiceSnapshot.Turn>> turns() {
-        return turns;
-    }
-
     /** 表现层字幕项独立流（严格解耦领域模型与视图层） */
     @NonNull
     public LiveData<List<AiSubtitleItem>> subtitleItems() {
@@ -145,7 +131,6 @@ public final class AiCallViewModel extends ViewModel {
             return;
         }
         durationSeconds = 0;
-        turns.setValue(List.of());
         subtitleItems.setValue(List.of());
         uiState.setValue(AiCallUiState.connecting()
                 .withSpeakerOn(speakerOn)
@@ -173,22 +158,23 @@ public final class AiCallViewModel extends ViewModel {
         stopTimer();
     }
 
-    /** 静音切换操作 */
-    public void setMuted(boolean muted) {
+    /** 麦克风收音门禁静音切换操作 */
+    public void setMicMuted(boolean micMuted) {
+        this.micMuted = micMuted;
         AiVoiceSession current = session;
         if (current != null) {
-            current.setMuted(muted);
+            current.setMicMuted(micMuted);
         }
         AiCallUiState currentUi = uiState.getValue();
         if (currentUi != null) {
-            uiState.setValue(currentUi.withMuted(muted));
+            uiState.setValue(currentUi.withMicMuted(micMuted));
         }
     }
 
-    public void toggleMute() {
+    public void toggleMicMute() {
         AiCallUiState current = uiState.getValue();
         if (current != null) {
-            setMuted(!current.muted());
+            setMicMuted(!current.micMuted());
         }
     }
 
@@ -300,19 +286,9 @@ public final class AiCallViewModel extends ViewModel {
             meter.postValue(level);
         }
 
-        List<AiVoiceSnapshot.Turn> currentTurns = snapshot.turns();
-        if (!Objects.equals(turns.getValue(), currentTurns)) {
-            turns.postValue(currentTurns);
-        }
-
-        List<AiSubtitleItem> currentItems = AiSubtitleMapper.fromDomainTurns(currentTurns);
+        List<AiSubtitleItem> currentItems = AiSubtitleMapper.fromDomainTurns(snapshot.turns());
         if (!Objects.equals(subtitleItems.getValue(), currentItems)) {
             subtitleItems.postValue(currentItems);
-        }
-
-        String text = transcriptOf(snapshot);
-        if (!text.equals(transcript.getValue())) {
-            transcript.postValue(text);
         }
     }
 
@@ -327,23 +303,5 @@ public final class AiCallViewModel extends ViewModel {
     private void stopTimer() {
         timerRunning = false;
         ticker.removeCallbacks(timerRunnable);
-    }
-
-    @NonNull
-    private static String transcriptOf(@NonNull AiVoiceSnapshot snapshot) {
-        StringBuilder text = new StringBuilder();
-        for (AiVoiceSnapshot.Turn turn : snapshot.turns()) {
-            if (turn.text().isEmpty()) {
-                continue;
-            }
-            if (text.length() > 0) {
-                text.append('\n');
-            }
-            text.append(turn.user() ? "你：" : "AI：").append(turn.text());
-            if (!turn.finalTranscript()) {
-                text.append('…');
-            }
-        }
-        return text.toString();
     }
 }
