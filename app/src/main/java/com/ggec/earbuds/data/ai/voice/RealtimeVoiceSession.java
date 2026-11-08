@@ -169,8 +169,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     }
 
     @Override
-    public void setMuted(boolean value) {
-        dispatch(() -> apply(new VoiceCallEvent.Muted(value)));
+    public void setMicMuted(boolean value) {
+        dispatch(() -> apply(new VoiceCallEvent.SetMicMuted(value)));
     }
 
     @Override
@@ -379,8 +379,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             return;
         }
         AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
-                snapshotState(model.state()), model.turns(), model.level(), model.failure(),
-                model.duplex());
+                snapshotState(model.state()),
+                model.turns(),
+                model.level(),
+                model.failure(),
+                model.duplex(),
+                model.micMuted()
+        );
         try {
             target.onSnapshot(snapshot);
         } catch (RuntimeException fromPage) {
@@ -395,7 +400,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             case LISTENING -> AiVoiceSnapshot.State.LISTENING;
             case THINKING -> AiVoiceSnapshot.State.THINKING;
             case SPEAKING, DRAINING -> AiVoiceSnapshot.State.SPEAKING;
-            case MUTED -> AiVoiceSnapshot.State.MUTED;
             case FAILED -> AiVoiceSnapshot.State.FAILED;
             case ENDED -> AiVoiceSnapshot.State.ENDED;
         };

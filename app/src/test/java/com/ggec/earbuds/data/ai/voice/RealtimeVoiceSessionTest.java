@@ -177,15 +177,18 @@ public class RealtimeVoiceSessionTest {
         session.start(snapshots::add);
         link.opened();
 
-        session.setMuted(true);
+        session.setMicMuted(true);
 
-        assertEquals(AiVoiceSnapshot.State.MUTED, last().state());
-        assertFalse(capture.uplinkEnabled);
+        assertEquals("静音麦克风绝不影响AI会话的LISTENING状态", AiVoiceSnapshot.State.LISTENING, last().state());
+        assertTrue("快照反映真实的micMuted状态", last().micMuted());
+        assertFalse("麦克风上行门禁关闭", capture.uplinkEnabled);
         capture.emit(FakeAudioCapture.pcm(FRAME_BYTES), 0.2f);
         assertEquals("静音时一帧都不该上行", 0, link.appended.size());
 
-        session.setMuted(false);
+        session.setMicMuted(false);
+        assertFalse(last().micMuted());
         assertTrue(capture.uplinkEnabled);
+        assertEquals(AiVoiceSnapshot.State.LISTENING, last().state());
     }
 
     @Test
