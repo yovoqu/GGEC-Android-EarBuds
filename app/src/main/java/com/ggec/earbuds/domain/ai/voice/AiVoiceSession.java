@@ -28,8 +28,8 @@ public interface AiVoiceSession {
      */
     void start(@NonNull Listener listener);
 
-    /** 静音只停上行，不停正在播放的回答。 */
-    void setMuted(boolean muted);
+    /** 本地麦克风收音静音开关控制（仅控制上行门禁，绝不中断正在播放的回答与 AI 会话）。 */
+    void setMicMuted(boolean micMuted);
 
     /** 设置双工通信方式（全双工/半双工）。严格单点控制。 */
     void setDuplex(@NonNull VoiceDuplex duplex);
