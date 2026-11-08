@@ -40,7 +40,7 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 public final class AiCallControlsView extends LinearLayout {
 
     public interface Listener {
-        void onMuted(boolean muted);
+        void onMicMuted(boolean micMuted);
         void onSpeaker(boolean speaker);
         void onHangUp();
     }
@@ -58,7 +58,7 @@ public final class AiCallControlsView extends LinearLayout {
     private final ImageView hangUpButton;
     private final ImageView speakerButton;
 
-    private boolean muted = false;
+    private boolean micMuted = false;
     private boolean speakerOn = true;
     private boolean ended = false;
 
@@ -118,7 +118,7 @@ public final class AiCallControlsView extends LinearLayout {
 
         // 左侧：麦克风静音按键
         micButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
-        FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMuted(!muted));
+        FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMicMuted(!micMuted));
 
         // 正中央英雄位：64dp 核心挂断按键（醒目电话正红）
         hangUpButton = createHeroButton(HERO_BUTTON_SIZE, 15f);
@@ -142,7 +142,7 @@ public final class AiCallControlsView extends LinearLayout {
     }
 
     public void render(@NonNull AiCallUiState state) {
-        this.muted = state.muted();
+        this.micMuted = state.micMuted();
         this.speakerOn = state.speakerOn();
         this.ended = state.ended();
 
@@ -166,7 +166,7 @@ public final class AiCallControlsView extends LinearLayout {
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
 
-        if (muted) {
+        if (micMuted) {
             // 静音报警暖琥珀态
             bg.setColor(theme.warningSoft);
             bg.setStroke(Math.max(1, theme.dp(1.2f)), theme.warning);

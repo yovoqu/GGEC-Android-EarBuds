@@ -13,7 +13,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 
@@ -40,7 +39,7 @@ public final class AiCallScreen {
         void onClose();
         void onToggleSubtitles();
         void onToggleDuplex();
-        void onMuted(boolean muted);
+        void onMicMuted(boolean micMuted);
         void onSpeaker(boolean speaker);
         void onHangUp();
         void onInterrupt();
@@ -57,8 +56,6 @@ public final class AiCallScreen {
     private final AiCallErrorView errorView;
     private final AiCallControlsView controlsView;
 
-    private String latestTranscript = "";
-    private List<AiVoiceSnapshot.Turn> latestTurns = List.of();
     private List<AiSubtitleItem> latestSubtitleItems = List.of();
     private boolean captionsEnabled = true;
     private AiCallUiState.Action currentAction = AiCallUiState.Action.NONE;
@@ -111,8 +108,8 @@ public final class AiCallScreen {
         // 2. 底部黄金三键悬浮控制舱 (ai_call_controls)
         controlsView = new AiCallControlsView(context, theme, new AiCallControlsView.Listener() {
             @Override
-            public void onMuted(boolean muted) {
-                listener.onMuted(muted);
+            public void onMicMuted(boolean micMuted) {
+                listener.onMicMuted(micMuted);
             }
 
             @Override
@@ -213,7 +210,6 @@ public final class AiCallScreen {
             case LISTENING -> AiFluidVisualizerView.VisualPhase.LISTENING;
             case THINKING -> AiFluidVisualizerView.VisualPhase.THINKING;
             case SPEAKING -> AiFluidVisualizerView.VisualPhase.SPEAKING;
-            case MUTED -> AiFluidVisualizerView.VisualPhase.MUTED;
             case OFFLINE -> AiFluidVisualizerView.VisualPhase.OFFLINE;
         };
         visualizerView.setPhase(vPhase);
@@ -223,13 +219,7 @@ public final class AiCallScreen {
             subtitleView.setVisibility(View.GONE);
         } else {
             visualizerView.setVisibility(View.VISIBLE);
-            if (!latestSubtitleItems.isEmpty()) {
-                subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
-            } else if (!latestTurns.isEmpty()) {
-                subtitleView.renderTurns(latestTurns, captionsEnabled);
-            } else {
-                subtitleView.render(latestTranscript, captionsEnabled);
-            }
+            subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
         }
     }
 
@@ -241,20 +231,6 @@ public final class AiCallScreen {
         this.latestSubtitleItems = items;
         if (currentAction == AiCallUiState.Action.NONE) {
             subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
-        }
-    }
-
-    public void setTurns(@NonNull List<AiVoiceSnapshot.Turn> turns) {
-        this.latestTurns = turns;
-        if (currentAction == AiCallUiState.Action.NONE && latestSubtitleItems.isEmpty()) {
-            subtitleView.renderTurns(latestTurns, captionsEnabled);
-        }
-    }
-
-    public void setTranscript(@NonNull String transcript) {
-        this.latestTranscript = transcript;
-        if (currentAction == AiCallUiState.Action.NONE && latestSubtitleItems.isEmpty() && latestTurns.isEmpty()) {
-            subtitleView.render(latestTranscript, captionsEnabled);
         }
     }
 

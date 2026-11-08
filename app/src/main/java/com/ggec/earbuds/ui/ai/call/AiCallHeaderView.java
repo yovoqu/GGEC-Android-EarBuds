@@ -194,7 +194,6 @@ public final class AiCallHeaderView extends RelativeLayout {
             case LISTENING -> theme.isDark() ? 0xFF00E676 : 0xFF10B981;
             case SPEAKING -> theme.brand;
             case THINKING -> theme.isDark() ? 0xFFA855F7 : 0xFF7C3AED;
-            case MUTED -> theme.warning;
             case CONNECTING -> theme.brand;
             case OFFLINE -> theme.text3;
         };

@@ -22,21 +22,32 @@ public class AiCallUiMapperTest {
     @Test
     public void listeningExposesLevelAndInterruptibilityOnlyWhenRelevant() {
         AiCallUiState state = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.LISTENING, List.of(), 0.42f, null));
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0.42f, null, VoiceDuplex.FULL_DUPLEX, false));
 
         assertEquals(AiCallUiState.Phase.LISTENING, state.phase());
         assertEquals(R.string.ai_call_phase_listening, state.title());
         assertTrue(state.live());
         assertFalse(state.interruptible());
         assertTrue(state.speakerOn());
+        assertFalse(state.micMuted());
+    }
+
+    @Test
+    public void micMutedDoesNotAlterPhaseOrLiveness() {
+        AiCallUiState state = mapper.map(new AiVoiceSnapshot(
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX, true));
+
+        assertEquals("静音麦克风绝不改变AI会话阶段", AiCallUiState.Phase.LISTENING, state.phase());
+        assertTrue(state.live());
+        assertTrue("反映真实的本地麦克风静音状态", state.micMuted());
     }
 
     @Test
     public void speakingIsInterruptibleAndEndedShowsTheOfflineOrb() {
         AiCallUiState speaking = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.SPEAKING, List.of(), 0.2f, null));
+                AiVoiceSnapshot.State.SPEAKING, List.of(), 0.2f, null, VoiceDuplex.FULL_DUPLEX, false));
         AiCallUiState ended = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.ENDED, List.of(), 0.2f, null));
+                AiVoiceSnapshot.State.ENDED, List.of(), 0.2f, null, VoiceDuplex.FULL_DUPLEX, false));
 
         assertTrue(speaking.interruptible());
         assertEquals(AiCallUiState.Phase.OFFLINE, ended.phase());
@@ -58,7 +69,7 @@ public class AiCallUiMapperTest {
     @Test
     public void speakerPreferenceIsProjectedWithoutChangingTheVoiceState() {
         AiCallUiState state = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null))
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX, false))
                 .withSpeakerOn(false);
 
         assertFalse(state.speakerOn());
@@ -69,16 +80,16 @@ public class AiCallUiMapperTest {
     @Test
     public void duplexModeIsProjectedFromSnapshot() {
         AiCallUiState full = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX));
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX, false));
         assertEquals(VoiceDuplex.FULL_DUPLEX, full.duplex());
 
         AiCallUiState half = mapper.map(new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.HALF_DUPLEX));
+                AiVoiceSnapshot.State.LISTENING, List.of(), 0f, null, VoiceDuplex.HALF_DUPLEX, false));
         assertEquals(VoiceDuplex.HALF_DUPLEX, half.duplex());
     }
 
     private static AiVoiceSnapshot failed(AiFailureKind kind) {
         return new AiVoiceSnapshot(AiVoiceSnapshot.State.FAILED, List.of(), 0f,
-                new AiFailure(kind, "detail", null));
+                new AiFailure(kind, "detail", null), VoiceDuplex.FULL_DUPLEX, false);
     }
 }
