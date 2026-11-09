@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -426,7 +427,7 @@ public final class YoCbtSppConnection {
         if (!(throwable instanceof IOException)) {
             return false;
         }
-        String text = String.valueOf(throwable.getMessage()).toLowerCase();
+        String text = String.valueOf(throwable.getMessage()).toLowerCase(Locale.ROOT);
         return text.contains("socket might closed")
                 || text.contains("read failed")
                 || text.contains("connection refused")

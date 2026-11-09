@@ -1,5 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
@@ -126,6 +127,7 @@ public final class YoCbtAndroidProfileProxyAdapter {
      * @return 标准类型对应的 Android {@link BluetoothProfile} 常量，
      *         扩展专用类型返回 -1
      */
+    @SuppressLint("InlinedApi")
     public static int toAndroidProfileConstant(@NonNull String profileType) {
         switch (profileType.toUpperCase(java.util.Locale.US)) {
             case "A2DP":

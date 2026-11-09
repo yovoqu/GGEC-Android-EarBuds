@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
-import android.os.Build;
+import androidx.core.content.ContextCompat;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
 
 import androidx.annotation.NonNull;
@@ -54,11 +54,7 @@ public final class YoCbtAndroidReceiverRegistry {
         }
 
         Context appContext = context.getApplicationContext();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
-        } else {
-            appContext.registerReceiver(receiver, filter);
-        }
+        ContextCompat.registerReceiver(appContext, receiver, filter, ContextCompat.RECEIVER_EXPORTED);
 
         receivers.add(new ReceiverEntry(receiver, appContext));
         YoBluetoothLogger.d(TAG, "接收器已注册: " + receiver);
