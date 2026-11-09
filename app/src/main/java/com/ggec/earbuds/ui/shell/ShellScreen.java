@@ -3,11 +3,9 @@ package com.ggec.earbuds.ui.shell;
 import android.view.View;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
-import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.shell.ShellDestination;
 import com.ggec.earbuds.ui.ai.chat.AiChatPage;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
@@ -145,19 +143,5 @@ final class ShellScreen {
         public void onToggle(@NonNull HomeToggle key, boolean checked) {
             home.setToggle(key, checked);
         }
-
-        @Override
-        public void onSelectModel() {
-            java.util.List<String> models = home.modelIds();
-            if (models.isEmpty()) {
-                return;
-            }
-            new AlertDialog.Builder(activity)
-                    .setTitle(R.string.device_select_model)
-                    .setItems(models.toArray(new String[0]),
-                            (dialog, which) -> home.selectModel(models.get(which)))
-                    .show();
-        }
     }
-
 }
