@@ -14,6 +14,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
@@ -22,17 +23,8 @@ import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 
 /**
  * 通话页顶部导航栏 (AiCallHeaderView)：
- * 全面基于 {@link AiTheme} 语义化调色系统与对称美学架构构建。
- *
- * <p>布局架构与空间互斥规范：
- * <ul>
- *   <li><b>绝对对称锚点</b>：左侧 40dp 黄金圆形返回键，右侧 40dp 黄金圆形字幕键，左右宽度严格 1:1 对等；</li>
- *   <li><b>中央灵动复合胶囊 (Dynamic Composite Capsule)</b>：
- *       将【通话状态 · 时长】与【全双工/半双工模式切换】完美融合于单一中央胶囊中，
- *       彻底消除旧版多个悬浮按钮在水平方向的挤压与碰撞；</li>
- *   <li><b>全屏级防溢出壁垒</b>：中央胶囊被严格约束在左右操作键之间，并启用文本尾部省略，在任意小屏上绝对零重叠。</li>
- * </ul>
- * </p>
+ * 基于 {@link AiTheme} 语义化调色系统构建，复用指示灯 Drawable 并按字段差异刷新，
+ * 避免每秒时长跳变触发重复 Drawable 分配。
  */
 public final class AiCallHeaderView extends RelativeLayout {
 
@@ -47,12 +39,11 @@ public final class AiCallHeaderView extends RelativeLayout {
     private static final float BUTTON_SIZE_DP = 40f;
 
     private final AiTheme theme;
-    private final Listener listener;
 
     private final AiHeaderActionButton closeButton;
     private final AiHeaderActionButton subtitlesButton;
 
-    private final View statusDot;
+    private final GradientDrawable statusDotDrawable;
     private final TextView statusText;
     private final TextView durationText;
 
@@ -60,17 +51,23 @@ public final class AiCallHeaderView extends RelativeLayout {
     private final ImageView duplexIcon;
     private final TextView duplexText;
 
+    private int lastTitle;
+    private int lastDurationSeconds = -1;
+    private int lastDotColor = Integer.MIN_VALUE;
+    @Nullable
+    private VoiceDuplex lastDuplex;
+    @Nullable
+    private Boolean lastCaptionsVisible;
+
     public AiCallHeaderView(@NonNull Context context, @NonNull AiTheme theme, @NonNull Listener listener) {
         super(context);
         this.theme = theme;
-        this.listener = listener;
 
         int pad = theme.dp(AiTheme.PAGE_INSET);
         setPadding(pad, theme.dp(AiTheme.SPACE_S), pad, theme.dp(AiTheme.SPACE_S));
 
         int btnSize = theme.dp(BUTTON_SIZE_DP);
 
-        // 1. 左侧：40dp 统一圆形返回/关闭按键
         closeButton = new AiHeaderActionButton(context, theme, AiHeaderActionButton.Style.NEUTRAL)
                 .icon(R.drawable.ic_ai_back)
                 .contentDesc(R.string.ai_call_close)
@@ -81,7 +78,6 @@ public final class AiCallHeaderView extends RelativeLayout {
         closeParams.addRule(CENTER_VERTICAL);
         addView(closeButton, closeParams);
 
-        // 2. 右侧：40dp 统一圆形双态字幕开关按键
         subtitlesButton = new AiHeaderActionButton(context, theme, AiHeaderActionButton.Style.TOGGLE)
                 .icon(R.drawable.ic_ai_call_subtitles)
                 .contentDesc(R.string.ai_call_subtitles_toggle)
@@ -92,27 +88,23 @@ public final class AiCallHeaderView extends RelativeLayout {
         subParams.addRule(CENTER_VERTICAL);
         addView(subtitlesButton, subParams);
 
-        // 3. 中央：灵动复合状态与双工胶囊 (状态 · 时长 | 双工切换)
         LinearLayout centerPill = new LinearLayout(context);
         centerPill.setId(View.generateViewId());
         centerPill.setOrientation(LinearLayout.HORIZONTAL);
         centerPill.setGravity(Gravity.CENTER_VERTICAL);
 
-        // 胶囊背景：卡片底色 + 细微轮廓描边，圆角半径严格等于高度一半 (20dp)，高度与左右按钮完全对齐 (40dp)
         GradientDrawable pillBg = theme.roundedStroke(theme.card, BUTTON_SIZE_DP / 2f, theme.cardStroke, 1f);
         centerPill.setBackground(pillBg);
         centerPill.setPadding(theme.dp(12f), 0, theme.dp(10f), 0);
 
-        // 3.1 呼吸状态指示灯
-        statusDot = new View(context);
-        GradientDrawable dotBg = new GradientDrawable();
-        dotBg.setShape(GradientDrawable.OVAL);
-        dotBg.setColor(theme.brand);
-        statusDot.setBackground(dotBg);
+        View statusDot = new View(context);
+        statusDotDrawable = new GradientDrawable();
+        statusDotDrawable.setShape(GradientDrawable.OVAL);
+        statusDotDrawable.setColor(theme.brand);
+        statusDot.setBackground(statusDotDrawable);
         int dotPx = theme.dp(STATUS_DOT_SIZE);
         centerPill.addView(statusDot, new LinearLayout.LayoutParams(dotPx, dotPx));
 
-        // 3.2 状态文字：自适应字号提升为 TEXT_SUBHEAD (13.5sp)，中等字重
         statusText = theme.text(AiTheme.TEXT_SUBHEAD, theme.text1, AiTheme.Weight.MEDIUM);
         statusText.setSingleLine(true);
         statusText.setEllipsize(TextUtils.TruncateAt.END);
@@ -123,13 +115,11 @@ public final class AiCallHeaderView extends RelativeLayout {
         statusParams.rightMargin = theme.dp(4f);
         centerPill.addView(statusText, statusParams);
 
-        // 3.3 分隔圆点
         TextView dotSeparator = theme.text(AiTheme.TEXT_SUBHEAD, theme.text3);
         dotSeparator.setText("·");
         centerPill.addView(dotSeparator, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // 3.4 实时通话时长：字号自适应提升为 TEXT_SUBHEAD (13.5sp)
         durationText = theme.text(AiTheme.TEXT_SUBHEAD, theme.text2);
         durationText.setSingleLine(true);
         durationText.setText("00:00");
@@ -138,7 +128,6 @@ public final class AiCallHeaderView extends RelativeLayout {
         durParams.leftMargin = theme.dp(4f);
         centerPill.addView(durationText, durParams);
 
-        // 3.5 竖向精致微细分隔线
         View divider = new View(context);
         divider.setBackgroundColor(theme.cardStroke);
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
@@ -147,7 +136,6 @@ public final class AiCallHeaderView extends RelativeLayout {
         divParams.rightMargin = theme.dp(8f);
         centerPill.addView(divider, divParams);
 
-        // 3.6 双工模式切换按键 (内置于胶囊右翼，支持果冻按压反馈)
         duplexButton = new LinearLayout(context);
         duplexButton.setOrientation(LinearLayout.HORIZONTAL);
         duplexButton.setGravity(Gravity.CENTER);
@@ -178,7 +166,6 @@ public final class AiCallHeaderView extends RelativeLayout {
         centerPill.addView(duplexButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // 居中对齐，高度严格对齐左右按键 40dp (btnSize)，消除落差
         LayoutParams centerParams = new LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, btnSize);
         centerParams.addRule(CENTER_IN_PARENT);
@@ -186,34 +173,43 @@ public final class AiCallHeaderView extends RelativeLayout {
     }
 
     public void render(@NonNull AiCallUiState state) {
-        statusText.setText(state.title());
-        durationText.setText(state.formattedDuration());
+        if (state.title() != lastTitle) {
+            lastTitle = state.title();
+            statusText.setText(state.title());
+        }
+        if (state.durationSeconds() != lastDurationSeconds) {
+            lastDurationSeconds = state.durationSeconds();
+            durationText.setText(state.formattedDuration());
+        }
 
-        // 呼吸指示灯随通话相位切换主题语义色
         int dotColor = switch (state.phase()) {
             case LISTENING -> theme.isDark() ? 0xFF00E676 : 0xFF10B981;
-            case SPEAKING -> theme.brand;
+            case SPEAKING, CONNECTING -> theme.brand;
             case THINKING -> theme.isDark() ? 0xFFA855F7 : 0xFF7C3AED;
-            case CONNECTING -> theme.brand;
             case OFFLINE -> theme.text3;
         };
-        GradientDrawable dotDrawable = new GradientDrawable();
-        dotDrawable.setShape(GradientDrawable.OVAL);
-        dotDrawable.setColor(dotColor);
-        statusDot.setBackground(dotDrawable);
+        if (dotColor != lastDotColor) {
+            lastDotColor = dotColor;
+            statusDotDrawable.setColor(dotColor);
+        }
 
-        // 渲染双工模式文字与强调色彩
-        boolean isFull = state.duplex() == VoiceDuplex.FULL_DUPLEX;
-        int activeColor = theme.brand;
-        int inactiveColor = theme.text2;
-        int targetColor = isFull ? activeColor : inactiveColor;
-        duplexText.setText(isFull ? R.string.ai_call_duplex_full : R.string.ai_call_duplex_half);
-        duplexText.setTextColor(targetColor);
-        duplexIcon.setColorFilter(targetColor);
-        duplexButton.setContentDescription(getContext().getString(
-                R.string.ai_call_duplex_toggle_desc,
-                getContext().getString(isFull ? R.string.ai_call_duplex_full : R.string.ai_call_duplex_half)));
+        VoiceDuplex currentDuplex = state.duplex();
+        if (currentDuplex != lastDuplex) {
+            lastDuplex = currentDuplex;
+            boolean isFull = currentDuplex == VoiceDuplex.FULL_DUPLEX;
+            int targetColor = isFull ? theme.brand : theme.text2;
+            duplexText.setText(isFull ? R.string.ai_call_duplex_full : R.string.ai_call_duplex_half);
+            duplexText.setTextColor(targetColor);
+            duplexIcon.setColorFilter(targetColor);
+            duplexButton.setContentDescription(getContext().getString(
+                    R.string.ai_call_duplex_toggle_desc,
+                    getContext().getString(isFull ? R.string.ai_call_duplex_full : R.string.ai_call_duplex_half)));
+        }
 
-        subtitlesButton.setActive(state.captionsVisible());
+        boolean captionsVisible = state.captionsVisible();
+        if (lastCaptionsVisible == null || lastCaptionsVisible != captionsVisible) {
+            lastCaptionsVisible = captionsVisible;
+            subtitlesButton.setActive(captionsVisible);
+        }
     }
 }
