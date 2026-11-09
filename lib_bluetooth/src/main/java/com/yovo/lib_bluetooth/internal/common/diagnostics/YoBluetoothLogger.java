@@ -19,6 +19,10 @@ public final class YoBluetoothLogger {
         enabled = value;
     }
 
+    public static boolean isPortInstalled() {
+        return port != BluetoothLogPort.UNINSTALLED;
+    }
+
     public static void setPort(@NonNull BluetoothLogPort value) {
         port = value;
     }

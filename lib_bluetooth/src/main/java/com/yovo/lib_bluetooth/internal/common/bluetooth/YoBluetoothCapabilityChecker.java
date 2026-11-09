@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.common.bluetooth;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -33,6 +34,12 @@ public final class YoBluetoothCapabilityChecker {
     public boolean supportsBle() {
         BluetoothAdapter adapter = adapter();
         if (adapter == null) return false;
+        if (context != null) {
+            PackageManager pm = context.getPackageManager();
+            if (pm != null && pm.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+                return true;
+            }
+        }
         return adapter.isMultipleAdvertisementSupported()
                 || adapter.getBluetoothLeScanner() != null;
     }
