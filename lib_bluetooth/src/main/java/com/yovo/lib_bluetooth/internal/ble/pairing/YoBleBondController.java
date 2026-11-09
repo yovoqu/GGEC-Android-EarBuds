@@ -251,7 +251,7 @@ public final class YoBleBondController implements YoReleasable {
         return new BleOperationHandle(opId, () -> observers.remove(observer));
     }
 
-    /** 由系统 BroadcastReceiver 或 Fake 平台推送配对状态迁移事件。 */
+    /** 由系统 BroadcastReceiver 推送配对状态迁移事件。 */
     public void onPlatformBondStateChanged(@NonNull BleDeviceId deviceId,
                                            @NonNull BleBondState previous,
                                            @NonNull BleBondState current,

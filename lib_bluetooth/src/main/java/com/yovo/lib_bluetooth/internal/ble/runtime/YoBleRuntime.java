@@ -25,9 +25,8 @@ public final class YoBleRuntime implements YoReleasable {
 
     private final long shutdownTimeoutSeconds;
     private final String stateThreadName;
-    private final boolean usingCustomStateDispatcher;
     private final YoCloseGuard closeGuard = new YoCloseGuard();
-    @Nullable
+    @NonNull
     private final ExecutorService stateExecutor;
     @NonNull
     private final YoDispatcher stateDispatcher;
@@ -37,7 +36,7 @@ public final class YoBleRuntime implements YoReleasable {
     private final ExecutorService callbackExecutor;
     @NonNull
     private final YoDispatcher callbackDispatcher;
-    @Nullable
+    @NonNull
     private final ScheduledExecutorService schedulerExecutor;
     @NonNull
     private final YoTaskScheduler scheduler;
@@ -52,31 +51,16 @@ public final class YoBleRuntime implements YoReleasable {
         this.stateThreadName = config.stateThreadName();
         this.shutdownTimeoutSeconds = config.shutdownTimeoutSeconds();
 
-        if (config.customStateDispatcher() != null) {
-            this.usingCustomStateDispatcher = true;
-            this.stateExecutor = null;
-            this.stateDispatcher = config.customStateDispatcher();
-        } else {
-            this.usingCustomStateDispatcher = false;
-            this.stateExecutor = YoExecutors.single(stateThreadName);
-            this.stateDispatcher = stateExecutor::execute;
-            stateExecutor.execute(() -> stateThreadRef.set(Thread.currentThread()));
-        }
+        this.stateExecutor = YoExecutors.single(stateThreadName);
+        this.stateDispatcher = stateExecutor::execute;
+        stateExecutor.execute(() -> stateThreadRef.set(Thread.currentThread()));
 
         this.ioExecutor = YoExecutors.fixed("yo-ble-io", config.ioThreadPoolSize());
 
-        if (config.customScheduler() != null) {
-            this.schedulerExecutor = null;
-            this.scheduler = config.customScheduler();
-        } else {
-            this.schedulerExecutor = YoExecutors.scheduled("yo-ble-scheduler");
-            this.scheduler = YoExecutors.scheduler(schedulerExecutor);
-        }
+        this.schedulerExecutor = YoExecutors.scheduled("yo-ble-scheduler");
+        this.scheduler = YoExecutors.scheduler(schedulerExecutor);
 
-        if (config.customCallbackDispatcher() != null) {
-            this.callbackExecutor = null;
-            this.callbackDispatcher = config.customCallbackDispatcher();
-        } else if (config.callbackOnMainThread()) {
+        if (config.callbackOnMainThread()) {
             this.callbackExecutor = null;
             this.callbackDispatcher = YoExecutors.mainDispatcher();
         } else {
@@ -123,9 +107,6 @@ public final class YoBleRuntime implements YoReleasable {
     }
 
     public void checkStateThread() {
-        if (usingCustomStateDispatcher) {
-            return;
-        }
         Thread current = Thread.currentThread();
         Thread expected = stateThreadRef.get();
         if (expected == null) {
@@ -166,15 +147,11 @@ public final class YoBleRuntime implements YoReleasable {
         YoBluetoothLogger.i(TAG, "正在释放 YoBleRuntime ...");
         eventHub.clear();
         shutdownExecutor(ioExecutor, "io");
-        if (schedulerExecutor != null) {
-            shutdownExecutor(schedulerExecutor, "scheduler");
-        }
+        shutdownExecutor(schedulerExecutor, "scheduler");
         if (callbackExecutor != null) {
             shutdownExecutor(callbackExecutor, "callback");
         }
-        if (stateExecutor != null) {
-            shutdownExecutor(stateExecutor, "state");
-        }
+        shutdownExecutor(stateExecutor, "state");
         YoBluetoothLogger.i(TAG, "YoBleRuntime 释放完成");
     }
 

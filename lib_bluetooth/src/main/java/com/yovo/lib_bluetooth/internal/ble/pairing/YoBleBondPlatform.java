@@ -11,7 +11,7 @@ import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import java.util.List;
 
 /**
- * BLE 配对平台适配端口（隔离 BluetoothDevice.createBond / removeBond 与 Fake 替身）。
+ * BLE 配对平台适配端口，封装 BluetoothDevice.createBond / removeBond 等系统交互。
  */
 public interface YoBleBondPlatform {
 

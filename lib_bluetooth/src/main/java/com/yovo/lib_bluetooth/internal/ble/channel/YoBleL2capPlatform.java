@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.util.function.Consumer;
 
 /**
- * BLE L2CAP CoC Socket 平台适配端口（Android API 29+ 或 JVM 假实现）。
+ * BLE L2CAP CoC Socket 平台适配端口，封装 Android API 29+ 系统通道能力。
  */
 public interface YoBleL2capPlatform {
 

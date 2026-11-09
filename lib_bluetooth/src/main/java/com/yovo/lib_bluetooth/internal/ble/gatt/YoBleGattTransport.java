@@ -10,7 +10,7 @@ import com.yovo.lib_bluetooth.model.ble.BlePhyOptions;
 import com.yovo.lib_bluetooth.model.ble.BleWriteType;
 
 /**
- * 单连接底层 GATT 原语端口（由 Android BluetoothGatt 适配器或 Fake 连接替身实现）。
+ * 单连接底层 GATT 原语端口，由 Android BluetoothGatt 传输适配器实现。
  */
 public interface YoBleGattTransport {
 

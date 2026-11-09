@@ -1,15 +1,11 @@
 package com.yovo.lib_bluetooth.internal.ble.runtime;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
-import com.yovo.lib_bluetooth.internal.common.concurrency.YoDispatcher;
-import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 
 import java.util.Objects;
 
 /**
- * BLE 运行时配置：支持配置 state/IO 线程池、回调线程及单测注入自定义调度器。
+ * BLE 运行时配置：统一配置 state / IO 线程池、回调派发线程策略与关闭超时。
  */
 public final class YoBleRuntimeConfig {
 
@@ -17,21 +13,12 @@ public final class YoBleRuntimeConfig {
     private final int ioThreadPoolSize;
     private final boolean callbackOnMainThread;
     private final long shutdownTimeoutSeconds;
-    @Nullable
-    private final YoDispatcher customStateDispatcher;
-    @Nullable
-    private final YoDispatcher customCallbackDispatcher;
-    @Nullable
-    private final YoTaskScheduler customScheduler;
 
     private YoBleRuntimeConfig(Builder builder) {
         this.stateThreadName = builder.stateThreadName;
         this.ioThreadPoolSize = builder.ioThreadPoolSize;
         this.callbackOnMainThread = builder.callbackOnMainThread;
         this.shutdownTimeoutSeconds = builder.shutdownTimeoutSeconds;
-        this.customStateDispatcher = builder.customStateDispatcher;
-        this.customCallbackDispatcher = builder.customCallbackDispatcher;
-        this.customScheduler = builder.customScheduler;
     }
 
     @NonNull
@@ -51,21 +38,6 @@ public final class YoBleRuntimeConfig {
         return shutdownTimeoutSeconds;
     }
 
-    @Nullable
-    public YoDispatcher customStateDispatcher() {
-        return customStateDispatcher;
-    }
-
-    @Nullable
-    public YoDispatcher customCallbackDispatcher() {
-        return customCallbackDispatcher;
-    }
-
-    @Nullable
-    public YoTaskScheduler customScheduler() {
-        return customScheduler;
-    }
-
     @NonNull
     public static Builder builder() {
         return new Builder();
@@ -76,12 +48,6 @@ public final class YoBleRuntimeConfig {
         private int ioThreadPoolSize = 2;
         private boolean callbackOnMainThread = true;
         private long shutdownTimeoutSeconds = 3L;
-        @Nullable
-        private YoDispatcher customStateDispatcher;
-        @Nullable
-        private YoDispatcher customCallbackDispatcher;
-        @Nullable
-        private YoTaskScheduler customScheduler;
 
         @NonNull
         public Builder stateThreadName(@NonNull String stateThreadName) {
@@ -104,24 +70,6 @@ public final class YoBleRuntimeConfig {
         @NonNull
         public Builder shutdownTimeoutSeconds(long shutdownTimeoutSeconds) {
             this.shutdownTimeoutSeconds = Math.max(1L, shutdownTimeoutSeconds);
-            return this;
-        }
-
-        @NonNull
-        public Builder customStateDispatcher(@Nullable YoDispatcher dispatcher) {
-            this.customStateDispatcher = dispatcher;
-            return this;
-        }
-
-        @NonNull
-        public Builder customCallbackDispatcher(@Nullable YoDispatcher dispatcher) {
-            this.customCallbackDispatcher = dispatcher;
-            return this;
-        }
-
-        @NonNull
-        public Builder customScheduler(@Nullable YoTaskScheduler scheduler) {
-            this.customScheduler = scheduler;
             return this;
         }
 
