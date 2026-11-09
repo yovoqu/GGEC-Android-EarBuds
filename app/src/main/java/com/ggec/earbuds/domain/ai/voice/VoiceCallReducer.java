@@ -4,38 +4,19 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * 纯状态机：输入 (Model, Event, now)，输出 (Model, Effects)。
+ * 纯状态机：输入 {@code (Model, Event, now)}，输出 {@code (Model, Effects)}。
  *
- * <p>不碰线程、不碰 Android、不碰音频；所有副作用都变成数据。每条转移都能单测穷举，
- * 真机 trace 也能直接回放。</p>
- *
- * <h2>为什么要有"上行闸门"</h2>
- *
- * <p>实机证据：用户只问一句，助手连答 6 轮，且 3 次 {@code SpeechStarted} 全部发生在助手播放期间。
- * 服务端把这三次"开口"判给了用户，但那时用户并没有说话——是扬声器的声音被麦克风收回去又上行了一次。
- * 问题不在模型分不清谁在说话，而在<b>我们把助手自己的声音当成用户声音送了上去</b>。</p>
- *
- * <h2>为什么"停止助手"是一条复合转移</h2>
- *
- * <p>打断要做四件事：停本地播放、让服务端停止生成、按用户真正听到的毫秒截断、
- * 丢掉未提交的上行。前三件之间有数据依赖（截断毫秒来自播放进度），所以它们必须由
- * 同一条 effect 在 actor 里按固定顺序执行，而不是由 reducer 凭空给一个数。</p>
- *
- * <h2>为什么 DRAINING 必须存在</h2>
- *
- * <p>服务端 {@code response.done} 只说明"生成完了"，本地可能还有几秒音频在队列里。
- * 此时就回 LISTENING 会把麦克风打开，助手立刻听到自己的尾巴，服务端 VAD 再判成插话。</p>
+ * <p>不碰线程、不碰音频硬件、不碰网络；所有副作用都收敛为 {@link VoiceCallEffect} 数据。
+ * 每条转移都能单元测试穷举，真机 trace 也能直接回放。</p>
  */
 public final class VoiceCallReducer {
-
-    /** 下行固定 24k PCM16 单声道。 */
-    private static final long OUTPUT_BYTES_PER_MS = 24_000L * 2L / 1_000L;
 
     /** 排空后再多留一点余量，吸收播放器/混音器的尾部延迟。 */
     private static final long DRAIN_TAIL_MS = 120L;
@@ -49,17 +30,21 @@ public final class VoiceCallReducer {
             float level,
             @Nullable AiFailure failure,
             @Nullable String assistantTurnId,
-            long audioBytes,
+            long audioMicros,
+            int playbackSampleRateHz,
             boolean micMuted,
             boolean playbackStarted,
             int turnsCreated,
             @NonNull VoiceDuplex duplex,
-            boolean uplinkEnabled) {
+            boolean uplinkEnabled,
+            @Nullable AiAudioSource.Descriptor activeSource,
+            @NonNull List<AiAudioSource.Descriptor> availableSources) {
 
         public Model {
             turns = List.copyOf(turns);
             level = Math.max(0f, Math.min(1f, level));
             duplex = Objects.requireNonNull(duplex, "duplex");
+            availableSources = List.copyOf(availableSources);
         }
 
         @NonNull
@@ -69,15 +54,15 @@ public final class VoiceCallReducer {
 
         @NonNull
         public static Model initial(@NonNull VoiceDuplex duplex) {
-            return new Model(VoiceCallState.IDLE, List.of(), 0f, null, null, 0,
-                    false, false, 0, duplex, false);
+            return new Model(VoiceCallState.IDLE, List.of(), 0f, null, null, 0L, 0,
+                    false, false, 0, duplex, false, null, List.of());
         }
 
         public boolean terminal() {
             return state == VoiceCallState.FAILED || state == VoiceCallState.ENDED;
         }
 
-        /** 助手正在发声（含"生成完但还没播完"）。 */
+        /** 助手正在发声（含“生成完但还没播完”）。 */
         public boolean assistantActive() {
             return state == VoiceCallState.THINKING
                     || state == VoiceCallState.SPEAKING
@@ -91,8 +76,23 @@ public final class VoiceCallReducer {
 
         @NonNull
         public Model withDuplex(@NonNull VoiceDuplex nextDuplex) {
-            return new Model(state, turns, level, failure, assistantTurnId, audioBytes,
-                    micMuted, playbackStarted, turnsCreated, nextDuplex, uplinkEnabled);
+            return new Model(state, turns, level, failure, assistantTurnId, audioMicros,
+                    playbackSampleRateHz, micMuted, playbackStarted, turnsCreated,
+                    nextDuplex, uplinkEnabled, activeSource, availableSources);
+        }
+
+        @NonNull
+        public Model withActiveSource(@Nullable AiAudioSource.Descriptor nextSource) {
+            return new Model(state, turns, level, failure, assistantTurnId, audioMicros,
+                    playbackSampleRateHz, micMuted, playbackStarted, turnsCreated,
+                    duplex, uplinkEnabled, nextSource, availableSources);
+        }
+
+        @NonNull
+        public Model withAvailableSources(@NonNull List<AiAudioSource.Descriptor> nextSources) {
+            return new Model(state, turns, level, failure, assistantTurnId, audioMicros,
+                    playbackSampleRateHz, micMuted, playbackStarted, turnsCreated,
+                    duplex, uplinkEnabled, activeSource, nextSources);
         }
     }
 
@@ -111,8 +111,8 @@ public final class VoiceCallReducer {
             if (model.terminal()) {
                 return same(model);
             }
-            Model next = with(model, VoiceCallState.ENDED, 0f, null, null, 0, false, false);
-            effects.add(new VoiceCallEffect.StopCapture());
+            Model next = with(model, VoiceCallState.ENDED, 0f, null, null, 0L, 0, false, false);
+            effects.add(new VoiceCallEffect.StopUplink());
             effects.add(new VoiceCallEffect.StopPlayback());
             effects.add(new VoiceCallEffect.CloseLink());
             effects.add(new VoiceCallEffect.Publish());
@@ -122,8 +122,8 @@ public final class VoiceCallReducer {
             if (model.terminal()) {
                 return same(model);
             }
-            Model next = with(model, VoiceCallState.FAILED, 0f, failed.failure(), null, 0, false, false);
-            effects.add(new VoiceCallEffect.StopCapture());
+            Model next = with(model, VoiceCallState.FAILED, 0f, failed.failure(), null, 0L, 0, false, false);
+            effects.add(new VoiceCallEffect.StopUplink());
             effects.add(new VoiceCallEffect.StopPlayback());
             effects.add(new VoiceCallEffect.CloseLink());
             effects.add(new VoiceCallEffect.Publish());
@@ -143,18 +143,36 @@ public final class VoiceCallReducer {
             return new Transition(next, effects);
         }
 
-        if (event instanceof VoiceCallEvent.Start) {
-            Model next = with(model, VoiceCallState.CONNECTING, 0f, null, null, 0, false, false);
+        if (event instanceof VoiceCallEvent.SetActiveSource setSource) {
+            if (Objects.equals(model.activeSource(), setSource.source())) {
+                return same(model);
+            }
+            Model next = model.withActiveSource(setSource.source());
             effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
         }
-        if (event instanceof VoiceCallEvent.Opened) {
+
+        if (event instanceof VoiceCallEvent.AvailableSourcesChanged changed) {
+            if (Objects.equals(model.availableSources(), changed.sources())) {
+                return same(model);
+            }
+            Model next = model.withAvailableSources(changed.sources());
+            effects.add(new VoiceCallEffect.Publish());
+            return new Transition(next, effects);
+        }
+
+        if (event instanceof VoiceCallEvent.Start) {
+            Model next = with(model, VoiceCallState.CONNECTING, 0f, null, null, 0L, 0, false, false);
+            effects.add(new VoiceCallEffect.Publish());
+            return new Transition(next, effects);
+        }
+        if (event instanceof VoiceCallEvent.Opened opened) {
             if (model.state() != VoiceCallState.CONNECTING) {
                 return same(model);
             }
-            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
+            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0L, 0,
                     false, model.uplinkEnabled());
-            effects.add(new VoiceCallEffect.StartCapture());
+            effects.add(new VoiceCallEffect.StartUplink(opened.inputWireRateHz()));
             next = addGateEffect(model, next, effects);
             effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
@@ -177,28 +195,32 @@ public final class VoiceCallReducer {
             }
             VoiceCallState state = model.assistantActive() ? model.state() : VoiceCallState.THINKING;
             Model next = new Model(state, turns, model.level(), model.failure(), turnId,
-                    model.audioBytes(), model.micMuted(), model.playbackStarted(), created,
-                    model.duplex(), model.uplinkEnabled());
+                    model.audioMicros(), model.playbackSampleRateHz(), model.micMuted(),
+                    model.playbackStarted(), created, model.duplex(), model.uplinkEnabled(),
+                    model.activeSource(), model.availableSources());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
         }
 
         if (event instanceof VoiceCallEvent.AssistantAudio audio) {
-            if (audio.pcm16().length == 0) {
+            if (audio.pcm16().length == 0 || audio.sampleRateHz() <= 0) {
                 return same(model);
             }
-            if (!model.playbackStarted()) {
-                effects.add(new VoiceCallEffect.StartPlayback(audio.sampleRateHz()));
+            int rate = audio.sampleRateHz();
+            if (!model.playbackStarted() || model.playbackSampleRateHz() != rate) {
+                effects.add(new VoiceCallEffect.StartPlayback(rate));
             }
             effects.add(new VoiceCallEffect.PlayAudio(
                     audio.pcm16(), audio.itemId(), audio.contentIndex()));
+            long samples = audio.pcm16().length / 2L;
+            long chunkMicros = samples * 1_000_000L / rate;
             VoiceCallState state = model.state() == VoiceCallState.DRAINING
                     ? VoiceCallState.DRAINING : VoiceCallState.SPEAKING;
             Model next = new Model(state, model.turns(), model.level(), model.failure(),
-                    model.assistantTurnId(), model.audioBytes() + audio.pcm16().length,
+                    model.assistantTurnId(), model.audioMicros() + chunkMicros, rate,
                     model.micMuted(), true, model.turnsCreated(), model.duplex(),
-                    model.uplinkEnabled());
+                    model.uplinkEnabled(), model.activeSource(), model.availableSources());
             if (state != model.state()) {
                 effects.add(new VoiceCallEffect.Publish());
             }
@@ -208,21 +230,20 @@ public final class VoiceCallReducer {
 
         if (event instanceof VoiceCallEvent.ResponseDone) {
             List<AiVoiceSnapshot.Turn> turns = finalizeTurn(model.turns(), model.assistantTurnId());
-            if (model.audioBytes() > 0) {
-                long playbackMillis = model.audioBytes() / OUTPUT_BYTES_PER_MS;
+            if (model.audioMicros() > 0L) {
+                long playbackMillis = (model.audioMicros() + 999L) / 1_000L;
                 Model next = new Model(VoiceCallState.DRAINING, turns, 0f, model.failure(), null,
-                        model.audioBytes(), model.micMuted(), model.playbackStarted(),
-                        model.turnsCreated(), model.duplex(), model.uplinkEnabled());
+                        model.audioMicros(), model.playbackSampleRateHz(), model.micMuted(),
+                        model.playbackStarted(), model.turnsCreated(), model.duplex(),
+                        model.uplinkEnabled(), model.activeSource(), model.availableSources());
                 effects.add(new VoiceCallEffect.ScheduleDrain(playbackMillis + DRAIN_TAIL_MS));
                 effects.add(new VoiceCallEffect.Publish());
                 return new Transition(next, effects);
             }
-            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
-                    model.playbackStarted(), model.uplinkEnabled());
-            next = new Model(next.state(), turns, next.level(), next.failure(),
-                    next.assistantTurnId(), next.audioBytes(), next.micMuted(),
-                    next.playbackStarted(), next.turnsCreated(), next.duplex(),
-                    next.uplinkEnabled());
+            Model next = new Model(VoiceCallState.LISTENING, turns, 0f, null, null, 0L,
+                    model.playbackSampleRateHz(), model.micMuted(), model.playbackStarted(),
+                    model.turnsCreated(), model.duplex(), model.uplinkEnabled(),
+                    model.activeSource(), model.availableSources());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
@@ -232,26 +253,25 @@ public final class VoiceCallReducer {
             if (model.state() != VoiceCallState.DRAINING) {
                 return same(model);
             }
-            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
-                    model.playbackStarted(), model.uplinkEnabled());
+            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0L,
+                    model.playbackSampleRateHz(), model.playbackStarted(), model.uplinkEnabled());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
         }
 
-        if (event instanceof VoiceCallEvent.CaptureFrame frame) {
+        if (event instanceof VoiceCallEvent.CaptureLevel frame) {
             if (!model.uplinkEnabled()) {
-                // 闸门关着：既不上行，也不让电平动。半双工下光晕应该显示"它在说话"，
-                // 而不是跟着回声一起跳。
                 return same(model);
             }
             if (model.state() == VoiceCallState.LISTENING) {
                 float level = Math.max(0f, Math.min(1f, frame.level()));
                 if (Math.abs(level - model.level()) >= 0.01f) {
                     Model next = new Model(model.state(), model.turns(), level, model.failure(),
-                            model.assistantTurnId(), model.audioBytes(), model.micMuted(),
+                            model.assistantTurnId(), model.audioMicros(),
+                            model.playbackSampleRateHz(), model.micMuted(),
                             model.playbackStarted(), model.turnsCreated(), model.duplex(),
-                            model.uplinkEnabled());
+                            model.uplinkEnabled(), model.activeSource(), model.availableSources());
                     effects.add(new VoiceCallEffect.Publish());
                     return new Transition(next, effects);
                 }
@@ -263,7 +283,7 @@ public final class VoiceCallReducer {
             if (!model.duplexStrategy().shouldInterruptOnSpeech(model.assistantActive())) {
                 return same(model);
             }
-            return stopAssistant(model, effects, now);
+            return stopAssistant(model, effects);
         }
 
         if (event instanceof VoiceCallEvent.SpeechStopped) {
@@ -271,9 +291,10 @@ public final class VoiceCallReducer {
                 return same(model);
             }
             Model next = new Model(VoiceCallState.THINKING, model.turns(), 0f, model.failure(),
-                    model.assistantTurnId(), model.audioBytes(), model.micMuted(),
-                    model.playbackStarted(), model.turnsCreated(), model.duplex(),
-                    model.uplinkEnabled());
+                    model.assistantTurnId(), model.audioMicros(), model.playbackSampleRateHz(),
+                    model.micMuted(), model.playbackStarted(), model.turnsCreated(),
+                    model.duplex(), model.uplinkEnabled(),
+                    model.activeSource(), model.availableSources());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
@@ -290,20 +311,20 @@ public final class VoiceCallReducer {
                     : "user-" + created;
             List<AiVoiceSnapshot.Turn> turns = appendUserTurn(model.turns(), turnId, text, now);
             Model next = new Model(model.state(), turns, model.level(), model.failure(),
-                    model.assistantTurnId(), model.audioBytes(), model.micMuted(),
-                    model.playbackStarted(), created, model.duplex(),
-                    model.uplinkEnabled());
+                    model.assistantTurnId(), model.audioMicros(), model.playbackSampleRateHz(),
+                    model.micMuted(), model.playbackStarted(), created, model.duplex(),
+                    model.uplinkEnabled(), model.activeSource(), model.availableSources());
             effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
         }
 
         if (event instanceof VoiceCallEvent.SetMicMuted muteEvent) {
-            // 核心解耦：静音仅控制本地麦克风收音与上行闸门，绝不篡改或停止 AI 通话阶段（LISTENING / THINKING / SPEAKING）
             float level = muteEvent.micMuted() ? 0f : model.level();
             Model next = new Model(model.state(), model.turns(), level, model.failure(),
-                    model.assistantTurnId(), model.audioBytes(), muteEvent.micMuted(),
-                    model.playbackStarted(), model.turnsCreated(), model.duplex(),
-                    model.uplinkEnabled());
+                    model.assistantTurnId(), model.audioMicros(), model.playbackSampleRateHz(),
+                    muteEvent.micMuted(), model.playbackStarted(), model.turnsCreated(),
+                    model.duplex(), model.uplinkEnabled(),
+                    model.activeSource(), model.availableSources());
             if (muteEvent.micMuted() != model.micMuted()) {
                 effects.add(new VoiceCallEffect.Publish());
             }
@@ -315,39 +336,29 @@ public final class VoiceCallReducer {
             if (!model.assistantActive()) {
                 return same(model);
             }
-            return stopAssistant(model, effects, now);
+            return stopAssistant(model, effects);
         }
 
         return same(model);
     }
 
-    /**
-     * 用户打断（或全双工下 VAD 判定插话）的统一出口。
-     *
-     * <p>顺序不能变：先停播并取走"已听到"的进度，再让服务端取消/截断，最后回聆听。
-     * {@code cancelGeneration} 只在真的还有生成在跑时为 true——通义对没有活动响应的
-     * {@code response.cancel} 会回错误事件。</p>
-     */
     @NonNull
     private static Transition stopAssistant(@NonNull Model model,
-                                            @NonNull List<VoiceCallEffect> effects, long now) {
+                                            @NonNull List<VoiceCallEffect> effects) {
         boolean cancelGeneration = model.generating();
         effects.add(new VoiceCallEffect.StopAssistant(cancelGeneration));
         Model next = new Model(VoiceCallState.LISTENING,
                 finalizeTurn(model.turns(), model.assistantTurnId()), 0f, model.failure(),
-                null, 0, model.micMuted(), model.playbackStarted(), model.turnsCreated(),
-                model.duplex(), model.uplinkEnabled());
+                null, 0L, model.playbackSampleRateHz(), model.micMuted(),
+                model.playbackStarted(), model.turnsCreated(), model.duplex(),
+                model.uplinkEnabled(), model.activeSource(), model.availableSources());
         effects.add(new VoiceCallEffect.Publish());
         next = addGateEffect(model, next, effects);
         return new Transition(next, effects);
     }
 
-    /**
-     * 上行闸门只在"应该开/应该关"真的变了的时候发一条 effect。
-     * 每帧都发会把状态机线程和采集线程刷成热点，而且没有意义。
-     */
     private static Model addGateEffect(@NonNull Model before, @NonNull Model after,
-                                      @NonNull List<VoiceCallEffect> effects) {
+                                       @NonNull List<VoiceCallEffect> effects) {
         Model settled = withGate(after);
         if (settled.uplinkEnabled() != before.uplinkEnabled()) {
             effects.add(new VoiceCallEffect.SetUplinkEnabled(settled.uplinkEnabled()));
@@ -355,7 +366,6 @@ public final class VoiceCallReducer {
         return settled;
     }
 
-    /** 把"应该开/应该关"落到模型上，供下一次转移比较。 */
     @NonNull
     private static Model withGate(@NonNull Model model) {
         boolean wanted = uplinkWanted(model);
@@ -363,17 +373,12 @@ public final class VoiceCallReducer {
             return model;
         }
         return new Model(model.state(), model.turns(), model.level(), model.failure(),
-                model.assistantTurnId(), model.audioBytes(), model.micMuted(), model.playbackStarted(),
-                model.turnsCreated(), model.duplex(), wanted);
+                model.assistantTurnId(), model.audioMicros(), model.playbackSampleRateHz(),
+                model.micMuted(), model.playbackStarted(), model.turnsCreated(),
+                model.duplex(), wanted, model.activeSource(), model.availableSources());
     }
 
-    /**
-     * 该不该让麦克风上行。
-     *
-     * <p>规则已委托至当前双工策略 {@link VoiceDuplexStrategy}：
-     * 非活跃通话期（IDLE / CONNECTING / 终态）或本地静音时关闭；其余由
-     * {@code model.duplexStrategy().allowsUplink(model.assistantActive())} 决定。</p>
-     */
+    /** 该不该允许上行推流。非活跃通话期或本地静音时关闭；其余由双工策略裁决。 */
     public static boolean uplinkWanted(@NonNull Model model) {
         if (model.micMuted()
                 || model.terminal()
@@ -387,10 +392,12 @@ public final class VoiceCallReducer {
     @NonNull
     private static Model with(@NonNull Model base, @NonNull VoiceCallState state, float level,
                               @Nullable AiFailure failure, @Nullable String assistantTurnId,
-                              long audioBytes, boolean playbackStarted, boolean uplinkEnabled) {
+                              long audioMicros, int playbackSampleRateHz,
+                              boolean playbackStarted, boolean uplinkEnabled) {
         return new Model(state, finalizeTurn(base.turns(), base.assistantTurnId()), level,
-                failure, assistantTurnId, audioBytes, base.micMuted(), playbackStarted,
-                base.turnsCreated(), base.duplex(), uplinkEnabled);
+                failure, assistantTurnId, audioMicros, playbackSampleRateHz, base.micMuted(),
+                playbackStarted, base.turnsCreated(), base.duplex(), uplinkEnabled,
+                base.activeSource(), base.availableSources());
     }
 
     @NonNull

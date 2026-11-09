@@ -12,7 +12,18 @@ import java.util.Objects;
  */
 public sealed interface AiRealtimeOutput {
 
-    record Opened() implements AiRealtimeOutput {
+    /**
+     * 会话握手建立完成，并携带协商确定后的上下行线速率。
+     *
+     * @param inputSampleRateHz  上行音频协议要求的采样率（Hz）
+     * @param outputSampleRateHz 下行音频协议输出的采样率（Hz）
+     */
+    record Opened(int inputSampleRateHz, int outputSampleRateHz) implements AiRealtimeOutput {
+        public Opened {
+            if (inputSampleRateHz <= 0 || outputSampleRateHz <= 0) {
+                throw new IllegalArgumentException("sampleRateHz must be positive");
+            }
+        }
     }
 
     /** 助手文字增量。 */
@@ -26,7 +37,7 @@ public sealed interface AiRealtimeOutput {
      * 助手的一段 PCM16。
      *
      * @param sampleRateHz 播放这段字节要用的速率
-     * @param itemId 服务端给这一条回答的 id；打断时用它定位要截断的条目。老网关可能为空。
+     * @param itemId       服务端给这一条回答的 id；打断时用它定位要截断的条目。老网关可能为空。
      * @param contentIndex 同一 item 内的音频序号
      */
     record AssistantAudio(@NonNull byte[] pcm16, int sampleRateHz,
@@ -46,7 +57,8 @@ public sealed interface AiRealtimeOutput {
     }
 
     /** 用户发言转写文本。 */
-    record UserTranscript(@NonNull String transcript, @Nullable String itemId) implements AiRealtimeOutput {
+    record UserTranscript(@NonNull String transcript, @Nullable String itemId)
+            implements AiRealtimeOutput {
         public UserTranscript {
             Objects.requireNonNull(transcript, "transcript");
         }

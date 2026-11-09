@@ -63,9 +63,4 @@ public enum VoiceDuplex {
     public VoiceDuplexStrategy strategy() {
         return VoiceDuplexStrategy.forMode(this);
     }
-
-    /** 助手发声期间是否继续保持麦克风上行流（委托 {@link #strategy()}）。 */
-    public boolean streamsWhileAssistantSpeaks() {
-        return strategy().allowsUplink(true);
-    }
 }

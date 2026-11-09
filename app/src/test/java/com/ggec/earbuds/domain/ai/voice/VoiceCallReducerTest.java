@@ -4,7 +4,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.ai.port.AiAudioSource;
+
 import org.junit.Test;
+
+import java.util.List;
 
 public class VoiceCallReducerTest {
 
@@ -26,7 +30,7 @@ public class VoiceCallReducerTest {
     @Test
     public void userTranscriptAppendsUserTurn() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.UserTranscript("今天天气如何", "user-item-1"), 1050);
 
         assertEquals(1, model.turns().size());
@@ -42,12 +46,13 @@ public class VoiceCallReducerTest {
     }
 
     @Test
-    public void responseDoneWithAudioGoesThroughDrainingBeforeListening() {
+    public void responseDoneWithAudioGoesThroughDrainingUsingActualSampleRate() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantText("你好"), 1100);
+        // 16kHz, 16000 bytes = 8000 samples = 500ms -> ScheduleDrain(500 + 120)
         VoiceCallReducer.Transition audio = send(new VoiceCallEvent.AssistantAudio(
-                new byte[24_000], 24_000, ITEM, 0), 1200);
+                new byte[16_000], 16_000, ITEM, 0), 1200);
 
         assertEquals(VoiceCallState.SPEAKING, model.state());
         assertTrue(has(audio, VoiceCallEffect.StartPlayback.class));
@@ -55,17 +60,22 @@ public class VoiceCallReducerTest {
 
         VoiceCallReducer.Transition done = send(new VoiceCallEvent.ResponseDone(), 1300);
         assertEquals(VoiceCallState.DRAINING, model.state());
-        assertTrue(has(done, VoiceCallEffect.ScheduleDrain.class));
+        VoiceCallEffect.ScheduleDrain drain = done.effects().stream()
+                .filter(VoiceCallEffect.ScheduleDrain.class::isInstance)
+                .map(VoiceCallEffect.ScheduleDrain.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(620L, drain.delayMillis());
 
         send(new VoiceCallEvent.PlaybackDrained(), 1930);
         assertEquals(VoiceCallState.LISTENING, model.state());
-        assertEquals(0, model.audioBytes());
+        assertEquals(0L, model.audioMicros());
     }
 
     @Test
     public void responseDoneWithoutAudioGoesStraightToListening() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantText("只返回文字"), 1100);
         send(new VoiceCallEvent.ResponseDone(), 1200);
         assertEquals(VoiceCallState.LISTENING, model.state());
@@ -75,8 +85,9 @@ public class VoiceCallReducerTest {
     @Test
     public void halfDuplexClosesUplinkWhileAssistantIsActive() {
         send(new VoiceCallEvent.Start(), 1000);
-        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(), 1000);
+        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(16_000), 1000);
         assertTrue("聆听时必须开上行", model.uplinkEnabled());
+        assertTrue(has(opened, VoiceCallEffect.StartUplink.class));
         assertTrue(has(opened, VoiceCallEffect.SetUplinkEnabled.class));
 
         send(new VoiceCallEvent.AssistantText("说"), 1100);
@@ -93,7 +104,7 @@ public class VoiceCallReducerTest {
     @Test
     public void halfDuplexIgnoresSpeechStartedWhileAssistantIsSpeaking() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantText("说"), 1100);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
 
@@ -107,7 +118,7 @@ public class VoiceCallReducerTest {
     public void fullDuplexBargeInStopsAssistantAndSkipsCancelWhenGeneratingFinished() {
         model = VoiceCallReducer.Model.initial(VoiceDuplex.FULL_DUPLEX);
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
         assertTrue("全双工播放期间上行保持开启", model.uplinkEnabled());
 
@@ -115,14 +126,13 @@ public class VoiceCallReducerTest {
 
         assertEquals(VoiceCallState.LISTENING, model.state());
         assertTrue(has(barge, VoiceCallEffect.StopAssistant.class));
-        // 还在 SPEAKING（生成未结束）→ 需要 cancel。
         assertTrue(stopAssistantCancels(barge));
     }
 
     @Test
     public void interruptWhileDrainingDoesNotCancelGeneration() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
         send(new VoiceCallEvent.ResponseDone(), 1300);
         assertEquals(VoiceCallState.DRAINING, model.state());
@@ -131,14 +141,13 @@ public class VoiceCallReducerTest {
 
         assertEquals(VoiceCallState.LISTENING, model.state());
         assertTrue(has(interrupted, VoiceCallEffect.StopAssistant.class));
-        assertFalse("生成已经结束，通义对空 cancel 会回错误事件",
-                stopAssistantCancels(interrupted));
+        assertFalse("生成已经结束，不需要多余 cancel", stopAssistantCancels(interrupted));
     }
 
     @Test
     public void speechStartedWhileListeningDoesNotStopAssistant() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         VoiceCallReducer.Transition transition = send(new VoiceCallEvent.SpeechStarted(), 1100);
         assertEquals(VoiceCallState.LISTENING, model.state());
         assertFalse(has(transition, VoiceCallEffect.StopAssistant.class));
@@ -147,7 +156,7 @@ public class VoiceCallReducerTest {
     @Test
     public void mutedClosesUplinkAndReturnsWhenUnmuted() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         VoiceCallReducer.Transition muted = send(new VoiceCallEvent.SetMicMuted(true), 1100);
         assertEquals(VoiceCallState.LISTENING, model.state());
         assertTrue(model.micMuted());
@@ -163,21 +172,19 @@ public class VoiceCallReducerTest {
     @Test
     public void mutedWhileSpeakingDoesNotAffectSpeakingStateAndPlayback() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1100);
         assertEquals(VoiceCallState.SPEAKING, model.state());
 
-        VoiceCallReducer.Transition muted = send(new VoiceCallEvent.SetMicMuted(true), 1200);
-        assertEquals("AI说话期间静音麦克风，AI对话状态仍然是SPEAKING", VoiceCallState.SPEAKING, model.state());
+        send(new VoiceCallEvent.SetMicMuted(true), 1200);
+        assertEquals(VoiceCallState.SPEAKING, model.state());
         assertTrue(model.micMuted());
         assertFalse(model.uplinkEnabled());
 
-        // AI回答结束
         send(new VoiceCallEvent.ResponseDone(), 1300);
-        assertEquals(VoiceCallState.DRAINING, model.state());
         send(new VoiceCallEvent.PlaybackDrained(), 1400);
         assertEquals(VoiceCallState.LISTENING, model.state());
-        assertFalse("由于麦克风仍处于静音状态，回到LISTENING后上行门禁依然关闭", model.uplinkEnabled());
+        assertFalse(model.uplinkEnabled());
     }
 
     @Test
@@ -185,7 +192,7 @@ public class VoiceCallReducerTest {
         send(new VoiceCallEvent.Start(), 1000);
         VoiceCallReducer.Transition stop = send(new VoiceCallEvent.Stop(), 1100);
         assertEquals(VoiceCallState.ENDED, model.state());
-        assertTrue(has(stop, VoiceCallEffect.StopCapture.class));
+        assertTrue(has(stop, VoiceCallEffect.StopUplink.class));
         VoiceCallReducer.Transition again = send(new VoiceCallEvent.Start(), 1200);
         assertEquals(VoiceCallState.ENDED, model.state());
         assertTrue(again.effects().isEmpty());
@@ -197,7 +204,7 @@ public class VoiceCallReducerTest {
         send(new VoiceCallEvent.Stop(), 1100);
         VoiceCallReducer.Transition late = send(new VoiceCallEvent.AssistantAudio(
                 new byte[480], 24_000, ITEM, 0), 1200);
-        assertTrue("终态后任何事件都不产生副作用", late.effects().isEmpty());
+        assertTrue(late.effects().isEmpty());
         assertEquals(VoiceCallState.ENDED, model.state());
     }
 
@@ -207,59 +214,77 @@ public class VoiceCallReducerTest {
         VoiceCallReducer.Transition switched =
                 send(new VoiceCallEvent.SetDuplex(VoiceDuplex.FULL_DUPLEX), 1100);
         assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
-        assertFalse("未完成握手打开前，不该提前开上行闸门",
-                has(switched, VoiceCallEffect.SetUplinkEnabled.class));
+        assertFalse(has(switched, VoiceCallEffect.SetUplinkEnabled.class));
         assertFalse(model.uplinkEnabled());
 
-        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(), 1200);
+        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(16_000), 1200);
         assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
         assertTrue(model.uplinkEnabled());
-        assertTrue(has(opened, VoiceCallEffect.StartCapture.class));
+        assertTrue(has(opened, VoiceCallEffect.StartUplink.class));
         assertTrue(has(opened, VoiceCallEffect.SetUplinkEnabled.class));
     }
 
     @Test
-    public void micMutedBeforeOpenedIsPreservedWhenConnectionOpens() {
+    public void micMutedBeforeStartAndOpenedIsPreserved() {
+        send(new VoiceCallEvent.SetMicMuted(true), 900);
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.SetMicMuted(true), 1100);
-        assertFalse(model.uplinkEnabled());
+        assertTrue(model.micMuted());
 
-        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(), 1200);
-        assertTrue(has(opened, VoiceCallEffect.StartCapture.class));
-        assertFalse("连线前已静音，Opened 后上行闸门必须保持关闭", model.uplinkEnabled());
+        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(24_000), 1200);
+        assertTrue(has(opened, VoiceCallEffect.StartUplink.class));
+        assertTrue(model.micMuted());
+        assertFalse(model.uplinkEnabled());
         assertFalse(has(opened, VoiceCallEffect.SetUplinkEnabled.class));
+    }
+
+    @Test
+    public void audioSourceChangesUpdateModelAndPublishWithoutResettingState() {
+        AiAudioSource.Descriptor mic = new AiAudioSource.Descriptor(
+                "mic", AiAudioSource.Kind.BUILTIN_MIC, "Built-in", 16_000);
+        AiAudioSource.Descriptor bt = new AiAudioSource.Descriptor(
+                "bt", AiAudioSource.Kind.BLUETOOTH_BLE, "Buds", 16_000);
+
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1100);
+        VoiceCallReducer.Transition avail =
+                send(new VoiceCallEvent.AvailableSourcesChanged(List.of(bt, mic)), 1200);
+        assertTrue(has(avail, VoiceCallEffect.Publish.class));
+        assertEquals(2, model.availableSources().size());
+
+        VoiceCallReducer.Transition active = send(new VoiceCallEvent.SetActiveSource(bt), 1300);
+        assertTrue(has(active, VoiceCallEffect.Publish.class));
+        assertEquals(bt, model.activeSource());
+        assertEquals(VoiceCallState.LISTENING, model.state());
     }
 
     @Test
     public void setDuplexDynamicallyUpdatesUplinkAndInterruptionStrategy() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
-        assertFalse("半双工播放中上行关闭", model.uplinkEnabled());
+        assertFalse(model.uplinkEnabled());
         assertEquals(VoiceCallState.SPEAKING, model.state());
         assertTrue(send(new VoiceCallEvent.SpeechStarted(), 1250).effects().isEmpty());
 
         VoiceCallReducer.Transition toFull =
                 send(new VoiceCallEvent.SetDuplex(VoiceDuplex.FULL_DUPLEX), 1300);
         assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
-        assertTrue("切换到全双工后上行应开启", model.uplinkEnabled());
+        assertTrue(model.uplinkEnabled());
         assertTrue(has(toFull, VoiceCallEffect.SetUplinkEnabled.class));
         assertTrue(has(toFull, VoiceCallEffect.Publish.class));
 
         VoiceCallReducer.Transition barge = send(new VoiceCallEvent.SpeechStarted(), 1350);
-        assertTrue("切到全双工后同一条 SpeechStarted 立刻触发打断",
-                has(barge, VoiceCallEffect.StopAssistant.class));
+        assertTrue(has(barge, VoiceCallEffect.StopAssistant.class));
         assertEquals(VoiceCallState.LISTENING, model.state());
 
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1400);
         VoiceCallReducer.Transition toHalf =
                 send(new VoiceCallEvent.SetDuplex(VoiceDuplex.HALF_DUPLEX), 1500);
         assertEquals(VoiceDuplex.HALF_DUPLEX, model.duplex());
-        assertFalse("切换回半双工且在播放中上行应关闭", model.uplinkEnabled());
+        assertFalse(model.uplinkEnabled());
         assertTrue(has(toHalf, VoiceCallEffect.SetUplinkEnabled.class));
         assertTrue(has(toHalf, VoiceCallEffect.Publish.class));
-        assertTrue("切回半双工后再次收到 SpeechStarted 必须忽略",
-                send(new VoiceCallEvent.SpeechStarted(), 1550).effects().isEmpty());
+        assertTrue(send(new VoiceCallEvent.SpeechStarted(), 1550).effects().isEmpty());
     }
 
     private static boolean stopAssistantCancels(VoiceCallReducer.Transition transition) {

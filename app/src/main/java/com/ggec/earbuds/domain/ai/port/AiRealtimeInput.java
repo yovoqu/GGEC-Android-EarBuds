@@ -5,7 +5,7 @@ import androidx.annotation.NonNull;
 import java.util.Objects;
 
 /**
- * 送进实时链路的数据。采样率写在音频上，不靠调用方另外记住。
+ * 送进实时链路的数据。所有控制指令与音频数据统一封装为输入命令。
  */
 public sealed interface AiRealtimeInput {
 
@@ -21,6 +21,26 @@ public sealed interface AiRealtimeInput {
 
     /** 打断正在生成的回答。连接保持。 */
     record Cancel() implements AiRealtimeInput {
+    }
+
+    /**
+     * 把服务端对话史里用户还没听到的那一段截掉。
+     *
+     * @param itemId       服务端条目 id
+     * @param contentIndex 同一 item 内的音频序号
+     * @param audioEndMs   用户实际听到的毫秒数
+     */
+    record Truncate(@NonNull String itemId, int contentIndex, int audioEndMs)
+            implements AiRealtimeInput {
+        public Truncate {
+            Objects.requireNonNull(itemId, "itemId");
+            if (itemId.isBlank()) {
+                throw new IllegalArgumentException("itemId must not be blank");
+            }
+            if (contentIndex < 0 || audioEndMs < 0) {
+                throw new IllegalArgumentException("contentIndex and audioEndMs must be >= 0");
+            }
+        }
     }
 
     /**
