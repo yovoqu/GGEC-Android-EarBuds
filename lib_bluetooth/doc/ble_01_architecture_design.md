@@ -17,13 +17,13 @@
    - `api/*.java` 禁止 `import com.yovo.lib_bluetooth.internal.*`；
    - 非 `provider/lib_common/**` 禁止直接 `import com.yovo.lib_common.*`。
 3. **反对“为了划分而划分”的包组织规则**：
-   - 每个子包必须对应清晰的能力域、协议层或测试/平台边界，且包内包含一组强相关协作文件，不创建无意义的单一文件子包（参考 `lib_bluetooth_full_rebuild_prompt_new_architecture.md:169-219`）。
+   - 每个子包必须对应清晰的能力域、协议层或平台边界，且包内包含一组强相关协作文件，不创建无意义的单一文件子包（参考 `lib_bluetooth_full_rebuild_prompt_new_architecture.md:169-219`）。
 4. **线程与生命周期不变式**：
    - `YoBleRuntime` 提供四类职责清晰的执行环境：
      - `stateExecutor`（单线程 `yo-ble-state`）：所有会话状态机、扫描状态、队列出队/完成、路由表、缓存读写**严格在 State 线程串行执行**，无锁零竞态，并支持 `checkStateThread()` 断言；
      - `ioExecutor`（定长池 `yo-ble-io`）：专用于阻塞式 I/O（如 L2CAP `InputStream`/`OutputStream` 读写）；
      - `scheduler`（单线程定时 `yo-ble-scheduler`）：专用于超时定时器、扫描 Lost 检测、退避重连延迟、Android 13 PHY 回调兜底、ConnectionPriority 回调兜底；
-     - `callbackDispatcher`：默认主线程 `MainLooper`（在单测或配置关闭时可注入 `FakeDispatcher` 或回调线程，**不硬依赖 `Looper.getMainLooper()`**）；
+     - `callbackDispatcher`：默认主线程 `MainLooper`，可通过配置切换至专用单线程回调执行器 `yo-ble-callback`；
    - 通过 `YoBleRuntimeConfig` 与 `YoBleRuntimeScope` 管理操作级作用域与资源优雅释放（IO -> Scheduler -> Callback -> State 顺序关闭），`release()` 幂等且永久阻止后续新操作提交。
 
 ---
@@ -105,9 +105,8 @@ com.yovo.lib_bluetooth
     │   ├── YoBleAndroidPeripheralPlatform.java
     │   ├── compat/                      # YoBleGattCompat (API 24-37 read/write/notify/serviceChanged), YoBleScanCompat, YoBleAdvertiseCompat, YoBleL2capCompat
     │   ├── hiddenapi/                   # YoBleHiddenApiPolicy, YoBleGattCacheRefresher, YoBleBondReflection
-    │   ├── receiver/                    # YoBleAndroidReceiverRegistry, YoBleAdapterStateReceiver, YoBleBondStateReceiver
-    │   └── gatt/                        # YoBleAndroidConnectionPlatform, YoBleAndroidGattCallbackBridge, YoBleAndroidGattTransport
-    └── testing/                         # FakeYoBleScanPlatform, FakeYoBleConnectionPlatform, FakeYoBleBondPlatform, FakeYoBleL2capPlatform, FakeYoBlePeripheralPlatform, FakeBleGattDevice
+    ├── receiver/                        # YoBleAndroidReceiverRegistry, YoBleAdapterStateReceiver, YoBleBondStateReceiver
+    └── gatt/                            # YoBleAndroidConnectionPlatform, YoBleAndroidGattCallbackBridge, YoBleAndroidGattTransport
 ```
 
 ### 2.2 模块依赖方向图
@@ -121,7 +120,7 @@ flowchart TD
     IMPL --> MODEL
     IMPL --> GRAPH["internal/ble/internal/android/YoBleAndroidModuleGraph"]
 
-    subgraph CORE["internal/ble 纯领域与状态机层（可 100% JVM 单测，零 Android Bluetooth 框架强绑定）"]
+    subgraph CORE["internal/ble 核心领域与状态机层"]
         RUNTIME["runtime"]
         DEVICE["device"]
         SCAN["scan"]
@@ -252,15 +251,3 @@ flowchart TD
 5. **GATT 读写与长包/事务**：`read(deviceId, target, observer)`、`write(deviceId, target, value, writeType, observer)`、`writeSplit(deviceId, target, value, writeType, splitter, progressObserver)`、`readDescriptor/writeDescriptor`（通过 `target.descriptor(...)` 统一支持并生效）、`beginReliableWrite(deviceId)`、`executeReliableWrite(deviceId, observer)`、`abortReliableWrite(deviceId, observer)`、`getPendingOperationCount(deviceId)`、`clearPendingOperations(deviceId)`
 6. **通知与请求响应**：`subscribe(deviceId, target, setupMode, observer)`、`setNotify(...)`、`sendAndWait(deviceId, requestConfig, observer)`
 7. **配对、L2CAP CoC、外设端、诊断与释放**：`createBond`、`cancelBond`、`removeBond`、`observeBondState`、`openL2capChannel(deviceId, psm, secure, observer)`、`startAdvertising(config, advertiseData, scanResponse, observer)`、`stopAdvertising()`、`startGattServer(config, observer)`、`notifyServerCharacteristic(deviceId, target, confirm, value)`、`stopGattServer()`、`exportDiagnosticReport()`、`release()`
-
----
-
-## 5. 测试替身与多维验证方案
-
-1. **`internal/ble/testing/` 完整 JVM 仿真平台**：
-   - `FakeYoBleScanPlatform`：模拟广告广播包、RSSI、Connectable、Batch Flush、底层错误码回调及 5-in-30s 限流场景；
-   - `FakeYoBleConnectionPlatform`：模拟远端 GATT DB 树、同 UUID 多实例特征、Notify vs Indicate CCCD、Service Changed (API 24-30 与 API 31+)、MTU 协商与拒绝、PHY 回调或 Android 13 丢失回调、ConnectionPriority 静默、ReliableWrite、HCI 133/0x08/0x13/0x3E、预认证错误、BT 适配器突然关闭等 100% 边界条件；
-   - `FakeYoBleBondPlatform` / `FakeYoBleL2capPlatform` / `FakeYoBlePeripheralPlatform`：实现全量端到端闭环单测。
-2. **真机仪器化测试 (`YoBleClientInstrumentedTest`)**：
-   - 在已连接真机 `NEPI4E0106` 上验证：权限检查与适配、LE 能力查询、真实低功耗扫描与停止幂等、Filter 过滤、外设广播启停（若硬件支持）、GATT Server 初始化释放、非法地址错误语义、全客户端 `release()` 与重建隔离性。
-3. **诚实汇报约束**：无真实配套 BLE 硬件外设对端时，针对远端物理耳机对端交互（真实远端固件 Notify 收发/真机配对弹窗确认）在最终报告中**实事求是列出“待真机物理外设联调验证项”**，绝不伪造测试结果。
