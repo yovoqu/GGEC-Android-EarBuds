@@ -3,10 +3,9 @@ package com.ggec.earbuds.domain.device.model;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
-import java.util.Objects;
 
 /**
- * 设备控件的不可变快照。默认值只在 {@link #initial()} 定义一次。
+ * 设备控件的不可变快照。未接入协议控件或未上报状态时由 {@link #empty()} 表达。
  */
 public record DeviceControls(
         EqPreset eqPreset,
@@ -27,8 +26,6 @@ public record DeviceControls(
         Map<GestureSlot, GestureAction> gestures) {
 
     public DeviceControls {
-        Objects.requireNonNull(eqPreset, "eqPreset");
-        Objects.requireNonNull(soundQuality, "soundQuality");
         customEqName = customEqName == null ? "" : customEqName.strip();
         float[] gains = new float[10];
         if (customEqGains != null) {
@@ -37,52 +34,37 @@ public record DeviceControls(
         customEqGains = gains;
         EnumMap<GestureSlot, GestureAction> copy = new EnumMap<>(GestureSlot.class);
         if (gestures != null) {
-            copy.putAll(gestures);
-        }
-        for (GestureSlot slot : GestureSlot.values()) {
-            copy.putIfAbsent(slot, GestureAction.NONE);
+            for (Map.Entry<GestureSlot, GestureAction> entry : gestures.entrySet()) {
+                if (entry.getKey() != null && entry.getValue() != null) {
+                    copy.put(entry.getKey(), entry.getValue());
+                }
+            }
         }
         gestures = Collections.unmodifiableMap(copy);
     }
 
-    public static DeviceControls initial() {
-        EnumMap<GestureSlot, GestureAction> gestures = new EnumMap<>(GestureSlot.class);
-        gestures.put(GestureSlot.LONG, GestureAction.VOICE_ASSISTANT);
-        gestures.put(GestureSlot.LONG_LEFT, GestureAction.VOICE_ASSISTANT);
-        gestures.put(GestureSlot.LONG_RIGHT, GestureAction.VOICE_ASSISTANT);
-        gestures.put(GestureSlot.SHORT, GestureAction.VOLUME_UP);
-        gestures.put(GestureSlot.SHORT_LEFT, GestureAction.VOLUME_UP);
-        gestures.put(GestureSlot.SHORT_RIGHT, GestureAction.VOLUME_UP);
-        gestures.put(GestureSlot.DOUBLE_LEFT, GestureAction.NEXT);
-        gestures.put(GestureSlot.DOUBLE_RIGHT, GestureAction.NEXT);
-        gestures.put(GestureSlot.TAP_TWICE, GestureAction.PLAY_PAUSE);
-        gestures.put(GestureSlot.TAP_TWICE_LEFT, GestureAction.PLAY_PAUSE);
-        gestures.put(GestureSlot.TAP_TWICE_RIGHT, GestureAction.PLAY_PAUSE);
-        gestures.put(GestureSlot.TAP_TRIPLE, GestureAction.VOICE_ASSISTANT);
-        gestures.put(GestureSlot.TAP_TRIPLE_LEFT, GestureAction.VOICE_ASSISTANT);
-        gestures.put(GestureSlot.TAP_TRIPLE_RIGHT, GestureAction.VOICE_ASSISTANT);
+    public static DeviceControls empty() {
         return new DeviceControls(
-                EqPreset.MUSIC,
+                null,
                 false,
                 "",
                 new float[10],
-                SoundQuality.HIGH_FIDELITY,
-                false,
-                true,
-                true,
+                null,
                 false,
                 false,
                 false,
-                true,
                 false,
                 false,
-                true,
-                gestures);
+                false,
+                false,
+                false,
+                false,
+                false,
+                Collections.emptyMap());
     }
 
     public GestureAction gesture(GestureSlot slot) {
-        GestureAction action = gestures.get(slot);
-        return action == null ? GestureAction.NONE : action;
+        return slot == null ? null : gestures.get(slot);
     }
 
     public boolean enabled(DeviceSwitch key) {
@@ -139,9 +121,16 @@ public record DeviceControls(
     }
 
     public DeviceControls withGesture(GestureSlot slot, GestureAction action) {
+        if (slot == null) {
+            return this;
+        }
         EnumMap<GestureSlot, GestureAction> next = new EnumMap<>(GestureSlot.class);
         next.putAll(gestures);
-        next.put(slot, action);
+        if (action == null) {
+            next.remove(slot);
+        } else {
+            next.put(slot, action);
+        }
         return copy(eqPreset, customEqSaved, customEqName, customEqGains, soundQuality, ldac,
                 volumeAdaptive, wearDetect, voiceWakeup, gameMode, fallAlert, volumeRemind,
                 beginnerMode, interpret, dualConnection, next);

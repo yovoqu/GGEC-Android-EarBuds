@@ -16,6 +16,10 @@ public final class EditDeviceControls {
         this.port = port;
     }
 
+    public boolean isAvailable() {
+        return port.isAvailable();
+    }
+
     public DeviceControls current() {
         return port.current();
     }
@@ -25,6 +29,9 @@ public final class EditDeviceControls {
     }
 
     public void update(UnaryOperator<DeviceControls> change) {
+        if (!port.isAvailable()) {
+            return;
+        }
         port.update(change);
     }
 }

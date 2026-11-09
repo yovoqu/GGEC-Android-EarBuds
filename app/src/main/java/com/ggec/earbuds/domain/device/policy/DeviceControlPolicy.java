@@ -45,6 +45,9 @@ public final class DeviceControlPolicy {
     }
 
     public static List<EqPreset> presets(DeviceProfile profile) {
+        if (profile == null) {
+            return List.of();
+        }
         if (profile.supports(Capability.CUSTOM_EQ)) {
             return List.of(EqPreset.MUSIC, EqPreset.MOVIE, EqPreset.NEWS, EqPreset.ELDER, EqPreset.SPORT);
         }
