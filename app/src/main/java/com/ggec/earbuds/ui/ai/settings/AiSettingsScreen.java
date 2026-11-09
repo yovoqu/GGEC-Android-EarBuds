@@ -45,6 +45,7 @@ public final class AiSettingsScreen {
         void onEditVoiceKey();
         void onEditVoiceUrl();
         void onFetchRealtimeModels();
+        void onSelectDefaultDuplex(@NonNull String duplexId);
     }
 
     private final Context context;
@@ -288,7 +289,7 @@ public final class AiSettingsScreen {
     @NonNull
     private VoiceSettingsView voicePanel() {
         if (voicePanel == null) {
-            voicePanel = new VoiceSettingsView(context, theme,
+            voicePanel = new VoiceSettingsView(context, theme, components,
                     new VoiceSettingsView.Listener() {
                 @Override
                 public void onSelectVoiceModel(@NonNull String modelId) {
@@ -313,6 +314,11 @@ public final class AiSettingsScreen {
                 @Override
                 public void onFetchVoiceModels() {
                     listener.onFetchRealtimeModels();
+                }
+
+                @Override
+                public void onSelectDefaultDuplex(@NonNull String duplexId) {
+                    listener.onSelectDefaultDuplex(duplexId);
                 }
             });
             mountPanel(voicePanel.view());

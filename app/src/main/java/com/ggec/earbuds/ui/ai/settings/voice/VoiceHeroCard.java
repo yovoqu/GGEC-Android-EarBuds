@@ -18,6 +18,7 @@ import androidx.annotation.StringRes;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoSelect;
 
 /**
@@ -51,7 +52,8 @@ final class VoiceHeroCard {
     @Nullable
     private AiSettingsUiState.Voice current;
 
-    VoiceHeroCard(@NonNull Context context, @NonNull AiTheme theme, @NonNull Listener listener) {
+    VoiceHeroCard(@NonNull Context context, @NonNull AiTheme theme,
+                  @NonNull YoComponents components, @NonNull Listener listener) {
         this.context = context;
         this.theme = theme;
         this.listener = listener;
@@ -88,6 +90,7 @@ final class VoiceHeroCard {
                     }
                 })
                 .build();
+        components.own(providerSelect::destroy);
         LinearLayout.LayoutParams selectParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         selectParams.setMarginStart(theme.dp(14f));

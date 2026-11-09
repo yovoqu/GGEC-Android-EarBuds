@@ -15,6 +15,7 @@ import com.ggec.earbuds.domain.ai.model.AiSettingsChanges;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
 import com.ggec.earbuds.domain.ai.port.Subscription;
@@ -195,6 +196,15 @@ public final class AiSettingsViewModel extends ViewModel {
 
     public void selectRealtimeModel(@NonNull String modelId) {
         apply(AiSettingsChanges.voiceRealtimeModel(modelId));
+    }
+
+    public void selectDefaultDuplex(@NonNull String duplexId) {
+        VoiceDuplex duplex = VoiceDuplex.fromId(duplexId);
+        if (duplex == null) {
+            events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
+            return;
+        }
+        apply(AiSettingsChanges.voiceDefaultDuplex(duplex));
     }
 
     public void fetchVoiceModels() {

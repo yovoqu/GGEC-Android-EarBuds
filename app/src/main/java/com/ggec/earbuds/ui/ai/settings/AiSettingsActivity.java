@@ -145,6 +145,11 @@ public final class AiSettingsActivity extends AppCompatActivity {
         }
 
         @Override
+        public void onSelectDefaultDuplex(@NonNull String duplexId) {
+            viewModel.selectDefaultDuplex(duplexId);
+        }
+
+        @Override
         public void onOpenPlatform(@NonNull String platformId) {
             startActivity(AiPlatformActivity.intent(AiSettingsActivity.this, platformId));
         }

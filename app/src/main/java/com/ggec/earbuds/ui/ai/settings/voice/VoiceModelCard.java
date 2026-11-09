@@ -12,14 +12,16 @@ import androidx.annotation.Nullable;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
+import com.ggec.earbuds.ui.common.YoComponents;
+import com.yohu.youi.api.containers.YoList;
+import com.yohu.youi.api.containers.list.ListPrefixSpec;
+import com.yohu.youi.api.containers.list.ListSuffixSpec;
+import com.yohu.youi.api.containers.list.ListTextSpec;
 
 import java.util.List;
 
 /**
- * 语音模型卡：一个「拉取/重新拉取」动作 + 拉回来的实时模型。
- *
- * <p>只列能接实时会话的模型（服务商目录里的聊天/向量/合成等已在网关筛掉）。
- * 每一行右侧的胶囊是 SDK 类别。选中行以实心圆点作主信号，胶囊不重复表示选中。</p>
+ * 语音模型卡：一个「拉取/重新拉取」动作 + 实时模型单选列表（YoList，固定高度，内部上下滑动）。
  */
 final class VoiceModelCard {
 
@@ -28,19 +30,24 @@ final class VoiceModelCard {
         void onSelectModel(@NonNull String modelId);
     }
 
+    private static final float LIST_FIXED_HEIGHT_DP = 240f;
+
     private final Context context;
     private final AiTheme theme;
     private final Listener listener;
     private final LinearLayout view;
     private final TextView title;
     private final TextView action;
-    private final LinearLayout card;
+    private final YoList list;
+    private boolean updatingSelection;
     @Nullable
     private AiSettingsUiState.Voice current;
     @Nullable
     private String signature;
 
-    VoiceModelCard(@NonNull Context context, @NonNull AiTheme theme, @NonNull Listener listener) {
+    VoiceModelCard(@NonNull Context context, @NonNull AiTheme theme,
+                   @NonNull YoComponents components,
+                   @NonNull Listener listener) {
         this.context = context;
         this.theme = theme;
         this.listener = listener;
@@ -54,11 +61,40 @@ final class VoiceModelCard {
                 listener.onFetch();
             }
         }), VoiceCard.matchWrap());
-        card = VoiceCard.plate(context, theme);
-        LinearLayout.LayoutParams params = VoiceCard.matchWrap();
-        params.leftMargin = theme.dp(AiTheme.LIST_EDGE);
-        params.rightMargin = theme.dp(AiTheme.LIST_EDGE);
-        view.addView(card, params);
+
+        list = YoList.create(context)
+                .setSelectable(true)
+                .setSelectionIndicator(YoList.SelectionIndicator.RADIO)
+                .setScrollBarEnabled(true)
+                .build();
+        components.own(list::destroy);
+
+        list.setOnItemClickListener(position -> {
+            AiSettingsUiState.Voice voice = current;
+            if (voice != null && voice.models().isEmpty()) {
+                if (!voice.fetching()) {
+                    listener.onFetch();
+                }
+            }
+        });
+
+        list.setOnSelectionChangeListener((oldId, newId) -> {
+            if (updatingSelection) {
+                return;
+            }
+            AiSettingsUiState.Voice voice = current;
+            if (voice == null) {
+                return;
+            }
+            int index = list.indexOfId(newId);
+            if (index >= 0 && index < voice.models().size()) {
+                listener.onSelectModel(voice.models().get(index).id());
+            }
+        });
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(LIST_FIXED_HEIGHT_DP));
+        view.addView(list.getView(), params);
     }
 
     @NonNull
@@ -84,50 +120,55 @@ final class VoiceModelCard {
                     ? R.string.ai_settings_voice_fetch
                     : R.string.ai_settings_voice_fetch_retry);
         }
-        // 只有"行集合"真的变了才重建卡片：拉取进行/结束不再整块 remove/add，避免高度来回跳。
-        String rows = voice.realtimeModelId() + "\u0000" + rowsSignature(voice.models());
-        if (rows.equals(signature)) {
-            return;
+
+        List<AiSettingsUiState.VoiceModelOption> models = voice.models();
+        String modelsSig = rowsSignature(models);
+        if (!modelsSig.equals(signature)) {
+            signature = modelsSig;
+            list.clear();
+            if (models.isEmpty()) {
+                list.setSelectable(false);
+                list.setSelectionIndicator(YoList.SelectionIndicator.NONE);
+                list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_refresh, theme.text2),
+                        ListTextSpec.of(context.getString(R.string.ai_settings_voice_models_empty),
+                                context.getString(R.string.ai_settings_voice_models_empty_hint)),
+                        ListSuffixSpec.arrow());
+            } else {
+                list.setSelectable(true);
+                list.setSelectionIndicator(YoList.SelectionIndicator.RADIO);
+                for (AiSettingsUiState.VoiceModelOption model : models) {
+                    list.addItem(ListTextSpec.of(model.id()));
+                }
+            }
         }
-        signature = rows;
-        card.removeAllViews();
+        applySelection(voice);
+    }
+
+    private void applySelection(@NonNull AiSettingsUiState.Voice voice) {
         List<AiSettingsUiState.VoiceModelOption> models = voice.models();
         if (models.isEmpty()) {
-            card.addView(emptyRow());
             return;
         }
+        int selectedIndex = -1;
         for (int i = 0; i < models.size(); i++) {
-            card.addView(modelRow(models.get(i), models.get(i).id().equals(voice.realtimeModelId())));
-            if (i < models.size() - 1) {
-                VoiceCard.addDivider(card, context, theme);
+            if (models.get(i).id().equals(voice.realtimeModelId())) {
+                selectedIndex = i;
+                break;
             }
         }
-    }
-
-    @NonNull
-    private View modelRow(@NonNull AiSettingsUiState.VoiceModelOption model, boolean selected) {
-        VoiceCard.Row row = VoiceCard.row(context, theme, 0);
-        row.view.addView(VoiceCard.dot(context, theme, selected), 0);
-        row.title.setText(model.id());
-        row.view.setOnClickListener(v -> listener.onSelectModel(model.id()));
-        row.view.setContentDescription(model.id());
-        return row.view;
-    }
-
-    @NonNull
-    private View emptyRow() {
-        VoiceCard.Row row = VoiceCard.row(context, theme, R.drawable.ic_ai_refresh);
-        row.title.setText(R.string.ai_settings_voice_models_empty);
-        row.subtitle.setVisibility(View.VISIBLE);
-        row.subtitle.setText(R.string.ai_settings_voice_models_empty_hint);
-        row.trailing.addView(VoiceCard.chevron(context, theme));
-        row.view.setOnClickListener(v -> {
-            if (current != null && !current.fetching()) {
-                listener.onFetch();
+        updatingSelection = true;
+        try {
+            if (selectedIndex >= 0 && selectedIndex < list.getItemCount()) {
+                long stableId = list.getStableIdAt(selectedIndex);
+                if (list.getSelectedStableId() != stableId) {
+                    list.setSelectedStableId(stableId);
+                }
+            } else {
+                list.clearSelection();
             }
-        });
-        row.view.setContentDescription(context.getString(R.string.ai_settings_voice_models_empty));
-        return row.view;
+        } finally {
+            updatingSelection = false;
+        }
     }
 
     @NonNull

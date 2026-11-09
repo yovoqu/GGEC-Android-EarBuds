@@ -8,6 +8,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 设置总览页的界面状态：顶部模式分段、文本身份卡、语音模型卡，全部是"已经做完取舍"的结果。
@@ -15,11 +16,11 @@ import java.util.List;
  * <p>这里没有 {@code AiSettings}：界面不该知道 {@code AiPlatformConfig} 里那些只跟请求有关的字段，
  * 也不该自己改判模型类别。类别来自 SDK，{@link AiSettingsUiMapper} 只把它交给界面。</p>
  *
- * @param mode     当前分段选中的接入形态
- * @param modeHint 分段下方那行说明，告诉用户这一模式接的是哪类模型
- * @param identity 文本模式的身份卡；语音模式不画它
- * @param voice    语音模式的模型卡：厂商、ChatGPT 的地址与实时模型、方言、Key 状态
- * @param loadFailed  首次读取失败；此时设置内容尚不可用
+ * @param mode       当前分段选中的接入形态
+ * @param modeHint   分段下方那行说明，告诉用户这一模式接的是哪类模型
+ * @param identity   文本模式的身份卡；语音模式不画它
+ * @param voice      语音模式的设置状态：服务商、地址、实时模型、Key 状态与通话交流模式
+ * @param loadFailed 首次读取失败；此时设置内容尚不可用
  */
 public record AiSettingsUiState(
         boolean loaded,
@@ -58,36 +59,45 @@ public record AiSettingsUiState(
     }
 
     /**
-     * 语音模式的模型卡：服务商、地址、拉到的实时模型与 Key 状态。
+     * 语音模式的设置状态：服务商、地址、拉到的实时模型、Key 状态与通话交流模式。
      *
-     * @param configured       当前服务商的 Key 是否已填；没填时通话入口不可用
-     * @param options          服务商下拉/列表，顺序即预设顺序
-     * @param baseUrl          真正会去连的主机，没改过时是官方地址
-     * @param baseUrlCustom    true 表示用户改过地址，界面据此说"自定义/官方"
-     * @param realtimeModelId  真正会去连的模型；没拉列表时是厂商预设
-     * @param models           已拉取的实时模型，空表示还没拉过
-     * @param fetching         正在拉模型列表
+     * @param configured      当前服务商的 Key 是否已填；没填时通话入口不可用
+     * @param options         服务商下拉/列表，顺序即预设顺序
+     * @param baseUrl         真正会去连的主机，没改过时是官方地址
+     * @param baseUrlCustom   true 表示用户改过地址，界面据此说"自定义/官方"
+     * @param realtimeModelId 真正会去连的模型；没拉列表时是厂商预设
+     * @param models          已拉取的实时模型，空表示还没拉过
+     * @param fetching        正在拉模型列表
+     * @param defaultDuplexId 当前默认双工模式标识
+     * @param duplexOptions   通话交流模式分段的展示项（有序）
      */
     public record Voice(@NonNull String modelId, @NonNull String modelName, boolean configured,
                         @NonNull List<VoiceOption> options,
                         @NonNull String baseUrl, boolean baseUrlCustom,
                         @NonNull String realtimeModelId, @NonNull List<VoiceModelOption> models,
-                        boolean fetching) {
+                        boolean fetching, @NonNull String defaultDuplexId,
+                        @NonNull List<DuplexOption> duplexOptions) {
 
         public Voice {
             options = List.copyOf(options);
             models = List.copyOf(models);
+            defaultDuplexId = Objects.requireNonNull(defaultDuplexId, "defaultDuplexId");
+            duplexOptions = List.copyOf(duplexOptions);
         }
 
         @NonNull
         public Voice fetching(boolean value) {
             return new Voice(modelId, modelName, configured, options, baseUrl, baseUrlCustom,
-                    realtimeModelId, models, value);
+                    realtimeModelId, models, value, defaultDuplexId, duplexOptions);
         }
     }
 
     /** 已拉取模型列表里的一项。语音页只列实时模型，所以只需要 id。 */
     public record VoiceModelOption(@NonNull String id) {
+    }
+
+    /** 通话交流模式分段项：纯展示数据，View 不接触领域枚举。 */
+    public record DuplexOption(@NonNull String id, @StringRes int labelRes, boolean current) {
     }
 
     /**
@@ -113,7 +123,8 @@ public record AiSettingsUiState(
     public static AiSettingsUiState empty() {
         return new AiSettingsUiState(false, false, AiInteractionMode.defaultMode(), AiText.of(0),
                 List.of(), new Identity(null, null, 0, 0),
-                new Voice("", "", false, List.of(), "", false, "", List.of(), false),
+                new Voice("", "", false, List.of(), "", false, "", List.of(), false,
+                        "", List.of()),
                 new Style("", AiText.of(0)));
     }
 
