@@ -44,32 +44,16 @@ public final class FileDevicePreferences implements DevicePreferences {
     }
 
     @Override
-    public String selectedModelId() {
-        return properties.getProperty("model");
-    }
-
-    @Override
-    public void selectModel(String modelId) {
-        if (modelId == null || modelId.isEmpty()) {
-            return;
-        }
-        properties.setProperty("model", modelId);
-        save();
-    }
-
-    @Override
     public String lastMac() {
         return properties.getProperty("mac");
     }
 
     @Override
     public void rememberDevice(String mac, String modelId) {
-        if (mac != null) {
-            properties.setProperty("mac", mac);
+        if (mac == null) {
+            return;
         }
-        if (modelId != null && !modelId.isEmpty()) {
-            properties.setProperty("model", modelId);
-        }
+        properties.setProperty("mac", mac);
         save();
     }
 }

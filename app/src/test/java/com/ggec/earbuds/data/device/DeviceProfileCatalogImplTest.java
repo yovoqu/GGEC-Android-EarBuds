@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.device;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import com.ggec.earbuds.domain.device.model.Capability;
 import com.ggec.earbuds.domain.device.model.DeviceProfile;
@@ -15,11 +16,10 @@ public final class DeviceProfileCatalogImplTest {
     private final DeviceProfileCatalog catalog = new DeviceProfileCatalogImpl();
 
     @Test
-    public void exposesThreeProjectNames() {
-        assertEquals(3, catalog.models().size());
+    public void exposesTwoRealProjectNames() {
+        assertEquals(2, catalog.models().size());
         assertEquals("HS01", catalog.models().get(0).id());
         assertEquals("HS02", catalog.models().get(1).id());
-        assertEquals("WY01", catalog.models().get(2).id());
     }
 
     @Test
@@ -33,8 +33,15 @@ public final class DeviceProfileCatalogImplTest {
     }
 
     @Test
-    public void wy01HasNoDeclaredVariants() {
+    public void wy01PlaceholderIsRemoved() {
+        assertTrue(catalog.model("WY01").isEmpty());
         assertTrue(catalog.variants("WY01").isEmpty());
+        try {
+            catalog.defaultProfile("WY01");
+            fail("WY01 placeholder must not exist");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("WY01"));
+        }
     }
 
     @Test
