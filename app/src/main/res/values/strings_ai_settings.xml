@@ -137,6 +137,10 @@
     <string name="ai_settings_voice_fetch_retry">重新拉取</string>
     <string name="ai_settings_voice_models_loading">正在拉取…</string>
     <string name="ai_settings_voice_models_empty_hint">点右上角「拉取」，取回该服务商的全部模型</string>
+    <string name="ai_settings_voice_call_section">通话设置</string>
+    <string name="ai_settings_voice_communication_mode">交流模式</string>
+    <string name="ai_settings_voice_duplex_full">全双工</string>
+    <string name="ai_settings_voice_duplex_half">半双工</string>
     <string name="ai_model_category_text">文本</string>
     <string name="ai_model_category_vision">视觉</string>
     <string name="ai_model_category_omni">全模态</string>

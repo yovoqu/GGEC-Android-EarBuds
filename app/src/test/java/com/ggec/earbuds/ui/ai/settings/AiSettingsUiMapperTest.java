@@ -15,6 +15,7 @@ import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 
 import org.junit.Test;
@@ -177,6 +178,25 @@ public class AiSettingsUiMapperTest {
 
         assertTrue(state.baseUrlCustom());
         assertEquals("https://gw.example.com", state.baseUrl());
+        assertEquals(VoiceDuplex.HALF_DUPLEX.id(), state.defaultDuplexId());
+    }
+
+    @Test
+    public void mapsConfiguredVoiceDefaultDuplex() {
+        AiVoiceConfig voice = AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")
+                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX);
+
+        AiSettingsUiState.Voice state = mapper.map(voiceSettings(null, voice),
+                AiInteractionMode.VOICE).voice();
+
+        assertEquals(VoiceDuplex.FULL_DUPLEX.id(), state.defaultDuplexId());
+        assertEquals(2, state.duplexOptions().size());
+        assertEquals(VoiceDuplex.FULL_DUPLEX.id(), state.duplexOptions().get(0).id());
+        assertEquals(R.string.ai_settings_voice_duplex_full, state.duplexOptions().get(0).labelRes());
+        assertTrue(state.duplexOptions().get(0).current());
+        assertEquals(VoiceDuplex.HALF_DUPLEX.id(), state.duplexOptions().get(1).id());
+        assertEquals(R.string.ai_settings_voice_duplex_half, state.duplexOptions().get(1).labelRes());
+        assertFalse(state.duplexOptions().get(1).current());
     }
 
     // ---- 回答风格 ----

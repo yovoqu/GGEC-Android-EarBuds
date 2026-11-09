@@ -18,6 +18,7 @@ import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
@@ -145,6 +146,33 @@ public class AiSettingsViewModelTest {
         AiSettingsUiState.Voice voice = viewModel.uiState().getValue().voice();
         assertEquals("Qwen", voice.modelName());
         assertTrue(voice.configured());
+    }
+
+    @Test
+    public void selectingDefaultDuplexPersistsThroughSingleSourceWithoutDroppingKeys() {
+        viewModel.saveVoiceApiKey("sk-gpt");
+        assertEquals(VoiceDuplex.HALF_DUPLEX.id(), viewModel.uiState().getValue().voice().defaultDuplexId());
+
+        viewModel.selectDefaultDuplex(VoiceDuplex.FULL_DUPLEX.id());
+
+        assertEquals(VoiceDuplex.FULL_DUPLEX.id(), viewModel.uiState().getValue().voice().defaultDuplexId());
+        assertEquals(VoiceDuplex.FULL_DUPLEX, settings.load().voice().defaultDuplex());
+        assertTrue(settings.load().voice().configured());
+
+        viewModel.selectDefaultDuplex(VoiceDuplex.HALF_DUPLEX.id());
+
+        assertEquals(VoiceDuplex.HALF_DUPLEX.id(), viewModel.uiState().getValue().voice().defaultDuplexId());
+        assertEquals(VoiceDuplex.HALF_DUPLEX, settings.load().voice().defaultDuplex());
+        assertTrue(settings.load().voice().configured());
+    }
+
+    @Test
+    public void anUnknownDefaultDuplexIsIgnoredInsteadOfGuessed() {
+        viewModel.selectDefaultDuplex("alien_mode");
+
+        assertEquals(VoiceDuplex.HALF_DUPLEX, settings.load().voice().defaultDuplex());
+        assertEquals(Integer.valueOf(R.string.ai_settings_value_invalid),
+                Integer.valueOf(viewModel.events().getValue().message()));
     }
 
     @Test

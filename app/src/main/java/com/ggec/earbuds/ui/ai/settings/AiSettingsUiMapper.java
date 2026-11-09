@@ -2,6 +2,7 @@ package com.ggec.earbuds.ui.ai.settings;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiActiveModel;
@@ -13,6 +14,7 @@ import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -111,7 +113,8 @@ public final class AiSettingsUiMapper {
 
     /**
      * 服务商下拉来自 {@link AiVoiceModel} 的预设顺序。地址、模型原样交给界面，
-     * 映射层不决定选哪一个；拉到的模型都是实时类别，类别保持 SDK 的原值。
+     * 映射层不决定选哪一个；拉到的模型都是实时类别，类别保持 SDK 的原值；
+     * 默认双工模式同样在此映射完毕，视图层不直接接触领域枚举。
      */
     @NonNull
     private static AiSettingsUiState.Voice voice(@NonNull AiVoiceConfig config) {
@@ -126,10 +129,31 @@ public final class AiSettingsUiMapper {
         for (AiModel listed : config.realtimeModels()) {
             models.add(new AiSettingsUiState.VoiceModelOption(listed.id()));
         }
+        VoiceDuplex defaultDuplex = config.defaultDuplex();
         return new AiSettingsUiState.Voice(config.model().id(), config.model().displayName(),
                 config.configured(), options,
                 config.effectiveBaseUrl(), !config.baseUrl().isEmpty(),
-                config.realtimeModelId(), models, false);
+                config.realtimeModelId(), models, false,
+                defaultDuplex.id(), duplexOptions(defaultDuplex));
+    }
+
+    @NonNull
+    private static List<AiSettingsUiState.DuplexOption> duplexOptions(@NonNull VoiceDuplex selected) {
+        VoiceDuplex[] ordered = {VoiceDuplex.FULL_DUPLEX, VoiceDuplex.HALF_DUPLEX};
+        List<AiSettingsUiState.DuplexOption> items = new ArrayList<>(ordered.length);
+        for (VoiceDuplex mode : ordered) {
+            items.add(new AiSettingsUiState.DuplexOption(
+                    mode.id(), duplexLabel(mode), mode == selected));
+        }
+        return items;
+    }
+
+    @StringRes
+    private static int duplexLabel(@NonNull VoiceDuplex mode) {
+        return switch (mode) {
+            case FULL_DUPLEX -> R.string.ai_settings_voice_duplex_full;
+            case HALF_DUPLEX -> R.string.ai_settings_voice_duplex_half;
+        };
     }
 
     // ---- 回答风格 ----
