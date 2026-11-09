@@ -250,6 +250,29 @@ public final class ModelDirectoryTest {
         }
     }
 
+    @Test
+    public void clientDoesNotDuplicateV1SegmentWhenBaseUrlEndsWithV1() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.start();
+            server.enqueue(new MockResponse().setBody("""
+                    {"object":"list","data":[{"id":"qwen3-omni-flash-realtime"}]}
+                    """));
+            String baseWithV1 = baseUrl(server) + "/compatible-mode/v1";
+            YoAiClient client = YoAiClient.builder()
+                    .platform(OpenAiPlatform.builder().baseUrl(baseWithV1).apiKey("k-test").build())
+                    .callbackExecutor(Runnable::run)
+                    .build();
+            try {
+                List<YoModelInfo> models = client.models().list();
+                assertEquals(1, models.size());
+                RecordedRequest request = server.takeRequest();
+                assertEquals("/compatible-mode/v1/models", request.getPath());
+            } finally {
+                client.close();
+            }
+        }
+    }
+
     private static String baseUrl(MockWebServer server) {
         return server.url("/").toString().replaceAll("/+$", "");
     }

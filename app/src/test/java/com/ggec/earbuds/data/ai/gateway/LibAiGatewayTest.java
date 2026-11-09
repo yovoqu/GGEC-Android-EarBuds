@@ -86,6 +86,24 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void voiceGatewayNormalizesDashScopeBareHostToCompatibleModeV1() throws Exception {
+        server.enqueue(new MockResponse().setBody("""
+                {"object":"list","data":[{"id":"qwen3.8-omni-flash-realtime"}]}
+                """));
+
+        // 模拟语音配置中 Qwen 的默认基址（裸 host）以及请求
+        String mockDashScopeUrl = server.url("/").toString().replaceAll("/+$", "") + "/dashscope.aliyuncs.com";
+        List<AiModel> models = new LibAiVoiceModelGateway()
+                .fetch(mockDashScopeUrl, KEY);
+
+        assertEquals(1, models.size());
+        assertEquals("qwen3.8-omni-flash-realtime", models.get(0).id());
+        RecordedRequest request = server.takeRequest();
+        assertEquals("DashScope 裸 host 必须被补全为兼容模式路径并消除重复 /v1",
+                "/dashscope.aliyuncs.com/compatible-mode/v1/models", request.getPath());
+    }
+
+    @Test
     public void fetchDropsRealtimeModelsBecauseThePlatformPageIsTextOnly() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[

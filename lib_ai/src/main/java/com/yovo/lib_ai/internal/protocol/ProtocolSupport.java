@@ -31,7 +31,17 @@ public final class ProtocolSupport {
     }
 
     public static String url(String baseUrl, String path) {
-        return baseUrl + path;
+        String base = baseUrl == null ? "" : baseUrl;
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.endsWith("/v1") && path != null && path.startsWith("/v1/")) {
+            return base + path.substring(3);
+        }
+        if (path != null && !path.startsWith("/")) {
+            return base + "/" + path;
+        }
+        return base + (path == null ? "" : path);
     }
 
     public static void requireSuccess(HttpExchange exchange) {
