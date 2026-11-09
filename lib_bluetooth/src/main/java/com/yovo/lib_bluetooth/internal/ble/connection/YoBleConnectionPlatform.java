@@ -9,7 +9,7 @@ import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BlePhyConfig;
 
 /**
- * 底层 BLE GATT 连接创建与事件回调端口（由 Android BluetoothGatt 适配器或 Fake 平台实现）。
+ * 底层 BLE GATT 连接创建与事件回调端口，由 Android BluetoothGatt 适配器实现。
  */
 public interface YoBleConnectionPlatform {
 

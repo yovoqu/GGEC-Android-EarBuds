@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * BLE AD 广播载荷结构化解析结果（完全不依赖 Android Framework 类，可直接在 JVM 中构造与断言）。
+ * BLE AD 广播载荷不可变结构化解析结果（独立于 Android Framework 类型）。
  */
 public final class BleScanRecord {
 

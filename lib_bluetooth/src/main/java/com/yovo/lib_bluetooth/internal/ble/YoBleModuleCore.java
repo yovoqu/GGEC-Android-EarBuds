@@ -32,7 +32,7 @@ import java.util.List;
 import java.util.function.LongSupplier;
 
 /**
- * BLE 纯领域模块核心装配图（平台无关：既可用于 Android 生产图，也可直接注入 Fake 平台进行全链路 JVM 单测）。
+ * BLE 核心装配图：串联扫描、配对、连接、GATT、L2CAP 与外设广播/GATT Server 等正式运行时组件。
  */
 public final class YoBleModuleCore {
 

@@ -10,7 +10,7 @@ import com.yovo.lib_bluetooth.model.ble.BleGattServerConfig;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 
 /**
- * BLE 外设广播（Advertising）与本地 GATT Server 底层平台适配端口（Android 适配器或 JVM 假实现）。
+ * BLE 外设广播（Advertising）与本地 GATT Server 底层平台适配端口。
  */
 public interface YoBlePeripheralPlatform {
 

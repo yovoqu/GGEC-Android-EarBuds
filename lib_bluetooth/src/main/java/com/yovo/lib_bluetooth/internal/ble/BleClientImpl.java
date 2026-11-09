@@ -48,7 +48,7 @@ import java.util.List;
  */
 public final class BleClientImpl implements YoBleClient {
 
-    @Nullable
+    @NonNull
     private final YoBleAndroidModuleGraph androidGraph;
     @NonNull
     private final YoBleModuleCore core;
@@ -56,12 +56,6 @@ public final class BleClientImpl implements YoBleClient {
     public BleClientImpl(@NonNull Context context, @NonNull BleConfig config) {
         this.androidGraph = YoBleAndroidModuleGraph.create(context, config);
         this.core = androidGraph.core;
-    }
-
-    /** 供 JVM 测试图注入 Fake 平台实现构建全功能 {@link YoBleClient}。 */
-    public BleClientImpl(@NonNull YoBleModuleCore core) {
-        this.androidGraph = null;
-        this.core = core;
     }
 
     // ── 1. 硬件能力、适配器与设备快照 ─────────────────────────────
@@ -436,10 +430,6 @@ public final class BleClientImpl implements YoBleClient {
 
     @Override
     public void release() {
-        if (androidGraph != null) {
-            androidGraph.releaseAll();
-        } else {
-            core.release(null);
-        }
+        androidGraph.releaseAll();
     }
 }

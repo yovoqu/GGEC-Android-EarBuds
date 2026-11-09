@@ -9,7 +9,7 @@ import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 import java.util.List;
 
 /**
- * BLE 扫描平台适配端口（隔离 Android BluetoothLeScanner 与测试用 Fake）。
+ * BLE 扫描平台适配端口，封装 Android BluetoothLeScanner 底层交互。
  */
 public interface YoBleScanPlatform {
 
