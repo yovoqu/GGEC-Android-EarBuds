@@ -76,7 +76,8 @@ final class ShellScreen {
     @NonNull
     private YoTabs createTabs(@NonNull ShellUiState state) {
         YoTabs.Builder builder = YoTabs.create(activity)
-                .setSelectedId(state.selectedTabId());
+                .setSelectedId(state.selectedTabId())
+                .setScrollable(false);
         for (ShellTabUi tab : state.tabs()) {
             CharSequence title = activity.getString(tab.titleRes());
             builder.addTab(tab.tabId(), title, tab.iconRes(), tab.selectedIconRes(),
