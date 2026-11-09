@@ -5,5 +5,6 @@ package com.yovo.lib_bluetooth.model.ble;
  */
 public enum BleWriteType {
     WITH_RESPONSE,
-    WITHOUT_RESPONSE
+    WITHOUT_RESPONSE,
+    SIGNED
 }
