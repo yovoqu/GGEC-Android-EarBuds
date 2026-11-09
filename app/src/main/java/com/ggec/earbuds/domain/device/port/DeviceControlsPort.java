@@ -8,6 +8,8 @@ import java.util.function.UnaryOperator;
 /** 设备控件的唯一写入口。 */
 public interface DeviceControlsPort {
 
+    boolean isAvailable();
+
     DeviceControls current();
 
     Subscription observe(Consumer<DeviceControls> listener);
