@@ -9,6 +9,7 @@ import android.media.AudioTrack;
 import android.os.Build;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 
@@ -20,19 +21,12 @@ import java.util.Objects;
 /**
  * {@link AiAudioPlayback} 的 Android 实现：一条 {@link AudioTrack} 流式写入，加一条排空线程。
  *
- * <p>为什么写要排队而不是直接 {@code AudioTrack.write}：{@code write} 在缓冲区满时会阻塞，
- * 而调用它的是状态机线程（打断、静音、挂断都在那条线程上）。直接写会让"用户打断"排在
- * 几秒钟的音频后面才生效。这里改成入队 + 独立线程阻塞写，{@link #flush()} 只要清空队列，
- * 就已经做到"下一帧不会再播"。</p>
- *
- * <p>为什么 flush 要先 pause 再 flush 再 play：{@code AudioTrack.flush()} 在播放状态下会
- * 重置写指针，部分实现里之后写进去的数据会被丢掉。按"暂停→丢弃→继续"三步走，
- * 保证停完之后还能接着播下一段。</p>
- *
- * <p>为什么扬声器要分两条路：API 31 起路由的正规做法是
- * {@link AudioManager#setCommunicationDevice}，而 {@code setSpeakerphoneOn} 只是兼容开关，
- * 在部分厂商实现上已经不生效。新版先试通信设备，找不到目标设备再退回旧开关——
- * 两条路都走不通时至少不会把通话静音，声音留在默认路由上。</p>
+ * <p>特性：</p>
+ * <ul>
+ *   <li>支持运行期若服务端变更下行采样率时自动平滑重建 {@link AudioTrack}；</li>
+ *   <li>API 31+ 在关闭外放模式时优先路由至已连接的蓝牙（BLE/SCO）或有线/USB 耳机，
+ *       无耳机时退回内置听筒。</li>
+ * </ul>
  */
 public final class AndroidAudioPlayback implements AiAudioPlayback {
 
@@ -69,11 +63,29 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
 
     @Override
     public void start(int sampleRateHz) {
+        int rate = sampleRateHz > 0 ? sampleRateHz : 24_000;
+        AudioTrack previousTrack = null;
+        Thread previousWriter = null;
         synchronized (lock) {
             if (track != null) {
-                return;
+                if (playedSampleRateHz == rate) {
+                    return;
+                }
+                running = false;
+                queue.clear();
+                queuedBytes = 0;
+                previousTrack = track;
+                track = null;
+                previousWriter = writer;
+                writer = null;
+                lock.notifyAll();
             }
-            int rate = sampleRateHz > 0 ? sampleRateHz : 16_000;
+        }
+        if (previousTrack != null) {
+            releaseTrack(previousTrack, previousWriter);
+        }
+
+        synchronized (lock) {
             int minBufferBytes = AudioTrack.getMinBufferSize(
                     rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
             int bufferBytes = Math.max(minBufferBytes > 0 ? minBufferBytes : rate, 4096) * 2;
@@ -111,7 +123,6 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
         }
         synchronized (lock) {
             if (track == null) {
-                // 没 start 就写：丢掉。排进一个永远不会被排空的队列只会在 start 之后炸出一段旧声音。
                 return;
             }
             queue.addLast(new Chunk(pcm16.clone(), itemId, contentIndex));
@@ -162,19 +173,21 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
         if (manager == null) {
             return;
         }
-        // 通话用模式：不切模式的话，扬声器/听筒的路由请求在多数设备上不会真的生效。
-        if (!ownsAudioMode) {
-            manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            ownsAudioMode = true;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            AudioDeviceInfo target = communicationDevice(manager, speaker);
-            if (target != null) {
-                manager.setCommunicationDevice(target);
-                return;
+        try {
+            if (!ownsAudioMode) {
+                manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                ownsAudioMode = true;
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                AudioDeviceInfo target = communicationDevice(manager, speaker);
+                if (target != null) {
+                    manager.setCommunicationDevice(target);
+                    return;
+                }
+            }
+            manager.setSpeakerphoneOn(speaker);
+        } catch (RuntimeException ignored) {
         }
-        manager.setSpeakerphoneOn(speaker);
     }
 
     @Override
@@ -191,6 +204,24 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             writer = null;
             lock.notifyAll();
         }
+        releaseTrack(stopping, working);
+
+        AudioManager manager = audioManager;
+        if (ownsAudioMode && manager != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    manager.clearCommunicationDevice();
+                } else {
+                    manager.setSpeakerphoneOn(false);
+                }
+                manager.setMode(AudioManager.MODE_NORMAL);
+            } catch (RuntimeException ignored) {
+            }
+            ownsAudioMode = false;
+        }
+    }
+
+    private static void releaseTrack(@Nullable AudioTrack stopping, @Nullable Thread working) {
         if (working != null && working != Thread.currentThread()) {
             try {
                 working.join(STOP_JOIN_MILLIS);
@@ -205,16 +236,6 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             }
             stopping.stop();
             stopping.release();
-        }
-        AudioManager manager = audioManager;
-        if (ownsAudioMode && manager != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                manager.clearCommunicationDevice();
-            } else {
-                manager.setSpeakerphoneOn(false);
-            }
-            manager.setMode(AudioManager.MODE_NORMAL);
-            ownsAudioMode = false;
         }
     }
 
@@ -246,7 +267,6 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             if (written < 0) {
                 return;
             }
-            // 只有真正写进设备的字节才算"用户听到的"；队列里的不算。
             synchronized (lock) {
                 String id = chunk.itemId();
                 if (id != null && !id.equals(playedItemId)) {
@@ -268,12 +288,39 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
         return audioManager;
     }
 
-    /** 在可用通信设备里找目标那一类；找不到返回 null，让调用方退回旧开关。 */
-    private static AudioDeviceInfo communicationDevice(AudioManager manager, boolean speaker) {
+    /** 在可用通信设备里按外放/非外放优先路由查找目标设备；找不到返回 null 退回旧开关。 */
+    @Nullable
+    private static AudioDeviceInfo communicationDevice(@NonNull AudioManager manager, boolean speaker) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return null;
+        }
         List<AudioDeviceInfo> devices = manager.getAvailableCommunicationDevices();
-        int wanted = speaker ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+        if (speaker) {
+            return findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+        }
+        AudioDeviceInfo preferred = findByType(devices, AudioDeviceInfo.TYPE_BLE_HEADSET);
+        if (preferred != null) {
+            return preferred;
+        }
+        preferred = findByType(devices, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
+        if (preferred != null) {
+            return preferred;
+        }
+        preferred = findByType(devices, AudioDeviceInfo.TYPE_WIRED_HEADSET);
+        if (preferred != null) {
+            return preferred;
+        }
+        preferred = findByType(devices, AudioDeviceInfo.TYPE_USB_HEADSET);
+        if (preferred != null) {
+            return preferred;
+        }
+        return findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+    }
+
+    @Nullable
+    private static AudioDeviceInfo findByType(@NonNull List<AudioDeviceInfo> devices, int targetType) {
         for (AudioDeviceInfo device : devices) {
-            if (device.getType() == wanted) {
+            if (device.getType() == targetType) {
                 return device;
             }
         }
