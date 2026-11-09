@@ -18,6 +18,7 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
     <!-- lib_bluetooth 同时提供 Classic 与 BLE API；BLE 不作为宿主硬件强制要求 -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
