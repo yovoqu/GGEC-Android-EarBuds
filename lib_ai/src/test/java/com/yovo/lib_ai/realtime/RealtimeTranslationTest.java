@@ -3,6 +3,7 @@ package com.yovo.lib_ai.realtime;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.json.JSONObject;
@@ -15,14 +16,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * F24 Realtime 扩展：翻译事件、传输承载抽象。既有 WebSocket 用例不受影响（另有 RealtimeProtocolTest）。
+ * F24 Realtime 扩展：翻译事件直接解析、传输承载抽象。
  */
 public final class RealtimeTranslationTest {
 
     @Test
-    public void translationSseParsesIntoTranslationEvents() throws Exception {
+    public void translationSseParsesDirectlyIntoPublicOutputs() throws Exception {
         String sse = resource("/fixtures/f24/translation.sse");
-        List<YoRealtimeEvent> events = new ArrayList<>();
+        List<YoRealtimeOutput.TranslationDelta> deltas = new ArrayList<>();
         for (String line : sse.split("\n", -1)) {
             String trimmed = line.trim();
             if (!trimmed.startsWith("data:")) {
@@ -32,38 +33,26 @@ public final class RealtimeTranslationTest {
             if (payload.isEmpty()) {
                 continue;
             }
-            YoRealtimeEvent event = RealtimeProtocol.parse(payload);
-            assertNotNull(event);
-            events.add(event);
+            RealtimeProtocol.Frame frame = RealtimeProtocol.parse(payload);
+            RealtimeProtocol.Frame.Output output =
+                    assertInstanceOf(RealtimeProtocol.Frame.Output.class, frame);
+            YoRealtimeOutput.TranslationDelta delta =
+                    assertInstanceOf(YoRealtimeOutput.TranslationDelta.class, output.output());
+            deltas.add(delta);
         }
 
-        assertEquals(2, events.size());
+        assertEquals(2, deltas.size());
         StringBuilder translated = new StringBuilder();
-        for (YoRealtimeEvent event : events) {
-            assertEquals(YoRealtimeEventType.TRANSLATION_DELTA, event.type());
-            assertEquals("en", event.targetLanguage());
-            translated.append(event.text());
+        for (YoRealtimeOutput.TranslationDelta delta : deltas) {
+            assertEquals("en", delta.targetLanguage());
+            translated.append(delta.delta());
         }
         assertEquals("Hello world", translated.toString());
     }
 
     @Test
-    public void translationEventMapsToPublicOutput() throws Exception {
-        YoRealtimeEvent event = RealtimeProtocol.parse(
-                "{\"type\":\"response.translation.delta\",\"delta\":\"你好\",\"target_language\":\"zh\"}");
-
-        assertNotNull(event);
-        YoRealtimeOutput output = YoRealtimeOutputs.from(event);
-        assertNotNull(output);
-        assertTrue(output instanceof YoRealtimeOutput.TranslationDelta);
-        YoRealtimeOutput.TranslationDelta delta = (YoRealtimeOutput.TranslationDelta) output;
-        assertEquals("你好", delta.delta());
-        assertEquals("zh", delta.targetLanguage());
-    }
-
-    @Test
     public void emptyTranslationDeltaIsDropped() throws Exception {
-        assertEquals(null, RealtimeProtocol.parse(
+        assertNull(RealtimeProtocol.parse(
                 "{\"type\":\"response.translation.delta\",\"delta\":\"\"}"));
     }
 
@@ -95,7 +84,6 @@ public final class RealtimeTranslationTest {
         assertTrue(session.has("translation"));
         assertEquals("en", session.getJSONObject("translation").getString("target_language"));
 
-        // 未设置时不写 translation，保持旧 JSON 字节不变（现有 beta 用例仍按旧字段断言）。
         YoRealtimeConfig plain = YoRealtimeConfig.builder()
                 .baseUrl("https://api.example.com")
                 .apiKey("sk-test")
@@ -103,7 +91,14 @@ public final class RealtimeTranslationTest {
                 .build();
         JSONObject betaSession = RealtimeProtocol.encodeSessionUpdate(plain).getJSONObject("session");
         assertFalse(betaSession.has("translation"));
-        assertEquals(null, plain.translationTarget());
+        assertNull(plain.translationTarget());
+    }
+
+    private static <T> T assertInstanceOf(Class<T> type, Object value) {
+        assertTrue("expected " + type.getSimpleName() + " but got "
+                + (value == null ? "null" : value.getClass().getSimpleName()),
+                type.isInstance(value));
+        return type.cast(value);
     }
 
     private static String resource(String path) throws Exception {

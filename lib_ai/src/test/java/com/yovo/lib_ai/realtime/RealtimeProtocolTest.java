@@ -14,15 +14,12 @@ import com.yovo.lib_ai.error.YoAiProtocolException;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 
 /**
- * 只测协议：JSON 怎么拼、帧怎么解。
- *
- * <p>故意不测网络：WebSocket 的行为由 OkHttp 保证，在这里模拟一条连接只会得到一堆
- * 和真实网关无关的通过。真网关的差异（有的不回 {@code session.created}、有的把 error
- * 摊平在顶层）在下面这些用例里用「帧长什么样」表达，比 mock 连接更接近现场。</p>
+ * 协议编解码与配置构建单测：只测 JSON 怎么拼、帧怎么解与默认方言解析。
  */
 public final class RealtimeProtocolTest {
 
@@ -33,7 +30,6 @@ public final class RealtimeProtocolTest {
         JSONObject frame = RealtimeProtocol.encodeAudioAppend(pcm);
 
         assertEquals("input_audio_buffer.append", frame.getString("type"));
-        // 用 JDK 的实现对拍：自己那份 base64 必须和服务端预期的一模一样。
         assertEquals(Base64.getEncoder().encodeToString(pcm), frame.getString("audio"));
         assertEquals("AAEC/w==", frame.getString("audio"));
     }
@@ -47,11 +43,9 @@ public final class RealtimeProtocolTest {
         assertEquals("pcm16", session.getString("input_audio_format"));
         assertEquals("pcm16", session.getString("output_audio_format"));
         assertEquals("server_vad", session.getJSONObject("turn_detection").getString("type"));
-        // 默认 beta 帧不能多字段：旧网关按「只看到 type」在跑，多写 create_response 会改它们的行为。
         assertEquals(1, session.getJSONObject("turn_detection").length());
         assertFalse(session.has("tools"));
         assertFalse(session.has("type"));
-        // 没配就不下发：下发 null 会被当成非法音色名。
         assertFalse(session.has("voice"));
         assertFalse(session.has("instructions"));
     }
@@ -70,7 +64,6 @@ public final class RealtimeProtocolTest {
 
     @Test
     public void blankVoiceIsDropped() throws Exception {
-        // 空串音色会被服务端当成一个合法但不存在的声音名，整条会话都建不起来。
         JSONObject frame = RealtimeProtocol.encodeSessionUpdate(base().voice("   ").build());
 
         assertFalse(frame.getJSONObject("session").has("voice"));
@@ -85,27 +78,25 @@ public final class RealtimeProtocolTest {
     }
 
     @Test
-    public void sessionCreatedOpens() throws Exception {
-        YoRealtimeEvent event = RealtimeProtocol.parse(
+    public void sessionCreatedAndUpdatedReturnDirectControlFrames() throws Exception {
+        RealtimeProtocol.Frame created = RealtimeProtocol.parse(
                 "{\"type\":\"session.created\",\"session\":{\"id\":\"sess_1\"}}");
+        RealtimeProtocol.Frame updated = RealtimeProtocol.parse(
+                "{\"type\":\"session.updated\"}");
 
-        assertNotNull(event);
-        assertEquals(YoRealtimeEventType.OPENED, event.type());
-        assertNull(event.text());
-        assertNull(event.audioPcm16());
+        assertInstanceOf(RealtimeProtocol.Frame.SessionCreated.class, created);
+        assertInstanceOf(RealtimeProtocol.Frame.SessionUpdated.class, updated);
     }
 
     @Test
     public void mapsServerVadSpeechEvents() throws Exception {
-        YoRealtimeEvent started = RealtimeProtocol.parse(
+        YoRealtimeOutput started = parseOutput(
                 "{\"type\":\"input_audio_buffer.speech_started\",\"audio_start_ms\":120}");
-        YoRealtimeEvent stopped = RealtimeProtocol.parse(
+        YoRealtimeOutput stopped = parseOutput(
                 "{\"type\":\"input_audio_buffer.speech_stopped\",\"audio_end_ms\":980}");
 
-        assertNotNull(started);
-        assertNotNull(stopped);
-        assertEquals(YoRealtimeEventType.INPUT_SPEECH_STARTED, started.type());
-        assertEquals(YoRealtimeEventType.INPUT_SPEECH_STOPPED, stopped.type());
+        assertInstanceOf(YoRealtimeOutput.SpeechStarted.class, started);
+        assertInstanceOf(YoRealtimeOutput.SpeechStopped.class, stopped);
     }
 
     @Test
@@ -114,46 +105,40 @@ public final class RealtimeProtocolTest {
         String frame = "{\"type\":\"response.audio.delta\",\"response_id\":\"resp_1\",\"delta\":\""
                 + Base64.getEncoder().encodeToString(pcm) + "\"}";
 
-        YoRealtimeEvent event = RealtimeProtocol.parse(frame);
+        YoRealtimeOutput.AssistantAudio audio =
+                assertInstanceOf(YoRealtimeOutput.AssistantAudio.class, parseOutput(frame));
 
-        assertNotNull(event);
-        assertEquals(YoRealtimeEventType.ASSISTANT_AUDIO_CHUNK, event.type());
-        assertArrayEquals(pcm, event.audioPcm16());
+        assertArrayEquals(pcm, audio.pcm16());
+        assertNull(audio.itemId());
+        assertEquals(0, audio.contentIndex());
     }
 
     @Test
     public void mapsTranscriptDeltaOfBothModalities() throws Exception {
-        YoRealtimeEvent audio = RealtimeProtocol.parse(
-                "{\"type\":\"response.audio_transcript.delta\",\"delta\":\"你好\"}");
-        YoRealtimeEvent text = RealtimeProtocol.parse(
-                "{\"type\":\"response.text.delta\",\"delta\":\"，我是\"}");
+        YoRealtimeOutput.AssistantText audio = assertInstanceOf(
+                YoRealtimeOutput.AssistantText.class,
+                parseOutput("{\"type\":\"response.audio_transcript.delta\",\"delta\":\"你好\"}"));
+        YoRealtimeOutput.AssistantText text = assertInstanceOf(
+                YoRealtimeOutput.AssistantText.class,
+                parseOutput("{\"type\":\"response.text.delta\",\"delta\":\"，我是\"}"));
 
-        assertNotNull(audio);
-        assertNotNull(text);
-        assertEquals(YoRealtimeEventType.ASSISTANT_TEXT_DELTA, audio.type());
-        assertEquals("你好", audio.text());
-        assertEquals(YoRealtimeEventType.ASSISTANT_TEXT_DELTA, text.type());
-        assertEquals("，我是", text.text());
+        assertEquals("你好", audio.delta());
+        assertEquals("，我是", text.delta());
     }
 
     @Test
     public void responseDoneMaps() throws Exception {
-        YoRealtimeEvent event = RealtimeProtocol.parse(
-                "{\"type\":\"response.done\",\"response\":{\"status\":\"cancelled\"}}");
+        YoRealtimeOutput.ResponseDone done = assertInstanceOf(
+                YoRealtimeOutput.ResponseDone.class,
+                parseOutput("{\"type\":\"response.done\",\"response\":{\"status\":\"cancelled\"}}"));
 
-        assertNotNull(event);
-        assertEquals(YoRealtimeEventType.RESPONSE_DONE, event.type());
+        assertEquals("cancelled", done.status());
     }
 
     @Test
     public void unknownAndIrrelevantFramesAreIgnored() throws Exception {
-        // 协议一直在加帧：不认识的一律忽略，绝不能抛异常把链路带下去。
         assertNull(RealtimeProtocol.parse("{\"type\":\"conversation.item.created\"}"));
-        YoRealtimeEvent updated = RealtimeProtocol.parse("{\"type\":\"session.updated\"}");
-        assertNotNull(updated);
-        assertEquals(YoRealtimeEventType.SESSION_UPDATED, updated.type());
         assertNull(RealtimeProtocol.parse("{\"type\":\"rate_limits.updated\"}"));
-        // 连 type 都没有的帧：当作无关帧，不是错误。
         assertNull(RealtimeProtocol.parse("{\"foo\":1}"));
     }
 
@@ -165,33 +150,27 @@ public final class RealtimeProtocolTest {
     }
 
     @Test
-    public void errorFrameBecomesErrorEventWithClassification() throws Exception {
-        YoRealtimeEvent auth = RealtimeProtocol.parse(
-                "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
-                        + "\"code\":\"invalid_api_key\",\"message\":\"Incorrect API key provided.\"}}");
-        YoRealtimeEvent server = RealtimeProtocol.parse(
-                "{\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"message\":\"内部错误\"}}");
-        YoRealtimeEvent flat = RealtimeProtocol.parse(
-                "{\"type\":\"error\",\"message\":\"模型不支持实时语音\"}");
+    public void errorFrameBecomesFailedOutputWithClassification() throws Exception {
+        YoRealtimeOutput.Failed auth = assertInstanceOf(
+                YoRealtimeOutput.Failed.class,
+                parseOutput("{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
+                        + "\"code\":\"invalid_api_key\",\"message\":\"Incorrect API key provided.\"}}"));
+        YoRealtimeOutput.Failed server = assertInstanceOf(
+                YoRealtimeOutput.Failed.class,
+                parseOutput("{\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"message\":\"内部错误\"}}"));
+        YoRealtimeOutput.Failed flat = assertInstanceOf(
+                YoRealtimeOutput.Failed.class,
+                parseOutput("{\"type\":\"error\",\"message\":\"模型不支持实时语音\"}"));
 
-        assertNotNull(auth);
-        assertEquals(YoRealtimeEventType.ERROR, auth.type());
-        // 密钥错了必须落到 AUTHENTICATION：界面不能把它显示成「稍后重试」。
-        assertEquals(YoAiErrorKind.AUTHENTICATION, auth.errorKind());
+        assertEquals(YoAiErrorKind.AUTHENTICATION, auth.kind());
         assertEquals("Incorrect API key provided.", auth.message());
-
-        assertNotNull(server);
-        assertEquals(YoAiErrorKind.SERVER, server.errorKind());
+        assertEquals(YoAiErrorKind.SERVER, server.kind());
         assertEquals("内部错误", server.message());
-
-        assertNotNull(flat);
-        assertEquals(YoRealtimeEventType.ERROR, flat.type());
         assertEquals("模型不支持实时语音", flat.message());
     }
 
     @Test
     public void malformedAudioDeltaIsProtocolError() {
-        // delta 缺失、或者不是 base64：宁可报协议错，也不要解出一段噪声去放。
         assertThrows(YoAiProtocolException.class,
                 () -> RealtimeProtocol.parse("{\"type\":\"response.audio.delta\"}"));
         assertThrows(YoAiProtocolException.class,
@@ -217,12 +196,11 @@ public final class RealtimeProtocolTest {
 
     @Test
     public void unbase64ToleratesLineWrappingButNotGarbage() throws Exception {
-        byte[] data = "pcm16".getBytes("UTF-8");
+        byte[] data = "pcm16".getBytes(StandardCharsets.UTF_8);
         String encoded = Base64.getEncoder().encodeToString(data);
 
         assertArrayEquals(data, RealtimeProtocol.unbase64(" \n" + encoded + "\r\n"));
         assertThrows(YoAiProtocolException.class, () -> RealtimeProtocol.unbase64("****"));
-        // 填充字符跑到中间：长度对但位置不对，必须拒。
         assertThrows(YoAiProtocolException.class, () -> RealtimeProtocol.unbase64("A=AA"));
     }
 
@@ -230,18 +208,14 @@ public final class RealtimeProtocolTest {
     public void buildWebSocketUrlFromPlatformBaseUrl() {
         assertEquals("wss://api.example.com/v1/realtime?model=gpt-4o-realtime-preview",
                 RealtimeProtocol.webSocketUrl(base().build()));
-        // 尾部斜杠要先归一化，否则会出现 /base//v1/realtime。
         assertEquals("wss://api.example.com/v1/realtime?model=m",
                 RealtimeProtocol.webSocketUrl(base().baseUrl("https://api.example.com///").model("m").build()));
-        // 本机明文调试。
         assertEquals("ws://127.0.0.1:8080/v1/realtime?model=m",
                 RealtimeProtocol.webSocketUrl(
                         base().baseUrl("http://127.0.0.1:8080").model("m").build()));
-        // 模型名里的 / 必须转义，否则 query 会被拆断。
         assertEquals("wss://gw.example.com/v1/realtime?model=org%2Frt",
                 RealtimeProtocol.webSocketUrl(
                         base().baseUrl("https://gw.example.com").model("org/rt").build()));
-        // 聊天配置经常已经带 /v1，不能再拼成 /v1/v1/realtime。
         assertEquals("wss://api.example.com/v1/realtime?model=m",
                 RealtimeProtocol.webSocketUrl(
                         base().baseUrl("https://api.example.com/v1").model("m").build()));
@@ -256,18 +230,25 @@ public final class RealtimeProtocolTest {
     }
 
     @Test
-    public void configDefaultsTo16kInputAnd24kOutput() {
-        YoRealtimeConfig config = base().build();
+    public void configResolvesWireFormatsPerDialect() {
+        YoRealtimeConfig openAi = base().build();
+        assertNull(openAi.voice());
+        assertNull(openAi.instructions());
+        assertEquals(YoRealtimeDialect.OPENAI_BETA, openAi.dialect());
+        assertEquals(24_000, openAi.inputWireFormat().sampleRateHz());
+        assertEquals(24_000, openAi.outputWireFormat().sampleRateHz());
+        assertFalse(openAi.toString().contains("sk-test"));
 
-        assertEquals(16_000, config.inputSampleRateHz());
-        assertEquals(24_000, config.outputSampleRateHz());
-        assertNull(config.voice());
-        assertNull(config.instructions());
-        assertEquals(YoRealtimeDialect.OPENAI_BETA, config.dialect());
-        assertEquals(24_000, config.inputWireFormat().sampleRateHz());
-        assertEquals(24_000, config.outputWireFormat().sampleRateHz());
-        // 密钥不能出现在 toString 里：这个对象很容易被顺手打进日志。
-        assertFalse(config.toString().contains("sk-test"));
+        YoRealtimeConfig qwen = YoRealtimeConfig.builder()
+                .baseUrl("https://dashscope.aliyuncs.com")
+                .apiKey("sk-qwen")
+                .model("qwen3.8-omni-flash-realtime")
+                .build();
+        assertEquals(YoRealtimeDialect.QWEN, qwen.dialect());
+        assertEquals("自动推断 QWEN 方言时，默认上行线速率应为 16k",
+                16_000, qwen.inputWireFormat().sampleRateHz());
+        assertEquals(24_000, qwen.outputWireFormat().sampleRateHz());
+        assertEquals("Tina", qwen.voice());
     }
 
     @Test
@@ -280,8 +261,6 @@ public final class RealtimeProtocolTest {
                 .baseUrl("https://api.example.com").apiKey("  ").model("m").build());
         assertThrows(IllegalArgumentException.class, () -> YoRealtimeConfig.builder()
                 .baseUrl("https://api.example.com").apiKey("k").model("").build());
-        assertThrows(IllegalArgumentException.class, () -> base().inputSampleRateHz(0).build());
-        assertThrows(IllegalArgumentException.class, () -> base().outputSampleRateHz(-1).build());
     }
 
     @Test
@@ -293,10 +272,9 @@ public final class RealtimeProtocolTest {
     }
 
     @Test
-    public void gaSessionDeclaresNestedRateAndDoesNotUseTheMicRate() throws Exception {
+    public void gaSessionDeclaresNestedRateAndFormat() throws Exception {
         JSONObject frame = RealtimeProtocol.encodeSessionUpdate(base()
                 .dialect(YoRealtimeDialect.OPENAI_GA)
-                .inputSampleRateHz(16_000)
                 .voice("marin")
                 .build());
 
@@ -305,7 +283,6 @@ public final class RealtimeProtocolTest {
         assertEquals("gpt-4o-realtime-preview", session.getString("model"));
         JSONObject input = session.getJSONObject("audio").getJSONObject("input");
         assertEquals("audio/pcm", input.getJSONObject("format").getString("type"));
-        // 麦克风是 16k，线上字节仍是默认 24k。把 16k 写进去，服务端会把升采样后的声音听慢。
         assertEquals(24_000, input.getJSONObject("format").getInt("rate"));
         JSONObject turn = input.getJSONObject("turn_detection");
         assertEquals("server_vad", turn.getString("type"));
@@ -347,36 +324,35 @@ public final class RealtimeProtocolTest {
         byte[] pcm = {0x01, 0x02};
         String audio = "{\"type\":\"response.output_audio.delta\",\"item_id\":\"item_9\",\"content_index\":0,"
                 + "\"delta\":\"" + Base64.getEncoder().encodeToString(pcm) + "\"}";
-        YoRealtimeEvent chunk = RealtimeProtocol.parse(audio);
-        assertNotNull(chunk);
+        YoRealtimeOutput.AssistantAudio chunk =
+                assertInstanceOf(YoRealtimeOutput.AssistantAudio.class, parseOutput(audio));
         assertEquals("item_9", chunk.itemId());
-        assertEquals(Integer.valueOf(0), chunk.contentIndex());
-        assertArrayEquals(pcm, chunk.audioPcm16());
+        assertEquals(0, chunk.contentIndex());
+        assertArrayEquals(pcm, chunk.pcm16());
 
-        YoRealtimeEvent said = RealtimeProtocol.parse(
-                "{\"type\":\"conversation.item.input_audio_transcription.completed\","
-                        + "\"item_id\":\"item_u\",\"transcript\":\"开灯\"}");
-        assertNotNull(said);
-        assertEquals(YoRealtimeEventType.USER_TRANSCRIPT, said.type());
-        assertEquals("开灯", said.text());
+        YoRealtimeOutput.UserTranscript said = assertInstanceOf(
+                YoRealtimeOutput.UserTranscript.class,
+                parseOutput("{\"type\":\"conversation.item.input_audio_transcription.completed\","
+                        + "\"item_id\":\"item_u\",\"transcript\":\"开灯\"}"));
+        assertEquals("开灯", said.transcript());
+        assertEquals("item_u", said.itemId());
 
-        YoRealtimeEvent call = RealtimeProtocol.parse(
-                "{\"type\":\"response.function_call_arguments.done\",\"call_id\":\"call_1\","
-                        + "\"name\":\"set_volume\",\"arguments\":\"{\\\"level\\\":1}\"}");
-        assertNotNull(call);
-        assertEquals(YoRealtimeEventType.TOOL_CALL, call.type());
-        assertEquals("set_volume", call.toolName());
+        YoRealtimeOutput.ToolCall call = assertInstanceOf(
+                YoRealtimeOutput.ToolCall.class,
+                parseOutput("{\"type\":\"response.function_call_arguments.done\",\"call_id\":\"call_1\","
+                        + "\"name\":\"set_volume\",\"arguments\":\"{\\\"level\\\":1}\"}"));
+        assertEquals("set_volume", call.name());
         assertEquals("call_1", call.callId());
     }
 
     @Test
     public void responseDoneCarriesUsage() throws Exception {
-        YoRealtimeEvent event = RealtimeProtocol.parse(
-                "{\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{"
-                        + "\"input_tokens\":3,\"output_tokens\":4,\"total_tokens\":7}}}");
+        YoRealtimeOutput.ResponseDone event = assertInstanceOf(
+                YoRealtimeOutput.ResponseDone.class,
+                parseOutput("{\"type\":\"response.done\",\"response\":{\"status\":\"completed\",\"usage\":{"
+                        + "\"input_tokens\":3,\"output_tokens\":4,\"total_tokens\":7}}}"));
 
-        assertNotNull(event);
-        assertEquals("completed", event.responseStatus());
+        assertEquals("completed", event.status());
         assertNotNull(event.usage());
         assertEquals(3, event.usage().inputTokens());
         assertEquals(4, event.usage().outputTokens());
@@ -394,6 +370,20 @@ public final class RealtimeProtocolTest {
         assertEquals("conversation.item.create", tool.getString("type"));
         assertEquals("function_call_output", tool.getJSONObject("item").getString("type"));
         assertEquals("call_1", tool.getJSONObject("item").getString("call_id"));
+    }
+
+    private static YoRealtimeOutput parseOutput(String raw) throws YoAiProtocolException {
+        RealtimeProtocol.Frame frame = RealtimeProtocol.parse(raw);
+        RealtimeProtocol.Frame.Output output =
+                assertInstanceOf(RealtimeProtocol.Frame.Output.class, frame);
+        return output.output();
+    }
+
+    private static <T> T assertInstanceOf(Class<T> type, Object value) {
+        assertTrue("expected " + type.getSimpleName() + " but got "
+                + (value == null ? "null" : value.getClass().getSimpleName()),
+                type.isInstance(value));
+        return type.cast(value);
     }
 
     private static YoRealtimeConfig.Builder base() {
