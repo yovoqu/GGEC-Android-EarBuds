@@ -7,8 +7,9 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
-import com.ggec.earbuds.domain.ai.port.AiAudioCapture;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
+import com.ggec.earbuds.domain.ai.port.AiAudioSource;
+import com.ggec.earbuds.domain.ai.port.AiAudioSourceCatalog;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
@@ -24,6 +25,7 @@ import com.ggec.earbuds.domain.ai.voice.VoiceCallState;
 import com.ggec.earbuds.domain.ai.voice.VoiceCallTrace;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -32,25 +34,17 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 语音通话 actor：唯一职责是串行处理 {@link VoiceCallEvent}，调用纯 {@link VoiceCallReducer}
- * 算下一状态与副作用，再按顺序执行 effects。
+ * 语音通话 actor：串行处理 {@link VoiceCallEvent}，调用纯 {@link VoiceCallReducer}
+ * 计算下一状态与副作用，再按顺序调度 {@link AudioUplinkPipeline}、{@link AiAudioPlayback} 与 {@link AiRealtimeLink}。
  *
- * <p>状态和 IO 分开之后，任何时序问题都能在 reducer 单测里复现，真机 trace 也能直接回放。
- * 采集/播放线程只负责投事件，不直接改状态。</p>
- *
- * <p><b>双工解耦与单一真相</b>：开场默认双工从用户设置（{@link AiVoiceConfig#defaultDuplex()}）读取，
- * 通话中 {@link #setDuplex} 直接向状态机投递 {@link VoiceCallEvent.SetDuplex}，由领域策略
- * {@link com.ggec.earbuds.domain.ai.voice.VoiceDuplexStrategy} 实时裁决上行闸门与 VAD 打断，
- * 采集启动不再覆盖双工状态，全/半双工可随时无损切换。</p>
+ * <p>音频源（内麦、蓝牙耳机、USB 外设或外部推流）的发现与切换全部通过 {@link AiAudioSourceCatalog}
+ * 与 {@link AudioUplinkPipeline} 热插拔闭环完成，切换输入源对网络链路和会话上下文完全透明。</p>
  */
 public final class RealtimeVoiceSession implements AiVoiceSession {
 
-    public static final int INPUT_SAMPLE_RATE_HZ = PcmResampler.INPUT_RATE_HZ;
-    public static final int OUTPUT_SAMPLE_RATE_HZ = PcmResampler.OUTPUT_RATE_HZ;
-
     private final AiSettingsRepository settings;
     private final AiCredentialStore credentials;
-    private final AiAudioCapture capture;
+    private final AiAudioSourceCatalog sourceCatalog;
     private final AiAudioPlayback playback;
     private final AiRealtimeLink link;
     private final AiClock clock;
@@ -59,8 +53,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     private final ScheduledExecutorService drainScheduler;
     private final VoiceCallTrace trace = new VoiceCallTrace();
 
-    private final PcmResampler resampler = new PcmResampler();
-    private final AiAudioCapture.Listener captureListener;
+    private final AudioUplinkPipeline uplink;
+    private final AiAudioSourceCatalog.Observer catalogObserver;
     private final AiRealtimeLink.Listener linkListener;
 
     /** 挂断从任意线程发起，必须在 start 派发之前就生效。 */
@@ -71,6 +65,11 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     private Listener listener;
     private boolean silenced;
     private boolean duplexPinned;
+    private boolean uplinkActive;
+    private boolean observingCatalog;
+    @Nullable
+    private AiAudioSource selectedSource;
+    private boolean selectedFromCatalog;
     private VoiceCallReducer.Model model;
     @Nullable
     private ScheduledFuture<?> drainFuture;
@@ -78,32 +77,32 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     public RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
             @NonNull AiCredentialStore credentials,
-            @NonNull AiAudioCapture capture,
+            @NonNull AiAudioSourceCatalog sourceCatalog,
             @NonNull AiAudioPlayback playback,
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor) {
-        this(settings, credentials, capture, playback, link, clock, executor,
+        this(settings, credentials, sourceCatalog, playback, link, clock, executor,
                 null, newScheduler());
     }
 
     public RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
             @NonNull AiCredentialStore credentials,
-            @NonNull AiAudioCapture capture,
+            @NonNull AiAudioSourceCatalog sourceCatalog,
             @NonNull AiAudioPlayback playback,
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor,
             @NonNull VoiceDuplex duplex) {
-        this(settings, credentials, capture, playback, link, clock, executor,
+        this(settings, credentials, sourceCatalog, playback, link, clock, executor,
                 Objects.requireNonNull(duplex, "duplex"), newScheduler());
     }
 
     private RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
             @NonNull AiCredentialStore credentials,
-            @NonNull AiAudioCapture capture,
+            @NonNull AiAudioSourceCatalog sourceCatalog,
             @NonNull AiAudioPlayback playback,
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
@@ -112,7 +111,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull ScheduledExecutorService drainScheduler) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
-        this.capture = Objects.requireNonNull(capture, "capture");
+        this.sourceCatalog = Objects.requireNonNull(sourceCatalog, "sourceCatalog");
         this.playback = Objects.requireNonNull(playback, "playback");
         this.link = Objects.requireNonNull(link, "link");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -121,28 +120,16 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         this.duplexPinned = explicitDuplex != null;
         this.model = VoiceCallReducer.Model.initial(
                 explicitDuplex != null ? explicitDuplex : VoiceDuplex.defaultMode());
-        this.captureListener = new AiAudioCapture.Listener() {
-            @Override
-            public void onFrame(@NonNull byte[] pcm16, float frameLevel) {
-                dispatch(() -> onFrameInternal(pcm16, frameLevel));
-            }
-
-            @Override
-            public void onFailure(@NonNull AiFailureKind kind, @NonNull String detail) {
-                dispatch(() -> apply(new VoiceCallEvent.Failed(
-                        new AiFailure(kind, detail.isEmpty() ? null : detail))));
-            }
-        };
+        this.uplink = new AudioUplinkPipeline(
+                link,
+                clock,
+                level -> dispatch(() -> apply(new VoiceCallEvent.CaptureLevel(level))),
+                (kind, detail) -> dispatch(() -> apply(new VoiceCallEvent.Failed(
+                        new AiFailure(kind, detail.isEmpty() ? null : detail)))));
+        this.catalogObserver = sources -> dispatch(() -> onAvailableSourcesChanged(sources));
         this.linkListener = output -> dispatch(() -> onLinkOutput(output));
     }
 
-    /**
-     * 投事件到状态机线程。
-     *
-     * <p>挂断之后采集线程和链路线程还会继续回调（它们各自有自己的停止延迟），
-     * 这时候执行器可能已经关闭。那种拒绝不是错误，是"这通电话已经结束了"，
-     * 所以直接丢弃——绝不能让异常冒到采集线程，那会把 AudioRecord 的读循环打断。</p>
-     */
     private void dispatch(@NonNull Runnable work) {
         if (stopRequested) {
             return;
@@ -150,7 +137,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         try {
             executor.execute(work);
         } catch (RuntimeException shuttingDown) {
-            // 见方法注释。
         }
     }
 
@@ -177,6 +163,31 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     }
 
     @Override
+    public void selectAudioSource(@NonNull String sourceId) {
+        Objects.requireNonNull(sourceId, "sourceId");
+        dispatch(() -> {
+            if (model.terminal()) {
+                return;
+            }
+            AiAudioSource resolved = sourceCatalog.resolve(sourceId);
+            if (resolved != null) {
+                switchToSource(resolved, true);
+            }
+        });
+    }
+
+    @Override
+    public void setAudioSource(@NonNull AiAudioSource source) {
+        Objects.requireNonNull(source, "source");
+        dispatch(() -> {
+            if (model.terminal()) {
+                return;
+            }
+            switchToSource(source, false);
+        });
+    }
+
+    @Override
     public void setSpeakerphone(boolean speaker) {
         dispatch(() -> playback.setSpeakerphone(speaker));
     }
@@ -188,12 +199,10 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
     @Override
     public void stop() {
-        // 先置位再投递：挂断之后到达的采集/链路回调都会被 dispatch 直接丢弃。
         stopRequested = true;
         try {
             executor.execute(this::doStop);
         } catch (RuntimeException shuttingDown) {
-            // 执行器已关：状态机不会再收到任何事件，无需再收尾。
         }
     }
 
@@ -204,6 +213,22 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             return;
         }
         listener = target;
+        if (!observingCatalog) {
+            sourceCatalog.addObserver(catalogObserver);
+            observingCatalog = true;
+        }
+        model = model.withAvailableSources(sourceCatalog.availableSources());
+        if (selectedSource == null) {
+            AiAudioSource def = sourceCatalog.defaultSource();
+            if (def != null) {
+                selectedSource = def;
+                selectedFromCatalog = true;
+            }
+        }
+        if (selectedSource != null) {
+            model = model.withActiveSource(selectedSource.descriptor());
+        }
+
         RealtimePlan plan;
         try {
             plan = planFor();
@@ -226,14 +251,45 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
 
     private void doStop() {
         apply(new VoiceCallEvent.Stop());
+        stopCatalogObservation();
         silenced = true;
         listener = null;
         drainScheduler.shutdownNow();
     }
 
+    private void onAvailableSourcesChanged(@NonNull List<AiAudioSource.Descriptor> sources) {
+        if (model.terminal()) {
+            return;
+        }
+        apply(new VoiceCallEvent.AvailableSourcesChanged(sources));
+        // 若当前使用的是目录源，且该外设在通话途中被移除（例如蓝牙耳机断开），自动回退到当前默认源无缝续传。
+        if (selectedSource != null && selectedFromCatalog) {
+            AiAudioSource stillPresent = sourceCatalog.resolve(selectedSource.descriptor().id());
+            if (stillPresent == null) {
+                AiAudioSource fallback = sourceCatalog.defaultSource();
+                if (fallback != null) {
+                    switchToSource(fallback, true);
+                } else {
+                    selectedSource = null;
+                    apply(new VoiceCallEvent.SetActiveSource(null));
+                }
+            }
+        }
+    }
+
+    private void switchToSource(@NonNull AiAudioSource source, boolean fromCatalog) {
+        selectedSource = source;
+        selectedFromCatalog = fromCatalog;
+        apply(new VoiceCallEvent.SetActiveSource(source.descriptor()));
+        if (uplinkActive) {
+            uplink.switchSource(source);
+        }
+    }
+
     private void onLinkOutput(@NonNull AiRealtimeOutput output) {
         switch (output) {
-            case AiRealtimeOutput.Opened ignored -> apply(new VoiceCallEvent.Opened());
+            case AiRealtimeOutput.Opened opened ->
+                    apply(new VoiceCallEvent.Opened(opened.inputSampleRateHz()));
             case AiRealtimeOutput.AssistantText text ->
                     apply(new VoiceCallEvent.AssistantText(text.delta()));
             case AiRealtimeOutput.AssistantAudio audio -> apply(new VoiceCallEvent.AssistantAudio(
@@ -246,29 +302,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
                     apply(new VoiceCallEvent.UserTranscript(transcript.transcript(), transcript.itemId()));
             case AiRealtimeOutput.ResponseDone ignored -> apply(new VoiceCallEvent.ResponseDone());
             case AiRealtimeOutput.Failed failed -> apply(new VoiceCallEvent.Failed(failed.failure()));
-        }
-    }
-
-    private void onFrameInternal(byte[] pcm16, float frameLevel) {
-        apply(new VoiceCallEvent.CaptureFrame(frameLevel));
-        if (model.terminal() || pcm16 == null || pcm16.length == 0) {
-            return;
-        }
-        // 上行线速率由方言决定：通义 16k、OpenAI 24k。相同就直接送，不白跑一次重采样。
-        int wireRate = link.inputWireSampleRateHz();
-        byte[] payload;
-        if (wireRate == INPUT_SAMPLE_RATE_HZ) {
-            payload = pcm16;
-        } else {
-            payload = resampler.resample(pcm16);
-        }
-        if (payload.length == 0) {
-            return;
-        }
-        try {
-            link.send(new AiRealtimeInput.Audio(payload, wireRate));
-        } catch (RuntimeException lost) {
-            // 上行失败由链路的错误事件负责上报；这里再抛只会把采集线程打断。
         }
     }
 
@@ -296,12 +329,31 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     private void execute(@NonNull VoiceCallEffect effect) {
         if (effect instanceof VoiceCallEffect.Publish) {
             publish();
-        } else if (effect instanceof VoiceCallEffect.StartCapture) {
-            capture.start(INPUT_SAMPLE_RATE_HZ, captureListener);
-        } else if (effect instanceof VoiceCallEffect.StopCapture) {
-            bestEffort(capture::stop);
+        } else if (effect instanceof VoiceCallEffect.StartUplink start) {
+            AiAudioSource source = selectedSource;
+            if (source == null) {
+                source = sourceCatalog.defaultSource();
+                if (source != null) {
+                    selectedSource = source;
+                    selectedFromCatalog = true;
+                    model = model.withActiveSource(source.descriptor());
+                }
+            }
+            if (source == null) {
+                apply(new VoiceCallEvent.Failed(new AiFailure(
+                        AiFailureKind.UNKNOWN, "No available audio input source")));
+                return;
+            }
+            uplinkActive = true;
+            uplink.start(source, start.wireSampleRateHz());
+        } else if (effect instanceof VoiceCallEffect.StopUplink) {
+            uplinkActive = false;
+            bestEffort(uplink::stop);
+            if (model.terminal()) {
+                stopCatalogObservation();
+            }
         } else if (effect instanceof VoiceCallEffect.SetUplinkEnabled gate) {
-            bestEffort(() -> capture.setUplinkEnabled(gate.enabled()));
+            uplink.setEnabled(gate.enabled());
         } else if (effect instanceof VoiceCallEffect.StartPlayback start) {
             cancelDrain();
             try {
@@ -314,7 +366,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             try {
                 playback.write(audio.pcm16(), audio.itemId(), audio.contentIndex());
             } catch (RuntimeException ignored) {
-                // 单块写失败是播放侧抖动，不让整通电话失败。
             }
         } else if (effect instanceof VoiceCallEffect.StopAssistant stop) {
             stopAssistant(stop.cancelGeneration());
@@ -331,19 +382,11 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         }
     }
 
-    /**
-     * 停止助手发言的固定顺序：先取进度 → 清队列 → 取消/截断 → 丢上行缓冲。
-     *
-     * <p>先取进度再清队列，是因为"用户听到多少"只存在于播放端口的记账里；
-     * 反过来清完再取，就只剩 0 毫秒，服务端会以为用户什么都没听到，
-     * 下一轮回答又会把整段重说一遍。</p>
-     */
     private void stopAssistant(boolean cancelGeneration) {
         AiAudioPlayback.Heard heard = null;
         try {
             heard = playback.captureHeard();
         } catch (RuntimeException ignored) {
-            // 取不到进度就退化成"不截断"，比拿一个错的毫秒数去截断安全。
         }
         bestEffort(playback::flush);
         bestEffort(() -> link.send(new AiRealtimeInput.Clear()));
@@ -355,7 +398,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             final String itemId = heard.itemId();
             final int contentIndex = heard.contentIndex();
             final int audioEndMs = heard.elapsedMs();
-            bestEffort(() -> link.truncate(itemId, contentIndex, audioEndMs));
+            bestEffort(() -> link.send(new AiRealtimeInput.Truncate(itemId, contentIndex, audioEndMs)));
         }
     }
 
@@ -364,6 +407,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         drainFuture = null;
         if (current != null) {
             current.cancel(false);
+        }
+    }
+
+    private void stopCatalogObservation() {
+        if (observingCatalog) {
+            observingCatalog = false;
+            bestEffort(() -> sourceCatalog.removeObserver(catalogObserver));
         }
     }
 
@@ -383,12 +433,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
                 model.level(),
                 model.failure(),
                 model.duplex(),
-                model.micMuted()
+                model.micMuted(),
+                model.activeSource(),
+                model.availableSources()
         );
         try {
             target.onSnapshot(snapshot);
         } catch (RuntimeException fromPage) {
-            // 页面回调是外部代码：它抛错属于界面缺陷，不该把状态机带停。
         }
     }
 
@@ -436,7 +487,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         try {
             step.run();
         } catch (RuntimeException alreadyReported) {
-            // 释放路径一步失败不能挡住其它步骤。
         }
     }
 
