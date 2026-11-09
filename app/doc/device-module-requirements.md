@@ -24,18 +24,18 @@ APP 侧对外的全部机型知识就两件事：**`HS01` 有几个变种**，�
 
 做一个多型号耳机的通用管理 APP 的设备部分：
 
-1. 以「项目名称」描述一类耳机（HS01 / HS02 / WY01）。
+1. 以「项目名称」描述一类耳机（HS01 / HS02）。
 2. 同一套 UI 通过**能力矩阵**适配：公共组件复用，差异能力按 Profile 裁剪或替换。
-3. 首版只做完整 UI 与状态机，接假数据源，不接真实蓝牙。
+3. 未接入真实蓝牙前由 `IdleDevicePort` / `EmptyDeviceControlsPort` 提供规范空态与只读保护，不使用 Mock/Fake 演示数据。
 4. 严格 MVVM，沿用现有分层与 Gradle 守卫。
 
 ## 2. 术语
 
 | 术语 | 含义 |
 | --- | --- |
-| 项目名称 DeviceModel | 项目前缀 + 设备类型，如 `HS`+`01`=HS01、`HS`+`02`=HS02、`WY`+`01`=WY01。**APP 唯一对外可见的机型标识** |
+| 项目名称 DeviceModel | 项目前缀 + 设备类型，如 `HS`+`01`=HS01、`HS`+`02`=HS02。**APP 唯一对外可见的机型标识** |
 | 变种 DeviceVariant | 同一项目名称下的一个版本标识。**由 SDK 上报，APP 只当作不透明 ID 使用，不解释其来源** |
-| 变种数量 | 每个项目名称下有几个变种，是 APP 需要知道的唯一"结构信息"（HS01=3，HS02=1，WY01=待定） |
+| 变种数量 | 每个项目名称下有几个变种，是 APP 需要知道的唯一"结构信息"（HS01=3，HS02=1） |
 | Profile | 「项目名称 + 变种」对应的能力声明与参数表 |
 | Capability | 能力原子，UI 组件按它渲染 |
 | 标准状态 Snapshot | SDK 归一化后的设备状态（连接/电量/佩戴/固件等），APP 只读 |
@@ -44,15 +44,13 @@ APP 侧对外的全部机型知识就两件事：**`HS01` 有几个变种**，�
 
 APP 只暴露项目名称；一个项目名称可挂多个变种；变种标识由 SDK 给，APP 不关心它背后是区域版还是硬件版。
 
-| 项目名称 | 前缀 | 设备类型 | 变种数 | 首版 |
+| 项目名称 | 前缀 | 设备类型 | 变种数 | 状态 |
 | --- | --- | --- | --- | --- |
 | HS01 | HS | 01 | 3 | 实现 |
 | HS02 | HS | 02 | 1 | 实现（能力超集） |
-| WY01 | WY | 01 | 待定 | 仅 Profile 占位 |
 
 - 变种之间只通过 `DeviceVariant` 的标识区分，`DeviceModel` 之上不含任何区域/市场信息。
 - HS02 相对 HS01 新增能力：双连接管理、10 段自定义 EQ、V12 首页快照、双击/三击左右耳区分、双触、语音助手状态、新手模式、同声传译、佩戴检测提示音、LDAC 查询、EQ 运动/自定义模式、服务状态查询。
-- WY01 首版只建空 Profile 与能力声明，不参与扫描识别。
 
 > 具体某个变种对应哪段 FeatureCode、哪个 market、哪种扫描方式，全部写在 SDK 侧；本文档不记录、APP 代码不出现。
 
@@ -159,8 +157,8 @@ CLASSIC_BT          经典蓝牙连接态监听
 ui/device      View / Screen / ViewModel / UiMapper / UiState
 domain/device  model(DeviceModel, DeviceVariant, CapabilitySet, DeviceProfile, DeviceSnapshot)
                port(DevicePort, DeviceProfileCatalog, DevicePreferences) / usecase / policy
-data/device    FakeDevicePort（假数据）+ ProfileCatalog 实现 + 文件持久化
-platform/device 预留真实 SDK 适配位（首版空）
+data/device    IdleDevicePort / EmptyDeviceControlsPort + ProfileCatalog 实现 + 文件持久化
+platform/device 预留真实 SDK 适配位（未接入前由 Idle/Empty 端口提供空态实现）
 wiring         DeviceGraph 装配
 ```
 
@@ -170,29 +168,28 @@ wiring         DeviceGraph 装配
 - 新增 `checkDeviceLayerImports` 守卫任务，与现有四项守卫同风格。
 - 首版留在 `:app` 按包边界扩展（F 项）。
 
-## 10. 假数据策略
+## 10. 空态与未就绪策略（已清理 Mock 数据）
 
-- `FakeDevicePort`：可切换 `CONNECTED` / `DISCONNECTED` / `SCANNING` 演示态。
-- 电量、佩戴、服务状态可随机游走以验证 UI 刷新。
-- 扫描页可产出多个模拟 `ScanResult`（不同 modelId / variantId）验证分组与 Profile 切换。
-- 调试页常驻「演示开关」（G 项）。
+- `IdleDevicePort`：始终返回 `DeviceSnapshot.idle()`，不产生虚假连接或模拟扫描结果。
+- `EmptyDeviceControlsPort`：`isAvailable() == false` 且返回 `DeviceControls.empty()`（所有开关为 `false`，EQ/音质/手势未设置），UI 控件置灰且不可操作，ViewModel 不伪造写操作与 Toast 反馈。
+- 无手动机型选择器、无 `WY01` 占位、无「演示开关」。
 
-## 11. 非目标（首版）
+## 11. 待接入真实 SDK 能力
 
-- 真实蓝牙连接与协议收发
+- 真实蓝牙扫描、连接与协议收发（替换 `IdleDevicePort` / `EmptyDeviceControlsPort`）
 - OTA 真实升级
 - 后端配置下发
 - 多语言（先中文）
 - 物理模块拆分
 
-## 12. 待确认汇总
+## 12. 设计决策汇总
 
-| 编号 | 问题 | 我的默认 |
+| 编号 | 问题 | 结论 |
 | --- | --- | --- |
-| A | 「我的」里是否允许手动指定项目名称 | 支持，作为 WY01 与无真机调试兜底 |
+| A | 是否允许手动指定项目名称调试 | 否（已清理；仅按真实连接快照匹配 Profile） |
 | B | HS01 三个变种是否有能力差异 | 按无差异处理，仅 Profile 参数不同 |
-| C | 设备页签形态 | 设备卡 + 快捷区 + 功能入口列表 |
+| C | 设备页签形态 | 连接态：设备卡 + 快捷区 + 功能入口列表；未连接态：标准左对齐空态 |
 | D | 不支持能力的表现 | 隐藏，但保留「关于设备」里的能力清单可查 |
-| E | 未连接态首页 | 空态引导 + 最近设备 |
+| E | 未连接态首页 | 规范化左对齐空态引导（对标 AI 页基线） |
 | F | 是否新开模块 | 留在 `:app`，加包边界守卫 |
-| G | 是否需要演示开关 | 需要，放调试页 |
+| G | 是否保留演示开关或假数据 | 否（Mock/Fake 数据已全部清理） |

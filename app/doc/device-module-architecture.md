@@ -15,7 +15,7 @@ domain/device
   usecase/     ObserveDevice · ConnectDevice · ScanDevices · LoadDeviceProfiles · EditDeviceControls
 
 data/device
-  FakeDevicePort · DeviceProfileCatalogImpl · FileDevicePreferences · MemoryDeviceControls
+  IdleDevicePort · EmptyDeviceControlsPort · DeviceProfileCatalogImpl · FileDevicePreferences
 
 ui/device
   DevicePage · DeviceTheme · DeviceLabels · DeviceFormats
@@ -67,7 +67,11 @@ EditDeviceControls → DeviceControls（唯一真源）
 - `Toggle(SettingId, titleRes, checked)`
 - `Action(SettingId, titleRes, destructive)`
 
-`DeviceSettingsUiState = (titleRes, List<DeviceSettingRow>, MusicPanel)`。
+- `DeviceSettingsUiState = (loaded, titleRes, connected, interactive, List<DeviceSettingRow>, MusicPanel)`。
+- 未接入真实蓝牙/协议通道前由 `IdleDevicePort` 与 `EmptyDeviceControlsPort` 提供真实空态（无 `FakeDevicePort` / `MemoryDeviceControls` / `WY01` / 调试切换弹窗 / 假 Toast）：
+  - 未连接态首页展示统一左对齐空态 `DeviceEmptyState`（`EMPTY_TOP = 88dp`、`PAGE_INSET = 20dp`、`20sp Medium` 标题 + `14sp Regular` 说明）。
+  - 未连接态设置页渲染统一未连接空态；若已连接但 `!DeviceControlsPort.isAvailable()`，控件保持 `DeviceControls.empty()` 只读置灰态并拦截写入意图。
+  - `ScanScreen` 区分 `!hasScanned` / `scanning` / `hasScanned && empty`，统一左对齐空态文案且不重复显示搜索状态条。
 
 音乐页不再走通用行：`MusicPanel` 描述预置项、自定义音效、音质与开关；自定义音效与预置项属于同一个单选值 `EqPreset`。
 
