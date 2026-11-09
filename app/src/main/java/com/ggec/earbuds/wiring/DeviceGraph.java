@@ -8,9 +8,9 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
 import com.ggec.earbuds.data.device.DeviceProfileCatalogImpl;
-import com.ggec.earbuds.data.device.FakeDevicePort;
+import com.ggec.earbuds.data.device.EmptyDeviceControlsPort;
 import com.ggec.earbuds.data.device.FileDevicePreferences;
-import com.ggec.earbuds.data.device.MemoryDeviceControls;
+import com.ggec.earbuds.data.device.IdleDevicePort;
 import com.ggec.earbuds.domain.device.port.DeviceControlsPort;
 import com.ggec.earbuds.domain.device.port.DevicePort;
 import com.ggec.earbuds.domain.device.port.DevicePreferences;
@@ -30,12 +30,11 @@ import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import java.io.File;
 
 /**
- * 设备功能装配根：唯一知道假端口与目录实现的地方。
- * 接真实 SDK 时，只需把 FakeDevicePort 换成 SDK 适配器。
+ * 设备功能装配根：唯一知道端口与目录实现的地方。
+ * 接真实 SDK 时，只需把 {@link IdleDevicePort} 与 {@link EmptyDeviceControlsPort} 换成 SDK 适配器。
  */
 public final class DeviceGraph {
 
-    private final DeviceProfileCatalog catalog;
     private final DevicePreferences preferences;
     private final DevicePort port;
     private final LoadDeviceProfiles loadProfiles;
@@ -48,20 +47,15 @@ public final class DeviceGraph {
 
     public DeviceGraph(@NonNull Context appContext) {
         File directory = new File(appContext.getFilesDir(), "device");
-        this.catalog = new DeviceProfileCatalogImpl();
+        DeviceProfileCatalog catalog = new DeviceProfileCatalogImpl();
         this.preferences = new FileDevicePreferences(directory);
-        this.port = new FakeDevicePort();
-        DeviceControlsPort controls = new MemoryDeviceControls();
-        this.loadProfiles = new LoadDeviceProfiles(catalog, preferences);
+        this.port = new IdleDevicePort();
+        DeviceControlsPort controls = new EmptyDeviceControlsPort();
+        this.loadProfiles = new LoadDeviceProfiles(catalog);
         this.observeDevice = new ObserveDevice(port);
         this.connectDevice = new ConnectDevice(port, preferences);
         this.scanDevices = new ScanDevices(port);
         this.editControls = new EditDeviceControls(controls);
-    }
-
-    @NonNull
-    public DeviceProfileCatalog catalog() {
-        return catalog;
     }
 
     @NonNull
