@@ -77,7 +77,6 @@ public final class AiCallActivity extends AppCompatActivity {
         });
         viewModel.meter().observe(this, screen::setLevel);
         viewModel.subtitleItems().observe(this, screen::setSubtitleItems);
-        viewModel.setSpeakerphone(true);
     }
 
     @NonNull

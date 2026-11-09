@@ -2,19 +2,18 @@ package com.ggec.earbuds.ui.ai.call;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import androidx.annotation.NonNull;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
-import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
-import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
+import com.ggec.earbuds.data.ai.voice.ExternalPcmAudioSource;
+import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
-import com.ggec.earbuds.testing.ai.AiFixtures;
-import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
-import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 
 import org.junit.Before;
@@ -25,7 +24,7 @@ import java.util.List;
 
 /**
  * 通话页 ViewModel 单元测试：
- * 验证严格 MVVM 架构中状态单向流动、意图处理与不可变快照投影。
+ * 验证严格单向数据流、前/中置音频源切换、静音/双工预置透传与不可变状态投影。
  */
 public class AiCallViewModelTest {
 
@@ -34,17 +33,13 @@ public class AiCallViewModelTest {
 
     private FakeVoiceSession fakeSession;
     private FakeTicker fakeTicker;
-    private MemorySettingsRepository settingsRepository;
     private AiCallViewModel viewModel;
 
     @Before
     public void setUp() {
         fakeSession = new FakeVoiceSession();
         fakeTicker = new FakeTicker();
-        settingsRepository = new MemorySettingsRepository(AiFixtures.readySettings());
-        AiVoiceSessionFactory factory = () -> fakeSession;
-        AiCallUiMapper mapper = new AiCallUiMapper();
-        viewModel = new AiCallViewModel(factory, mapper, new LoadAiSettings(settingsRepository), fakeTicker);
+        viewModel = new AiCallViewModel(() -> fakeSession, fakeTicker);
     }
 
     @Test
@@ -59,6 +54,8 @@ public class AiCallViewModelTest {
         assertTrue(state.speakerOn());
         assertTrue(state.captionsVisible());
         assertEquals(0, state.durationSeconds());
+        assertNull("未手动切换双工时，交由会话内部按设置默认值决策",
+                fakeSession.explicitDuplexSet);
     }
 
     @Test
@@ -115,16 +112,21 @@ public class AiCallViewModelTest {
     }
 
     @Test
-    public void onSnapshotUpdatesSubtitleItemsFlow() {
+    public void onSnapshotUpdatesSubtitlesAndAvailableSourcesInUiState() {
         viewModel.start();
         assertEquals(List.of(), viewModel.subtitleItems().getValue());
 
+        AiAudioSource.Descriptor mic = new AiAudioSource.Descriptor(
+                "builtin:1", AiAudioSource.Kind.BUILTIN_MIC, "手机麦", 16_000);
+        AiAudioSource.Descriptor ble = new AiAudioSource.Descriptor(
+                "ble:1", AiAudioSource.Kind.BLUETOOTH_BLE, "GGEC Buds", 48_000);
         List<AiVoiceSnapshot.Turn> turns = List.of(
                 new AiVoiceSnapshot.Turn("1", true, "你好", true, 1000L),
                 new AiVoiceSnapshot.Turn("2", false, "很高兴为你服务", false, 2000L)
         );
         AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
-                AiVoiceSnapshot.State.SPEAKING, turns, 0.5f, null, VoiceDuplex.FULL_DUPLEX, false);
+                AiVoiceSnapshot.State.SPEAKING, turns, 0.5f, null,
+                VoiceDuplex.FULL_DUPLEX, false, ble, List.of(ble, mic));
 
         fakeSession.listener.onSnapshot(snapshot);
 
@@ -139,6 +141,11 @@ public class AiCallViewModelTest {
         assertFalse(items.get(1).isUser());
         assertEquals("很高兴为你服务", items.get(1).text());
         assertFalse(items.get(1).isFinal());
+
+        AiCallUiState ui = viewModel.uiState().getValue();
+        assertEquals(VoiceDuplex.FULL_DUPLEX, ui.duplex());
+        assertEquals(ble, ui.activeSource());
+        assertEquals(List.of(ble, mic), ui.availableSources());
     }
 
     @Test
@@ -168,47 +175,36 @@ public class AiCallViewModelTest {
     }
 
     @Test
-    public void initializesDefaultDuplexFromConfiguredSettings() {
-        MemorySettingsRepository fullRepo = new MemorySettingsRepository(
-                AiFixtures.settings(null,
-                        AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")
-                                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
-        AiCallViewModel fullVm = new AiCallViewModel(
-                () -> fakeSession, new AiCallUiMapper(), new LoadAiSettings(fullRepo), fakeTicker);
+    public void preStartControlsForwardToCreatedSessionOnStart() {
+        viewModel.setMicMuted(true);
+        viewModel.setDuplex(VoiceDuplex.FULL_DUPLEX);
+        viewModel.selectAudioSource("bt:sco:1");
 
-        assertEquals(VoiceDuplex.FULL_DUPLEX, fullVm.duplex());
-        assertEquals(VoiceDuplex.FULL_DUPLEX, fullVm.uiState().getValue().duplex());
+        viewModel.start();
 
-        fullVm.start();
-        assertEquals("未手动覆盖时，交由 session 自行读取配置默认模式，不硬写 setDuplex",
-                null, fakeSession.explicitDuplexSet);
+        assertTrue(fakeSession.micMuted);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.explicitDuplexSet);
+        assertEquals("bt:sco:1", fakeSession.selectedSourceId);
     }
 
     @Test
-    public void preStartToggleOverridesAsyncLoadedDefaultDuplex() {
-        DeferredSettingsRepository deferred = new DeferredSettingsRepository();
-        AiCallViewModel vm = new AiCallViewModel(
-                () -> fakeSession, new AiCallUiMapper(), new LoadAiSettings(deferred), fakeTicker);
+    public void midCallSourceSwitchingDelegatesToSession() {
+        viewModel.start();
+        viewModel.selectAudioSource("usb:1");
+        assertEquals("usb:1", fakeSession.selectedSourceId);
 
-        vm.setDuplex(VoiceDuplex.FULL_DUPLEX);
-        deferred.complete(AiFixtures.settings(null,
-                AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")
-                        .withDefaultDuplex(VoiceDuplex.HALF_DUPLEX)));
-
-        assertEquals("用户在异步读取完成前已手动切换，异步结果不得覆盖用户选择",
-                VoiceDuplex.FULL_DUPLEX, vm.duplex());
-        vm.start();
-        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.explicitDuplexSet);
+        ExternalPcmAudioSource external = new ExternalPcmAudioSource(
+                "ext:1", "自定义音源", 16_000);
+        viewModel.setAudioSource(external);
+        assertSame(external, fakeSession.customSource);
     }
 
     private static final class FakeTicker implements AiCallViewModel.Ticker {
         Runnable scheduled;
-        long delay;
 
         @Override
         public void postDelayed(@NonNull Runnable r, long delayMs) {
             this.scheduled = r;
-            this.delay = delayMs;
         }
 
         @Override
@@ -227,6 +223,8 @@ public class AiCallViewModelTest {
         boolean interrupted = false;
         VoiceDuplex duplex = VoiceDuplex.defaultMode();
         VoiceDuplex explicitDuplexSet;
+        String selectedSourceId;
+        AiAudioSource customSource;
         Listener listener;
 
         @Override
@@ -254,6 +252,16 @@ public class AiCallViewModelTest {
         public void setDuplex(@NonNull VoiceDuplex duplex) {
             this.duplex = duplex;
             this.explicitDuplexSet = duplex;
+        }
+
+        @Override
+        public void selectAudioSource(@NonNull String sourceId) {
+            this.selectedSourceId = sourceId;
+        }
+
+        @Override
+        public void setAudioSource(@NonNull AiAudioSource source) {
+            this.customSource = source;
         }
 
         @Override

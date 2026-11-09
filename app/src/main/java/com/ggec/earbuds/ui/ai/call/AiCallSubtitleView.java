@@ -22,7 +22,6 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItemView;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleScrollEngine;
-import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleUiState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,11 +31,10 @@ import java.util.List;
  *
  * <p>严格遵循高内聚低耦合与 MVVM 架构：
  * <ul>
- *   <li><b>数据层解耦</b>：仅依赖不可变 {@link AiSubtitleItem} / {@link AiSubtitleUiState}，
- *       领域模型转换由 {@link AiSubtitleMapper} 完成，单一真实数据源；</li>
+ *   <li><b>数据层解耦</b>：仅依赖不可变 {@link AiSubtitleItem} 列表，单一真实数据源；</li>
  *   <li><b>行为层解耦</b>：滚动判定与防弹回状态机交由 {@link AiSubtitleScrollEngine} 独立驱动；</li>
  *   <li><b>视图层解耦</b>：单条消息卡片由独立组件 {@link AiSubtitleItemView} 负责排版折行；</li>
- *   <li><b>弹性测量</b>：内容少时紧凑包裹，内容多时最大限制 180dp，永不挤压底部操作舱。</li>
+ *   <li><b>弹性测量</b>：内容少时紧凑包裹，内容多时最大限制 300dp，永不挤压底部操作舱。</li>
  * </ul>
  * </p>
  */
@@ -213,13 +211,6 @@ public final class AiCallSubtitleView extends FrameLayout {
         if (getMeasuredHeight() > maxH) {
             setMeasuredDimension(getMeasuredWidth(), maxH);
         }
-    }
-
-    /**
-     * 响应式 MVVM 主入口：消费完整字幕状态快照。
-     */
-    public void render(@NonNull AiSubtitleUiState state) {
-        renderItems(state.items(), state.visible());
     }
 
     /**

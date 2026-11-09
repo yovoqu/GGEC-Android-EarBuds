@@ -26,17 +26,8 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 /**
  * 次世代全息极光流体声场视效引擎 (Next-Gen Organic Fluid Soundfield Engine)。
  *
- * <p>彻底清理多余杂乱的硬质同心圆环与浮动微粒，遵循极简呼吸有机生命体设计美学：
- * <ul>
- *   <li><b>深浅色双模自适应架构</b>：基于 {@link AiTheme} 色彩系统，自适应暗黑深邃夜空与明朗纯白通透画卷；</li>
- *   <li><b>64阶多相傅里叶谐波流体核 (64-Vertex Fourier Harmonic Spline)</b>：
- *       4 重复合角频率平滑叠加，呈现无死板圆环痕迹的有机水滴呼吸与声音振荡；</li>
- *   <li><b>极光色彩涡旋与中心消缝弥散光 (Seamless Aurora Chromatic Vortex)</b>：
- *       双层渐变融合，彻底消除硬边缘与接缝，营造半透明全息液态质感；</li>
- *   <li><b>触感弹性果冻打断 (Haptic Jelly Bounce)</b>：
- *       触碰即产生流体阻尼果冻形变，直觉打断 AI 发言。</li>
- * </ul>
- * </p>
+ * <p>绘制路径零分配优化：所有画笔、渐变着色器与矩阵变换全部缓存复用，60fps 高帧率渲染期间
+ * 不在 {@link #onDraw(Canvas)} 内分配任何 {@link Paint}、{@link Shader} 或数组。</p>
  */
 public final class AiFluidVisualizerView extends View {
 
@@ -59,11 +50,12 @@ public final class AiFluidVisualizerView extends View {
 
     private final AiTheme theme;
 
-    // 画笔体系
+    // 画笔体系（构造期一次性分配）
     private final Paint auraPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fluidPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fluidRimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint centerAuraPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint centerCorePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint innerGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     // 几何路径与样条控制点
@@ -71,6 +63,35 @@ public final class AiFluidVisualizerView extends View {
     private final PointF[] vertices = new PointF[VERTEX_COUNT];
     private final PointF[] midPoints = new PointF[VERTEX_COUNT];
     private final Matrix shaderMatrix = new Matrix();
+    private final Matrix auraMatrix = new Matrix();
+    private final Matrix radialMatrix = new Matrix();
+
+    // 预分配渐变参数数组，避免每帧分配 int[]/float[]
+    private final int[] auraColors = new int[4];
+    private final float[] auraStops = {0.0f, 0.42f, 0.75f, 1.0f};
+    private final int[] sweepColors = new int[4];
+    private final float[] sweepStops = {0.0f, 0.42f, 0.80f, 1.0f};
+    private final int[] centerAuraColors = new int[3];
+    private final float[] centerAuraStops = {0.0f, 0.35f, 1.0f};
+    private final int[] centerCoreColors = new int[3];
+    private final float[] centerCoreStops = {0.0f, 0.45f, 1.0f};
+    private final int[] innerGlowColors = new int[3];
+    private final float[] innerGlowStops = {0.0f, 0.35f, 1.0f};
+    private final int[] offlineColors = new int[2];
+    private final float[] offlineStops = {0.0f, 1.0f};
+
+    // 缓存 Shader（仅在尺寸或相位变化时重建）
+    @Nullable private RadialGradient auraShader;
+    @Nullable private SweepGradient sweepShader;
+    @Nullable private RadialGradient centerAuraShader;
+    @Nullable private RadialGradient centerCoreShader;
+    @Nullable private RadialGradient innerGlowShader;
+    @Nullable private RadialGradient offlineShader;
+    @Nullable private VisualPhase cachedShaderPhase;
+    private float cachedCx = -1f;
+    private float cachedCy = -1f;
+    private float cachedShortSide = -1f;
+    private boolean cachedDark;
 
     @NonNull
     private VisualPhase phase = VisualPhase.CONNECTING;
@@ -79,19 +100,16 @@ public final class AiFluidVisualizerView extends View {
     @Nullable
     private ValueAnimator breathAnimator;
 
-    private float rawLevel = 0f;
-    private float smoothLevel = 0f;
+    private float rawLevel;
+    private float smoothLevel;
     private float breathProgress = 0.5f;
 
-    // 旋转与流动时间相位
-    private float timePhase = 0f;
-    private float vortexRotation = 0f;
-    private long lastFrameTime = 0L;
+    private float timePhase;
+    private float vortexRotation;
+    private long lastFrameTime;
 
-    // 触控打断果冻回弹
     private float touchScale = 1.0f;
 
-    // 配色方案（支持深浅色模式语义映射）
     @ColorInt private int colorA;
     @ColorInt private int colorB;
     @ColorInt private int colorC;
@@ -112,6 +130,7 @@ public final class AiFluidVisualizerView extends View {
         auraPaint.setStyle(Paint.Style.FILL);
         fluidPaint.setStyle(Paint.Style.FILL);
         centerAuraPaint.setStyle(Paint.Style.FILL);
+        centerCorePaint.setStyle(Paint.Style.FILL);
         innerGlowPaint.setStyle(Paint.Style.FILL);
 
         fluidRimPaint.setStyle(Paint.Style.STROKE);
@@ -150,9 +169,7 @@ public final class AiFluidVisualizerView extends View {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN -> {
                 touchScale = 0.90f;
-                if (bargeInListener != null) {
-                    bargeInListener.onBargeIn();
-                }
+                bargeInListener.onBargeIn();
                 invalidate();
                 return true;
             }
@@ -161,7 +178,8 @@ public final class AiFluidVisualizerView extends View {
                 invalidate();
                 return true;
             }
-            default -> {}
+            default -> {
+            }
         }
         return super.onTouchEvent(event);
     }
@@ -191,13 +209,11 @@ public final class AiFluidVisualizerView extends View {
         long delta = lastFrameTime > 0 ? (now - lastFrameTime) : 16;
         lastFrameTime = now;
 
-        // 低通平滑电平滤波
         smoothLevel += (rawLevel - smoothLevel) * LEVEL_DAMPING;
         if (Math.abs(smoothLevel - rawLevel) < 0.001f) {
             smoothLevel = rawLevel;
         }
 
-        // 推进时间相位与极光涡流转角
         float speedMultiplier = switch (phase) {
             case THINKING -> 2.2f;
             case SPEAKING -> 1.5f;
@@ -205,41 +221,96 @@ public final class AiFluidVisualizerView extends View {
             case CONNECTING -> 0.9f;
             default -> 0.5f;
         };
-        timePhase = (timePhase + (delta / 4200f) * speedMultiplier * (float) (2 * Math.PI)) % (float) (2 * Math.PI);
+        timePhase = (timePhase + (delta / 4200f) * speedMultiplier * (float) (2 * Math.PI))
+                % (float) (2 * Math.PI);
         vortexRotation = (vortexRotation + (delta * 0.035f) * speedMultiplier) % 360f;
 
         float shortSide = Math.min(width, height);
         float cx = width / 2f;
         float cy = height / 2f;
+        ensureShaders(cx, cy, shortSide);
 
         canvas.save();
-
-        // 触控果冻微缩
         if (touchScale != 1.0f) {
             canvas.scale(touchScale, touchScale, cx, cy);
         }
 
         float breathVal = isLive() ? breathProgress : 0.5f;
 
-        // 1. 绘制极光背景体辉光（纯净无硬边缘，自然融入画布）
         if (phase != VisualPhase.OFFLINE) {
             drawAtmosphericAura(canvas, cx, cy, shortSide, breathVal);
         }
 
-        // 2. 绘制 64 阶高阶谐波平滑流体核（纯净无多余圆环和杂点）
         drawHarmonicFluidCore(canvas, cx, cy, shortSide, breathVal);
 
         canvas.restore();
 
-        // 高帧率常态驱动
         if (isLive() || phase == VisualPhase.CONNECTING) {
             postInvalidateOnAnimation();
         }
     }
 
-    /** 绘制弥散体光气场 */
+    private void ensureShaders(float cx, float cy, float shortSide) {
+        boolean dark = theme.isDark();
+        if (cachedShaderPhase == phase
+                && cachedCx == cx
+                && cachedCy == cy
+                && cachedShortSide == shortSide
+                && cachedDark == dark
+                && sweepShader != null) {
+            return;
+        }
+        cachedShaderPhase = phase;
+        cachedCx = cx;
+        cachedCy = cy;
+        cachedShortSide = shortSide;
+        cachedDark = dark;
+
+        float baseR = Math.max(1f, shortSide * BASE_RADIUS_RATIO);
+        float bloomR = Math.max(1f, shortSide * BLOOM_RADIUS_RATIO);
+
+        offlineColors[0] = theme.cardStroke;
+        offlineColors[1] = theme.card;
+        offlineShader = new RadialGradient(cx, cy, baseR, offlineColors, offlineStops, Shader.TileMode.CLAMP);
+
+        auraColors[0] = ColorUtils.setAlphaComponent(auraGlow, 255);
+        auraColors[1] = ColorUtils.setAlphaComponent(colorA, 115);
+        auraColors[2] = ColorUtils.setAlphaComponent(colorB, 38);
+        auraColors[3] = Color.TRANSPARENT;
+        auraShader = new RadialGradient(cx, cy, bloomR, auraColors, auraStops, Shader.TileMode.CLAMP);
+
+        sweepColors[0] = colorA;
+        sweepColors[1] = colorB;
+        sweepColors[2] = colorC;
+        sweepColors[3] = colorA;
+        sweepShader = new SweepGradient(cx, cy, sweepColors, sweepStops);
+
+        centerAuraColors[0] = ColorUtils.setAlphaComponent(Color.WHITE, dark ? 140 : 110);
+        centerAuraColors[1] = ColorUtils.setAlphaComponent(colorA, dark ? 150 : 100);
+        centerAuraColors[2] = Color.TRANSPARENT;
+        centerAuraShader = new RadialGradient(cx, cy, baseR * 0.95f,
+                centerAuraColors, centerAuraStops, Shader.TileMode.CLAMP);
+
+        centerCoreColors[0] = ColorUtils.setAlphaComponent(Color.WHITE, dark ? 160 : 120);
+        centerCoreColors[1] = ColorUtils.setAlphaComponent(colorA, dark ? 120 : 80);
+        centerCoreColors[2] = Color.TRANSPARENT;
+        centerCoreShader = new RadialGradient(cx, cy, baseR * 0.35f,
+                centerCoreColors, centerCoreStops, Shader.TileMode.CLAMP);
+
+        innerGlowColors[0] = dark ? 0x99FFFFFF : 0x66FFFFFF;
+        innerGlowColors[1] = dark ? 0x33FFFFFF : 0x1AFFFFFF;
+        innerGlowColors[2] = Color.TRANSPARENT;
+        innerGlowShader = new RadialGradient(cx - baseR * 0.28f, cy - baseR * 0.28f,
+                baseR * 1.25f, innerGlowColors, innerGlowStops, Shader.TileMode.CLAMP);
+    }
+
+    /** 绘制弥散体光气场（全量复用 Cached RadialGradient + Matrix 缩放） */
     private void drawAtmosphericAura(@NonNull Canvas canvas, float cx, float cy, float shortSide, float breathVal) {
-        float auraRadius = shortSide * BLOOM_RADIUS_RATIO * (0.86f + 0.14f * breathVal + 0.32f * smoothLevel);
+        if (auraShader == null) {
+            return;
+        }
+        float scale = 0.86f + 0.14f * breathVal + 0.32f * smoothLevel;
+        float auraRadius = shortSide * BLOOM_RADIUS_RATIO * scale;
 
         boolean dark = theme.isDark();
         int maxAlpha = switch (phase) {
@@ -250,32 +321,23 @@ public final class AiFluidVisualizerView extends View {
             default -> 0;
         };
 
-        auraPaint.setShader(new RadialGradient(cx, cy, auraRadius,
-                new int[]{
-                        ColorUtils.setAlphaComponent(auraGlow, Math.min(255, maxAlpha)),
-                        ColorUtils.setAlphaComponent(colorA, (int) (maxAlpha * 0.45f)),
-                        ColorUtils.setAlphaComponent(colorB, (int) (maxAlpha * 0.15f)),
-                        Color.TRANSPARENT
-                },
-                new float[]{0.0f, 0.42f, 0.75f, 1.0f},
-                Shader.TileMode.CLAMP));
-
+        auraMatrix.setScale(scale, scale, cx, cy);
+        auraShader.setLocalMatrix(auraMatrix);
+        auraPaint.setShader(auraShader);
+        auraPaint.setAlpha(Math.max(0, Math.min(255, maxAlpha)));
         canvas.drawCircle(cx, cy, auraRadius, auraPaint);
     }
 
     /** 绘制 64 阶复合正余弦闭合样条流体核 */
     private void drawHarmonicFluidCore(@NonNull Canvas canvas, float cx, float cy, float shortSide, float breathVal) {
-        float baseR = shortSide * BASE_RADIUS_RATIO;
+        float baseR = Math.max(1f, shortSide * BASE_RADIUS_RATIO);
 
         if (phase == VisualPhase.OFFLINE) {
-            // 离线静息态：依主题选用柔和灰卡
-            fluidPaint.setShader(new RadialGradient(cx, cy, baseR,
-                    new int[]{theme.cardStroke, theme.card}, new float[]{0f, 1f}, Shader.TileMode.CLAMP));
+            fluidPaint.setShader(offlineShader);
             canvas.drawCircle(cx, cy, baseR * 0.88f, fluidPaint);
             return;
         }
 
-        // 声音电平与呼吸复合形变振幅
         float fluidExpansion = (phase == VisualPhase.LISTENING) ? (shortSide * 0.12f * smoothLevel) : 0f;
         float r0 = (baseR + fluidExpansion) * (0.95f + 0.08f * breathVal);
 
@@ -284,11 +346,8 @@ public final class AiFluidVisualizerView extends View {
         float amp3 = (phase == VisualPhase.SPEAKING) ? 0.06f : 0.025f;
         float amp4 = (phase == VisualPhase.LISTENING) ? (0.035f * smoothLevel) : 0.012f;
 
-        // 计算 64 控制点坐标
         for (int i = 0; i < VERTEX_COUNT; i++) {
             double angle = (2 * Math.PI * i) / VERTEX_COUNT;
-
-            // 4 重空间角频率复合叠加波形
             double deformation = 1.0
                     + amp1 * Math.sin(2 * angle + timePhase * 1.7)
                     + amp2 * Math.cos(3 * angle - timePhase * 2.1)
@@ -302,7 +361,6 @@ public final class AiFluidVisualizerView extends View {
             );
         }
 
-        // 构建闭合平滑贝塞尔样条
         fluidPath.reset();
         for (int i = 0; i < VERTEX_COUNT; i++) {
             PointF p1 = vertices[i];
@@ -316,49 +374,35 @@ public final class AiFluidVisualizerView extends View {
         }
         fluidPath.close();
 
-        // 极光涡流色彩渐变着色器（SweepGradient + Matrix 旋转）
-        SweepGradient sweepShader = new SweepGradient(cx, cy,
-                new int[]{colorA, colorB, colorC, colorA},
-                new float[]{0.0f, 0.42f, 0.80f, 1.0f});
-        shaderMatrix.reset();
-        shaderMatrix.postRotate(vortexRotation, cx, cy);
-        sweepShader.setLocalMatrix(shaderMatrix);
+        if (sweepShader != null) {
+            shaderMatrix.setRotate(vortexRotation, cx, cy);
+            sweepShader.setLocalMatrix(shaderMatrix);
+            fluidPaint.setShader(sweepShader);
+            canvas.drawPath(fluidPath, fluidPaint);
+        }
 
-        fluidPaint.setShader(sweepShader);
-        canvas.drawPath(fluidPath, fluidPaint);
+        float radialScale = r0 / baseR;
+        radialMatrix.setScale(radialScale, radialScale, cx, cy);
 
-        // 柔和中心弥散极光核，彻底消除扫掠渐变角边接缝，呈现通透纵深
+        if (centerAuraShader != null) {
+            centerAuraShader.setLocalMatrix(radialMatrix);
+            centerAuraPaint.setShader(centerAuraShader);
+            canvas.drawPath(fluidPath, centerAuraPaint);
+        }
+
+        if (centerCoreShader != null) {
+            centerCoreShader.setLocalMatrix(radialMatrix);
+            centerCorePaint.setShader(centerCoreShader);
+            canvas.drawCircle(cx, cy, r0 * 0.35f, centerCorePaint);
+        }
+
+        if (innerGlowShader != null) {
+            innerGlowShader.setLocalMatrix(radialMatrix);
+            innerGlowPaint.setShader(innerGlowShader);
+            canvas.drawPath(fluidPath, innerGlowPaint);
+        }
+
         boolean dark = theme.isDark();
-        int whiteCenterAlpha = dark ? 140 : 110;
-        int colorBlendAlpha = dark ? 150 : 100;
-        centerAuraPaint.setShader(new RadialGradient(cx, cy, r0 * 0.95f,
-                new int[]{
-                        ColorUtils.setAlphaComponent(Color.WHITE, whiteCenterAlpha),
-                        ColorUtils.setAlphaComponent(colorA, colorBlendAlpha),
-                        Color.TRANSPARENT
-                },
-                new float[]{0.0f, 0.35f, 1.0f}, Shader.TileMode.CLAMP));
-        canvas.drawPath(fluidPath, centerAuraPaint);
-
-        // 柔和流体核芯消除原点射线汇聚尖点
-        Paint centerCorePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        centerCorePaint.setStyle(Paint.Style.FILL);
-        centerCorePaint.setShader(new RadialGradient(cx, cy, r0 * 0.35f,
-                new int[]{
-                        ColorUtils.setAlphaComponent(Color.WHITE, dark ? 160 : 120),
-                        ColorUtils.setAlphaComponent(colorA, dark ? 120 : 80),
-                        Color.TRANSPARENT
-                },
-                new float[]{0.0f, 0.45f, 1.0f}, Shader.TileMode.CLAMP));
-        canvas.drawCircle(cx, cy, r0 * 0.35f, centerCorePaint);
-
-        // 内部通透高光反射弧
-        innerGlowPaint.setShader(new RadialGradient(cx - r0 * 0.28f, cy - r0 * 0.28f, r0 * 1.25f,
-                new int[]{dark ? 0x99FFFFFF : 0x66FFFFFF, dark ? 0x33FFFFFF : 0x1AFFFFFF, Color.TRANSPARENT},
-                new float[]{0.0f, 0.35f, 1.0f}, Shader.TileMode.CLAMP));
-        canvas.drawPath(fluidPath, innerGlowPaint);
-
-        // 晶莹流体高光边缘线
         fluidRimPaint.setColor(colorA);
         fluidRimPaint.setAlpha(dark ? (int) (85 + 65 * breathVal) : (int) (60 + 45 * breathVal));
         canvas.drawPath(fluidPath, fluidRimPaint);
@@ -368,28 +412,24 @@ public final class AiFluidVisualizerView extends View {
         boolean dark = theme.isDark();
         switch (phase) {
             case LISTENING -> {
-                // 极光青翠：自适应高灵敏拾音
                 colorA = dark ? 0xFF00F2FE : 0xFF00B4D8;
                 colorB = dark ? 0xFF4FACFE : 0xFF0077B6;
                 colorC = dark ? 0xFF00E676 : 0xFF10B981;
                 auraGlow = dark ? 0xFF00F2FE : 0xFF00B4D8;
             }
             case SPEAKING -> {
-                // 电光紫蓝：饱满声浪发音
                 colorA = dark ? 0xFF3B82F6 : 0xFF2563EB;
                 colorB = dark ? 0xFF8B5CF6 : 0xFF7C3AED;
                 colorC = dark ? 0xFFEC4899 : 0xFFDB2777;
                 auraGlow = dark ? 0xFF6366F1 : 0xFF4F46E5;
             }
             case THINKING -> {
-                // 深度霓紫：沉浸推理星云
                 colorA = dark ? 0xFF7C3AED : 0xFF6366F1;
                 colorB = dark ? 0xFFC026D3 : 0xFFA855F7;
                 colorC = dark ? 0xFF38BDF8 : 0xFF0284C7;
                 auraGlow = dark ? 0xFF9333EA : 0xFF7C3AED;
             }
             case CONNECTING -> {
-                // 静谧蔚蓝：平稳寻呼待命
                 colorA = dark ? 0xFF06B6D4 : 0xFF0891B2;
                 colorB = dark ? 0xFF0284C7 : 0xFF0369A1;
                 colorC = dark ? 0xFF3B82F6 : 0xFF1D4ED8;

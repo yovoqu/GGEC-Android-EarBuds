@@ -4,25 +4,21 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.ui.ai.common.AiMessages;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
  * 通话页完整界面渲染不可变快照 (AiCallUiState)。
  *
- * <p>严格遵循 MVVM 架构与单一数据源原则：
- * <ul>
- *   <li>{@link #phase()}：AI 对话阶段（CONNECTING/LISTENING/THINKING/SPEAKING/OFFLINE）；</li>
- *   <li>{@link #micMuted()}：本地麦克风收音静音开关状态；</li>
- *   <li>{@link #speakerOn()}：音频输出路由（扬声器 vs 听筒）；</li>
- *   <li>{@link #duplex()}：双工通信协议模式；</li>
- *   <li>{@link #durationSeconds()}：通话已进行时长（秒）；</li>
- *   <li>{@link #captionsVisible()}：实时字幕卡片可见性开关。</li>
- * </ul>
- * </p>
+ * <p>严格遵循单一数据源原则，直接从 {@link AiVoiceSnapshot} 投影得到，无需冗余 Mapper。</p>
  */
 public record AiCallUiState(
         @NonNull Phase phase,
@@ -36,12 +32,15 @@ public record AiCallUiState(
         boolean ended,
         int durationSeconds,
         boolean captionsVisible,
-        @NonNull VoiceDuplex duplex) {
+        @NonNull VoiceDuplex duplex,
+        @Nullable AiAudioSource.Descriptor activeSource,
+        @NonNull List<AiAudioSource.Descriptor> availableSources) {
 
     public AiCallUiState {
         Objects.requireNonNull(phase, "phase");
         Objects.requireNonNull(action, "action");
         Objects.requireNonNull(duplex, "duplex");
+        availableSources = List.copyOf(availableSources);
     }
 
     public enum Phase {
@@ -58,14 +57,16 @@ public record AiCallUiState(
         RETRY
     }
 
+    @NonNull
     public static AiCallUiState connecting() {
         return connecting(VoiceDuplex.defaultMode());
     }
 
+    @NonNull
     public static AiCallUiState connecting(@NonNull VoiceDuplex duplex) {
         return new AiCallUiState(
                 Phase.CONNECTING,
-                com.ggec.earbuds.R.string.ai_call_phase_connecting,
+                R.string.ai_call_phase_connecting,
                 null,
                 Action.NONE,
                 false,
@@ -75,18 +76,22 @@ public record AiCallUiState(
                 false,
                 0,
                 true,
-                Objects.requireNonNull(duplex, "duplex")
+                Objects.requireNonNull(duplex, "duplex"),
+                null,
+                List.of()
         );
     }
 
+    @NonNull
     public static AiCallUiState permissionDenied() {
         return permissionDenied(VoiceDuplex.defaultMode());
     }
 
+    @NonNull
     public static AiCallUiState permissionDenied(@NonNull VoiceDuplex duplex) {
         return new AiCallUiState(
                 Phase.OFFLINE,
-                com.ggec.earbuds.R.string.ai_call_no_permission,
+                R.string.ai_call_no_permission,
                 null,
                 Action.NONE,
                 false,
@@ -96,12 +101,15 @@ public record AiCallUiState(
                 false,
                 0,
                 true,
-                Objects.requireNonNull(duplex, "duplex")
+                Objects.requireNonNull(duplex, "duplex"),
+                null,
+                List.of()
         );
     }
 
     @NonNull
     public static AiCallUiState fromSnapshot(@NonNull AiVoiceSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot");
         AiVoiceSnapshot.State state = snapshot.state();
         boolean failed = state == AiVoiceSnapshot.State.FAILED;
         boolean ended = state == AiVoiceSnapshot.State.ENDED;
@@ -109,21 +117,20 @@ public record AiCallUiState(
         return new AiCallUiState(
                 phase(state),
                 title(state),
+                failed && failure != null ? AiMessages.failure(failure.kind()) : null,
                 failed && failure != null
-                        ? com.ggec.earbuds.ui.ai.common.AiMessages.failure(failure.kind())
-                        : null,
-                failed && failure != null
-                        ? failure.kind().retryable() ? Action.RETRY : Action.SETTINGS
+                        ? (failure.kind().retryable() ? Action.RETRY : Action.SETTINGS)
                         : Action.NONE,
                 live(state),
-                state == AiVoiceSnapshot.State.THINKING
-                        || state == AiVoiceSnapshot.State.SPEAKING,
+                state == AiVoiceSnapshot.State.THINKING || state == AiVoiceSnapshot.State.SPEAKING,
                 snapshot.micMuted(),
                 true,
                 failed || ended,
                 0,
                 true,
-                snapshot.duplex()
+                snapshot.duplex(),
+                snapshot.activeSource(),
+                snapshot.availableSources()
         );
     }
 
@@ -131,37 +138,51 @@ public record AiCallUiState(
     public String formattedDuration() {
         int m = durationSeconds / 60;
         int s = durationSeconds % 60;
-        return String.format(java.util.Locale.US, "%02d:%02d", m, s);
+        return String.format(Locale.US, "%02d:%02d", m, s);
     }
 
     @NonNull
     public AiCallUiState withSpeakerOn(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                micMuted, value, ended, durationSeconds, captionsVisible, duplex);
+                micMuted, value, ended, durationSeconds, captionsVisible, duplex,
+                activeSource, availableSources);
     }
 
     @NonNull
     public AiCallUiState withDurationSeconds(int value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                micMuted, speakerOn, ended, value, captionsVisible, duplex);
+                micMuted, speakerOn, ended, value, captionsVisible, duplex,
+                activeSource, availableSources);
     }
 
     @NonNull
     public AiCallUiState withCaptionsVisible(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                micMuted, speakerOn, ended, durationSeconds, value, duplex);
+                micMuted, speakerOn, ended, durationSeconds, value, duplex,
+                activeSource, availableSources);
     }
 
     @NonNull
     public AiCallUiState withMicMuted(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                value, speakerOn, ended, durationSeconds, captionsVisible, duplex);
+                value, speakerOn, ended, durationSeconds, captionsVisible, duplex,
+                activeSource, availableSources);
     }
 
     @NonNull
     public AiCallUiState withDuplex(@NonNull VoiceDuplex value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
-                micMuted, speakerOn, ended, durationSeconds, captionsVisible, value);
+                micMuted, speakerOn, ended, durationSeconds, captionsVisible, value,
+                activeSource, availableSources);
+    }
+
+    @NonNull
+    public AiCallUiState withSources(
+            @Nullable AiAudioSource.Descriptor nextActiveSource,
+            @NonNull List<AiAudioSource.Descriptor> nextAvailableSources) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                micMuted, speakerOn, ended, durationSeconds, captionsVisible, duplex,
+                nextActiveSource, nextAvailableSources);
     }
 
     @NonNull
@@ -178,12 +199,12 @@ public record AiCallUiState(
     @StringRes
     private static int title(@NonNull AiVoiceSnapshot.State state) {
         return switch (state) {
-            case IDLE, CONNECTING -> com.ggec.earbuds.R.string.ai_call_phase_connecting;
-            case LISTENING -> com.ggec.earbuds.R.string.ai_call_phase_listening;
-            case THINKING -> com.ggec.earbuds.R.string.ai_call_phase_thinking;
-            case SPEAKING -> com.ggec.earbuds.R.string.ai_call_phase_speaking;
-            case FAILED -> com.ggec.earbuds.R.string.ai_call_phase_failed;
-            case ENDED -> com.ggec.earbuds.R.string.ai_call_phase_ended;
+            case IDLE, CONNECTING -> R.string.ai_call_phase_connecting;
+            case LISTENING -> R.string.ai_call_phase_listening;
+            case THINKING -> R.string.ai_call_phase_thinking;
+            case SPEAKING -> R.string.ai_call_phase_speaking;
+            case FAILED -> R.string.ai_call_phase_failed;
+            case ENDED -> R.string.ai_call_phase_ended;
         };
     }
 
