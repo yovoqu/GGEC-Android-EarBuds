@@ -3,10 +3,20 @@ package com.ggec.earbuds.ui.device.settings;
 import java.util.List;
 
 /** 设置页界面状态：行是强类型封闭集合，音乐页附带独立的强类型面板。 */
-public record DeviceSettingsUiState(int titleRes, List<DeviceSettingRow> rows, MusicPanel music) {
+public record DeviceSettingsUiState(
+        boolean loaded,
+        int titleRes,
+        boolean connected,
+        boolean interactive,
+        List<DeviceSettingRow> rows,
+        MusicPanel music) {
 
     public DeviceSettingsUiState {
         rows = rows == null ? List.of() : List.copyOf(rows);
+    }
+
+    public static DeviceSettingsUiState unconnected(int titleRes) {
+        return new DeviceSettingsUiState(true, titleRes, false, false, List.of(), null);
     }
 
     public record MusicPanel(

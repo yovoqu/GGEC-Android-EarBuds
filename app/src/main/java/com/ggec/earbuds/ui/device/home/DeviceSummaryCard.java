@@ -95,13 +95,21 @@ public final class DeviceSummaryCard {
 
     public void render(@NonNull DeviceHomeUiState state) {
         subtitle.setText(state.modelId());
-        status.setText(state.connectionTextRes());
+        if (state.connectionTextRes() != 0) {
+            status.setText(state.connectionTextRes());
+        } else {
+            status.setText("");
+        }
         status.setTextColor(state.connected() ? theme.confirm : theme.text2);
         statusDot.setBackground(theme.circle(state.connected() ? theme.confirm : theme.text3));
         leftValue.setText(state.leftText());
         rightValue.setText(state.rightText());
         caseValue.setText(state.caseText());
-        wear.setText(state.wearTextRes());
+        if (state.wearTextRes() != 0) {
+            wear.setText(state.wearTextRes());
+        } else {
+            wear.setText("");
+        }
         if (state.chargingTextRes() != 0) {
             charging.setText(state.chargingTextRes());
         } else {

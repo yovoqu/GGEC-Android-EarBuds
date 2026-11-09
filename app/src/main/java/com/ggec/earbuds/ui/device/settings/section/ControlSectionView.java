@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
@@ -47,19 +48,20 @@ public final class ControlSectionView implements SettingsSectionView {
     public void render(@NonNull DeviceSettingsUiState state) {
         content.removeAllViews();
         release();
+        boolean interactive = state.interactive();
         List<DeviceSettingRow.Choice> group = new ArrayList<>();
         for (DeviceSettingRow row : state.rows()) {
             if (row instanceof DeviceSettingRow.Section section) {
-                flushGroup(group);
+                flushGroup(group, interactive);
                 content.addView(chrome.label(section.titleRes()), chrome.matchWrap());
             } else if (row instanceof DeviceSettingRow.Choice choice) {
                 group.add(choice);
             } else if (row instanceof DeviceSettingRow.Action action) {
-                flushGroup(group);
-                addActionButton(action);
+                flushGroup(group, interactive);
+                addActionButton(action, interactive);
             }
         }
-        flushGroup(group);
+        flushGroup(group, interactive);
     }
 
     @Override
@@ -72,14 +74,14 @@ public final class ControlSectionView implements SettingsSectionView {
         chrome.releaseAll(releases);
     }
 
-    private void flushGroup(List<DeviceSettingRow.Choice> group) {
+    private void flushGroup(List<DeviceSettingRow.Choice> group, boolean interactive) {
         if (group.isEmpty()) {
             return;
         }
         LinearLayout card = chrome.card();
         LinearLayout row = SettingsChrome.horizontal(activity);
         for (DeviceSettingRow.Choice item : group) {
-            row.addView(gestureCell(item), new LinearLayout.LayoutParams(
+            row.addView(gestureCell(item, interactive), new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
         card.addView(row, chrome.matchWrap());
@@ -87,17 +89,24 @@ public final class ControlSectionView implements SettingsSectionView {
         group.clear();
     }
 
-    private View gestureCell(DeviceSettingRow.Choice item) {
+    private View gestureCell(DeviceSettingRow.Choice item, boolean interactive) {
         LinearLayout cell = SettingsChrome.vertical(activity);
         cell.setPadding(theme.dp(DeviceTheme.SPACE_XS), theme.dp(DeviceTheme.SPACE_S),
                 theme.dp(DeviceTheme.SPACE_XS), theme.dp(DeviceTheme.SPACE_S));
-        cell.setBackground(theme.pressable(DeviceTheme.RADIUS_ROW));
-        cell.setOnClickListener(v -> pick(item));
+        if (interactive) {
+            cell.setBackground(theme.pressable(DeviceTheme.RADIUS_ROW));
+            cell.setOnClickListener(v -> pick(item));
+        } else {
+            cell.setEnabled(false);
+            cell.setClickable(false);
+        }
 
-        TextView name = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
+        TextView name = theme.text(DeviceTheme.TEXT_CAPTION, interactive ? theme.text3 : theme.hint);
         name.setText(item.titleRes());
-        TextView value = theme.text(DeviceTheme.TEXT_BODY, theme.text1, DeviceTheme.Weight.MEDIUM);
-        value.setText(item.valueRes() == 0 ? "" : activity.getString(item.valueRes()));
+        TextView value = theme.text(DeviceTheme.TEXT_BODY, interactive ? theme.text1 : theme.text3,
+                DeviceTheme.Weight.MEDIUM);
+        value.setText(item.valueRes() == 0
+                ? DeviceFormats.UNKNOWN : activity.getString(item.valueRes()));
         cell.addView(name, chrome.matchWrap());
         LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -106,8 +115,12 @@ public final class ControlSectionView implements SettingsSectionView {
         return cell;
     }
 
-    private void addActionButton(DeviceSettingRow.Action row) {
+    private void addActionButton(DeviceSettingRow.Action row, boolean interactive) {
         YoButton button = chrome.button(row.titleRes(), () -> viewModel.onAction(row.id()));
+        button.setEnabled(interactive);
+        if (!interactive) {
+            button.setOnClickListener(null);
+        }
         releases.add(button::destroy);
         LinearLayout wrapper = new LinearLayout(activity);
         wrapper.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XS),

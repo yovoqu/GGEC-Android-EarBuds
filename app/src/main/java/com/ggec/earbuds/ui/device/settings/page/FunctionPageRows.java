@@ -4,6 +4,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.Capability;
 import com.ggec.earbuds.domain.device.model.DeviceControls;
 import com.ggec.earbuds.domain.device.model.DeviceProfile;
+import com.ggec.earbuds.domain.device.model.DeviceSwitch;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
 import com.ggec.earbuds.ui.device.settings.SettingId;
 
@@ -17,20 +18,24 @@ public final class FunctionPageRows {
     }
 
     public static List<DeviceSettingRow> build(DeviceProfile profile, DeviceControls controls) {
+        if (profile == null) {
+            return List.of();
+        }
+        DeviceControls safeControls = controls == null ? DeviceControls.empty() : controls;
         List<DeviceSettingRow> rows = new ArrayList<>();
-        toggle(rows, profile, controls, Capability.WEAR_DETECT, SettingId.WEAR_DETECT,
+        toggle(rows, profile, safeControls, Capability.WEAR_DETECT, SettingId.WEAR_DETECT,
                 R.string.device_toggle_wear);
-        toggle(rows, profile, controls, Capability.VOICE_WAKEUP, SettingId.VOICE_WAKEUP,
+        toggle(rows, profile, safeControls, Capability.VOICE_WAKEUP, SettingId.VOICE_WAKEUP,
                 R.string.device_toggle_voice);
-        toggle(rows, profile, controls, Capability.GAME_MODE, SettingId.GAME_MODE,
+        toggle(rows, profile, safeControls, Capability.GAME_MODE, SettingId.GAME_MODE,
                 R.string.device_toggle_game);
-        toggle(rows, profile, controls, Capability.FALL_ALERT, SettingId.FALL_ALERT,
+        toggle(rows, profile, safeControls, Capability.FALL_ALERT, SettingId.FALL_ALERT,
                 R.string.device_row_fall_alert);
-        toggle(rows, profile, controls, Capability.VOLUME_REMIND, SettingId.VOLUME_REMIND,
+        toggle(rows, profile, safeControls, Capability.VOLUME_REMIND, SettingId.VOLUME_REMIND,
                 R.string.device_row_volume_remind);
-        toggle(rows, profile, controls, Capability.BEGINNER_MODE, SettingId.BEGINNER_MODE,
+        toggle(rows, profile, safeControls, Capability.BEGINNER_MODE, SettingId.BEGINNER_MODE,
                 R.string.device_row_beginner);
-        toggle(rows, profile, controls, Capability.INTERPRET, SettingId.INTERPRET,
+        toggle(rows, profile, safeControls, Capability.INTERPRET, SettingId.INTERPRET,
                 R.string.device_row_interpret);
 
         if (profile.supports(Capability.FIND_EAR)) {
@@ -50,7 +55,7 @@ public final class FunctionPageRows {
         }
     }
 
-    private static com.ggec.earbuds.domain.device.model.DeviceSwitch switchOf(SettingId id) {
-        return com.ggec.earbuds.domain.device.model.DeviceSwitch.valueOf(id.name());
+    private static DeviceSwitch switchOf(SettingId id) {
+        return DeviceSwitch.valueOf(id.name());
     }
 }

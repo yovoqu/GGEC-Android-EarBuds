@@ -18,6 +18,9 @@ public final class AboutPageRows {
     }
 
     public static List<DeviceSettingRow> build(DeviceProfile profile, DeviceSnapshot snapshot) {
+        if (profile == null || snapshot == null) {
+            return List.of();
+        }
         List<DeviceSettingRow> rows = new ArrayList<>();
         rows.add(new DeviceSettingRow.Section(R.string.device_section_info));
         rows.add(new DeviceSettingRow.Info(R.string.device_row_model, profile.model().id()));

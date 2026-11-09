@@ -1,9 +1,9 @@
 package com.ggec.earbuds.ui.device.home;
 
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -11,51 +11,50 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.device.DeviceTheme;
-import com.yohu.youi.api.controls.YoButton;
 
-/** 未连接设备时的空态引导。 */
+/**
+ * 未连接设备时的空态引导：左对齐主标题 + 说明文字，对齐 AI 页标准空态基线。
+ */
 public final class DeviceEmptyState {
 
     private final DeviceTheme theme;
-    private final View view;
-    private final YoButton action;
+    private final ScrollView view;
+    private final LinearLayout column;
 
-    public DeviceEmptyState(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                            @NonNull Runnable onAdd) {
+    public DeviceEmptyState(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme) {
         this.theme = theme;
-        LinearLayout box = new LinearLayout(activity);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER_HORIZONTAL);
-        box.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.EMPTY_TOP),
-                theme.dp(DeviceTheme.PAGE_INSET), 0);
 
-        View icon = theme.icon(R.drawable.ic_ai_bolt, theme.text3);
-        box.addView(icon, new LinearLayout.LayoutParams(theme.dp(40), theme.dp(40)));
+        view = new ScrollView(activity);
+        view.setFillViewport(true);
+        view.setVerticalScrollBarEnabled(false);
+        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        view.setClipToPadding(false);
 
-        TextView title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        title.setText(R.string.device_empty_title);
-        title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+        column = new LinearLayout(activity);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(0, theme.dp(DeviceTheme.EMPTY_TOP), 0, theme.dp(DeviceTheme.SPACE_XL));
+        view.addView(column, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout block = new LinearLayout(activity);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(theme.dp(DeviceTheme.PAGE_INSET), 0, theme.dp(DeviceTheme.PAGE_INSET), 0);
+        column.addView(block, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
+        heading.setText(R.string.device_empty_title);
+        heading.setLineSpacing(theme.dpf(5), 1f);
+        block.addView(heading, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView message = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text2);
+        message.setText(R.string.device_empty_body);
+        message.setLineSpacing(theme.dpf(5), 1f);
+        LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleParams.topMargin = theme.dp(DeviceTheme.SPACE_L);
-        box.addView(title, titleParams);
-
-        TextView body = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text3);
-        body.setText(R.string.device_empty_body);
-        body.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams bodyParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bodyParams.topMargin = theme.dp(DeviceTheme.SPACE_S);
-        box.addView(body, bodyParams);
-
-        action = YoButton.create(activity).build();
-        action.setText(activity.getString(R.string.device_empty_action));
-        action.setOnClickListener(v -> onAdd.run());
-        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
-                theme.dp(180), theme.dp(44));
-        actionParams.topMargin = theme.dp(DeviceTheme.SPACE_XL);
-        box.addView(action.getView(), actionParams);
-        view = box;
+        messageParams.topMargin = theme.dp(DeviceTheme.SPACE_S);
+        block.addView(message, messageParams);
     }
 
     @NonNull
@@ -63,7 +62,7 @@ public final class DeviceEmptyState {
         return view;
     }
 
-    public void destroy() {
-        action.destroy();
+    public void setBottomPadding(int bottomPx) {
+        column.setPadding(0, theme.dp(DeviceTheme.EMPTY_TOP), 0, bottomPx);
     }
 }

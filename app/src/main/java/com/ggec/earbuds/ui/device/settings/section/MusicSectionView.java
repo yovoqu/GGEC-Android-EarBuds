@@ -15,6 +15,7 @@ import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
 import com.yohu.youi.api.containers.list.ListTextSpec;
+import com.yohu.youi.api.controls.YoSwitch;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,7 @@ import java.util.function.IntConsumer;
  * 音乐与音效：音效模式（预置 + 自定义同一单选组）+ 添加自定义音效 + 音质模式 + 开关。
  *
  * <p>交互要点：单选切换只更新选中态，不重建任何列表；只有结构变化（新增自定义音效、
- * 名称变化、能力变化）才重建，避免整页抖动。</p>
+ * 名称变化、能力变化、可写态变化）才重建，避免整页抖动。</p>
  */
 public final class MusicSectionView implements SettingsSectionView {
 
@@ -39,6 +40,7 @@ public final class MusicSectionView implements SettingsSectionView {
     private CustomEqSheet customEqSheet;
 
     private boolean built;
+    private boolean interactive;
     private String signature = "";
     private boolean updatingSelection;
     private YoList presetList;
@@ -61,8 +63,9 @@ public final class MusicSectionView implements SettingsSectionView {
 
     @Override
     public void render(@NonNull DeviceSettingsUiState state) {
+        interactive = state.interactive();
         music = state.music() == null ? emptyMusic() : state.music();
-        String next = signatureOf(music);
+        String next = signatureOf(interactive, music);
         if (built && next.equals(signature)) {
             updateSelections();
             return;
@@ -106,20 +109,20 @@ public final class MusicSectionView implements SettingsSectionView {
         YoList.Builder builder = YoList.create(activity);
         for (DeviceSettingsUiState.MusicPanel.Preset preset : presets) {
             builder.addItem(ListPrefixSpec.none(),
-                    ListTextSpec.of(activity.getString(preset.labelRes()),
+                    modeTextSpec(activity.getString(preset.labelRes()),
                             activity.getString(preset.subtitleRes())),
                     ListSuffixSpec.none());
         }
         if (music.showCustom()) {
             builder.addItem(ListPrefixSpec.none(),
-                    ListTextSpec.of(customName(),
+                    modeTextSpec(customName(),
                             activity.getString(R.string.device_eq_custom_section)),
                     ListSuffixSpec.none());
         }
         YoList list = builder.build();
         releases.add(list::destroy);
         presetList = list;
-        singleSelect(list, selectedModeIndex(), index -> {
+        bindSingleSelect(list, selectedModeIndex(), index -> {
             if (index < presets.size()) {
                 viewModel.choosePreset(index);
             } else {
@@ -132,45 +135,82 @@ public final class MusicSectionView implements SettingsSectionView {
     private void addAddCustomRow() {
         YoList.Builder builder = YoList.create(activity);
         builder.addItem(ListTextSpec.colored(
-                activity.getString(R.string.device_eq_add_custom), theme.brand));
+                activity.getString(R.string.device_eq_add_custom),
+                interactive ? theme.brand : theme.text3));
         YoList list = builder.build();
         releases.add(list::destroy);
-        list.setOnItemClickListener(index -> openCustomEq());
+        if (interactive) {
+            list.setOnItemClickListener(index -> openCustomEq());
+        }
         content.addView(list.getView(), listParams());
     }
 
     private void addQualityList() {
         YoList.Builder builder = YoList.create(activity);
         for (int labelRes : music.qualityLabels()) {
-            builder.addItem(ListPrefixSpec.none(),
-                    ListTextSpec.of(activity.getString(labelRes)), ListSuffixSpec.none());
+            String title = activity.getString(labelRes);
+            ListTextSpec text = interactive ? ListTextSpec.of(title)
+                    : ListTextSpec.colored(title, theme.text3);
+            builder.addItem(ListPrefixSpec.none(), text, ListSuffixSpec.none());
         }
         YoList list = builder.build();
         releases.add(list::destroy);
         qualityList = list;
-        singleSelect(list, music.selectedQuality(), viewModel::chooseQuality);
+        bindSingleSelect(list, music.selectedQuality(), viewModel::chooseQuality);
         content.addView(list.getView(), listParams());
     }
 
     private void addSwitchList() {
         YoList.Builder builder = YoList.create(activity);
-        builder.addItem(ListPrefixSpec.none(),
-                ListTextSpec.of(activity.getString(R.string.device_row_ldac)),
-                ListSuffixSpec.switch_(music.ldac(), viewModel::setLdac));
-        builder.addItem(ListPrefixSpec.none(),
-                ListTextSpec.of(activity.getString(R.string.device_row_volume_adaptive)),
-                ListSuffixSpec.switch_(music.volumeAdaptive(), viewModel::setVolumeAdaptive));
+        addSwitchItem(builder, R.string.device_row_ldac, music.ldac(), viewModel::setLdac);
+        addSwitchItem(builder, R.string.device_row_volume_adaptive, music.volumeAdaptive(),
+                viewModel::setVolumeAdaptive);
         YoList list = builder.build();
         releases.add(list::destroy);
         content.addView(list.getView(), listParams());
     }
 
-    private void singleSelect(YoList list, int selectedIndex, IntConsumer onSelected) {
+    private void addSwitchItem(YoList.Builder builder, int titleRes, boolean checked,
+                               java.util.function.Consumer<Boolean> onChange) {
+        String title = activity.getString(titleRes);
+        if (interactive) {
+            builder.addItem(ListPrefixSpec.none(),
+                    ListTextSpec.of(title),
+                    ListSuffixSpec.switch_(checked, onChange::accept));
+            return;
+        }
+        YoSwitch sw = YoSwitch.create(activity)
+                .setChecked(checked)
+                .setEnabled(false)
+                .build();
+        releases.add(sw::destroy);
+        builder.addItem(ListPrefixSpec.none(),
+                ListTextSpec.colored(title, theme.text3),
+                ListSuffixSpec.custom(sw.getView()));
+    }
+
+    private ListTextSpec modeTextSpec(CharSequence title, CharSequence subtitle) {
+        if (interactive) {
+            return ListTextSpec.of(title, subtitle);
+        }
+        return new ListTextSpec(title, subtitle, null, theme.text3, true, ListTextSpec.Tone.DEFAULT);
+    }
+
+    private void bindSingleSelect(YoList list, int selectedIndex, IntConsumer onSelected) {
+        if (!interactive && selectedIndex < 0) {
+            list.setSelectable(false);
+            list.setSelectionIndicator(YoList.SelectionIndicator.NONE);
+            return;
+        }
         list.setSelectable(true);
         list.setSelectionIndicator(YoList.SelectionIndicator.RADIO);
         applySelection(list, selectedIndex);
         list.setOnSelectionChangeListener((oldId, newId) -> {
             if (updatingSelection) {
+                return;
+            }
+            if (!interactive) {
+                updateSelections();
                 return;
             }
             // YoUI 语义：onSelectionChanged(oldStableId, newStableId)。
@@ -183,9 +223,12 @@ public final class MusicSectionView implements SettingsSectionView {
 
     private void updateSelections() {
         updatingSelection = true;
-        applySelection(presetList, selectedModeIndex());
-        applySelection(qualityList, music.selectedQuality());
-        updatingSelection = false;
+        try {
+            applySelection(presetList, selectedModeIndex());
+            applySelection(qualityList, music.selectedQuality());
+        } finally {
+            updatingSelection = false;
+        }
     }
 
     private void applySelection(YoList list, int index) {
@@ -210,7 +253,7 @@ public final class MusicSectionView implements SettingsSectionView {
     }
 
     private void openCustomEq() {
-        if (customEqSheet != null) {
+        if (!interactive || customEqSheet != null) {
             return;
         }
         customEqSheet = CustomEqSheet.show(activity, theme, customName(), music.customGains(),
@@ -227,14 +270,16 @@ public final class MusicSectionView implements SettingsSectionView {
                 });
     }
 
-    private String signatureOf(DeviceSettingsUiState.MusicPanel panel) {
+    private String signatureOf(boolean interactiveFlag, DeviceSettingsUiState.MusicPanel panel) {
         StringBuilder builder = new StringBuilder();
+        builder.append(interactiveFlag).append('|');
         for (DeviceSettingsUiState.MusicPanel.Preset preset : panel.presets()) {
             builder.append(preset.labelRes()).append(':')
                     .append(preset.subtitleRes()).append('|');
         }
         builder.append(panel.showCustom()).append(':').append(panel.customName()).append('|');
-        builder.append(panel.qualityLabels());
+        builder.append(panel.qualityLabels()).append('|');
+        builder.append(panel.ldac()).append(':').append(panel.volumeAdaptive());
         return builder.toString();
     }
 
@@ -252,6 +297,6 @@ public final class MusicSectionView implements SettingsSectionView {
 
     private static DeviceSettingsUiState.MusicPanel emptyMusic() {
         return new DeviceSettingsUiState.MusicPanel(
-                List.of(), -1, false, false, "", new float[10], List.of(), 0, false, false);
+                List.of(), -1, false, false, "", new float[10], List.of(), -1, false, false);
     }
 }

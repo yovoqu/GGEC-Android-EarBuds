@@ -14,16 +14,18 @@ import com.ggec.earbuds.ui.device.DeviceFormats;
 /** 领域状态 → 设备首页 UiState。不碰 View。 */
 public final class DeviceHomeUiMapper {
 
-    public DeviceHomeUiState map(DeviceProfile profile, DeviceSnapshot snapshot, DeviceControls controls) {
-        if (profile == null) {
-            return DeviceHomeUiState.empty();
+    public DeviceHomeUiState map(DeviceProfile profile, DeviceSnapshot snapshot,
+                                 DeviceControls controls, boolean controlsAvailable) {
+        if (profile == null || snapshot == null || !snapshot.isConnected()) {
+            return DeviceHomeUiState.disconnected();
         }
+        DeviceControls safeControls = controls == null ? DeviceControls.empty() : controls;
         BatterySnapshot battery = snapshot.battery();
         return new DeviceHomeUiState(
                 true,
                 profile.model().id(),
                 connectionTextRes(snapshot.connection()),
-                snapshot.isConnected(),
+                true,
                 DeviceFormats.battery(battery.left()),
                 DeviceFormats.battery(battery.right()),
                 DeviceFormats.battery(battery.caseLevel()),
@@ -31,9 +33,10 @@ public final class DeviceHomeUiMapper {
                 battery.caseCharging(),
                 battery.caseCharging() ? R.string.device_charging_on : 0,
                 snapshot.firmware(),
-                controls.enabled(DeviceSwitch.GAME_MODE),
-                controls.enabled(DeviceSwitch.WEAR_DETECT),
-                controls.enabled(DeviceSwitch.VOICE_WAKEUP),
+                controlsAvailable,
+                safeControls.enabled(DeviceSwitch.GAME_MODE),
+                safeControls.enabled(DeviceSwitch.WEAR_DETECT),
+                safeControls.enabled(DeviceSwitch.VOICE_WAKEUP),
                 profile.supports(Capability.GAME_MODE),
                 profile.supports(Capability.WEAR_DETECT),
                 profile.supports(Capability.VOICE_WAKEUP),

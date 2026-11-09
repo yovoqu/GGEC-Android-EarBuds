@@ -12,7 +12,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.ui.device.DevicePage;
 import com.ggec.earbuds.wiring.AppContainer;
-import com.yohu.youi.api.feedback.YoToast;
 
 /** 二级设置页宿主：MUSIC / CONTROL / FUNCTION / DUAL / RECORD / ABOUT 共用。 */
 public final class DeviceSettingsActivity extends AppCompatActivity {
@@ -41,11 +40,6 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
         viewModel.uiState().observe(this, state -> {
             if (state != null) {
                 screen.render(state);
-            }
-        });
-        viewModel.message().observe(this, res -> {
-            if (res != null && res != 0) {
-                YoToast.show(this, getString(res));
             }
         });
         viewModel.start();
