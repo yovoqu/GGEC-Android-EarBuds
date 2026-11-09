@@ -23,7 +23,6 @@ import com.ggec.earbuds.domain.ai.voice.VoiceCallReducer;
 import com.ggec.earbuds.domain.ai.voice.VoiceCallState;
 import com.ggec.earbuds.domain.ai.voice.VoiceCallTrace;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
-import com.ggec.earbuds.domain.ai.voice.VoiceDuplexPolicy;
 
 import java.util.Objects;
 import java.util.concurrent.Executor;
@@ -39,10 +38,10 @@ import java.util.concurrent.TimeUnit;
  * <p>状态和 IO 分开之后，任何时序问题都能在 reducer 单测里复现，真机 trace 也能直接回放。
  * 采集/播放线程只负责投事件，不直接改状态。</p>
  *
- * <p><b>双工由事实决定</b>：装配根请求一个双工方式；采集真正打开后查询
- * {@link AiAudioCapture#echoCancellationActive()}，用 {@code DuplexResolved} 落到状态机。
- * AEC 没挂上就只能半双工，否则扬声器声音会被麦克风收回去，服务端 VAD 判成用户开口，
- * 助手自问自答（实机已验证：一句输入连答 6 轮）。</p>
+ * <p><b>双工解耦与单一真相</b>：开场默认双工从用户设置（{@link AiVoiceConfig#defaultDuplex()}）读取，
+ * 通话中 {@link #setDuplex} 直接向状态机投递 {@link VoiceCallEvent.SetDuplex}，由领域策略
+ * {@link com.ggec.earbuds.domain.ai.voice.VoiceDuplexStrategy} 实时裁决上行闸门与 VAD 打断，
+ * 采集启动不再覆盖双工状态，全/半双工可随时无损切换。</p>
  */
 public final class RealtimeVoiceSession implements AiVoiceSession {
 
@@ -58,9 +57,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     /** 所有状态字段只在它的线程上读写。 */
     private final Executor executor;
     private final ScheduledExecutorService drainScheduler;
-    private final VoiceDuplex duplex;
-    /** 输出是否私密路由（耳机/蓝牙/USB）；私密时无需 AEC 也能全双工。 */
-    private final boolean privateOutput;
     private final VoiceCallTrace trace = new VoiceCallTrace();
 
     private final PcmResampler resampler = new PcmResampler();
@@ -74,6 +70,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     @Nullable
     private Listener listener;
     private boolean silenced;
+    private boolean duplexPinned;
     private VoiceCallReducer.Model model;
     @Nullable
     private ScheduledFuture<?> drainFuture;
@@ -85,10 +82,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull AiAudioPlayback playback,
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
-            @NonNull Executor executor,
-            @NonNull VoiceDuplex duplex) {
-        this(settings, credentials, capture, playback, link, clock, executor, duplex,
-                false, newScheduler());
+            @NonNull Executor executor) {
+        this(settings, credentials, capture, playback, link, clock, executor,
+                null, newScheduler());
     }
 
     public RealtimeVoiceSession(
@@ -99,10 +95,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor,
-            @NonNull VoiceDuplex duplex,
-            boolean privateOutput) {
-        this(settings, credentials, capture, playback, link, clock, executor, duplex,
-                privateOutput, newScheduler());
+            @NonNull VoiceDuplex duplex) {
+        this(settings, credentials, capture, playback, link, clock, executor,
+                Objects.requireNonNull(duplex, "duplex"), newScheduler());
     }
 
     private RealtimeVoiceSession(
@@ -113,8 +108,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor,
-            @NonNull VoiceDuplex duplex,
-            boolean privateOutput,
+            @Nullable VoiceDuplex explicitDuplex,
             @NonNull ScheduledExecutorService drainScheduler) {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
@@ -123,10 +117,10 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         this.link = Objects.requireNonNull(link, "link");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.executor = Objects.requireNonNull(executor, "executor");
-        this.duplex = Objects.requireNonNull(duplex, "duplex");
-        this.privateOutput = privateOutput;
         this.drainScheduler = Objects.requireNonNull(drainScheduler, "drainScheduler");
-        this.model = VoiceCallReducer.Model.initial(duplex);
+        this.duplexPinned = explicitDuplex != null;
+        this.model = VoiceCallReducer.Model.initial(
+                explicitDuplex != null ? explicitDuplex : VoiceDuplex.defaultMode());
         this.captureListener = new AiAudioCapture.Listener() {
             @Override
             public void onFrame(@NonNull byte[] pcm16, float frameLevel) {
@@ -176,7 +170,10 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     @Override
     public void setDuplex(@NonNull VoiceDuplex duplex) {
         Objects.requireNonNull(duplex, "duplex");
-        dispatch(() -> apply(new VoiceCallEvent.SetDuplex(duplex)));
+        dispatch(() -> {
+            duplexPinned = true;
+            apply(new VoiceCallEvent.SetDuplex(duplex));
+        });
     }
 
     @Override
@@ -214,10 +211,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             apply(new VoiceCallEvent.Failed(unusable));
             return;
         }
+        if (!duplexPinned && plan.defaultDuplex() != model.duplex()) {
+            model = model.withDuplex(plan.defaultDuplex());
+        }
         apply(new VoiceCallEvent.Start());
         try {
-            link.open(new AiRealtimeLink.Config(plan.baseUrl(), plan.apiKey(), plan.model(),
-                    duplex.streamsWhileAssistantSpeaks()), linkListener);
+            link.open(new AiRealtimeLink.Config(plan.baseUrl(), plan.apiKey(), plan.model()),
+                    linkListener);
         } catch (RuntimeException broken) {
             apply(new VoiceCallEvent.Failed(new AiFailure(AiFailureKind.UNKNOWN,
                     detailOf(broken), broken)));
@@ -298,7 +298,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             publish();
         } else if (effect instanceof VoiceCallEffect.StartCapture) {
             capture.start(INPUT_SAMPLE_RATE_HZ, captureListener);
-            apply(new VoiceCallEvent.DuplexResolved(duplex));
         } else if (effect instanceof VoiceCallEffect.StopCapture) {
             bestEffort(capture::stop);
         } else if (effect instanceof VoiceCallEffect.SetUplinkEnabled gate) {
@@ -420,7 +419,8 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         if (apiKey == null || apiKey.isBlank()) {
             throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED, null);
         }
-        return new RealtimePlan(voice.effectiveBaseUrl(), apiKey, voice.resolvedRealtimeModel());
+        return new RealtimePlan(voice.effectiveBaseUrl(), apiKey, voice.resolvedRealtimeModel(),
+                voice.defaultDuplex());
     }
 
     @NonNull
@@ -446,6 +446,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         return detail == null || detail.isBlank() ? error.getClass().getSimpleName() : detail;
     }
 
-    private record RealtimePlan(String baseUrl, String apiKey, String model) {
+    private record RealtimePlan(String baseUrl, String apiKey, String model, VoiceDuplex defaultDuplex) {
     }
 }

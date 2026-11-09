@@ -2,6 +2,8 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -11,16 +13,16 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 语音交流模式的配置聚合：当前选哪一家 + 每一家自己的状态。
+ * 语音交流模式的配置聚合：当前选哪一家 + 每一家自己的状态 + 通话默认双工模式。
  *
- * <p>领域模型只有两份数据：
+ * <p>领域模型包含三份正交状态：
  * <ul>
  *   <li>{@link #model}：当前选中的服务商，只是一个指针；</li>
  *   <li>{@link #providers}：按服务商索引的 {@link AiVoiceProvider}，地址、选中模型、方言、
- *       已拉列表都挂在自己名下。</li>
+ *       已拉列表都挂在自己名下；</li>
+ *   <li>{@link #defaultDuplex}：发起新通话时默认采用的通信方式（全双工 / 半双工）。</li>
  * </ul>
- * 切换服务商只改指针，不碰任何一家的状态，所以"Qwen 拉好模型 → 切到 ChatGPT → 切回 Qwen"
- * 之后 Qwen 的列表还在。旧模型把这些字段放在公共位置，切换时只能清空，正是数据丢失的根因。</p>
+ * 切换服务商或切换默认双工模式互不影响。</p>
  *
  * <p>Key 不在领域里：每家"是否已填 Key"只作为事实 {@link #configuredProviders} 存在，
  * 明文密钥由 {@code AiCredentialStore} 在建立连接/拉取模型的那一刻提供。</p>
@@ -28,13 +30,22 @@ import java.util.Set;
 public record AiVoiceConfig(
         @NonNull AiVoiceModel model,
         @NonNull Set<AiVoiceModel> configuredProviders,
-        @NonNull Map<AiVoiceModel, AiVoiceProvider> providers) {
+        @NonNull Map<AiVoiceModel, AiVoiceProvider> providers,
+        @NonNull VoiceDuplex defaultDuplex) {
 
     public static final AiVoiceConfig DEFAULT = new AiVoiceConfig(
-            AiVoiceModel.defaultModel(), Set.of(), Map.of());
+            AiVoiceModel.defaultModel(), Set.of(), Map.of(), VoiceDuplex.defaultMode());
+
+    public AiVoiceConfig(
+            @NonNull AiVoiceModel model,
+            @NonNull Set<AiVoiceModel> configuredProviders,
+            @NonNull Map<AiVoiceModel, AiVoiceProvider> providers) {
+        this(model, configuredProviders, providers, VoiceDuplex.defaultMode());
+    }
 
     public AiVoiceConfig {
         Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(defaultDuplex, "defaultDuplex");
         EnumSet<AiVoiceModel> configured = EnumSet.noneOf(AiVoiceModel.class);
         for (AiVoiceModel provider : configuredProviders) {
             if (provider != null) {
@@ -115,7 +126,22 @@ public record AiVoiceConfig(
     @NonNull
     public AiVoiceConfig withModel(@NonNull AiVoiceModel next) {
         Objects.requireNonNull(next, "model");
-        return next == model ? this : new AiVoiceConfig(next, configuredProviders, providers);
+        return next == model ? this : new AiVoiceConfig(next, configuredProviders, providers, defaultDuplex);
+    }
+
+    /** 更换新通话的默认双工模式（全双工 / 半双工），不影响各服务商自身状态。 */
+    @NonNull
+    public AiVoiceConfig withDefaultDuplex(@NonNull VoiceDuplex next) {
+        Objects.requireNonNull(next, "defaultDuplex");
+        return next == defaultDuplex ? this : new AiVoiceConfig(model, configuredProviders, providers, next);
+    }
+
+    /** 用密钥库扫描结果整体刷新"已填 Key"集合，保留服务商状态与默认双工模式。 */
+    @NonNull
+    public AiVoiceConfig withConfiguredProviders(@NonNull Set<AiVoiceModel> configured) {
+        Objects.requireNonNull(configured, "configured");
+        AiVoiceConfig updated = new AiVoiceConfig(model, configured, providers, defaultDuplex);
+        return updated.configuredProviders.equals(configuredProviders) ? this : updated;
     }
 
     /** 记录当前这一家是否已填 Key；真正的密钥写入由用例调用凭证端口完成。 */
@@ -128,7 +154,7 @@ public record AiVoiceConfig(
         } else {
             next.remove(model);
         }
-        return new AiVoiceConfig(model, next, providers);
+        return new AiVoiceConfig(model, next, providers, defaultDuplex);
     }
 
     /** 改当前这一家的接口地址。空串恢复成厂商预设。必须是 http 或 https。 */
@@ -182,7 +208,7 @@ public record AiVoiceConfig(
         } else {
             map.put(owner, updated);
         }
-        return new AiVoiceConfig(model, configuredProviders, map);
+        return new AiVoiceConfig(model, configuredProviders, map, defaultDuplex);
     }
 
     @NonNull
@@ -194,6 +220,6 @@ public record AiVoiceConfig(
         } else {
             map.put(model, next);
         }
-        return new AiVoiceConfig(model, configuredProviders, map);
+        return new AiVoiceConfig(model, configuredProviders, map, defaultDuplex);
     }
 }

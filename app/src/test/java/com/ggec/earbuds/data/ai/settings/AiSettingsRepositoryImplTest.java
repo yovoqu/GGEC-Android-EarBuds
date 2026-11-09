@@ -18,6 +18,7 @@ import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.Subscription;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.MemoryDocumentStore;
 import com.ggec.earbuds.testing.ai.MemorySecretStore;
@@ -158,6 +159,18 @@ public class AiSettingsRepositoryImplTest {
         assertNull(secrets.secrets.get("apikey.deepseek"));
         assertEquals("sk-gpt", secrets.secrets.get("voicekey.chatgpt"));
         assertTrue(repository.load().voiceReady());
+    }
+
+    @Test
+    public void voiceDefaultDuplexSurvivesRestartBesideCredentials() {
+        secrets.secrets.put("voicekey.chatgpt", "sk-gpt");
+        repository().update(s -> s.withVoice(AiFixtures.voice(AiVoiceModel.CHATGPT, "")
+                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
+
+        AiVoiceConfig reloaded = repository().load().voice();
+
+        assertEquals(VoiceDuplex.FULL_DUPLEX, reloaded.defaultDuplex());
+        assertTrue(reloaded.configured());
     }
 
     @Test

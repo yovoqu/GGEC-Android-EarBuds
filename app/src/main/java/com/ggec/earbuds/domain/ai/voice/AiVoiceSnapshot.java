@@ -37,7 +37,7 @@ public record AiVoiceSnapshot(
     }
 
     public static AiVoiceSnapshot idle() {
-        return new AiVoiceSnapshot(State.IDLE, List.of(), 0f, null, VoiceDuplex.FULL_DUPLEX, false);
+        return new AiVoiceSnapshot(State.IDLE, List.of(), 0f, null, VoiceDuplex.defaultMode(), false);
     }
 
     /** AI 通话核心阶段枚举 */

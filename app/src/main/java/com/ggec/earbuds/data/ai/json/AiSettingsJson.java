@@ -13,6 +13,7 @@ import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.model.AiVoiceProvider;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import androidx.annotation.Nullable;
 
@@ -103,6 +104,9 @@ public final class AiSettingsJson {
     private static void putVoice(JSONObject root, AiVoiceConfig voice) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "model", voice.model().id());
+        if (voice.defaultDuplex() != VoiceDuplex.defaultMode()) {
+            JsonValues.put(json, "defaultDuplex", voice.defaultDuplex().id());
+        }
         JSONObject providers = new JSONObject();
         for (Map.Entry<AiVoiceModel, AiVoiceProvider> entry : voice.providers().entrySet()) {
             JSONObject state = encodeProvider(entry.getValue());
@@ -168,7 +172,11 @@ public final class AiSettingsJson {
                 providers.put(model, legacy);
             }
         }
-        return new AiVoiceConfig(model, Set.of(), providers);
+        VoiceDuplex defaultDuplex = VoiceDuplex.fromId(JsonValues.string(json, "defaultDuplex"));
+        if (defaultDuplex == null) {
+            defaultDuplex = VoiceDuplex.defaultMode();
+        }
+        return new AiVoiceConfig(model, Set.of(), providers, defaultDuplex);
     }
 
     private static AiVoiceProvider decodeProvider(@Nullable JSONObject json) {

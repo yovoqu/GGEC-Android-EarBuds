@@ -59,6 +59,10 @@ public record AiCallUiState(
     }
 
     public static AiCallUiState connecting() {
+        return connecting(VoiceDuplex.defaultMode());
+    }
+
+    public static AiCallUiState connecting(@NonNull VoiceDuplex duplex) {
         return new AiCallUiState(
                 Phase.CONNECTING,
                 com.ggec.earbuds.R.string.ai_call_phase_connecting,
@@ -71,11 +75,15 @@ public record AiCallUiState(
                 false,
                 0,
                 true,
-                VoiceDuplex.FULL_DUPLEX
+                Objects.requireNonNull(duplex, "duplex")
         );
     }
 
     public static AiCallUiState permissionDenied() {
+        return permissionDenied(VoiceDuplex.defaultMode());
+    }
+
+    public static AiCallUiState permissionDenied(@NonNull VoiceDuplex duplex) {
         return new AiCallUiState(
                 Phase.OFFLINE,
                 com.ggec.earbuds.R.string.ai_call_no_permission,
@@ -88,7 +96,7 @@ public record AiCallUiState(
                 false,
                 0,
                 true,
-                VoiceDuplex.FULL_DUPLEX
+                Objects.requireNonNull(duplex, "duplex")
         );
     }
 

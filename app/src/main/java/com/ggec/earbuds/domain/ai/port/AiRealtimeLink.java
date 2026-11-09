@@ -42,11 +42,10 @@ public interface AiRealtimeLink {
      * 连接参数用 baseUrl 而不是拼好的 wss 地址：wss 的拼法（路径、query、模型名转义）
      * 属于协议细节，留在 lib_ai 里；领域只说"连这个平台的这个模型"。
      *
-     * @param bargeIn 助手发声时是否接受用户插话。半双工必须为 false：
-     *                否则服务端 VAD 会把回声判成插话，助手会自问自答。
+     * <p>全双工与半双工的行为裁决（上行闸门与是否按 VAD 打断）已在领域层解耦至
+     * {@code VoiceDuplexStrategy}，链路配置不再绑定固定的半/全双工标志，从而支持通话中随时切换。</p>
      */
-    record Config(@NonNull String baseUrl, @NonNull String apiKey, @NonNull String model,
-                  boolean bargeIn) {
+    record Config(@NonNull String baseUrl, @NonNull String apiKey, @NonNull String model) {
     }
 
     interface Listener {

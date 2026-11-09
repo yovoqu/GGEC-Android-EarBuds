@@ -3,10 +3,10 @@ package com.ggec.earbuds.domain.ai.voice;
 import androidx.annotation.NonNull;
 
 /**
- * 初始双工建议策略：根据输出路由与硬件回声消除能力提供默认推荐值。
+ * 声学环境双工建议策略（纯无状态建议函数）：根据输出路由与硬件回声消除能力评估“是否具备全双工声学条件”。
  *
- * <p>双工模式受用户单一事实来源（SSOT）严格单点控制，运行期用户指令具有最高决策权，
- * 本策略仅在未显式指定时给出初始化建议。</p>
+ * <p>运行期通话的初始双工模式由用户在「AI 设置 → 语音交流模式 → 默认的模式」中配置的偏好决定，
+ * 通话中由 {@link VoiceDuplexStrategy} 与用户即时切换单点控制，本类不覆写用户偏好。</p>
  */
 public final class VoiceDuplexPolicy {
 

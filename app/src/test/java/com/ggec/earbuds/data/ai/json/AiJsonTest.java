@@ -24,6 +24,7 @@ import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 import org.json.JSONException;
 import org.junit.Test;
@@ -101,6 +102,23 @@ public class AiJsonTest {
                 decoded.realtimeModels());
         assertEquals("gpt-4o-realtime-preview", decoded.realtimeModelId());
         assertFalse(decoded.configured());
+        assertEquals(VoiceDuplex.HALF_DUPLEX, decoded.defaultDuplex());
+        assertFalse("默认半双工不写进文档", text.contains("defaultDuplex"));
+    }
+
+    @Test
+    public void nonDefaultVoiceDuplexRoundTripsAndInvalidValueFallsBack() throws Exception {
+        AiVoiceConfig full = AiVoiceConfig.DEFAULT.withDefaultDuplex(VoiceDuplex.FULL_DUPLEX);
+        AiSettings settings = new AiSettings(List.of(), null, full, AiChatPreferences.DEFAULT);
+
+        String encoded = settingsJson.encode(settings);
+        assertTrue(encoded.contains("\"defaultDuplex\":\"full_duplex\""));
+        assertEquals(VoiceDuplex.FULL_DUPLEX, settingsJson.decode(encoded).voice().defaultDuplex());
+
+        AiSettings corrupt = settingsJson.decode("""
+                {"v":5,"voice":{"model":"chatgpt","defaultDuplex":"alien_mode"}}
+                """);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, corrupt.voice().defaultDuplex());
     }
 
     @Test

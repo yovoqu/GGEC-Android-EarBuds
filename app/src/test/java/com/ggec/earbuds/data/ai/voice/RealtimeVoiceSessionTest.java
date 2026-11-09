@@ -337,6 +337,71 @@ public class RealtimeVoiceSessionTest {
         assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());
     }
 
+    @Test
+    public void sessionReadsConfiguredDefaultDuplexWhenNotPinned() {
+        MemorySettingsRepository fullDefaultRepo = new MemorySettingsRepository(
+                AiFixtures.settings(null,
+                        AiFixtures.voice(VOICE_MODEL, API_KEY)
+                                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
+        session = new RealtimeVoiceSession(fullDefaultRepo,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                capture, playback, link, clock, Runnable::run);
+
+        session.start(snapshots::add);
+        assertEquals("开场连接阶段即采用设置页的默认模式", VoiceDuplex.FULL_DUPLEX, last().duplex());
+
+        link.opened();
+        assertEquals("Opened 不得把默认模式冲回旧值", VoiceDuplex.FULL_DUPLEX, last().duplex());
+        link.audio(FakeAudioCapture.pcm(480));
+        assertTrue(capture.uplinkEnabled);
+        link.speechStarted();
+        assertEquals(1, playback.flushes);
+        assertEquals(1, link.cancels);
+    }
+
+    @Test
+    public void preOpenedSetDuplexIsPreservedAcrossOpened() {
+        session = new RealtimeVoiceSession(settings,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                capture, playback, link, clock, Runnable::run);
+
+        session.start(snapshots::add);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());
+
+        session.setDuplex(VoiceDuplex.FULL_DUPLEX);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, last().duplex());
+
+        link.opened();
+        assertEquals("连线打开不得覆盖用户在 CONNECTING 期间切好的模式",
+                VoiceDuplex.FULL_DUPLEX, last().duplex());
+        link.audio(FakeAudioCapture.pcm(480));
+        assertTrue(capture.uplinkEnabled);
+    }
+
+    @Test
+    public void midCallDuplexSwitchingUpdatesBothUplinkAndSpeechInterruption() {
+        newSession(VoiceDuplex.FULL_DUPLEX);
+        session.start(snapshots::add);
+        link.opened();
+
+        // 1. 全双工切到半双工：立即闭麦上行并忽略后续回声 SpeechStarted
+        session.setDuplex(VoiceDuplex.HALF_DUPLEX);
+        link.audio(FakeAudioCapture.pcm(480));
+        assertFalse(capture.uplinkEnabled);
+        link.speechStarted();
+        assertEquals(AiVoiceSnapshot.State.SPEAKING, last().state());
+        assertEquals(0, playback.flushes);
+        assertEquals(0, link.cancels);
+
+        // 2. 半双工再切回全双工：同一轮回答中立即重新开闸，并且 SpeechStarted 生效
+        session.setDuplex(VoiceDuplex.FULL_DUPLEX);
+        assertTrue(capture.uplinkEnabled);
+        link.speechStarted();
+        assertEquals(AiVoiceSnapshot.State.LISTENING, last().state());
+        assertEquals(1, playback.flushes);
+        assertEquals(1, link.cancels);
+    }
+
     private AiVoiceSnapshot last() {
         return snapshots.get(snapshots.size() - 1);
     }
