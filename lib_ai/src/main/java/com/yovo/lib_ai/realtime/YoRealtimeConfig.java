@@ -9,23 +9,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 一次全双工语音通话的连接参数。
+ * 一次实时语音会话的纯连接与协议参数。
  *
- * <p>{@code baseUrl} / {@code apiKey} / {@code model} 来自用户已经配好的平台，
- * 和聊天、转写用的是同一份凭据。</p>
- *
- * <p><b>两套采样率不要混用。</b>{@code inputSampleRateHz} 是麦克风那一侧（交给 {@code AudioRecord}），
- * {@link #inputWireFormat()} 才是套接字上的字节。app 经常 16kHz 采集、升到 24kHz 再上行，
- * 所以线格式默认 24kHz PCM，不跟着麦克风的 16kHz 走。{@code outputSampleRateHz} 同时是播放端
- * 和默认下行线格式：下行不再重采样。</p>
+ * <p>{@code baseUrl} / {@code apiKey} / {@code model} 来自用户配好的平台凭据；
+ * 本配置只关心协议线上的格式与会话参数（{@link #inputWireFormat()} / {@link #outputWireFormat()}），
+ * 不涉足麦克风采集、本地重采样、播放进度或自动打断策略。</p>
  */
 public final class YoRealtimeConfig {
 
-    /** 采集默认 16kHz：全双工语音里 16k 已经够 ASR 用，带宽和上行压力都小一半。 */
-    public static final int DEFAULT_INPUT_SAMPLE_RATE_HZ = 16_000;
+    /** OpenAI 实时链路的默认线速率（24kHz）。 */
+    public static final int DEFAULT_WIRE_SAMPLE_RATE_HZ = 24_000;
 
-    /** 线上 PCM 与下行播放的默认档位。OpenAI 的 {@code pcm16} 按这个速率解释字节。 */
-    public static final int DEFAULT_OUTPUT_SAMPLE_RATE_HZ = 24_000;
+    /** 通义 Omni-Realtime 的默认上行线速率（16kHz）。 */
+    public static final int DEFAULT_QWEN_INPUT_SAMPLE_RATE_HZ = 16_000;
 
     @NonNull
     private final String baseUrl;
@@ -39,8 +35,6 @@ public final class YoRealtimeConfig {
     private final String voice;
     @Nullable
     private final String instructions;
-    private final int inputSampleRateHz;
-    private final int outputSampleRateHz;
     @NonNull
     private final YoRealtimeAudioFormat inputWireFormat;
     @NonNull
@@ -57,10 +51,6 @@ public final class YoRealtimeConfig {
     private final List<YoRealtimeOutputModality> outputModalities;
     @Nullable
     private final String translationTarget;
-    /** 服务端判定用户开口时是否自动打断。半双工必须关。 */
-    private final boolean interruptOnSpeech;
-    /** 播放进度是否按"到达即算听到"。false 表示调用方自己记。 */
-    private final boolean countPlaybackOnArrival;
 
     private YoRealtimeConfig(
             @NonNull String baseUrl,
@@ -69,8 +59,6 @@ public final class YoRealtimeConfig {
             @NonNull YoRealtimeDialect dialect,
             @Nullable String voice,
             @Nullable String instructions,
-            int inputSampleRateHz,
-            int outputSampleRateHz,
             @NonNull YoRealtimeAudioFormat inputWireFormat,
             @NonNull YoRealtimeAudioFormat outputWireFormat,
             @Nullable YoRealtimeTurnDetection turnDetection,
@@ -78,17 +66,13 @@ public final class YoRealtimeConfig {
             @Nullable YoRealtimeNoiseReduction noiseReduction,
             @NonNull List<YoRealtimeTool> tools,
             @Nullable List<YoRealtimeOutputModality> outputModalities,
-            @Nullable String translationTarget,
-            boolean interruptOnSpeech,
-            boolean countPlaybackOnArrival) {
+            @Nullable String translationTarget) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.model = model;
         this.dialect = dialect;
         this.voice = voice;
         this.instructions = instructions;
-        this.inputSampleRateHz = inputSampleRateHz;
-        this.outputSampleRateHz = outputSampleRateHz;
         this.inputWireFormat = inputWireFormat;
         this.outputWireFormat = outputWireFormat;
         this.turnDetection = turnDetection;
@@ -97,8 +81,6 @@ public final class YoRealtimeConfig {
         this.tools = tools;
         this.outputModalities = outputModalities;
         this.translationTarget = translationTarget;
-        this.interruptOnSpeech = interruptOnSpeech;
-        this.countPlaybackOnArrival = countPlaybackOnArrival;
     }
 
     @NonNull
@@ -106,9 +88,7 @@ public final class YoRealtimeConfig {
         return new Builder();
     }
 
-    /**
-     * 归一化后的基址，不含尾部斜杠，协议前缀为 http(s)。
-     */
+    /** 归一化后的基址，不含尾部斜杠，协议前缀为 http(s)。 */
     @NonNull
     public String baseUrl() {
         return baseUrl;
@@ -129,38 +109,25 @@ public final class YoRealtimeConfig {
         return dialect;
     }
 
-    /**
-     * 下行音色；为空表示用服务端默认音色。
-     */
+    /** 下行音色；为空表示用服务端默认音色。 */
     @Nullable
     public String voice() {
         return voice;
     }
 
-    /**
-     * 系统提示词；为空表示不下发（沿用平台侧默认）。
-     */
+    /** 系统提示词；为空表示不下发（沿用平台侧默认）。 */
     @Nullable
     public String instructions() {
         return instructions;
     }
 
-    /** 麦克风采样率，不写进协议。 */
-    public int inputSampleRateHz() {
-        return inputSampleRateHz;
-    }
-
-    /** 播放采样率。没单独指定下行线格式时，线格式跟这个数走。 */
-    public int outputSampleRateHz() {
-        return outputSampleRateHz;
-    }
-
-    /** 上行字节的格式。默认 24kHz PCM16，和 beta 线上隐含的档位一致。 */
+    /** 上行套接字字节格式。默认按方言选择（通义 16k PCM16，OpenAI 24k PCM16）。 */
     @NonNull
     public YoRealtimeAudioFormat inputWireFormat() {
         return inputWireFormat;
     }
 
+    /** 下行套接字字节格式。默认 24kHz PCM16。 */
     @NonNull
     public YoRealtimeAudioFormat outputWireFormat() {
         return outputWireFormat;
@@ -187,36 +154,19 @@ public final class YoRealtimeConfig {
         return tools;
     }
 
-    /**
-     * 为空表示用方言默认：GA 只出音频，通义文字加音频，beta 不下发、沿用服务端。
-     */
+    /** 为空表示用方言默认：GA 只出音频，通义文字加音频，beta 不下发、沿用服务端。 */
     @Nullable
     public List<YoRealtimeOutputModality> outputModalities() {
         return outputModalities;
     }
 
-    /**
-     * 翻译目标语种（Qwen realtime 翻译模式）；为空表示不做翻译。
-     */
+    /** 翻译目标语种（Qwen realtime 翻译模式）；为空表示不做翻译。 */
     @Nullable
     public String translationTarget() {
         return translationTarget;
     }
 
-    /** 服务端判定用户开口时是否自动打断当前回答。 */
-    public boolean interruptOnSpeech() {
-        return interruptOnSpeech;
-    }
-
-    /** 播放进度是否按"到达即算听到"。false 表示由调用方自己记。 */
-    public boolean countPlaybackOnArrival() {
-        return countPlaybackOnArrival;
-    }
-
-
-    /**
-     * 故意不带 {@code apiKey}：这个对象很容易被打进日志。
-     */
+    /** 故意不带 {@code apiKey}：这个对象很容易被打进日志。 */
     @NonNull
     @Override
     public String toString() {
@@ -225,8 +175,6 @@ public final class YoRealtimeConfig {
                 + ", dialect=" + dialect
                 + ", apiKey=***"
                 + ", voice=" + voice
-                + ", inputSampleRateHz=" + inputSampleRateHz
-                + ", outputSampleRateHz=" + outputSampleRateHz
                 + ", inputWire=" + inputWireFormat
                 + ", outputWire=" + outputWireFormat
                 + ", tools=" + tools.size()
@@ -234,22 +182,16 @@ public final class YoRealtimeConfig {
                 + '}';
     }
 
-    /**
-     * 构造器。三个必填项在 {@link #build()} 里校验，错误尽早暴露在建立连接之前，
-     * 而不是等用户在通话页看着「连接中」转圈。
-     */
+    /** 构造器：在建立连接前校验必填字段及方言一致性。 */
     public static final class Builder {
 
         private String baseUrl;
         private String apiKey;
         private String model;
-        private YoRealtimeDialect dialect = YoRealtimeDialect.OPENAI_BETA;
+        private YoRealtimeDialect dialect;
         private String voice;
         private String instructions;
-        private int inputSampleRateHz = DEFAULT_INPUT_SAMPLE_RATE_HZ;
-        private int outputSampleRateHz = DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
-        private YoRealtimeAudioFormat inputWireFormat =
-                YoRealtimeAudioFormat.pcm16(DEFAULT_OUTPUT_SAMPLE_RATE_HZ);
+        private YoRealtimeAudioFormat inputWireFormat;
         private YoRealtimeAudioFormat outputWireFormat;
         private YoRealtimeTurnDetection turnDetection;
         private YoRealtimeTranscription transcription;
@@ -257,15 +199,11 @@ public final class YoRealtimeConfig {
         private final List<YoRealtimeTool> tools = new ArrayList<>();
         private List<YoRealtimeOutputModality> outputModalities;
         private String translationTarget;
-        private boolean interruptOnSpeech = true;
-        private boolean countPlaybackOnArrival = true;
 
         private Builder() {
         }
 
-        /**
-         * 平台基址，例如 {@code https://api.openai.com}。带不带尾部斜杠都行。
-         */
+        /** 平台基址，例如 {@code https://api.openai.com}。 */
         @NonNull
         public Builder baseUrl(@NonNull String baseUrl) {
             this.baseUrl = baseUrl;
@@ -278,9 +216,7 @@ public final class YoRealtimeConfig {
             return this;
         }
 
-        /**
-         * 全双工模型名，例如 {@code gpt-4o-realtime-preview}。
-         */
+        /** 实时模型名，例如 {@code gpt-4o-realtime-preview}。 */
         @NonNull
         public Builder model(@NonNull String model) {
             this.model = model;
@@ -288,7 +224,7 @@ public final class YoRealtimeConfig {
         }
 
         @NonNull
-        public Builder dialect(@NonNull YoRealtimeDialect dialect) {
+        public Builder dialect(@Nullable YoRealtimeDialect dialect) {
             this.dialect = dialect;
             return this;
         }
@@ -305,55 +241,21 @@ public final class YoRealtimeConfig {
             return this;
         }
 
-        @NonNull
-        public Builder inputSampleRateHz(int inputSampleRateHz) {
-            this.inputSampleRateHz = inputSampleRateHz;
-            return this;
-        }
-
-        @NonNull
-        public Builder outputSampleRateHz(int outputSampleRateHz) {
-            this.outputSampleRateHz = outputSampleRateHz;
-            return this;
-        }
-
-        /** 上行字节的格式。不调用则是 24kHz PCM16，与麦克风采样率无关。 */
+        /** 上行线格式。未指定时按方言默认（QWEN=16kHz PCM16，其余=24kHz PCM16）。 */
         @NonNull
         public Builder inputWireFormat(@NonNull YoRealtimeAudioFormat inputWireFormat) {
             this.inputWireFormat = inputWireFormat;
             return this;
         }
 
-        /** 下行字节的格式。不调用则跟 {@link #outputSampleRateHz} 走，编码为 PCM16。 */
+        /** 下行线格式。未指定时默认 24kHz PCM16。 */
         @NonNull
         public Builder outputWireFormat(@NonNull YoRealtimeAudioFormat outputWireFormat) {
             this.outputWireFormat = outputWireFormat;
             return this;
         }
 
-
-        /**
-         * 服务端判定用户开口时，是否自动打断当前回答。
-         *
-         * <p>默认 true，和以前一样。半双工链路必须传 false：上行关着的时候那条
-         * {@code speech_started} 只可能是自己的外放回授，让它打断就等于让助手自问自答。</p>
-         */
-        public Builder interruptOnSpeech(boolean interruptOnSpeech) {
-            this.interruptOnSpeech = interruptOnSpeech;
-            return this;
-        }
-
-        /**
-         * 播放进度是否按"音频一到就算听到"计。
-         *
-         * <p>默认 true。传 false 表示调用方会自己记进度（{@link YoRealtime#open}
-         * 返回的 {@link YoRealtime.Connection#notePlayed}），截断毫秒数才准。</p>
-         */
-        public Builder countPlaybackOnArrival(boolean countPlaybackOnArrival) {
-            this.countPlaybackOnArrival = countPlaybackOnArrival;
-            return this;
-        }
-
+        @NonNull
         public Builder turnDetection(@Nullable YoRealtimeTurnDetection turnDetection) {
             this.turnDetection = turnDetection;
             return this;
@@ -403,24 +305,18 @@ public final class YoRealtimeConfig {
             YoRealtimeDialect resolvedDialect = dialect != null
                     ? dialect
                     : YoRealtimeDialect.infer(normalizedBaseUrl, modelName);
-            int inputRate = inputWireFormat != null ? inputWireFormat.sampleRateHz()
-                    : (resolvedDialect == YoRealtimeDialect.QWEN ? 16_000 : DEFAULT_OUTPUT_SAMPLE_RATE_HZ);
-            YoRealtimeAudioFormat resolvedInputWire = inputWireFormat == null
-                    ? YoRealtimeAudioFormat.pcm16(inputRate)
-                    : inputWireFormat;
+            YoRealtimeAudioFormat resolvedInputWire = inputWireFormat != null
+                    ? inputWireFormat
+                    : YoRealtimeAudioFormat.pcm16(resolvedDialect == YoRealtimeDialect.QWEN
+                            ? DEFAULT_QWEN_INPUT_SAMPLE_RATE_HZ
+                            : DEFAULT_WIRE_SAMPLE_RATE_HZ);
+            YoRealtimeAudioFormat resolvedOutputWire = outputWireFormat != null
+                    ? outputWireFormat
+                    : YoRealtimeAudioFormat.pcm16(DEFAULT_WIRE_SAMPLE_RATE_HZ);
             String resolvedVoice = blankToNull(voice);
             if (resolvedVoice == null && resolvedDialect == YoRealtimeDialect.QWEN) {
                 resolvedVoice = "Tina";
             }
-            if (inputSampleRateHz <= 0) {
-                throw new IllegalArgumentException("inputSampleRateHz must be positive");
-            }
-            if (outputSampleRateHz <= 0) {
-                throw new IllegalArgumentException("outputSampleRateHz must be positive");
-            }
-            YoRealtimeAudioFormat outputWire = outputWireFormat == null
-                    ? YoRealtimeAudioFormat.pcm16(outputSampleRateHz)
-                    : outputWireFormat;
             requireTurnDetectionMatchesDialect(resolvedDialect, turnDetection);
             return new YoRealtimeConfig(
                     normalizedBaseUrl,
@@ -429,31 +325,16 @@ public final class YoRealtimeConfig {
                     resolvedDialect,
                     resolvedVoice,
                     blankToNull(instructions),
-                    inputSampleRateHz,
-                    outputSampleRateHz,
                     resolvedInputWire,
-                    outputWire,
+                    resolvedOutputWire,
                     turnDetection,
                     transcription,
                     noiseReduction,
                     List.copyOf(tools),
                     outputModalities == null ? null : List.copyOf(outputModalities),
-                    translationTarget,
-                    interruptOnSpeech,
-                    countPlaybackOnArrival);
+                    translationTarget);
         }
 
-        @NonNull
-        /**
-         * 断句配置的变体必须与方言匹配。
-         *
-         * <p>把 OpenAI 的 {@code OpenAi} 发给通义，或者反过来，都不会被服务端友好地拒绝：
-         * 通义会把 {@code create_response} 当成非法参数，OpenAI 会把 {@code idle_timeout_ms} 忽略掉。
-         * 两种结果都是"配置看起来生效了、行为却不对"，最难查。这里在构造期就拦住。</p>
-         *
-         * <p>{@code null}（不配置）与 {@link YoRealtimeTurnDetection.Disabled} 对两种方言都合法：
-         * 前者用服务端默认，后者显式关掉。</p>
-         */
         private static void requireTurnDetectionMatchesDialect(
                 @NonNull YoRealtimeDialect dialect,
                 @Nullable YoRealtimeTurnDetection turnDetection) {
@@ -480,7 +361,6 @@ public final class YoRealtimeConfig {
 
         @Nullable
         private static String blankToNull(@Nullable String value) {
-            // 空串音色会被服务端当成合法音色名，然后整条会话建不起来。这里提前抹平。
             return value == null || value.isBlank() ? null : value.trim();
         }
     }
