@@ -20,6 +20,7 @@ public final class ScanViewModel extends ViewModel {
 
     private final MutableLiveData<ScanUiState> uiState = new MutableLiveData<>(ScanUiState.idle());
     private final List<ScanResult> results = new ArrayList<>();
+    private boolean hasScanned;
 
     public ScanViewModel(@NonNull ScanDevices scanDevices, @NonNull ConnectDevice connectDevice) {
         this.scanDevices = scanDevices;
@@ -36,13 +37,14 @@ public final class ScanViewModel extends ViewModel {
             return;
         }
         results.clear();
-        uiState.setValue(new ScanUiState(true, List.of()));
+        hasScanned = true;
+        uiState.setValue(new ScanUiState(true, true, List.of()));
         scanDevices.start(result -> {
             if (!contains(result)) {
                 results.add(result);
             }
-            uiState.postValue(new ScanUiState(true, ScanUiMapper.map(results)));
-        }, () -> uiState.postValue(new ScanUiState(false, ScanUiMapper.map(results))));
+            uiState.postValue(new ScanUiState(true, true, ScanUiMapper.map(results)));
+        }, () -> uiState.postValue(new ScanUiState(false, true, ScanUiMapper.map(results))));
     }
 
     private boolean contains(ScanResult candidate) {
@@ -56,7 +58,7 @@ public final class ScanViewModel extends ViewModel {
 
     public void stopScan() {
         scanDevices.stop();
-        uiState.postValue(new ScanUiState(false, ScanUiMapper.map(results)));
+        uiState.postValue(new ScanUiState(false, hasScanned, ScanUiMapper.map(results)));
     }
 
     public void connect(@NonNull ScanItem item) {

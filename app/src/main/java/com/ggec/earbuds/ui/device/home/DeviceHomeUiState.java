@@ -1,5 +1,6 @@
 package com.ggec.earbuds.ui.device.home;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DevicePage;
 
@@ -18,6 +19,7 @@ public record DeviceHomeUiState(
         boolean caseCharging,
         int chargingTextRes,
         String firmware,
+        boolean controlsAvailable,
         boolean gameMode,
         boolean wearDetect,
         boolean voiceWakeup,
@@ -33,6 +35,12 @@ public record DeviceHomeUiState(
     public static DeviceHomeUiState empty() {
         return new DeviceHomeUiState(false, "", 0, false,
                 DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN,
-                0, false, 0, "", false, false, false, false, false, false, List.of());
+                0, false, 0, "", false, false, false, false, false, false, false, List.of());
+    }
+
+    public static DeviceHomeUiState disconnected() {
+        return new DeviceHomeUiState(true, "", R.string.device_state_idle, false,
+                DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN,
+                0, false, 0, "", false, false, false, false, false, false, false, List.of());
     }
 }

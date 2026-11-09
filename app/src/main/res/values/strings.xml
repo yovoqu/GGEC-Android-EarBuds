@@ -116,10 +116,8 @@
     <string name="ai_history_load_failed_action">重试</string>
 
     <!-- 设备 -->
-    <string name="device_header_subtitle">管理已连接的耳机</string>
     <string name="device_add">添加设备</string>
     <string name="device_back">返回</string>
-    <string name="device_select_model">选择项目</string>
     <string name="device_connected_title">当前设备</string>
     <string name="device_battery_left">左耳</string>
     <string name="device_battery_right">右耳</string>
@@ -145,16 +143,20 @@
     <string name="device_entry_record">录音</string>
     <string name="device_entry_about">关于设备</string>
     <string name="device_empty_title">还没有连接耳机</string>
-    <string name="device_empty_body">打开耳机并靠近手机，然后开始搜索。</string>
-    <string name="device_empty_action">添加设备</string>
+    <string name="device_empty_body">打开耳机并靠近手机，点右上角 + 添加设备。</string>
+    <string name="device_settings_empty_body">请先返回设备页添加并连接耳机，连接后即可查看和调整此项设置。</string>
 
     <!-- 扫描 -->
     <string name="device_scan_title">添加设备</string>
     <string name="device_scan_start">开始搜索</string>
     <string name="device_scan_stop">停止搜索</string>
+    <string name="device_scan_idle_title">搜索附近的耳机</string>
+    <string name="device_scan_idle_body">点击下方按钮开始搜索。</string>
     <string name="device_scan_searching">正在搜索附近的耳机…</string>
-    <string name="device_scan_hint">点击开始搜索附近的耳机。</string>
-    <string name="device_scan_empty">没有发现设备，换个位置再试。</string>
+    <string name="device_scan_searching_hint">请确认耳机已开启并靠近手机。</string>
+    <string name="device_scan_empty_title">没有发现附近的耳机</string>
+    <string name="device_scan_empty_body">打开耳机配对模式并靠近手机后重新搜索。</string>
+    <string name="device_scan_found_count">发现 %1$d 台附近耳机</string>
     <string name="device_scan_paired">已配对</string>
 
     <!-- 设置分组 -->
@@ -217,12 +219,6 @@
     <string name="device_row_clear_pairing">清除配对</string>
     <string name="device_row_cap_count">能力数量</string>
 
-    <!-- 提示 -->
-    <string name="device_toast_reset_done">已恢复默认设置</string>
-    <string name="device_toast_find">已发送响铃指令</string>
-    <string name="device_toast_record">已发送录音指令</string>
-    <string name="device_toast_cleared">已清除配对</string>
-    <string name="device_toast_eq">已保存均衡器</string>
 
     <!-- 自定义均衡器 -->
     <string name="device_eq_save">保存</string>

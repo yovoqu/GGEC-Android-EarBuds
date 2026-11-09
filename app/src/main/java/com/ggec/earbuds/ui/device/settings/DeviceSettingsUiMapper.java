@@ -21,18 +21,22 @@ import java.util.List;
 public final class DeviceSettingsUiMapper {
 
     public DeviceSettingsUiState map(DevicePage page, DeviceProfile profile, DeviceSnapshot snapshot,
-                                     DeviceControls controls) {
+                                     DeviceControls controls, boolean interactive) {
+        if (profile == null || snapshot == null || !snapshot.isConnected()) {
+            return DeviceSettingsUiState.unconnected(page.titleRes);
+        }
+        DeviceControls safeControls = controls == null ? DeviceControls.empty() : controls;
         List<DeviceSettingRow> rows = switch (page) {
             case MUSIC -> List.of();
-            case CONTROL -> ControlPageRows.build(profile, controls);
-            case FUNCTION -> FunctionPageRows.build(profile, controls);
-            case DUAL -> DualPageRows.build(profile, controls);
+            case CONTROL -> ControlPageRows.build(profile, safeControls);
+            case FUNCTION -> FunctionPageRows.build(profile, safeControls);
+            case DUAL -> DualPageRows.build(profile, safeControls);
             case RECORD -> RecordPageRows.build(profile);
             case ABOUT -> AboutPageRows.build(profile, snapshot);
         };
         DeviceSettingsUiState.MusicPanel music = page == DevicePage.MUSIC
-                ? music(profile, controls) : null;
-        return new DeviceSettingsUiState(page.titleRes, rows, music);
+                ? music(profile, safeControls) : null;
+        return new DeviceSettingsUiState(true, page.titleRes, true, interactive, rows, music);
     }
 
     private static DeviceSettingsUiState.MusicPanel music(DeviceProfile profile, DeviceControls controls) {
@@ -49,7 +53,7 @@ public final class DeviceSettingsUiMapper {
         }
         List<Integer> qualities = new ArrayList<>();
         List<SoundQuality> qualityValues = DeviceControlPolicy.qualities();
-        int selectedQuality = 0;
+        int selectedQuality = -1;
         for (int index = 0; index < qualityValues.size(); index++) {
             SoundQuality quality = qualityValues.get(index);
             qualities.add(DeviceLabels.quality(quality));

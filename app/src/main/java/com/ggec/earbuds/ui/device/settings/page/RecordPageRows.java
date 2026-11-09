@@ -17,6 +17,9 @@ public final class RecordPageRows {
     }
 
     public static List<DeviceSettingRow> build(DeviceProfile profile) {
+        if (profile == null) {
+            return List.of();
+        }
         List<DeviceSettingRow> rows = new ArrayList<>();
         rows.add(new DeviceSettingRow.Section(R.string.device_section_record));
         if (profile.supports(Capability.RECORD_LOCAL)) {

@@ -5,8 +5,8 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceControls;
+import com.ggec.earbuds.domain.device.model.DeviceProfile;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceSwitch;
 import com.ggec.earbuds.domain.device.model.EqPreset;
@@ -21,10 +21,11 @@ import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.ui.device.DevicePage;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 设置页状态机：订阅快照与控件，把界面的语义意图翻译成领域操作。
- * View 只提交 SettingId / 索引，不接触任何领域枚举。
+ * View 只提交 SettingId / 索引，不接触任何领域枚举；未连接或协议控件未就绪时不伪造写操作。
  */
 public final class DeviceSettingsViewModel extends ViewModel {
 
@@ -35,10 +36,9 @@ public final class DeviceSettingsViewModel extends ViewModel {
     private final DeviceSettingsUiMapper mapper;
 
     private final MutableLiveData<DeviceSettingsUiState> uiState = new MutableLiveData<>();
-    private final MutableLiveData<Integer> message = new MutableLiveData<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
-    private DeviceControls controlState = DeviceControls.initial();
+    private DeviceControls controlState = DeviceControls.empty();
     private Subscription deviceSubscription;
     private Subscription controlSubscription;
 
@@ -60,11 +60,6 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     @NonNull
-    public LiveData<Integer> message() {
-        return message;
-    }
-
-    @NonNull
     public DevicePage page() {
         return page;
     }
@@ -82,7 +77,11 @@ public final class DeviceSettingsViewModel extends ViewModel {
     // ---- 音乐与音效 ----
 
     public void choosePreset(int index) {
-        List<EqPreset> presets = DeviceControlPolicy.presets(loadProfiles.selectedProfile());
+        DeviceProfile profile = activeWritableProfile().orElse(null);
+        if (profile == null) {
+            return;
+        }
+        List<EqPreset> presets = DeviceControlPolicy.presets(profile);
         if (index < 0 || index >= presets.size()) {
             return;
         }
@@ -91,10 +90,16 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     public void selectCustomEq() {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         controls.update(current -> current.withEqPreset(EqPreset.CUSTOM));
     }
 
     public void chooseQuality(int index) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         List<SoundQuality> qualities = DeviceControlPolicy.qualities();
         if (index < 0 || index >= qualities.size()) {
             return;
@@ -104,21 +109,32 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     public void saveCustomEq(@NonNull String name, @NonNull float[] gains) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         controls.update(current -> current.withCustomEq(name, gains));
-        message.setValue(R.string.device_toast_eq);
     }
 
     public void setLdac(boolean enabled) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         controls.update(current -> current.withSwitch(DeviceSwitch.LDAC, enabled));
     }
 
     public void setVolumeAdaptive(boolean enabled) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         controls.update(current -> current.withSwitch(DeviceSwitch.VOLUME_ADAPTIVE, enabled));
     }
 
     // ---- 其他页的语义意图 ----
 
     public void onChoice(@NonNull SettingId id, int optionIndex) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         GestureSlot slot = gestureSlotOf(id);
         if (slot == null) {
             return;
@@ -132,6 +148,9 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     public void onToggle(@NonNull SettingId id, boolean checked) {
+        if (activeWritableProfile().isEmpty()) {
+            return;
+        }
         DeviceSwitch key = switchOf(id);
         if (key == null) {
             return;
@@ -140,17 +159,23 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     public void onAction(@NonNull SettingId id) {
-        switch (id) {
-            case RESET_CONTROL -> {
-                controls.update(current -> DeviceControls.initial());
-                message.setValue(R.string.device_toast_reset_done);
-            }
-            case FIND_LEFT, FIND_RIGHT, FIND_STOP -> message.setValue(R.string.device_toast_find);
-            case RECORD_START, RECORD_STOP, RECORD_SYNC -> message.setValue(R.string.device_toast_record);
-            case CLEAR_PAIRING -> message.setValue(R.string.device_toast_cleared);
-            default -> {
-            }
+        if (activeWritableProfile().isEmpty()) {
+            return;
         }
+        if (id == SettingId.RESET_CONTROL) {
+            controls.update(current -> DeviceControls.empty());
+        }
+    }
+
+    private Optional<DeviceProfile> activeWritableProfile() {
+        DeviceSnapshot currentSnapshot;
+        synchronized (this) {
+            currentSnapshot = snapshot;
+        }
+        if (!currentSnapshot.isConnected() || !controls.isAvailable()) {
+            return Optional.empty();
+        }
+        return loadProfiles.profileFor(currentSnapshot);
     }
 
     private static GestureSlot gestureSlotOf(SettingId id) {
@@ -192,7 +217,8 @@ public final class DeviceSettingsViewModel extends ViewModel {
             shot = snapshot;
             current = controlState;
         }
-        uiState.postValue(mapper.map(page, loadProfiles.selectedProfile(), shot, current));
+        DeviceProfile profile = loadProfiles.profileFor(shot).orElse(null);
+        uiState.postValue(mapper.map(page, profile, shot, current, controls.isAvailable()));
     }
 
     @Override

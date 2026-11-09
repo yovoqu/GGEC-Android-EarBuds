@@ -21,6 +21,9 @@ public final class ControlPageRows {
     }
 
     public static List<DeviceSettingRow> build(DeviceProfile profile, DeviceControls controls) {
+        if (profile == null) {
+            return List.of();
+        }
         boolean split = profile.params().tapSplitsEar();
         List<DeviceSettingRow> rows = new ArrayList<>();
         rows.add(new DeviceSettingRow.Section(R.string.device_section_long));
@@ -79,7 +82,8 @@ public final class ControlPageRows {
         for (GestureAction action : DeviceControlPolicy.actions(slot)) {
             options.add(DeviceLabels.gesture(action));
         }
-        return new DeviceSettingRow.Choice(id, titleRes,
-                DeviceLabels.gesture(controls.gesture(slot)), options);
+        GestureAction current = controls == null ? null : controls.gesture(slot);
+        int valueRes = current == null ? 0 : DeviceLabels.gesture(current);
+        return new DeviceSettingRow.Choice(id, titleRes, valueRes, options);
     }
 }

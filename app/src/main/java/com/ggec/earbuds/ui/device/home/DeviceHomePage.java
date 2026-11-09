@@ -31,8 +31,6 @@ public final class DeviceHomePage {
 
         void onOpenEntry(@NonNull DevicePage page);
 
-        void onSelectModel();
-
         void onToggle(@NonNull HomeToggle key, boolean checked);
     }
 
@@ -80,7 +78,7 @@ public final class DeviceHomePage {
         summary = new DeviceSummaryCard(activity, theme);
         column.addView(summary.view(), cardParams());
 
-        quick = new QuickToggleCard(activity, components, listener::onToggle);
+        quick = new QuickToggleCard(activity, theme, components, listener::onToggle);
         column.addView(quick.view(), topOnlyParams());
 
         entries = new DeviceEntryListView(activity, theme, components, listener::onOpenEntry);
@@ -94,10 +92,11 @@ public final class DeviceHomePage {
         column.addView(footer, footerParams);
 
         content = scroll;
+        content.setVisibility(View.GONE);
         contentHost.addView(scroll, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        emptyState = new DeviceEmptyState(activity, theme, listener::onOpenScan);
+        emptyState = new DeviceEmptyState(activity, theme);
         empty = emptyState.view();
         empty.setVisibility(View.GONE);
         contentHost.addView(empty, new FrameLayout.LayoutParams(
@@ -140,35 +139,27 @@ public final class DeviceHomePage {
     }
 
     public void destroy() {
-        emptyState.destroy();
         components.close();
     }
 
     private void applyScrollBottom(int systemBottom) {
         lastSystemBottom = systemBottom;
-        if (scroll != null) {
-            scroll.setPadding(0, 0, 0,
-                    Math.max(systemBottom, bottomInset) + theme.dp(DeviceTheme.SPACE_XL));
-        }
+        int bottom = Math.max(systemBottom, bottomInset) + theme.dp(DeviceTheme.SPACE_XL);
+        scroll.setPadding(0, 0, 0, bottom);
+        emptyState.setBottomPadding(bottom);
     }
 
     private View buildHeader() {
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_M),
-                theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_S));
+        row.setMinimumHeight(theme.dp(DeviceTheme.HEADER_HEIGHT));
+        row.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XS),
+                theme.dp(DeviceTheme.PAGE_INSET), 0);
 
-        LinearLayout titles = new LinearLayout(activity);
-        titles.setOrientation(LinearLayout.VERTICAL);
-        TextView title = theme.text(28f, theme.text1, DeviceTheme.Weight.BOLD);
+        TextView title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
         title.setText(R.string.tab_device);
-        TextView sub = theme.text(DeviceTheme.TEXT_SUBHEAD, theme.text3);
-        sub.setText(R.string.device_header_subtitle);
-        sub.setOnClickListener(v -> listener.onSelectModel());
-        titles.addView(title, matchWrap());
-        titles.addView(sub, matchWrap());
-        row.addView(titles, new LinearLayout.LayoutParams(0,
+        row.addView(title, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         AiHeaderActionButton add = new AiHeaderActionButton(activity)

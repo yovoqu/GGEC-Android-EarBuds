@@ -6,7 +6,7 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.device.model.DeviceControls;
-import com.ggec.earbuds.domain.device.model.DeviceModel;
+import com.ggec.earbuds.domain.device.model.DeviceProfile;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceSwitch;
 import com.ggec.earbuds.domain.device.port.Subscription;
@@ -14,9 +14,6 @@ import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
 import com.ggec.earbuds.domain.device.usecase.EditDeviceControls;
 import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /** 设备页签：订阅设备与控件，发布一份界面状态。 */
 public final class DeviceHomeViewModel extends ViewModel {
@@ -30,7 +27,7 @@ public final class DeviceHomeViewModel extends ViewModel {
     private final MutableLiveData<DeviceHomeUiState> uiState = new MutableLiveData<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
-    private DeviceControls controlState = DeviceControls.initial();
+    private DeviceControls controlState = DeviceControls.empty();
     private Subscription deviceSubscription;
     private Subscription controlSubscription;
 
@@ -61,29 +58,14 @@ public final class DeviceHomeViewModel extends ViewModel {
         controlSubscription = controls.observe(this::onControls);
     }
 
-    public void refresh() {
-        synchronized (this) {
-            snapshot = observeDevice.current();
-            controlState = controls.current();
-        }
-        publish();
-    }
-
-    public void selectModel(@NonNull String modelId) {
-        loadProfiles.selectModel(modelId);
-        refresh();
-    }
-
-    @NonNull
-    public List<String> modelIds() {
-        List<String> ids = new ArrayList<>();
-        for (DeviceModel model : loadProfiles.models()) {
-            ids.add(model.id());
-        }
-        return ids;
-    }
-
     public void setToggle(@NonNull HomeToggle key, boolean value) {
+        DeviceSnapshot currentSnapshot;
+        synchronized (this) {
+            currentSnapshot = snapshot;
+        }
+        if (!currentSnapshot.isConnected() || !controls.isAvailable()) {
+            return;
+        }
         controls.update(current -> current.withSwitch(DeviceSwitch.valueOf(key.name()), value));
     }
 
@@ -112,7 +94,8 @@ public final class DeviceHomeViewModel extends ViewModel {
             shot = snapshot;
             current = controlState;
         }
-        uiState.postValue(mapper.map(loadProfiles.selectedProfile(), shot, current));
+        DeviceProfile profile = loadProfiles.profileFor(shot).orElse(null);
+        uiState.postValue(mapper.map(profile, shot, current, controls.isAvailable()));
     }
 
     @Override

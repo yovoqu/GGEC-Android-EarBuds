@@ -20,7 +20,7 @@ import com.yohu.youi.api.platform.YoSystemBar;
 
 import java.util.List;
 
-/** 扫描连接页视图。 */
+/** 扫描连接页视图。空态遵循统一左对齐标题+说明排版，避免重复提示文案。 */
 public final class ScanScreen {
 
     public interface Listener {
@@ -54,6 +54,7 @@ public final class ScanScreen {
         status = theme.text(DeviceTheme.TEXT_SUBHEAD, theme.text3);
         status.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_S),
                 theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_S));
+        status.setVisibility(View.GONE);
         root.addView(status, matchWrap());
 
         NestedScrollView scroll = new NestedScrollView(activity);
@@ -91,20 +92,24 @@ public final class ScanScreen {
     }
 
     public void render(@NonNull ScanUiState state) {
-        status.setText(state.scanning() ? R.string.device_scan_searching : R.string.device_scan_hint);
         action.setText(activity.getString(state.scanning()
                 ? R.string.device_scan_stop : R.string.device_scan_start));
-        rebuild(state.results(), state.scanning());
+        List<ScanItem> results = state.results();
+        if (results.isEmpty()) {
+            status.setVisibility(View.GONE);
+        } else {
+            status.setVisibility(View.VISIBLE);
+            status.setText(state.scanning()
+                    ? activity.getString(R.string.device_scan_searching)
+                    : activity.getString(R.string.device_scan_found_count, results.size()));
+        }
+        rebuild(results, state.scanning(), state.hasScanned());
     }
 
-    private void rebuild(List<ScanItem> results, boolean scanning) {
+    private void rebuild(List<ScanItem> results, boolean scanning, boolean hasScanned) {
         list.removeAllViews();
         if (results.isEmpty()) {
-            TextView empty = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text3);
-            empty.setText(scanning ? R.string.device_scan_searching : R.string.device_scan_empty);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, theme.dp(DeviceTheme.EMPTY_TOP), 0, 0);
-            list.addView(empty, matchWrap());
+            list.addView(buildEmptyState(scanning, hasScanned), matchWrap());
             return;
         }
         for (ScanItem result : results) {
@@ -116,6 +121,39 @@ public final class ScanScreen {
             list.addView(new ScanDeviceCard(activity, theme, result,
                     () -> listener.onConnect(result)).view(), params);
         }
+    }
+
+    private View buildEmptyState(boolean scanning, boolean hasScanned) {
+        LinearLayout block = new LinearLayout(activity);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.EMPTY_TOP),
+                theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XL));
+
+        int titleRes;
+        int bodyRes;
+        if (scanning) {
+            titleRes = R.string.device_scan_searching;
+            bodyRes = R.string.device_scan_searching_hint;
+        } else if (!hasScanned) {
+            titleRes = R.string.device_scan_idle_title;
+            bodyRes = R.string.device_scan_idle_body;
+        } else {
+            titleRes = R.string.device_scan_empty_title;
+            bodyRes = R.string.device_scan_empty_body;
+        }
+
+        TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
+        heading.setText(titleRes);
+        heading.setLineSpacing(theme.dpf(5), 1f);
+        block.addView(heading, matchWrap());
+
+        TextView body = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text2);
+        body.setText(bodyRes);
+        body.setLineSpacing(theme.dpf(5), 1f);
+        LinearLayout.LayoutParams bodyParams = matchWrap();
+        bodyParams.topMargin = theme.dp(DeviceTheme.SPACE_S);
+        block.addView(body, bodyParams);
+        return block;
     }
 
     private View buildHeader() {
