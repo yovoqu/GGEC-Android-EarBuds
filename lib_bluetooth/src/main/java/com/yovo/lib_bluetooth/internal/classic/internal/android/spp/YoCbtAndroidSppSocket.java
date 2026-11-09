@@ -1,5 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.spp;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothSocket;
 
 import androidx.annotation.NonNull;
@@ -57,6 +58,7 @@ public final class YoCbtAndroidSppSocket implements YoCbtSppSocket {
      * 反射在部分 ROM 上可能被限制，失败时返回 -1。
      */
     @Override
+    @SuppressLint("DiscouragedPrivateApi")
     public int getResolvedRfcommChannel() {
         try {
             Field portField = BluetoothSocket.class.getDeclaredField("mPort");

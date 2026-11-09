@@ -12,6 +12,7 @@ import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnection
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -188,7 +189,7 @@ public final class YoCbtSppReader implements Runnable {
     private static boolean isRemoteCloseException(@NonNull IOException e) {
         String message = e.getMessage();
         if (message == null) return false;
-        String text = message.toLowerCase();
+        String text = message.toLowerCase(Locale.ROOT);
         return text.contains("bt socket closed")
                 || text.contains("socket closed")
                 || text.contains("socket might closed")
