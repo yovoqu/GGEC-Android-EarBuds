@@ -39,10 +39,6 @@ public final class DeviceProfileCatalogImpl implements DeviceProfileCatalog {
             Capability.SERVICE_STATUS, Capability.BEGINNER_MODE, Capability.INTERPRET
     };
 
-    private static final Capability[] WY01_CAPS = {
-            Capability.CONNECTION, Capability.BATTERY, Capability.DEVICE_INFO
-    };
-
     private final List<DeviceModel> models;
     private final Map<String, List<DeviceVariant>> variantsByModel;
     private final Map<String, DeviceProfile> profilesByKey;
@@ -54,14 +50,11 @@ public final class DeviceProfileCatalogImpl implements DeviceProfileCatalog {
 
         DeviceModel hs01 = DeviceModel.of("HS", "01");
         DeviceModel hs02 = DeviceModel.of("HS", "02");
-        DeviceModel wy01 = DeviceModel.of("WY", "01");
         modelList.add(hs01);
         modelList.add(hs02);
-        modelList.add(wy01);
 
         CapabilitySet hs01Set = CapabilitySet.of(HS01_CAPS);
         CapabilitySet hs02Set = merge(HS01_CAPS, HS02_EXTRA);
-        CapabilitySet wy01Set = CapabilitySet.of(WY01_CAPS);
 
         List<DeviceVariant> hs01Variants = new ArrayList<>();
         for (int index = 1; index <= 3; index++) {
@@ -76,12 +69,6 @@ public final class DeviceProfileCatalogImpl implements DeviceProfileCatalog {
         variantMap.put(hs02.id(), List.of(hs02Variant));
         profileMap.put(key(hs02.id(), hs02Variant.id()),
                 new DeviceProfile(hs02, hs02Variant, hs02Set, ProfileParams.extended()));
-
-        // WY01 只有占位能力，变种数待定。
-        variantMap.put(wy01.id(), Collections.emptyList());
-        DeviceVariant wy01Placeholder = DeviceVariant.of(wy01.id(), "default");
-        profileMap.put(key(wy01.id(), wy01Placeholder.id()),
-                new DeviceProfile(wy01, wy01Placeholder, wy01Set, ProfileParams.base()));
 
         this.models = Collections.unmodifiableList(modelList);
         this.variantsByModel = Collections.unmodifiableMap(variantMap);
@@ -133,10 +120,6 @@ public final class DeviceProfileCatalogImpl implements DeviceProfileCatalog {
             if (profile != null) {
                 return profile;
             }
-        }
-        DeviceProfile placeholder = profilesByKey.get(key(modelId, "default"));
-        if (placeholder != null) {
-            return placeholder;
         }
         throw new IllegalArgumentException("Unknown model: " + modelId);
     }

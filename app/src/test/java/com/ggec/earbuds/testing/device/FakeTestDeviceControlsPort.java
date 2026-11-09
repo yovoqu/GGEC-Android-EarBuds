@@ -1,4 +1,4 @@
-package com.ggec.earbuds.data.device;
+package com.ggec.earbuds.testing.device;
 
 import com.ggec.earbuds.domain.device.model.DeviceControls;
 import com.ggec.earbuds.domain.device.port.DeviceControlsPort;
@@ -8,37 +8,47 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
-/** 进程内的控件写者。同一时刻只保留一份快照。 */
-public final class MemoryDeviceControls implements DeviceControlsPort {
+/** 单测用设备控件端口：可配置是否可用及记录变更次数。 */
+public final class FakeTestDeviceControlsPort implements DeviceControlsPort {
 
-    private final Object lock = new Object();
     private final CopyOnWriteArrayList<Consumer<DeviceControls>> listeners = new CopyOnWriteArrayList<>();
-    private DeviceControls current = DeviceControls.initial();
+    private final boolean available;
+    private DeviceControls current;
+    public int updateCalls;
+
+    public FakeTestDeviceControlsPort(boolean available, DeviceControls initial) {
+        this.available = available;
+        this.current = initial;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return available;
+    }
 
     @Override
     public DeviceControls current() {
-        synchronized (lock) {
-            return current;
-        }
+        return current;
     }
 
     @Override
     public Subscription observe(Consumer<DeviceControls> listener) {
         listeners.add(listener);
-        listener.accept(current());
+        listener.accept(current);
         return () -> listeners.remove(listener);
     }
 
     @Override
     public void update(UnaryOperator<DeviceControls> change) {
-        DeviceControls next;
-        synchronized (lock) {
-            next = change.apply(current);
-            if (next.equals(current)) {
-                return;
-            }
-            current = next;
+        updateCalls++;
+        if (!available) {
+            return;
         }
+        DeviceControls next = change.apply(current);
+        if (next.equals(current)) {
+            return;
+        }
+        current = next;
         for (Consumer<DeviceControls> listener : listeners) {
             listener.accept(next);
         }
