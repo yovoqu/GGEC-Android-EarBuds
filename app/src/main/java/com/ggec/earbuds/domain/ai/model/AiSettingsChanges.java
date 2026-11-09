@@ -2,6 +2,9 @@ package com.ggec.earbuds.domain.ai.model;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+
+import java.util.Objects;
 import java.util.function.UnaryOperator;
 
 /**
@@ -48,5 +51,11 @@ public final class AiSettingsChanges {
     @NonNull
     public static UnaryOperator<AiSettings> voiceRealtimeModel(@NonNull String modelId) {
         return settings -> settings.withVoice(settings.voice().withRealtimeModel(modelId));
+    }
+
+    @NonNull
+    public static UnaryOperator<AiSettings> voiceDefaultDuplex(@NonNull VoiceDuplex duplex) {
+        Objects.requireNonNull(duplex, "duplex");
+        return settings -> settings.withVoice(settings.voice().withDefaultDuplex(duplex));
     }
 }

@@ -202,25 +202,42 @@ public class VoiceCallReducerTest {
     }
 
     @Test
-    public void duplexResolvedUpgradesUplinkOnlyWhenFullDuplex() {
+    public void setDuplexBeforeOpenedUpdatesModelWithoutEmittingUplinkPrematurely() {
         send(new VoiceCallEvent.Start(), 1000);
-        send(new VoiceCallEvent.Opened(), 1000);
-        send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
-        assertFalse("半双工默认关闸", model.uplinkEnabled());
+        VoiceCallReducer.Transition switched =
+                send(new VoiceCallEvent.SetDuplex(VoiceDuplex.FULL_DUPLEX), 1100);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
+        assertFalse("未完成握手打开前，不该提前开上行闸门",
+                has(switched, VoiceCallEffect.SetUplinkEnabled.class));
+        assertFalse(model.uplinkEnabled());
 
-        VoiceCallReducer.Transition upgraded =
-                send(new VoiceCallEvent.DuplexResolved(VoiceDuplex.FULL_DUPLEX), 1300);
-
-        assertTrue("升级为全双工后播放期间也应开闸", model.uplinkEnabled());
-        assertTrue(has(upgraded, VoiceCallEffect.SetUplinkEnabled.class));
+        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(), 1200);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, model.duplex());
+        assertTrue(model.uplinkEnabled());
+        assertTrue(has(opened, VoiceCallEffect.StartCapture.class));
+        assertTrue(has(opened, VoiceCallEffect.SetUplinkEnabled.class));
     }
 
     @Test
-    public void setDuplexSwitchesModeAndUpdatesUplinkDynamically() {
+    public void micMutedBeforeOpenedIsPreservedWhenConnectionOpens() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.SetMicMuted(true), 1100);
+        assertFalse(model.uplinkEnabled());
+
+        VoiceCallReducer.Transition opened = send(new VoiceCallEvent.Opened(), 1200);
+        assertTrue(has(opened, VoiceCallEffect.StartCapture.class));
+        assertFalse("连线前已静音，Opened 后上行闸门必须保持关闭", model.uplinkEnabled());
+        assertFalse(has(opened, VoiceCallEffect.SetUplinkEnabled.class));
+    }
+
+    @Test
+    public void setDuplexDynamicallyUpdatesUplinkAndInterruptionStrategy() {
         send(new VoiceCallEvent.Start(), 1000);
         send(new VoiceCallEvent.Opened(), 1000);
         send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
         assertFalse("半双工播放中上行关闭", model.uplinkEnabled());
+        assertEquals(VoiceCallState.SPEAKING, model.state());
+        assertTrue(send(new VoiceCallEvent.SpeechStarted(), 1250).effects().isEmpty());
 
         VoiceCallReducer.Transition toFull =
                 send(new VoiceCallEvent.SetDuplex(VoiceDuplex.FULL_DUPLEX), 1300);
@@ -229,12 +246,20 @@ public class VoiceCallReducerTest {
         assertTrue(has(toFull, VoiceCallEffect.SetUplinkEnabled.class));
         assertTrue(has(toFull, VoiceCallEffect.Publish.class));
 
+        VoiceCallReducer.Transition barge = send(new VoiceCallEvent.SpeechStarted(), 1350);
+        assertTrue("切到全双工后同一条 SpeechStarted 立刻触发打断",
+                has(barge, VoiceCallEffect.StopAssistant.class));
+        assertEquals(VoiceCallState.LISTENING, model.state());
+
+        send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1400);
         VoiceCallReducer.Transition toHalf =
-                send(new VoiceCallEvent.SetDuplex(VoiceDuplex.HALF_DUPLEX), 1400);
+                send(new VoiceCallEvent.SetDuplex(VoiceDuplex.HALF_DUPLEX), 1500);
         assertEquals(VoiceDuplex.HALF_DUPLEX, model.duplex());
         assertFalse("切换回半双工且在播放中上行应关闭", model.uplinkEnabled());
         assertTrue(has(toHalf, VoiceCallEffect.SetUplinkEnabled.class));
         assertTrue(has(toHalf, VoiceCallEffect.Publish.class));
+        assertTrue("切回半双工后再次收到 SpeechStarted 必须忽略",
+                send(new VoiceCallEvent.SpeechStarted(), 1550).effects().isEmpty());
     }
 
     private static boolean stopAssistantCancels(VoiceCallReducer.Transition transition) {

@@ -241,7 +241,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
             }
         }
         AiVoiceConfig storedVoice = stored.voice();
-        AiVoiceConfig voice = new AiVoiceConfig(storedVoice.model(), configuredVoices, storedVoice.providers());
+        AiVoiceConfig voice = storedVoice.withConfiguredProviders(configuredVoices);
         return new AiSettings(platforms, stored.textSelection(), voice,
                 stored.preferences());
     }
@@ -269,7 +269,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         AiVoiceConfig voice = settings.voice();
         boolean voiceChanged = !voice.configuredProviders().equals(configured);
         if (voiceChanged) {
-            voice = new AiVoiceConfig(voice.model(), configured, voice.providers());
+            voice = voice.withConfiguredProviders(configured);
         }
         if (!platformChanged && !voiceChanged) {
             return settings;

@@ -7,6 +7,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 纯状态机：输入 (Model, Event, now)，输出 (Model, Effects)。
@@ -58,6 +59,12 @@ public final class VoiceCallReducer {
         public Model {
             turns = List.copyOf(turns);
             level = Math.max(0f, Math.min(1f, level));
+            duplex = Objects.requireNonNull(duplex, "duplex");
+        }
+
+        @NonNull
+        public VoiceDuplexStrategy duplexStrategy() {
+            return duplex.strategy();
         }
 
         @NonNull
@@ -126,16 +133,6 @@ public final class VoiceCallReducer {
             return same(model);
         }
 
-        if (event instanceof VoiceCallEvent.DuplexResolved resolved) {
-            if (model.duplex() == resolved.duplex()) {
-                return same(model);
-            }
-            Model next = model.withDuplex(resolved.duplex());
-            effects.add(new VoiceCallEffect.Publish());
-            next = addGateEffect(model, next, effects);
-            return new Transition(next, effects);
-        }
-
         if (event instanceof VoiceCallEvent.SetDuplex set) {
             if (model.duplex() == set.duplex()) {
                 return same(model);
@@ -155,9 +152,10 @@ public final class VoiceCallReducer {
             if (model.state() != VoiceCallState.CONNECTING) {
                 return same(model);
             }
-            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0, false, true);
+            Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
+                    false, model.uplinkEnabled());
             effects.add(new VoiceCallEffect.StartCapture());
-            effects.add(new VoiceCallEffect.SetUplinkEnabled(true));
+            next = addGateEffect(model, next, effects);
             effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
         }
@@ -220,7 +218,7 @@ public final class VoiceCallReducer {
                 return new Transition(next, effects);
             }
             Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
-                    model.playbackStarted(), true);
+                    model.playbackStarted(), model.uplinkEnabled());
             next = new Model(next.state(), turns, next.level(), next.failure(),
                     next.assistantTurnId(), next.audioBytes(), next.micMuted(),
                     next.playbackStarted(), next.turnsCreated(), next.duplex(),
@@ -235,7 +233,7 @@ public final class VoiceCallReducer {
                 return same(model);
             }
             Model next = with(model, VoiceCallState.LISTENING, 0f, null, null, 0,
-                    model.playbackStarted(), true);
+                    model.playbackStarted(), model.uplinkEnabled());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
             return new Transition(next, effects);
@@ -262,12 +260,7 @@ public final class VoiceCallReducer {
         }
 
         if (event instanceof VoiceCallEvent.SpeechStarted) {
-            if (!model.assistantActive()) {
-                return same(model);
-            }
-            // 助手正在发声却被判成"用户开口"：只有全双工才可能是真的插话。
-            // 半双工下上行本来是关的，这条事件只可能来自服务端对残余音频的判定，忽略。
-            if (!model.duplex().streamsWhileAssistantSpeaks()) {
+            if (!model.duplexStrategy().shouldInterruptOnSpeech(model.assistantActive())) {
                 return same(model);
             }
             return stopAssistant(model, effects, now);
@@ -343,7 +336,7 @@ public final class VoiceCallReducer {
         Model next = new Model(VoiceCallState.LISTENING,
                 finalizeTurn(model.turns(), model.assistantTurnId()), 0f, model.failure(),
                 null, 0, model.micMuted(), model.playbackStarted(), model.turnsCreated(),
-                model.duplex(), true);
+                model.duplex(), model.uplinkEnabled());
         effects.add(new VoiceCallEffect.Publish());
         next = addGateEffect(model, next, effects);
         return new Transition(next, effects);
@@ -377,17 +370,18 @@ public final class VoiceCallReducer {
     /**
      * 该不该让麦克风上行。
      *
-     * <p>规则只有三条：静音时不开；半双工下助手发声时不开；其余情况开。
-     * 全双工在助手发声时也开——那是它的定义，前提是设备侧回声消除生效。</p>
+     * <p>规则已委托至当前双工策略 {@link VoiceDuplexStrategy}：
+     * 非活跃通话期（IDLE / CONNECTING / 终态）或本地静音时关闭；其余由
+     * {@code model.duplexStrategy().allowsUplink(model.assistantActive())} 决定。</p>
      */
     public static boolean uplinkWanted(@NonNull Model model) {
-        if (model.micMuted()) {
+        if (model.micMuted()
+                || model.terminal()
+                || model.state() == VoiceCallState.IDLE
+                || model.state() == VoiceCallState.CONNECTING) {
             return false;
         }
-        if (model.assistantActive() && !model.duplex().streamsWhileAssistantSpeaks()) {
-            return false;
-        }
-        return true;
+        return model.duplexStrategy().allowsUplink(model.assistantActive());
     }
 
     @NonNull

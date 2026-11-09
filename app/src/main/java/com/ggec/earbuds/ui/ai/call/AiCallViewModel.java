@@ -9,6 +9,8 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
@@ -17,6 +19,7 @@ import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 通话页 ViewModel：严格 MVVM 架构中唯一的业务大脑与状态持有者。
@@ -38,20 +41,23 @@ public final class AiCallViewModel extends ViewModel {
 
     private final AiVoiceSessionFactory factory;
     private final AiCallUiMapper mapper;
+    private final LoadAiSettings loadSettings;
     private final Ticker ticker;
 
     private final MutableLiveData<AiCallUiState> uiState =
-            new MutableLiveData<>(AiCallUiState.connecting());
+            new MutableLiveData<>(AiCallUiState.connecting(VoiceDuplex.defaultMode()));
     private final MutableLiveData<Float> meter = new MutableLiveData<>(0f);
     private final MutableLiveData<List<AiSubtitleItem>> subtitleItems =
             new MutableLiveData<>(List.of());
 
+    private final Object duplexLock = new Object();
     private int durationSeconds = 0;
     private boolean timerRunning = false;
     private boolean captionsVisible = true;
     private boolean speakerOn = true;
     private boolean micMuted = false;
-    private VoiceDuplex duplex = VoiceDuplex.FULL_DUPLEX;
+    private VoiceDuplex duplex = VoiceDuplex.defaultMode();
+    private boolean duplexPinnedByUser = false;
     private long lastMeterAt;
 
     @Nullable
@@ -72,16 +78,21 @@ public final class AiCallViewModel extends ViewModel {
         }
     };
 
-    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory, @NonNull AiCallUiMapper mapper) {
-        this(factory, mapper, new MainTicker());
+    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory,
+                           @NonNull AiCallUiMapper mapper,
+                           @NonNull LoadAiSettings loadSettings) {
+        this(factory, mapper, loadSettings, new MainTicker());
     }
 
     public AiCallViewModel(@NonNull AiVoiceSessionFactory factory,
                            @NonNull AiCallUiMapper mapper,
+                           @NonNull LoadAiSettings loadSettings,
                            @NonNull Ticker ticker) {
-        this.factory = factory;
-        this.mapper = mapper;
-        this.ticker = ticker;
+        this.factory = Objects.requireNonNull(factory, "factory");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
+        this.ticker = Objects.requireNonNull(ticker, "ticker");
+        loadDefaultDuplex();
     }
 
     private static final class MainTicker implements Ticker {
@@ -132,15 +143,24 @@ public final class AiCallViewModel extends ViewModel {
         }
         durationSeconds = 0;
         subtitleItems.setValue(List.of());
-        uiState.setValue(AiCallUiState.connecting()
+        VoiceDuplex initialDuplex;
+        boolean pinned;
+        synchronized (duplexLock) {
+            initialDuplex = duplex;
+            pinned = duplexPinnedByUser;
+        }
+        uiState.setValue(AiCallUiState.connecting(initialDuplex)
                 .withSpeakerOn(speakerOn)
                 .withCaptionsVisible(captionsVisible)
-                .withDuplex(duplex)
                 .withDurationSeconds(0));
 
         AiVoiceSession created = factory.create();
-        session = created;
-        created.setDuplex(duplex);
+        synchronized (duplexLock) {
+            session = created;
+        }
+        if (pinned) {
+            created.setDuplex(initialDuplex);
+        }
         created.start(this::publishSnapshot);
         created.setSpeakerphone(speakerOn);
     }
@@ -150,10 +170,13 @@ public final class AiCallViewModel extends ViewModel {
     }
 
     public void permissionDenied() {
-        uiState.setValue(AiCallUiState.permissionDenied()
+        VoiceDuplex activeDuplex;
+        synchronized (duplexLock) {
+            activeDuplex = duplex;
+        }
+        uiState.setValue(AiCallUiState.permissionDenied(activeDuplex)
                 .withSpeakerOn(speakerOn)
                 .withCaptionsVisible(captionsVisible)
-                .withDuplex(duplex)
                 .withDurationSeconds(durationSeconds));
         stopTimer();
     }
@@ -198,12 +221,16 @@ public final class AiCallViewModel extends ViewModel {
     /** 双工通信方式切换操作（全双工/半双工，严格单点控制） */
     public void setDuplex(@NonNull VoiceDuplex mode) {
         Objects.requireNonNull(mode, "mode");
-        duplex = mode;
+        AiVoiceSession running;
+        synchronized (duplexLock) {
+            duplexPinnedByUser = true;
+            duplex = mode;
+            running = session;
+        }
         AiCallUiState current = uiState.getValue();
         if (current != null) {
             uiState.setValue(current.withDuplex(mode));
         }
-        AiVoiceSession running = session;
         if (running != null) {
             running.setDuplex(mode);
         }
@@ -211,14 +238,19 @@ public final class AiCallViewModel extends ViewModel {
 
     public void toggleDuplex() {
         AiCallUiState current = uiState.getValue();
-        VoiceDuplex active = current != null ? current.duplex() : duplex;
+        VoiceDuplex active = current != null ? current.duplex() : duplex();
         setDuplex(active == VoiceDuplex.FULL_DUPLEX ? VoiceDuplex.HALF_DUPLEX : VoiceDuplex.FULL_DUPLEX);
     }
 
     @NonNull
     public VoiceDuplex duplex() {
         AiCallUiState current = uiState.getValue();
-        return current != null ? current.duplex() : duplex;
+        if (current != null) {
+            return current.duplex();
+        }
+        synchronized (duplexLock) {
+            return duplex;
+        }
     }
 
     /** 实时字幕浮层卡片显示/隐藏切换 */
@@ -251,15 +283,61 @@ public final class AiCallViewModel extends ViewModel {
     }
 
     private void release() {
-        AiVoiceSession current = session;
-        session = null;
+        AiVoiceSession current;
+        synchronized (duplexLock) {
+            current = session;
+            session = null;
+        }
         if (current != null) {
             current.stop();
         }
     }
 
+    private void loadDefaultDuplex() {
+        CompletableFuture<AiSettings> future;
+        try {
+            future = loadSettings.executeAsync();
+        } catch (RuntimeException ignored) {
+            return;
+        }
+        if (future.isDone()) {
+            if (!future.isCompletedExceptionally()) {
+                AiSettings loaded = future.getNow(null);
+                if (loaded != null) {
+                    applyLoadedDefaultDuplex(loaded.voice().defaultDuplex(), true);
+                }
+            }
+            return;
+        }
+        future.whenComplete((loaded, failure) -> {
+            if (failure == null && loaded != null) {
+                applyLoadedDefaultDuplex(loaded.voice().defaultDuplex(), false);
+            }
+        });
+    }
+
+    private void applyLoadedDefaultDuplex(@NonNull VoiceDuplex configured, boolean onMainThread) {
+        AiCallUiState next;
+        synchronized (duplexLock) {
+            if (duplexPinnedByUser || session != null) {
+                return;
+            }
+            duplex = configured;
+            AiCallUiState current = uiState.getValue();
+            next = (current != null ? current : AiCallUiState.connecting(configured))
+                    .withDuplex(configured);
+        }
+        if (onMainThread) {
+            uiState.setValue(next);
+        } else {
+            uiState.postValue(next);
+        }
+    }
+
     private void publishSnapshot(@NonNull AiVoiceSnapshot snapshot) {
-        this.duplex = snapshot.duplex();
+        synchronized (duplexLock) {
+            this.duplex = snapshot.duplex();
+        }
         AiCallUiState mapped = mapper.map(snapshot)
                 .withSpeakerOn(speakerOn)
                 .withDurationSeconds(durationSeconds)

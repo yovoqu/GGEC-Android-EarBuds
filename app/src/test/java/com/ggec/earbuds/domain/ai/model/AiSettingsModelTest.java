@@ -8,6 +8,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 
 import org.junit.Test;
@@ -151,6 +152,18 @@ public class AiSettingsModelTest {
         assertNull(cleaned.textSelection());
         assertTrue("语音模型与平台无关，删平台不该把它一起清掉", cleaned.voiceReady());
         assertEquals(AiVoiceModel.CHATGPT, cleaned.voice().model());
+    }
+
+    @Test
+    public void defaultDuplexIsIndependentFromProviderSwitchesAndCredentialDerivation() {
+        AiVoiceConfig config = AiFixtures.voice(AiVoiceModel.QWEN, "sk-qwen")
+                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)
+                .withModel(AiVoiceModel.CHATGPT)
+                .withConfigured(true)
+                .withConfiguredProviders(Set.of(AiVoiceModel.CHATGPT));
+
+        assertEquals(VoiceDuplex.FULL_DUPLEX, config.defaultDuplex());
+        assertEquals(VoiceDuplex.HALF_DUPLEX, AiVoiceConfig.DEFAULT.defaultDuplex());
     }
 
     @Test

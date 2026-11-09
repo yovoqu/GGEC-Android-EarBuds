@@ -70,8 +70,8 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
                     .inputWireFormat(YoRealtimeAudioFormat.pcm16(inputWireSampleRateHz))
                     .outputSampleRateHz(outputSampleRateHz)
                     .countPlaybackOnArrival(false)
-                    .interruptOnSpeech(config.bargeIn())
-                    .turnDetection(YoRealtimeTurnDetection.serverVadFor(dialect, config.bargeIn()))
+                    .interruptOnSpeech(false)
+                    .turnDetection(YoRealtimeTurnDetection.serverVadFor(dialect, false))
                     .build();
         } catch (IllegalArgumentException unusable) {
             failureReported = true;

@@ -34,8 +34,6 @@ import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
-import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
-import com.ggec.earbuds.domain.ai.voice.VoiceDuplexPolicy;
 import com.ggec.earbuds.domain.ai.usecase.AddManualModel;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.FetchPlatformModels;
@@ -52,7 +50,6 @@ import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioCapture;
-import com.ggec.earbuds.platform.ai.voice.AndroidAudioRoute;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
 import com.ggec.earbuds.ui.ai.call.AiCallViewModel;
 import com.ggec.earbuds.ui.ai.call.AiCallUiMapper;
@@ -153,20 +150,13 @@ public final class AiGraph {
     /**
      * 通话页的会话工厂。每次通话新建采集与播放（它们持有音频设备）；
      * 所有状态合并都投到同一条串行线程，否则一次朗读会把"打断"排在它后面才生效。
+     * 开场默认双工由会话内部读取用户设置（"默认的模式"）决定，不在此处硬编码覆写。
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
-        return () -> {
-            AndroidAudioCapture capture = new AndroidAudioCapture(context);
-            // 双工按输出路由决定：
-            //  - 耳机/蓝牙/USB（私密路由）：声音不进麦克风，可以全双工，支持语音打断；
-            //  - 外放/听筒：有回声风险，默认半双工（实测本机 AEC 不足以支撑外放全双工）。
-            boolean privateOutput = new AndroidAudioRoute(context).hasPrivateOutput();
-            VoiceDuplex initialDuplex = VoiceDuplexPolicy.resolveDefault(privateOutput, false);
-            return new RealtimeVoiceSession(settings, credentials,
-                    capture, new AndroidAudioPlayback(context),
-                    new RealtimeLinkAdapter(), clock, voiceState, initialDuplex, privateOutput);
-        };
+        return () -> new RealtimeVoiceSession(settings, credentials,
+                new AndroidAudioCapture(context), new AndroidAudioPlayback(context),
+                new RealtimeLinkAdapter(), clock, voiceState);
     }
 
     private final class Factory implements ViewModelProvider.Factory {
@@ -178,7 +168,8 @@ public final class AiGraph {
                 return modelClass.cast(newChatViewModel());
             }
             if (AiCallViewModel.class.equals(modelClass)) {
-                return modelClass.cast(new AiCallViewModel(voiceSessions(), new AiCallUiMapper()));
+                return modelClass.cast(new AiCallViewModel(
+                        voiceSessions(), new AiCallUiMapper(), new LoadAiSettings(settings)));
             }
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(

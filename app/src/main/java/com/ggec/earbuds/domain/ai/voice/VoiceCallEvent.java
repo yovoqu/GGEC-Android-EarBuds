@@ -24,15 +24,6 @@ public sealed interface VoiceCallEvent {
     record Opened() implements VoiceCallEvent {
     }
 
-    /**
-     * 采集启动后确认了设备真实的回声消除能力。
-     *
-     * <p>装配根先请求一个双工方式；只有设备真的挂上了 AEC，才允许是全双工。
-     * 这样"能不能打断"由事实决定，不由配置猜。</p>
-     */
-    record DuplexResolved(@NonNull VoiceDuplex duplex) implements VoiceCallEvent {
-    }
-
     /** 服务端判定有人开口。可能是用户，也可能是我们自己的外放（回声）。 */
     record SpeechStarted() implements VoiceCallEvent {
     }
