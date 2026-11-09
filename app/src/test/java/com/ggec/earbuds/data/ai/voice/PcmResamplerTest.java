@@ -1,96 +1,101 @@
 package com.ggec.earbuds.data.ai.voice;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 /**
- * 16k → 24k 的升采样。
- *
- * <p>这里断言的都是"字节数怎么变、边界会不会炸"，不断言波形细节：相位与插值的正确性
- * 由 1.5 倍这个整数关系间接保证——比例错了，累积误差一定会在多帧之后露出来。</p>
+ * 通用有理数比值 {@link PcmResampler} 单测：覆盖升采样、降采样、同速率直通与热切换自适应。
  */
 public class PcmResamplerTest {
 
     @Test
-    public void oneFrameBecomesExactlyOneAndAHalfTimesLonger() {
-        PcmResampler resampler = new PcmResampler();
-
-        byte[] out = resampler.resample(new byte[640]);
-
-        // 640 字节 = 320 个采样，320 × 1.5 = 480 个采样 = 960 字节。
-        assertEquals(960, out.length);
-    }
-
-    @Test
-    public void ratioStaysExactAcrossManyFrames() {
+    public void upsampling16kTo24kProducesExactOneAndAHalfRatioWithoutDrift() {
         PcmResampler resampler = new PcmResampler();
         int total = 0;
 
-        // 连续 50 帧：如果实现里相位用浮点累加，误差会在这里攒出来。
         for (int frame = 0; frame < 50; frame++) {
-            total += resampler.resample(new byte[640]).length;
+            total += resampler.resample(new byte[640], 16_000, 24_000).length;
         }
 
         assertEquals(50 * 640 * 3 / 2, total);
     }
 
     @Test
-    public void oddByteCountDropsTheHalfSample() {
+    public void downsampling48kTo24kAnd16kProduceExactRatiosAndAntiAlias() {
         PcmResampler resampler = new PcmResampler();
 
-        // 401 字节：最后半个采样（1 字节）必须被丢掉，否则之后所有采样都错位半格。
-        byte[] out = resampler.resample(new byte[401]);
+        byte[] in48k = constantSignal(960 * 2, (short) 12_000);
+        byte[] out24k = resampler.resample(in48k, 48_000, 24_000);
+        assertEquals(960, out24k.length);
+        assertAllSamplesEqual(out24k, (short) 12_000);
 
-        assertEquals("输出永远是整数个采样", 0, out.length % 2);
-        assertTrue("400 字节输入应该产生 600 字节", out.length == 600);
+        byte[] out16k = resampler.resample(in48k, 48_000, 16_000);
+        assertEquals(640, out16k.length);
+        assertAllSamplesEqual(out16k, (short) 12_000);
     }
 
     @Test
-    public void emptyInputStaysEmpty() {
+    public void upsampling8kTo16kDoublesLengthCleanly() {
         PcmResampler resampler = new PcmResampler();
 
-        assertEquals(0, resampler.resample(new byte[0]).length);
-        assertEquals(0, resampler.resample(new byte[1]).length);
+        byte[] out = resampler.resample(new byte[320], 8_000, 16_000);
+        assertEquals(640, out.length);
     }
 
     @Test
-    public void silenceProducesSilenceWithoutBlowingUp() {
+    public void sameRateEvenBytesBypassWithZeroCopy() {
         PcmResampler resampler = new PcmResampler();
+        byte[] frame = new byte[640];
 
-        byte[] out = resampler.resample(new byte[640]);
-
-        for (byte value : out) {
-            assertEquals("静音升采样之后还得是静音", 0, value);
-        }
+        assertSame(frame, resampler.resample(frame, 16_000, 16_000));
+        assertSame(frame, resampler.resample(frame, 24_000, 24_000));
+        assertEquals(640, resampler.resample(new byte[641], 24_000, 24_000).length);
     }
 
     @Test
-    public void fullScaleInputDoesNotWrapAround() {
+    public void switchingInputRatesMidStreamResetsPhaseCleanly() {
         PcmResampler resampler = new PcmResampler();
-        byte[] loud = new byte[640];
-        for (int i = 0; i + 1 < loud.length; i += 2) {
-            loud[i] = (byte) 0xFF;      // 小端 0x7FFF = 32767
-            loud[i + 1] = 0x7F;
-        }
 
-        byte[] out = resampler.resample(loud);
-
-        // 插值算的是 int，若忘了夹回 short 范围，正的最大值会翻成负的最小值（听得见的爆音）。
-        for (int i = 0; i + 1 < out.length; i += 2) {
-            int sample = (short) ((out[i] & 0xFF) | (out[i + 1] << 8));
-            assertEquals(32767, sample);
-        }
+        assertEquals(960, resampler.resample(new byte[640], 16_000, 24_000).length);
+        assertEquals(960, resampler.resample(new byte[1920], 48_000, 24_000).length);
+        assertEquals(960, resampler.resample(new byte[320], 8_000, 24_000).length);
     }
 
     @Test
-    public void shortestPossibleFrameDoesNotHang() {
+    public void oddByteCountAndBoundariesStaySafe() {
         PcmResampler resampler = new PcmResampler();
 
-        byte[] out = resampler.resample(new byte[]{0x10, 0x00});
-
+        byte[] out = resampler.resample(new byte[401], 16_000, 24_000);
         assertEquals(0, out.length % 2);
-        assertTrue("一个采样也该有输出", out.length >= 2);
+        assertEquals(600, out.length);
+
+        assertEquals(0, resampler.resample(new byte[0], 16_000, 24_000).length);
+        assertEquals(0, resampler.resample(new byte[1], 16_000, 24_000).length);
+
+        byte[] loud = constantSignal(640, Short.MAX_VALUE);
+        assertAllSamplesEqual(resampler.resample(loud, 16_000, 24_000), Short.MAX_VALUE);
+
+        byte[] tiny = resampler.resample(new byte[]{0x10, 0x00}, 16_000, 24_000);
+        assertEquals(0, tiny.length % 2);
+        assertTrue(tiny.length >= 2);
+    }
+
+    private static byte[] constantSignal(int byteCount, short value) {
+        byte[] data = new byte[byteCount];
+        for (int i = 0; i + 1 < data.length; i += 2) {
+            data[i] = (byte) (value & 0xFF);
+            data[i + 1] = (byte) ((value >> 8) & 0xFF);
+        }
+        return data;
+    }
+
+    private static void assertAllSamplesEqual(byte[] pcm16, short expected) {
+        for (int i = 0; i + 1 < pcm16.length; i += 2) {
+            short sample = (short) ((pcm16[i] & 0xFF) | (pcm16[i + 1] << 8));
+            assertEquals(expected, sample);
+        }
     }
 }

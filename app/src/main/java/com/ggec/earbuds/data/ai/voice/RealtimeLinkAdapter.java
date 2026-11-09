@@ -12,22 +12,17 @@ import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.realtime.YoRealtime;
 import com.yovo.lib_ai.realtime.YoRealtimeConfig;
 import com.yovo.lib_ai.realtime.YoRealtimeDialect;
-import com.yovo.lib_ai.realtime.YoRealtimeAudioFormat;
-import com.yovo.lib_ai.realtime.YoRealtimeTurnDetection;
 import com.yovo.lib_ai.realtime.YoRealtimeInput;
 import com.yovo.lib_ai.realtime.YoRealtimeOutput;
+import com.yovo.lib_ai.realtime.YoRealtimeTurnDetection;
 
 import java.util.Objects;
 
 /**
- * 把 {@link YoRealtime} 的输入输出译成领域端口。
+ * 把 {@link YoRealtime} 的输入输出适配成领域端口 {@link AiRealtimeLink}。
  *
- * <p>这一层只做改名：地址、密钥、模型和方言进 {@link YoRealtimeConfig}，
- * {@link AiRealtimeInput} 进 {@link YoRealtimeInput}，{@link YoRealtimeOutput} 出
- * {@link AiRealtimeOutput}。传输、方言 JSON 和打断截断不在这里组装。</p>
- *
- * <p>本地 {@link #close()} 之后不再把 {@link YoRealtimeOutput.Closed} 报成失败。
- * 没经过这次 close 的 Closed 是对端断开，报成 {@code NETWORK}。</p>
+ * <p>所有配置与方言默认线速率均由 {@link YoRealtimeConfig} 统一解析并在握手完成时通过
+ * {@link AiRealtimeOutput.Opened} 向上游公布；音频、取消、截断与清空统一走 {@link #send} 单入口。</p>
  */
 public final class RealtimeLinkAdapter implements AiRealtimeLink {
 
@@ -36,8 +31,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
 
     @Nullable
     private volatile YoRealtime.Connection current;
-    private volatile int outputSampleRateHz = YoRealtimeConfig.DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
-    private volatile int inputWireSampleRateHz = YoRealtimeConfig.DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
+    private volatile int outputSampleRateHz = YoRealtimeConfig.DEFAULT_WIRE_SAMPLE_RATE_HZ;
     private volatile boolean closed;
     private volatile boolean failureReported;
 
@@ -56,21 +50,16 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         }
         closed = false;
         failureReported = false;
-        outputSampleRateHz = YoRealtimeConfig.DEFAULT_OUTPUT_SAMPLE_RATE_HZ;
+        outputSampleRateHz = YoRealtimeConfig.DEFAULT_WIRE_SAMPLE_RATE_HZ;
+
         YoRealtimeConfig realtime;
         try {
             YoRealtimeDialect dialect = YoRealtimeDialect.infer(config.baseUrl(), config.model());
-            inputWireSampleRateHz = dialect == YoRealtimeDialect.QWEN ? 16_000 : 24_000;
             realtime = YoRealtimeConfig.builder()
                     .baseUrl(config.baseUrl())
                     .apiKey(config.apiKey())
                     .model(config.model())
                     .dialect(dialect)
-                    .inputSampleRateHz(inputWireSampleRateHz)
-                    .inputWireFormat(YoRealtimeAudioFormat.pcm16(inputWireSampleRateHz))
-                    .outputSampleRateHz(outputSampleRateHz)
-                    .countPlaybackOnArrival(false)
-                    .interruptOnSpeech(false)
                     .turnDetection(YoRealtimeTurnDetection.serverVadFor(dialect, false))
                     .build();
         } catch (IllegalArgumentException unusable) {
@@ -90,6 +79,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
 
     @Override
     public void send(@NonNull AiRealtimeInput input) {
+        Objects.requireNonNull(input, "input");
         YoRealtime.Connection link = current;
         if (closed || link == null) {
             return;
@@ -98,24 +88,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             link.send(toSdk(input));
         } catch (RuntimeException lost) {
             // 上行失败由 SDK 的 Failed 输出上报。
-        }
-    }
-
-    @Override
-    public int inputWireSampleRateHz() {
-        return inputWireSampleRateHz;
-    }
-
-    @Override
-    public void truncate(@NonNull String itemId, int contentIndex, int audioEndMs) {
-        YoRealtime.Connection link = current;
-        if (closed || link == null || itemId.isBlank()) {
-            return;
-        }
-        try {
-            link.truncate(itemId, contentIndex, audioEndMs);
-        } catch (RuntimeException lost) {
-            // 截断失败不影响本地已经回到聆听；对话史略长一点由下一轮的 instructions 兜住。
         }
     }
 
@@ -129,11 +101,13 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         }
     }
 
-
+    @NonNull
     private static YoRealtimeInput toSdk(@NonNull AiRealtimeInput input) {
         return switch (input) {
             case AiRealtimeInput.Audio audio -> new YoRealtimeInput.Audio(audio.pcm16());
             case AiRealtimeInput.Cancel ignored -> new YoRealtimeInput.Cancel();
+            case AiRealtimeInput.Truncate truncate -> new YoRealtimeInput.Truncate(
+                    truncate.itemId(), truncate.contentIndex(), truncate.audioEndMs());
             case AiRealtimeInput.Clear ignored -> new YoRealtimeInput.Clear();
         };
     }
@@ -143,9 +117,15 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             return;
         }
         switch (output) {
-            case YoRealtimeOutput.Opened ignored -> emit(listener, new AiRealtimeOutput.Opened());
-            case YoRealtimeOutput.SpeechStarted ignored -> emit(listener, new AiRealtimeOutput.UserSpeechStarted());
-            case YoRealtimeOutput.SpeechStopped ignored -> emit(listener, new AiRealtimeOutput.UserSpeechStopped());
+            case YoRealtimeOutput.Opened opened -> {
+                outputSampleRateHz = opened.outputSampleRateHz();
+                emit(listener, new AiRealtimeOutput.Opened(
+                        opened.inputSampleRateHz(), opened.outputSampleRateHz()));
+            }
+            case YoRealtimeOutput.SpeechStarted ignored ->
+                    emit(listener, new AiRealtimeOutput.UserSpeechStarted());
+            case YoRealtimeOutput.SpeechStopped ignored ->
+                    emit(listener, new AiRealtimeOutput.UserSpeechStopped());
             case YoRealtimeOutput.AssistantText text -> {
                 if (!text.delta().isEmpty()) {
                     emit(listener, new AiRealtimeOutput.AssistantText(text.delta()));
@@ -166,10 +146,8 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
                 }
             }
             case YoRealtimeOutput.ToolCall ignored -> {
-                // 通话页还没有工具调用。
             }
             case YoRealtimeOutput.TranslationDelta ignored -> {
-                // 通话页还没有同传字幕。
             }
             case YoRealtimeOutput.Failed failed -> failOnce(listener, new AiFailure(
                     kindOf(failed.kind()), redact(failed.message(), apiKey)));
@@ -193,10 +171,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         listener.onOutput(output);
     }
 
-    /**
-     * lib_ai 的错误分类只有一份（{@code YoAiErrors}/{@code YoAiErrorKind}），这里只做枚举改名：
-     * 领域层不该认识 SDK 的枚举，界面也不该为同一种失败给出两套原因名。
-     */
     static AiFailureKind kindOf(@Nullable YoAiErrorKind kind) {
         if (kind == null) {
             return AiFailureKind.UNKNOWN;
@@ -222,7 +196,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         };
     }
 
-    /** 平台回显里可能带密钥片段；进领域之前抹掉，并且截断，避免把整段报文塞进页面。 */
     @NonNull
     private static String redact(@Nullable String message, @Nullable String apiKey) {
         String clean = message == null ? "" : message;
@@ -236,7 +209,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         try {
             step.run();
         } catch (RuntimeException alreadyClosing) {
-            // 关闭路径上某个环节失败不该挡住其他环节；通话已经结束，没有第二条命令要发。
         }
     }
 }

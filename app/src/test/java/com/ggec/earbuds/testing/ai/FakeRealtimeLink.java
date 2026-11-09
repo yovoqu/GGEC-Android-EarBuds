@@ -13,15 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 测试用的全双工链路：由测试决定什么时候"连上"、来一段文字、来一块音频、用户开口、失败。
- *
- * <p>{@link #close()} 之后仍然保留监听器（和 {@link FakeAudioCapture} 一个道理）：
- * 真实的 WebSocket 在读线程上可能还会送来最后一帧，而 {@code stop()} 之后再来的事件
- * 一条都不该变成快照——这一点必须能测，所以不能在这儿就把监听器抹掉。</p>
+ * 测试用全双工实时链路：支持显式配置协商线速率并记录全部上行音频、速率与打断截断指令。
  */
 public final class FakeRealtimeLink implements AiRealtimeLink {
 
-    /** 测试默认的下行 item id；真实服务端每条回答给一个，这里固定即可。 */
     public static final String DEFAULT_ITEM_ID = "item-test-1";
 
     public int opens;
@@ -31,14 +26,15 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     public int truncates;
     @Nullable
     public String truncatedItemId;
+    public int truncatedContentIndex;
     public int truncatedAudioEndMs;
     @Nullable
     public Config lastConfig;
     @Nullable
     public Listener listener;
     public final List<byte[]> appended = new ArrayList<>();
+    public final List<Integer> appendedRates = new ArrayList<>();
 
-    /** 非空时 {@link #open} 直接抛它，用来演练"打不开通道"。 */
     @Nullable
     public RuntimeException openFailure;
 
@@ -55,22 +51,19 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     @Override
     public void send(@NonNull AiRealtimeInput input) {
         switch (input) {
-            case AiRealtimeInput.Audio audio -> appended.add(audio.pcm16().clone());
+            case AiRealtimeInput.Audio audio -> {
+                appended.add(audio.pcm16().clone());
+                appendedRates.add(audio.sampleRateHz());
+            }
             case AiRealtimeInput.Cancel ignored -> cancels++;
+            case AiRealtimeInput.Truncate truncate -> {
+                truncates++;
+                truncatedItemId = truncate.itemId();
+                truncatedContentIndex = truncate.contentIndex();
+                truncatedAudioEndMs = truncate.audioEndMs();
+            }
             case AiRealtimeInput.Clear ignored -> clears++;
         }
-    }
-
-    @Override
-    public int inputWireSampleRateHz() {
-        return 24_000;
-    }
-
-    @Override
-    public void truncate(@NonNull String itemId, int contentIndex, int audioEndMs) {
-        truncates++;
-        truncatedItemId = itemId;
-        truncatedAudioEndMs = audioEndMs;
     }
 
     @Override
@@ -81,9 +74,13 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
     // ---- 由测试推事件 ----
 
     public void opened() {
+        opened(24_000, 24_000);
+    }
+
+    public void opened(int inputWireRateHz, int outputWireRateHz) {
         Listener target = listener;
         if (target != null) {
-            target.onOutput(new AiRealtimeOutput.Opened());
+            target.onOutput(new AiRealtimeOutput.Opened(inputWireRateHz, outputWireRateHz));
         }
     }
 
@@ -98,11 +95,14 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
         audio(pcm16, DEFAULT_ITEM_ID);
     }
 
-    /** 带 itemId 的下行音频：打断时用它断言截断落到了正确的条目上。 */
     public void audio(@NonNull byte[] pcm16, @Nullable String itemId) {
+        audio(pcm16, 24_000, itemId);
+    }
+
+    public void audio(@NonNull byte[] pcm16, int sampleRateHz, @Nullable String itemId) {
         Listener target = listener;
         if (target != null) {
-            target.onOutput(new AiRealtimeOutput.AssistantAudio(pcm16, 24_000, itemId, 0));
+            target.onOutput(new AiRealtimeOutput.AssistantAudio(pcm16, sampleRateHz, itemId, 0));
         }
     }
 
@@ -145,7 +145,6 @@ public final class FakeRealtimeLink implements AiRealtimeLink {
         }
     }
 
-    /** 送出去的上行音频总字节数：用来断言 16k→24k 的 1.5 倍关系。 */
     public int appendedBytes() {
         int total = 0;
         for (byte[] frame : appended) {
