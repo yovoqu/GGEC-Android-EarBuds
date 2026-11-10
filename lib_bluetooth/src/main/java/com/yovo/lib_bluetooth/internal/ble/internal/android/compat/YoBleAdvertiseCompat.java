@@ -27,12 +27,11 @@ public final class YoBleAdvertiseCompat {
 
     @NonNull
     public static AdvertiseSettings toLegacySettings(@NonNull BleAdvertiseConfig config) {
-        int clampedTimeout = Math.max(0, Math.min(180_000, config.timeoutMillis()));
         return new AdvertiseSettings.Builder()
                 .setAdvertiseMode(toLegacyMode(config.mode()))
                 .setTxPowerLevel(toLegacyTxPower(config.txPowerLevel()))
                 .setConnectable(config.connectable())
-                .setTimeout(clampedTimeout)
+                .setTimeout(0)
                 .build();
     }
 
