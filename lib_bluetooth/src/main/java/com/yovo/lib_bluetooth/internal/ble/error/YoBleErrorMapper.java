@@ -134,6 +134,7 @@ public final class YoBleErrorMapper {
             case WRITE_FAILED:
             case NOTIFY_FAILED:
             case SERVICE_DISCOVERY_FAILED:
+            case BOND_TIMEOUT:
                 return true;
             default:
                 return false;

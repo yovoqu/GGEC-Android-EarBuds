@@ -55,7 +55,8 @@ public final class YoBleReconnectPolicy {
                 || YoBleHciStatus.isLocalTerminated(rawStatus)) {
             return false;
         }
-        return currentAttempt < config.maxRetryCount();
+        // 丢链后的 autoConnect 重连不计入 maxRetryCount，直到用户断开、适配器关闭或释放。
+        return true;
     }
 
     /**

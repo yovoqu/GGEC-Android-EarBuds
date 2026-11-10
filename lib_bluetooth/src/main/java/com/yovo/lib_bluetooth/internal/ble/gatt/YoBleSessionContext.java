@@ -87,6 +87,11 @@ public interface YoBleSessionContext {
 
     void notifyConnectionObservers(@NonNull Consumer<BleConnectionObserver> emitter);
 
-    /** 判断并处理 pre-O ATT 认证失败自动配对重试；返回 true 表示由邦定流程接管重试，原操作暂缓失败。 */
-    boolean handleAuthErrorIfConfigured(@NonNull BleFailure failure, @NonNull Runnable retryAction);
+    /**
+     * 鉴权失败时按配对策略发起一次配对。成功走 {@code onRecovered}（由调用方用原 operationId 重试）；
+     * 策略不允许或配对失败走 {@code onGiveUp}，不再重发原操作。
+     */
+    void recoverFromAuthError(@NonNull BleFailure failure,
+                              @NonNull Runnable onRecovered,
+                              @NonNull Runnable onGiveUp);
 }

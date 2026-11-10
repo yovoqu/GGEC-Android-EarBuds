@@ -7,6 +7,7 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
+import com.yovo.lib_bluetooth.internal.ble.error.YoBleGattStatus;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleHciStatus;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationHandler;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue;
@@ -27,6 +28,7 @@ import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionParameters;
+import com.yovo.lib_bluetooth.model.ble.BleConnectionPriority;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionState;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
@@ -38,53 +40,71 @@ import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BlePhyConfig;
 import com.yovo.lib_bluetooth.model.ble.BleValueObserver;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
 /**
- * 单个 BLE 设备的独立 GATT 会话上下文与生命周期编排器。
+ * 单设备连接会话。状态只在 state 线程变化。
+ * autoConnect 关闭时丢链即结束；打开时首次直连，READY 之后的丢链改为无库超时的 autoConnect。
  */
 public final class YoBleGattSession implements YoBleSessionContext {
 
     private static final String MODULE = "ble-session";
+    private static final long DISCONNECT_CLOSE_TIMEOUT_MS = 2_000L;
 
+    @NonNull
     private final BleDeviceId deviceId;
+    @NonNull
     private final YoBleRuntime runtime;
+    @NonNull
     private final BleConfig bleConfig;
+    @NonNull
     private final BleConnectionConfig connectionConfig;
+    @NonNull
     private final YoBleCapabilityInspector capabilityInspector;
+    @NonNull
     private final YoBleConnectionPlatform connectionPlatform;
+    @NonNull
     private final YoBleBondController bondController;
+    @NonNull
     private final YoBleDeviceSnapshotStore snapshotStore;
+    @NonNull
     private final YoBleTimelineRecorder timeline;
+    @NonNull
     private final LongSupplier clockMillis;
+    @NonNull
     private final CopyOnWriteArrayList<BleConnectionObserver> globalObservers;
+    @NonNull
     private final CopyOnWriteArrayList<BleConnectionObserver> sessionObservers = new CopyOnWriteArrayList<>();
+    @NonNull
     private final BiConsumer<BleDeviceId, Long> closeTimestampSink;
-
+    @NonNull
     private final YoBleConnectionStateMachine stateMachine = new YoBleConnectionStateMachine();
+    @NonNull
     private final YoBleGattOperationQueue operationQueue;
+    @NonNull
     private final YoBleNotificationRouter notificationRouter;
-    private final YoBleServiceDiscoveryManager serviceDiscoveryManager;
-    private final YoBleReliableWriteCoordinator reliableWriteCoordinator;
-    private final YoBleGattOperationHandler gattOperationHandler;
+    @NonNull
+    private final YoBleServiceDiscoveryManager discoveryManager;
+    @NonNull
+    private final YoBleReliableWriteCoordinator reliableWrite;
+    @NonNull
+    private final YoBleGattOperationHandler gattHandler;
+    @NonNull
     private final YoBleLinkTuner linkTuner;
-    private final YoBleLongWriteCoordinator longWriteCoordinator;
-    private final YoBleRequestResponseCoordinator requestResponseCoordinator;
+    @NonNull
+    private final YoBleLongWriteCoordinator longWrite;
+    @NonNull
+    private final YoBleRequestResponseCoordinator requestResponse;
+    @NonNull
+    private final List<Runnable> endedWaiters = new ArrayList<>();
 
-    private final AtomicLong attemptSeq = new AtomicLong();
-    private long activeAttemptGen = 0L;
-
-    @Nullable
-    private YoBleConnectionPlatform.BleGattHandle gattHandle;
-    @Nullable
-    private YoTimeoutHandle connectTimeoutHandle;
-    @Nullable
-    private YoTimeoutHandle pendingRetryHandle;
-
+    private long generation;
+    private int retryAttempt;
     private int currentMtu = BleConnectionSnapshot.DEFAULT_ATT_MTU;
     @Nullable
     private Integer overriddenMtu;
@@ -93,19 +113,25 @@ public final class YoBleGattSession implements YoBleSessionContext {
     @Nullable
     private BleConnectionParameters connectionParameters;
     @NonNull
-    private BleBondState bondState = BleBondState.UNKNOWN;
+    private BleBondState bondState;
     @Nullable
     private Integer lastRssi;
-    private int retryAttempt = 0;
     @Nullable
     private BleGattDatabaseSnapshot currentDatabase;
     @Nullable
     private BleFailure lastFailure;
-
     private long lastCloseAtMillis;
-    private boolean userDisconnected = false;
-    private boolean released = false;
-    private volatile boolean authRetryUsed = false;
+    private boolean userDisconnected;
+    private boolean backgroundAutoConnect;
+    private boolean ended;
+    @Nullable
+    private YoBleConnectionPlatform.BleGattHandle handle;
+    @Nullable
+    private YoTimeoutHandle connectTimeout;
+    @Nullable
+    private YoTimeoutHandle retryHandle;
+    @Nullable
+    private YoTimeoutHandle closeTimeout;
 
     public YoBleGattSession(@NonNull BleDeviceId deviceId,
                             @NonNull YoBleRuntime runtime,
@@ -132,20 +158,18 @@ public final class YoBleGattSession implements YoBleSessionContext {
         this.timeline = timeline;
         this.clockMillis = clockMillis;
         this.globalObservers = globalObservers;
-        this.lastCloseAtMillis = lastCloseAtMillis;
         this.closeTimestampSink = closeTimestampSink;
-        this.sessionObservers.add(initialObserver);
-
-        this.operationQueue = new YoBleGattOperationQueue(
-                deviceId, runtime, bleConfig.gattOperationQueueCapacity());
-        this.notificationRouter = new YoBleNotificationRouter(this);
-        this.serviceDiscoveryManager = new YoBleServiceDiscoveryManager(this);
-        this.reliableWriteCoordinator = new YoBleReliableWriteCoordinator(this);
-        this.gattOperationHandler = new YoBleGattOperationHandler(this, reliableWriteCoordinator);
-        this.linkTuner = new YoBleLinkTuner(this);
-        this.longWriteCoordinator = new YoBleLongWriteCoordinator(this, gattOperationHandler);
-        this.requestResponseCoordinator = new YoBleRequestResponseCoordinator(this, gattOperationHandler);
+        this.lastCloseAtMillis = lastCloseAtMillis;
         this.bondState = bondController.getBondState(deviceId);
+        this.sessionObservers.add(initialObserver);
+        this.operationQueue = new YoBleGattOperationQueue(deviceId, runtime, bleConfig.gattOperationQueueCapacity());
+        this.notificationRouter = new YoBleNotificationRouter(this);
+        this.discoveryManager = new YoBleServiceDiscoveryManager(this);
+        this.reliableWrite = new YoBleReliableWriteCoordinator(this);
+        this.gattHandler = new YoBleGattOperationHandler(this, reliableWrite);
+        this.linkTuner = new YoBleLinkTuner(this);
+        this.longWrite = new YoBleLongWriteCoordinator(this, gattHandler);
+        this.requestResponse = new YoBleRequestResponseCoordinator(this, gattHandler);
     }
 
     public void attachObserver(@NonNull BleConnectionObserver observer) {
@@ -156,111 +180,33 @@ public final class YoBleGattSession implements YoBleSessionContext {
         sessionObservers.remove(observer);
     }
 
-    public void startConnect() {
-        runtime.checkStateThread();
-        userDisconnected = false;
-        lastFailure = null;
-        retryAttempt = 0;
-
-        long now = clockMillis.getAsLong();
-        long closeGapRemaining = lastCloseAtMillis > 0L
-                ? Math.max(0L, connectionConfig.closeDelayMillis() - Math.max(0L, now - lastCloseAtMillis))
-                : 0L;
-
-        if (stateMachine.transitionTo(BleConnectionState.CONNECTING, "connect")) {
-            publishStateChange();
-        }
-        if (closeGapRemaining > 0L) {
-            timeline.record(MODULE, "waiting " + closeGapRemaining + "ms close-gap before connectGatt: " + deviceId);
-            pendingRetryHandle = runtime.scheduler().schedule(
-                    () -> runtime.state(this::launchConnectAttempt),
-                    closeGapRemaining);
-        } else {
-            launchConnectAttempt();
-        }
+    public int observerCount() {
+        return sessionObservers.size();
     }
 
-    public void userDisconnect() {
-        runtime.checkStateThread();
-        if (userDisconnected && (stateMachine.state() == BleConnectionState.DISCONNECTED
-                || stateMachine.state() == BleConnectionState.FAILED)) {
+    public boolean isLive() {
+        return !ended && (stateMachine.isConnected()
+                || stateMachine.state() == BleConnectionState.CONNECTING);
+    }
+
+    public boolean isDisconnecting() {
+        return stateMachine.state() == BleConnectionState.DISCONNECTING;
+    }
+
+    public boolean isEnded() {
+        return ended;
+    }
+
+    public boolean isReady() {
+        return !ended && stateMachine.isReady();
+    }
+
+    public void whenEnded(@NonNull Runnable action) {
+        if (ended) {
+            action.run();
             return;
         }
-        userDisconnected = true;
-        cancelTimers();
-        timeline.record(MODULE, "userDisconnect: " + deviceId);
-
-        BleFailure cancelReason = YoBleErrorMapper.failure(
-                BleErrorCode.LOCAL_TERMINATED, MODULE,
-                "Disconnected by local client", deviceId);
-        teardownGattAndQueues(cancelReason);
-
-        if (stateMachine.state() != BleConnectionState.DISCONNECTED
-                && stateMachine.state() != BleConnectionState.FAILED) {
-            if (stateMachine.transitionTo(BleConnectionState.DISCONNECTING, "userDisconnect")) {
-                publishStateChange();
-            }
-            if (stateMachine.transitionTo(BleConnectionState.DISCONNECTED, "userDisconnectDone")) {
-                publishStateChange();
-            }
-        }
-    }
-
-    public void onAdapterTurnedOff() {
-        runtime.checkStateThread();
-        if (stateMachine.state() == BleConnectionState.IDLE
-                || stateMachine.state() == BleConnectionState.DISCONNECTED
-                || stateMachine.state() == BleConnectionState.FAILED) {
-            cancelTimers();
-            return;
-        }
-        cancelTimers();
-        userDisconnected = false;
-        BleFailure failure = YoBleErrorMapper.failure(
-                BleErrorCode.BLUETOOTH_DISABLED, MODULE,
-                "Bluetooth adapter turned off; forcing GATT close", deviceId);
-        this.lastFailure = failure;
-        timeline.record(MODULE, "adapter OFF -> immediate cleanup for " + deviceId);
-        teardownGattAndQueues(failure);
-        if (stateMachine.state() != BleConnectionState.DISCONNECTED) {
-            stateMachine.transitionTo(BleConnectionState.DISCONNECTING, "adapterOff");
-            stateMachine.transitionTo(BleConnectionState.DISCONNECTED, "adapterOff");
-            publishStateChange();
-        }
-        notifyFailure(failure);
-    }
-
-    public void onPlatformBondStateChanged(@NonNull BleBondState newState) {
-        runtime.checkStateThread();
-        this.bondState = newState;
-        recordSnapshot();
-        notifyConnectionObservers(obs -> obs.onBondStateChanged(deviceId, newState));
-    }
-
-    public void releaseSession() {
-        runtime.checkStateThread();
-        if (released) {
-            return;
-        }
-        released = true;
-        userDisconnect();
-        sessionObservers.clear();
-    }
-
-    @NonNull
-    public BleConnectionSnapshot snapshot() {
-        return new BleConnectionSnapshot(
-                deviceId,
-                stateMachine.state(),
-                currentMtu,
-                currentPhy,
-                connectionParameters,
-                bondState,
-                lastRssi,
-                retryAttempt,
-                currentDatabase != null,
-                lastFailure,
-                clockMillis.getAsLong());
+        endedWaiters.add(action);
     }
 
     @NonNull
@@ -268,14 +214,65 @@ public final class YoBleGattSession implements YoBleSessionContext {
         return connectionConfig;
     }
 
+    public void startConnect() {
+        runtime.checkStateThread();
+        ended = false;
+        userDisconnected = false;
+        backgroundAutoConnect = false;
+        retryAttempt = 0;
+        lastFailure = null;
+        transition(BleConnectionState.CONNECTING, "start");
+        publish();
+        long wait = remainingCloseGap();
+        runtime.stateDelayed(this::launchConnectAttempt, wait);
+    }
+
+    public void userDisconnect() {
+        runtime.checkStateThread();
+        userDisconnected = true;
+        cancelTimers();
+        if (stateMachine.isConnected()) {
+            gracefulDisconnect();
+            return;
+        }
+        finishTerminal(true, YoBleErrorMapper.failure(
+                BleErrorCode.LOCAL_TERMINATED, MODULE, "disconnected by user", deviceId), false);
+    }
+
+    public void forceClose() {
+        runtime.checkStateThread();
+        userDisconnected = true;
+        finishTerminal(true, YoBleErrorMapper.failure(
+                BleErrorCode.RELEASED, MODULE, "session released", deviceId), false);
+    }
+
+    public void onAdapterTurnedOff() {
+        runtime.checkStateThread();
+        finishTerminal(false, YoBleErrorMapper.failure(
+                BleErrorCode.BLUETOOTH_DISABLED, MODULE, "adapter turned off", deviceId), true);
+    }
+
+    public void onPlatformBondStateChanged(@NonNull BleBondState newState) {
+        runtime.checkStateThread();
+        bondState = newState;
+        publish();
+        notifyConnectionObservers(observer -> observer.onBondStateChanged(deviceId, newState));
+    }
+
     @NonNull
-    public YoBleServiceDiscoveryManager serviceDiscoveryManager() {
-        return serviceDiscoveryManager;
+    public BleConnectionSnapshot snapshot() {
+        return new BleConnectionSnapshot(deviceId, stateMachine.state(), currentMtu, currentPhy,
+                connectionParameters, bondState, lastRssi, retryAttempt, currentDatabase != null,
+                lastFailure, nowMillis());
+    }
+
+    public int publishedPendingCount() {
+        return operationQueue.publishedPendingCount();
     }
 
     @NonNull
     public YoBleGattOperationHandler gattOperationHandler() {
-        return gattOperationHandler;
+        return gattHandler;
     }
 
     @NonNull
@@ -285,53 +282,398 @@ public final class YoBleGattSession implements YoBleSessionContext {
 
     @NonNull
     public YoBleReliableWriteCoordinator reliableWriteCoordinator() {
-        return reliableWriteCoordinator;
+        return reliableWrite;
     }
 
     @NonNull
     public YoBleLongWriteCoordinator longWriteCoordinator() {
-        return longWriteCoordinator;
+        return longWrite;
     }
 
     @NonNull
     public YoBleRequestResponseCoordinator requestResponseCoordinator() {
-        return requestResponseCoordinator;
+        return requestResponse;
     }
 
-    // ── YoBleSessionContext ─────────────────────────────────────────
+    @NonNull
+    public YoBleServiceDiscoveryManager serviceDiscoveryManager() {
+        return discoveryManager;
+    }
 
     @NonNull
+    public YoBleNotificationRouter notificationRouter() {
+        return notificationRouter;
+    }
+
+    private void launchConnectAttempt() {
+        if (userDisconnected || ended || !capabilityInspector.isAdapterEnabled()) {
+            if (!userDisconnected && !ended) {
+                finishTerminal(false, YoBleErrorMapper.failure(
+                        BleErrorCode.BLUETOOTH_DISABLED, MODULE, "adapter disabled", deviceId), true);
+            }
+            return;
+        }
+        long gen = ++generation;
+        boolean platformAuto = backgroundAutoConnect;
+        if (!platformAuto && connectionConfig.connectTimeoutMillis() > 0L) {
+            connectTimeout = runtime.stateDelayed(() -> {
+                if (gen == generation && stateMachine.state() == BleConnectionState.CONNECTING) {
+                    failAttempt(gen, false, YoBleErrorMapper.failure(
+                            BleErrorCode.CONNECT_TIMEOUT, MODULE, "connect timed out", deviceId), true);
+                }
+            }, connectionConfig.connectTimeoutMillis());
+        }
+        YoBleConnectionPlatform.BleGattHandle opened;
+        try {
+            opened = connectionPlatform.connectGatt(deviceId, platformAuto, new SessionListener(gen));
+        } catch (SecurityException security) {
+            finishTerminal(false, YoBleErrorMapper.failure(
+                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE, "connectGatt security exception",
+                    security, BleFailure.NO_RAW_STATUS, deviceId, null, null), true);
+            return;
+        }
+        if (opened == null) {
+            failAttempt(gen, false, YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECT_FAILED, MODULE, "connectGatt returned null", deviceId), true);
+            return;
+        }
+        handle = opened;
+    }
+
+    private void onConnected(long gen) {
+        if (gen != generation || userDisconnected) {
+            return;
+        }
+        cancel(connectTimeout);
+        connectTimeout = null;
+        transition(BleConnectionState.CONNECTED, "connected");
+        publish();
+        if (connectionConfig.bondPolicy() == BleBondPolicy.ENSURE_BONDED_BEFORE_DISCOVERY
+                && bondState != BleBondState.BONDED) {
+            transition(BleConnectionState.BONDING_WAIT, "bond");
+            publish();
+            bondController.createBond(deviceId, new BleValueObserver<BleDeviceSnapshot>() {
+                @Override
+                public void onSuccess(@NonNull BleDeviceSnapshot value) {
+                    runtime.state(() -> beginDiscovery());
+                }
+
+                @Override
+                public void onFailed(@NonNull BleFailure failure) {
+                    runtime.state(() -> finishTerminal(false, failure, true));
+                }
+            });
+            return;
+        }
+        beginDiscovery();
+    }
+
+    private void beginDiscovery() {
+        if (!connectionConfig.autoDiscoverServices()) {
+            beginInitializing();
+            return;
+        }
+        transition(BleConnectionState.DISCOVERING_SERVICES, "discover");
+        publish();
+        discoveryManager.discover(connectionConfig.refreshCacheBeforeDiscovery(),
+                connectionConfig.refreshCacheBeforeDiscovery(),
+                new BleValueObserver<BleGattDatabaseSnapshot>() {
+                    @Override
+                    public void onSuccess(@NonNull BleGattDatabaseSnapshot value) {
+                        runtime.state(() -> beginInitializing());
+                    }
+
+                    @Override
+                    public void onFailed(@NonNull BleFailure failure) {
+                        runtime.state(() -> finishTerminal(false, failure, true));
+                    }
+                });
+    }
+
+    private void beginInitializing() {
+        transition(BleConnectionState.INITIALIZING, "init");
+        publish();
+        Integer mtu = connectionConfig.requestMtu();
+        if (mtu == null) {
+            runPriority();
+            return;
+        }
+        linkTuner.requestMtu(mtu, new BleValueObserver<Integer>() {
+            @Override
+            public void onSuccess(@NonNull Integer value) {
+                runtime.state(YoBleGattSession.this::runPriority);
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                runtime.state(YoBleGattSession.this::runPriority);
+            }
+        });
+    }
+
+    private void runPriority() {
+        BleConnectionPriority priority = connectionConfig.preferredConnectionPriority();
+        if (priority == null) {
+            runPhy();
+            return;
+        }
+        linkTuner.requestConnectionPriority(priority, new BleValueObserver<Void>() {
+            @Override
+            public void onSuccess(@Nullable Void value) {
+                runtime.state(YoBleGattSession.this::runPhy);
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                runtime.state(YoBleGattSession.this::runPhy);
+            }
+        });
+    }
+
+    private void runPhy() {
+        BlePhyConfig phy = connectionConfig.preferredPhy();
+        if (phy == null) {
+            finishInit();
+            return;
+        }
+        linkTuner.setPreferredPhy(phy.txPhy(), phy.rxPhy(), phy.phyOptions(), new BleValueObserver<BlePhyConfig>() {
+            @Override
+            public void onSuccess(@NonNull BlePhyConfig value) {
+                runtime.state(YoBleGattSession.this::finishInit);
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                runtime.state(YoBleGattSession.this::finishInit);
+            }
+        });
+    }
+
+    private void finishInit() {
+        notificationRouter.restoreSubscriptions(() -> {
+            retryAttempt = 0;
+            backgroundAutoConnect = false;
+            transition(BleConnectionState.READY, "ready");
+            publish();
+        });
+    }
+
+    private void onDisconnected(long gen, int status) {
+        if (gen != generation) {
+            return;
+        }
+        if (stateMachine.state() == BleConnectionState.DISCONNECTING) {
+            closeHandle();
+            transition(BleConnectionState.DISCONNECTED, "closed");
+            publish();
+            markEnded();
+            return;
+        }
+        boolean wasUp = stateMachine.isConnected();
+        BleFailure reason = status == 0
+                ? YoBleErrorMapper.failure(BleErrorCode.REMOTE_TERMINATED, MODULE, "remote disconnected", deviceId)
+                : YoBleErrorMapper.fromHciStatus(status, MODULE, deviceId);
+        lastFailure = reason;
+        boolean retryConnect = !wasUp && !userDisconnected && retryAttempt < connectionConfig.maxRetryCount()
+                && (YoBleHciStatus.isRetryableConnectFailure(status) || reason.errorCode() == BleErrorCode.CONNECT_FAILED);
+        boolean auto = YoBleReconnectPolicy.shouldAutoReconnectOnUnexpectedDrop(
+                wasUp, retryAttempt, connectionConfig, userDisconnected,
+                capabilityInspector.isAdapterEnabled(), runtime.isReleased(), status);
+        releaseGatt(reason, !(retryConnect || auto));
+        if (retryConnect || auto) {
+            if (auto) {
+                backgroundAutoConnect = true;
+            } else {
+                retryAttempt++;
+            }
+            transition(BleConnectionState.DISCONNECTED, "retry-wait");
+            publish();
+            long wait = YoBleReconnectPolicy.computeWaitMillis(Math.max(1, retryAttempt), connectionConfig,
+                    nowMillis(), lastCloseAtMillis);
+            retryHandle = runtime.stateDelayed(() -> {
+                transition(BleConnectionState.CONNECTING, "retry");
+                publish();
+                launchConnectAttempt();
+            }, wait);
+            return;
+        }
+        finishTerminal(false, reason, true);
+    }
+
+    private void failAttempt(long gen, boolean wasUp, @NonNull BleFailure reason, boolean mayRetry) {
+        if (gen != generation || userDisconnected || ended) {
+            return;
+        }
+        lastFailure = reason;
+        boolean retry = mayRetry && !wasUp && retryAttempt < connectionConfig.maxRetryCount();
+        releaseGatt(reason, !retry);
+        if (retry) {
+            retryAttempt++;
+            transition(BleConnectionState.DISCONNECTED, "retry-wait");
+            publish();
+            retryHandle = runtime.stateDelayed(() -> {
+                transition(BleConnectionState.CONNECTING, "retry");
+                publish();
+                launchConnectAttempt();
+            }, YoBleReconnectPolicy.computeWaitMillis(retryAttempt, connectionConfig, nowMillis(), lastCloseAtMillis));
+            return;
+        }
+        finishTerminal(false, reason, true);
+    }
+
+    private void gracefulDisconnect() {
+        transition(BleConnectionState.DISCONNECTING, "user");
+        publish();
+        YoBleConnectionPlatform.BleGattHandle local = handle;
+        handle = null;
+        operationQueue.clearAll(YoBleErrorMapper.failure(
+                BleErrorCode.LOCAL_TERMINATED, MODULE, "user disconnect", deviceId));
+        notificationRouter.endSession(true, null);
+        discoveryManager.reset();
+        reliableWrite.reset();
+        linkTuner.cancelAllFallbacks();
+        if (local != null) {
+            local.disconnect();
+        }
+        closeTimeout = runtime.stateDelayed(() -> {
+            if (stateMachine.state() == BleConnectionState.DISCONNECTING) {
+                closeLocal(local);
+                transition(BleConnectionState.DISCONNECTED, "close-timeout");
+                publish();
+                markEnded();
+            }
+        }, DISCONNECT_CLOSE_TIMEOUT_MS);
+    }
+
+    private void finishTerminal(boolean user, @NonNull BleFailure reason, boolean notifyFailure) {
+        if (ended) {
+            return;
+        }
+        lastFailure = reason;
+        releaseGatt(reason, true);
+        transition(user ? BleConnectionState.DISCONNECTED : BleConnectionState.FAILED, "terminal");
+        publish();
+        if (notifyFailure && !user) {
+            notifyConnectionObservers(observer -> observer.onConnectionFailed(reason));
+        }
+        markEnded();
+    }
+
+    private void releaseGatt(@NonNull BleFailure reason, boolean terminal) {
+        cancel(connectTimeout);
+        connectTimeout = null;
+        YoBleConnectionPlatform.BleGattHandle local = handle;
+        handle = null;
+        generation++;
+        operationQueue.clearAll(reason);
+        discoveryManager.reset();
+        reliableWrite.reset();
+        linkTuner.cancelAllFallbacks();
+        currentDatabase = null;
+        snapshotStore.clearGattDatabase(deviceId, nowMillis());
+        if (terminal) {
+            notificationRouter.endSession(userDisconnected, userDisconnected ? null : reason);
+        } else {
+            notificationRouter.onLinkLost();
+        }
+        closeLocal(local);
+    }
+
+    private void closeHandle() {
+        closeLocal(handle);
+        handle = null;
+    }
+
+    private void closeLocal(@Nullable YoBleConnectionPlatform.BleGattHandle local) {
+        if (local == null || local.isClosed()) {
+            return;
+        }
+        try {
+            local.disconnect();
+        } catch (Throwable ignored) {
+        }
+        try {
+            local.close();
+        } catch (Throwable ignored) {
+        }
+        lastCloseAtMillis = nowMillis();
+        closeTimestampSink.accept(deviceId, lastCloseAtMillis);
+    }
+
+    private void markEnded() {
+        ended = true;
+        cancelTimers();
+        List<Runnable> waiters = new ArrayList<>(endedWaiters);
+        endedWaiters.clear();
+        for (Runnable waiter : waiters) {
+            waiter.run();
+        }
+    }
+
+    private void transition(@NonNull BleConnectionState next, @NonNull String event) {
+        stateMachine.transitionTo(next, event);
+    }
+
+    private void publish() {
+        BleConnectionSnapshot snap = snapshot();
+        snapshotStore.recordConnectionSnapshot(snap);
+        notifyConnectionObservers(observer -> observer.onConnectionStateChanged(snap));
+    }
+
+    private void cancelTimers() {
+        cancel(connectTimeout);
+        cancel(retryHandle);
+        cancel(closeTimeout);
+        connectTimeout = null;
+        retryHandle = null;
+        closeTimeout = null;
+    }
+
+    private static void cancel(@Nullable YoTimeoutHandle handle) {
+        if (handle != null) {
+            handle.cancel();
+        }
+    }
+
+    private long remainingCloseGap() {
+        if (lastCloseAtMillis <= 0L) {
+            return 0L;
+        }
+        return Math.max(0L, connectionConfig.closeDelayMillis() - (nowMillis() - lastCloseAtMillis));
+    }
+
     @Override
+    @NonNull
     public BleDeviceId deviceId() {
         return deviceId;
     }
 
-    @NonNull
     @Override
+    @NonNull
     public YoBleRuntime runtime() {
         return runtime;
     }
 
-    @NonNull
     @Override
+    @NonNull
     public BleConfig bleConfig() {
         return bleConfig;
     }
 
-    @NonNull
     @Override
+    @NonNull
     public YoBleCapabilityInspector capabilityInspector() {
         return capabilityInspector;
     }
 
-    @NonNull
     @Override
+    @NonNull
     public YoBleDeviceSnapshotStore snapshotStore() {
         return snapshotStore;
     }
 
-    @NonNull
     @Override
+    @NonNull
     public YoBleTimelineRecorder timeline() {
         return timeline;
     }
@@ -353,16 +695,11 @@ public final class YoBleGattSession implements YoBleSessionContext {
 
     @Override
     public boolean isConnected() {
-        return !released && !userDisconnected && stateMachine.isConnected();
+        return !ended && stateMachine.isConnected();
     }
 
     @Override
-    public boolean isReady() {
-        return !released && !userDisconnected && stateMachine.isReady();
-    }
-
     @NonNull
-    @Override
     public BleBondState bondState() {
         return bondState;
     }
@@ -372,708 +709,208 @@ public final class YoBleGattSession implements YoBleSessionContext {
         return currentMtu;
     }
 
-    @Nullable
     @Override
+    @Nullable
     public Integer overriddenMtu() {
         return overriddenMtu;
     }
 
     @Override
     public void onMtuUpdated(int mtu) {
-        this.currentMtu = Math.max(BleConnectionSnapshot.DEFAULT_ATT_MTU, mtu);
-        recordSnapshot();
+        currentMtu = mtu;
     }
 
     @Override
     public void onMtuOverridden(int mtu) {
-        this.overriddenMtu = Math.max(BleConnectionSnapshot.DEFAULT_ATT_MTU, mtu);
-        this.currentMtu = this.overriddenMtu;
-        recordSnapshot();
+        overriddenMtu = mtu;
     }
 
     @Override
     public void onPhyUpdated(@NonNull BlePhyConfig phy) {
-        this.currentPhy = phy;
-        recordSnapshot();
+        currentPhy = phy;
     }
 
     @Override
     public void onConnectionParametersUpdated(@NonNull BleConnectionParameters parameters) {
-        this.connectionParameters = parameters;
-        recordSnapshot();
+        connectionParameters = parameters;
     }
 
     @Override
     public void onRssiUpdated(int rssi) {
-        this.lastRssi = rssi;
-        recordSnapshot();
+        lastRssi = rssi;
     }
 
-    @Nullable
     @Override
+    @Nullable
     public BleGattDatabaseSnapshot currentDatabase() {
         return currentDatabase;
     }
 
     @Override
     public void onDatabaseUpdated(@NonNull BleGattDatabaseSnapshot database) {
-        this.currentDatabase = database;
-        recordSnapshot();
+        currentDatabase = database;
     }
 
     @Override
     public void onDatabaseCleared() {
-        this.currentDatabase = null;
-        recordSnapshot();
+        currentDatabase = null;
     }
 
+    @Override
     @Nullable
-    @Override
     public YoBleGattTransport transport() {
-        YoBleConnectionPlatform.BleGattHandle h = gattHandle;
-        return h == null || h.isClosed() ? null : h.transport();
+        return handle == null || handle.isClosed() ? null : handle.transport();
     }
 
-    @NonNull
     @Override
+    @NonNull
     public YoBleGattOperationQueue operationQueue() {
         return operationQueue;
     }
 
-    @NonNull
-    @Override
-    public YoBleNotificationRouter notificationRouter() {
-        return notificationRouter;
-    }
-
     @Override
     public void notifyConnectionObservers(@NonNull Consumer<BleConnectionObserver> emitter) {
-        for (BleConnectionObserver obs : sessionObservers) {
-            runtime.callback(() -> emitter.accept(obs));
-        }
-        for (BleConnectionObserver obs : globalObservers) {
-            runtime.callback(() -> emitter.accept(obs));
-        }
+        runtime.callback(() -> {
+            for (BleConnectionObserver observer : sessionObservers) {
+                emitter.accept(observer);
+            }
+            for (BleConnectionObserver observer : globalObservers) {
+                emitter.accept(observer);
+            }
+        });
     }
 
     @Override
-    public boolean handleAuthErrorIfConfigured(@NonNull BleFailure failure,
-                                               @NonNull Runnable retryAction) {
-        if (authRetryUsed || !isConnected()) {
-            return false;
+    public void recoverFromAuthError(@NonNull BleFailure failure,
+                                     @NonNull Runnable onRecovered,
+                                     @NonNull Runnable onGiveUp) {
+        BleBondPolicy policy = connectionConfig.bondPolicy();
+        boolean allow = policy == BleBondPolicy.AUTO_BOND_ON_AUTH_ERROR
+                || (policy == BleBondPolicy.NONE && capabilityInspector.sdkInt() < 26);
+        if (!allow || !YoBleGattStatus.isAuthOrEncryptionError(failure.rawStatusCode())) {
+            onGiveUp.run();
+            return;
         }
-        boolean policyMatch = connectionConfig.bondPolicy() == BleBondPolicy.AUTO_BOND_ON_AUTH_ERROR
-                || (connectionConfig.bondPolicy() == BleBondPolicy.NONE
-                && capabilityInspector.sdkInt() < 26);
-        if (!policyMatch) {
-            return false;
-        }
-        authRetryUsed = true;
-        timeline.record(MODULE, "ATT auth error (" + failure.rawStatusCode()
-                + ") -> triggering createBond & retry for " + deviceId);
         bondController.createBond(deviceId, new BleValueObserver<BleDeviceSnapshot>() {
             @Override
             public void onSuccess(@NonNull BleDeviceSnapshot value) {
-                runtime.state(() -> {
-                    bondState = BleBondState.BONDED;
-                    if (isConnected()) {
-                        retryAction.run();
-                    }
-                });
+                runtime.state(onRecovered);
             }
 
             @Override
             public void onFailed(@NonNull BleFailure bondFailure) {
-                runtime.state(() -> {
-                    if (isConnected()) {
-                        // 重跑一次触发原始操作以释放 authRetryUsed 并让其正常上报失败给调用方
-                        retryAction.run();
-                    }
-                });
-            }
-        });
-        return true;
-    }
-
-    // ── 内部连接、状态迁移与平台事件处理 ────────────────────────────
-
-    private void launchConnectAttempt() {
-        runtime.checkStateThread();
-        if (released || userDisconnected) {
-            return;
-        }
-        if (!capabilityInspector.isAdapterEnabled()) {
-            failConnection(YoBleErrorMapper.failure(
-                    BleErrorCode.BLUETOOTH_DISABLED, MODULE,
-                    "Bluetooth adapter disabled before connectGatt", deviceId), true);
-            return;
-        }
-
-        if (stateMachine.state() == BleConnectionState.DISCONNECTED
-                || stateMachine.state() == BleConnectionState.FAILED) {
-            if (stateMachine.transitionTo(BleConnectionState.CONNECTING, "retryConnect")) {
-                publishStateChange();
-            }
-        }
-
-        long gen = attemptSeq.incrementAndGet();
-        activeAttemptGen = gen;
-        authRetryUsed = false;
-
-        if (connectionConfig.connectTimeoutMillis() > 0L) {
-            armConnectTimeout(gen);
-        }
-
-        timeline.record(MODULE, "connectGatt attempt=" + retryAttempt
-                + ", autoConnect=" + connectionConfig.autoConnect() + " device=" + deviceId);
-
-        YoBleConnectionPlatform.BleGattHandle handle = connectionPlatform.connectGatt(
-                deviceId, connectionConfig.autoConnect(), new SessionPlatformListener(gen));
-
-        if (handle == null) {
-            handleConnectOrDropFailure(gen, false, YoBleHciStatus.GATT_ERROR_133,
-                    YoBleErrorMapper.failure(BleErrorCode.CONNECT_FAILED, MODULE,
-                            "connectGatt returned null", deviceId));
-            return;
-        }
-        this.gattHandle = handle;
-    }
-
-    private void armConnectTimeout(long gen) {
-        if (connectTimeoutHandle != null) {
-            connectTimeoutHandle.cancel();
-        }
-        connectTimeoutHandle = runtime.scheduler().schedule(
-                () -> runtime.state(() -> {
-                    if (released || userDisconnected || gen != activeAttemptGen) {
-                        return;
-                    }
-                    if (stateMachine.state() != BleConnectionState.CONNECTING) {
-                        return;
-                    }
-                    timeline.record(MODULE, "connect timeout after "
-                            + connectionConfig.connectTimeoutMillis() + "ms: " + deviceId);
-                    BleFailure timeoutFailure = YoBleErrorMapper.failure(
-                            BleErrorCode.CONNECT_TIMEOUT, MODULE,
-                            "BLE connect timed out after " + connectionConfig.connectTimeoutMillis() + "ms",
-                            deviceId);
-                    handleConnectOrDropFailure(gen, false, YoBleHciStatus.CONNECTION_TIMEOUT, timeoutFailure);
-                }),
-                connectionConfig.connectTimeoutMillis());
-    }
-
-    private void onPlatformConnected(long gen) {
-        if (released || userDisconnected || gen != activeAttemptGen) {
-            return;
-        }
-        if (connectTimeoutHandle != null) {
-            connectTimeoutHandle.cancel();
-            connectTimeoutHandle = null;
-        }
-        bondState = bondController.getBondState(deviceId);
-        if (!stateMachine.transitionTo(BleConnectionState.CONNECTED, "onConnected")) {
-            return;
-        }
-        timeline.record(MODULE, "GATT connected: " + deviceId + ", bond=" + bondState);
-        publishStateChange();
-
-        if (connectionConfig.bondPolicy() == BleBondPolicy.ENSURE_BONDED_BEFORE_DISCOVERY
-                && bondState != BleBondState.BONDED) {
-            stateMachine.transitionTo(BleConnectionState.BONDING_WAIT, "ensureBonded");
-            publishStateChange();
-            bondController.createBond(deviceId, new BleValueObserver<BleDeviceSnapshot>() {
-                @Override
-                public void onSuccess(@NonNull BleDeviceSnapshot value) {
-                    runtime.state(() -> {
-                        if (released || userDisconnected || gen != activeAttemptGen || !isConnected()) {
-                            return;
-                        }
-                        bondState = BleBondState.BONDED;
-                        beginDiscoveryPhase(gen);
-                    });
-                }
-
-                @Override
-                public void onFailed(@NonNull BleFailure failure) {
-                    runtime.state(() -> {
-                        if (released || userDisconnected || gen != activeAttemptGen) {
-                            return;
-                        }
-                        failConnection(failure, false);
-                    });
-                }
-            });
-            return;
-        }
-
-        beginDiscoveryPhase(gen);
-    }
-
-    private void beginDiscoveryPhase(long gen) {
-        if (released || userDisconnected || gen != activeAttemptGen || !isConnected()) {
-            return;
-        }
-        if (!connectionConfig.autoDiscoverServices()) {
-            beginInitializingPhase(gen);
-            return;
-        }
-        stateMachine.transitionTo(BleConnectionState.DISCOVERING_SERVICES, "discoverServices");
-        publishStateChange();
-        serviceDiscoveryManager.discoverServices(
-                connectionConfig.refreshCacheBeforeDiscovery(),
-                connectionConfig.autoHandleServiceChanged(),
-                new BleValueObserver<BleGattDatabaseSnapshot>() {
-                    @Override
-                    public void onSuccess(@NonNull BleGattDatabaseSnapshot value) {
-                        runtime.state(() -> {
-                            if (released || userDisconnected || gen != activeAttemptGen || !isConnected()) {
-                                return;
-                            }
-                            if (stateMachine.state() == BleConnectionState.DISCOVERING_SERVICES) {
-                                beginInitializingPhase(gen);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void onFailed(@NonNull BleFailure failure) {
-                        runtime.state(() -> {
-                            if (released || userDisconnected || gen != activeAttemptGen) {
-                                return;
-                            }
-                            if (stateMachine.state() == BleConnectionState.DISCOVERING_SERVICES) {
-                                failConnection(failure, false);
-                            }
-                        });
-                    }
-                });
-    }
-
-    private void beginInitializingPhase(long gen) {
-        if (released || userDisconnected || gen != activeAttemptGen || !isConnected()) {
-            return;
-        }
-        stateMachine.transitionTo(BleConnectionState.INITIALIZING, "initPipeline");
-        publishStateChange();
-        runMtuInitStep(gen);
-    }
-
-    private void runMtuInitStep(long gen) {
-        Integer targetMtu = connectionConfig.requestMtu();
-        if (targetMtu == null) {
-            runPriorityInitStep(gen);
-            return;
-        }
-        linkTuner.requestMtu(targetMtu, new BleValueObserver<Integer>() {
-            @Override
-            public void onSuccess(@NonNull Integer value) {
-                runtime.state(() -> {
-                    if (gen == activeAttemptGen && isConnected()) {
-                        runPriorityInitStep(gen);
-                    }
-                });
-            }
-
-            @Override
-            public void onFailed(@NonNull BleFailure failure) {
-                runtime.state(() -> {
-                    timeline.record(MODULE, "init requestMtu non-fatal failure: " + failure.errorCode());
-                    if (gen == activeAttemptGen && isConnected()) {
-                        runPriorityInitStep(gen);
-                    }
-                });
+                runtime.state(onGiveUp);
             }
         });
     }
 
-    private void runPriorityInitStep(long gen) {
-        com.yovo.lib_bluetooth.model.ble.BleConnectionPriority prio =
-                connectionConfig.preferredConnectionPriority();
-        if (prio == null) {
-            runPhyInitStep(gen);
-            return;
-        }
-        linkTuner.requestConnectionPriority(prio, new BleValueObserver<Void>() {
-            @Override
-            public void onSuccess(@Nullable Void value) {
-                runtime.state(() -> {
-                    if (gen == activeAttemptGen && isConnected()) {
-                        runPhyInitStep(gen);
-                    }
-                });
-            }
-
-            @Override
-            public void onFailed(@NonNull BleFailure failure) {
-                runtime.state(() -> {
-                    timeline.record(MODULE, "init priority non-fatal failure: " + failure.errorCode());
-                    if (gen == activeAttemptGen && isConnected()) {
-                        runPhyInitStep(gen);
-                    }
-                });
-            }
-        });
-    }
-
-    private void runPhyInitStep(long gen) {
-        BlePhyConfig phy = connectionConfig.preferredPhy();
-        if (phy == null || capabilityInspector.sdkInt() < 26) {
-            completeInitialization(gen);
-            return;
-        }
-        linkTuner.setPreferredPhy(phy.txPhy(), phy.rxPhy(), phy.phyOptions(),
-                new BleValueObserver<BlePhyConfig>() {
-                    @Override
-                    public void onSuccess(@NonNull BlePhyConfig value) {
-                        runtime.state(() -> completeInitialization(gen));
-                    }
-
-                    @Override
-                    public void onFailed(@NonNull BleFailure failure) {
-                        runtime.state(() -> {
-                            timeline.record(MODULE, "init setPreferredPhy non-fatal failure: " + failure.errorCode());
-                            completeInitialization(gen);
-                        });
-                    }
-                });
-    }
-
-    private void completeInitialization(long gen) {
-        if (released || userDisconnected || gen != activeAttemptGen || !isConnected()) {
-            return;
-        }
-        if (stateMachine.transitionTo(BleConnectionState.READY, "ready")) {
-            timeline.record(MODULE, "GATT session READY: " + deviceId
-                    + ", mtu=" + currentMtu
-                    + ", phy=" + currentPhy.txPhy() + "/" + currentPhy.rxPhy());
-            publishStateChange();
-        }
-    }
-
-    private void onPlatformDisconnected(long gen, int status) {
-        if (released || gen != activeAttemptGen) {
-            return;
-        }
-        cancelTimers();
-        boolean wasConnectedOrReady = stateMachine.isConnected();
-        if (userDisconnected) {
-            teardownGattAndQueues(YoBleErrorMapper.failure(
-                    BleErrorCode.LOCAL_TERMINATED, MODULE, "Disconnected locally", deviceId));
-            stateMachine.transitionTo(BleConnectionState.DISCONNECTED, "platformDisconnectedLocal");
-            publishStateChange();
-            return;
-        }
-
-        BleFailure reason = status == 0
-                ? YoBleErrorMapper.failure(BleErrorCode.REMOTE_TERMINATED, MODULE,
-                "Peripheral disconnected (status=0)", deviceId)
-                : YoBleErrorMapper.fromHciStatus(status, MODULE, deviceId);
-        handleConnectOrDropFailure(gen, wasConnectedOrReady, status, reason);
-    }
-
-    private void handleConnectOrDropFailure(long gen,
-                                            boolean wasConnectedOrReady,
-                                            int rawStatus,
-                                            @NonNull BleFailure reason) {
-        if (released || gen != activeAttemptGen || userDisconnected) {
-            return;
-        }
-        cancelTimers();
-        teardownGattAndQueues(reason);
-
-        boolean retryConnect = !wasConnectedOrReady && YoBleReconnectPolicy.shouldRetryOnConnectFailure(
-                retryAttempt, rawStatus, connectionConfig, userDisconnected,
-                capabilityInspector.isAdapterEnabled(), released);
-        boolean autoReconnect = YoBleReconnectPolicy.shouldAutoReconnectOnUnexpectedDrop(
-                wasConnectedOrReady, retryAttempt, connectionConfig, userDisconnected,
-                capabilityInspector.isAdapterEnabled(), released, rawStatus);
-
-        if (retryConnect || autoReconnect) {
-            retryAttempt++;
-            if (wasConnectedOrReady && stateMachine.transitionTo(BleConnectionState.DISCONNECTED, "autoReconnectWait")) {
-                publishStateChange();
-            }
-            long waitMs = YoBleReconnectPolicy.computeWaitMillis(
-                    retryAttempt, connectionConfig, clockMillis.getAsLong(), lastCloseAtMillis);
-            timeline.record(MODULE, "scheduling retry #" + retryAttempt
-                    + " in " + waitMs + "ms (rawStatus=" + rawStatus + "): " + deviceId);
-            pendingRetryHandle = runtime.scheduler().schedule(
-                    () -> runtime.state(this::launchConnectAttempt),
-                    waitMs);
-            return;
-        }
-
-        failConnection(reason, wasConnectedOrReady);
-    }
-
-    private void failConnection(@NonNull BleFailure failure, boolean endInDisconnectedState) {
-        cancelTimers();
-        this.lastFailure = failure;
-        teardownGattAndQueues(failure);
-        BleConnectionState targetEnd = endInDisconnectedState
-                ? BleConnectionState.DISCONNECTED
-                : BleConnectionState.FAILED;
-        if (stateMachine.state() != targetEnd) {
-            stateMachine.transitionTo(targetEnd, "fail:" + failure.errorCode());
-            publishStateChange();
-        }
-        timeline.record(MODULE, "session failed (" + failure.errorCode()
-                + ", raw=" + failure.rawStatusCode() + "): " + deviceId);
-        notifyFailure(failure);
-    }
-
-    private void teardownGattAndQueues(@NonNull BleFailure reason) {
-        operationQueue.clearAll(reason);
-        YoBleConnectionPlatform.BleGattHandle handle = gattHandle;
-        if (reliableWriteCoordinator.isInTransaction() && handle != null && !handle.isClosed()) {
-            try {
-                handle.transport().abortReliableWrite();
-            } catch (Throwable ignored) {
-            }
-        }
-        reliableWriteCoordinator.reset();
-        notificationRouter.clearAll();
-        serviceDiscoveryManager.reset();
-        linkTuner.cancelAllFallbacks();
-        currentDatabase = null;
-        snapshotStore.clearGattDatabase(deviceId, clockMillis.getAsLong());
-
-        gattHandle = null;
-        if (handle != null && !handle.isClosed()) {
-            try {
-                handle.disconnect();
-            } catch (Throwable ignored) {
-            }
-            try {
-                handle.close();
-            } catch (Throwable ignored) {
-            }
-            long now = clockMillis.getAsLong();
-            this.lastCloseAtMillis = now;
-            closeTimestampSink.accept(deviceId, now);
-        }
-    }
-
-    private void cancelTimers() {
-        if (connectTimeoutHandle != null) {
-            connectTimeoutHandle.cancel();
-            connectTimeoutHandle = null;
-        }
-        if (pendingRetryHandle != null) {
-            pendingRetryHandle.cancel();
-            pendingRetryHandle = null;
-        }
-    }
-
-    private void publishStateChange() {
-        BleConnectionSnapshot snap = recordSnapshot();
-        notifyConnectionObservers(obs -> obs.onConnectionStateChanged(snap));
-    }
-
-    @NonNull
-    private BleConnectionSnapshot recordSnapshot() {
-        BleConnectionSnapshot snap = snapshot();
-        snapshotStore.recordConnectionSnapshot(snap);
-        return snap;
-    }
-
-    private void notifyFailure(@NonNull BleFailure failure) {
-        notifyConnectionObservers(obs -> obs.onConnectionFailed(failure));
-    }
-
-    private final class SessionPlatformListener implements YoBleConnectionPlatform.PlatformListener {
+    private final class SessionListener implements YoBleConnectionPlatform.PlatformListener {
         private final long gen;
 
-        SessionPlatformListener(long gen) {
+        SessionListener(long gen) {
             this.gen = gen;
+        }
+
+        private void post(@NonNull Runnable action) {
+            runtime.state(() -> {
+                if (gen != generation && stateMachine.state() != BleConnectionState.DISCONNECTING) {
+                    return;
+                }
+                action.run();
+            });
         }
 
         @Override
         public void onConnectionStateChange(int status, int newState) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
+            post(() -> {
                 if (newState == YoBleConnectionPlatform.STATE_CONNECTED && status == 0) {
-                    onPlatformConnected(gen);
+                    onConnected(gen);
                 } else {
-                    onPlatformDisconnected(gen, status);
+                    onDisconnected(gen, status);
                 }
             });
         }
 
         @Override
         public void onServicesDiscovered(int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    serviceDiscoveryManager.onPlatformServicesDiscovered(
-                            status, connectionConfig.autoHandleServiceChanged());
-                }
-            });
+            post(() -> discoveryManager.onPlatformServicesDiscovered(status));
         }
 
         @Override
         public void onServiceChanged() {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    serviceDiscoveryManager.onServiceChangedTriggered(
-                            connectionConfig.autoHandleServiceChanged());
-                }
-            });
+            post(discoveryManager::onServiceChanged);
         }
 
         @Override
         public void onCharacteristicRead(@NonNull BleGattTarget target, @NonNull byte[] value, int status) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
-                if (status == 0) {
-                    authRetryUsed = false;
-                    operationQueue.succeedInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.READ_CHAR, value);
-                } else {
-                    operationQueue.failInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.READ_CHAR,
-                            YoBleErrorMapper.fromGattStatus(
-                                    status, BleErrorCode.READ_FAILED, MODULE, deviceId, target, "readCharacteristic"));
-                }
-            });
+            post(() -> complete(YoBleGattOperationQueue.OpKind.READ_CHAR, target, value, status, BleErrorCode.READ_FAILED, "read"));
         }
 
         @Override
         public void onCharacteristicWrite(@NonNull BleGattTarget target, @Nullable byte[] echoedValue, int status) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
-                if (status == 0) {
-                    authRetryUsed = false;
-                    operationQueue.succeedInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.WRITE_CHAR, echoedValue);
-                } else {
-                    operationQueue.failInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.WRITE_CHAR,
-                            YoBleErrorMapper.fromGattStatus(
-                                    status, BleErrorCode.WRITE_FAILED, MODULE, deviceId, target, "writeCharacteristic"));
-                }
-            });
+            post(() -> complete(YoBleGattOperationQueue.OpKind.WRITE_CHAR, target, echoedValue, status, BleErrorCode.WRITE_FAILED, "write"));
         }
 
         @Override
         public void onCharacteristicChanged(@NonNull BleGattTarget target, @NonNull byte[] value) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    notificationRouter.dispatchCharacteristicChanged(target, value);
-                }
-            });
+            post(() -> notificationRouter.dispatchCharacteristicChanged(target, value));
         }
 
         @Override
         public void onDescriptorRead(@NonNull BleGattTarget target, @NonNull byte[] value, int status) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
-                if (status == 0) {
-                    authRetryUsed = false;
-                    operationQueue.succeedInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.READ_DESC, value);
-                } else {
-                    operationQueue.failInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.READ_DESC,
-                            YoBleErrorMapper.fromGattStatus(
-                                    status, BleErrorCode.READ_FAILED, MODULE, deviceId, target, "readDescriptor"));
-                }
-            });
+            post(() -> complete(YoBleGattOperationQueue.OpKind.READ_DESC, target, value, status, BleErrorCode.READ_FAILED, "readDescriptor"));
         }
 
         @Override
         public void onDescriptorWrite(@NonNull BleGattTarget target, int status) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
-                if (status == 0) {
-                    authRetryUsed = false;
-                    operationQueue.succeedInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.WRITE_DESC, null);
-                } else {
-                    BleErrorCode fallback = BleGattDatabaseSnapshot.CCCD_UUID.equals(target.descriptorUuid())
-                            ? BleErrorCode.NOTIFY_FAILED
-                            : BleErrorCode.WRITE_FAILED;
-                    operationQueue.failInFlightIfMatches(
-                            YoBleGattOperationQueue.OpKind.WRITE_DESC,
-                            YoBleErrorMapper.fromGattStatus(
-                                    status, fallback, MODULE, deviceId, target, "writeDescriptor"));
-                }
-            });
+            post(() -> complete(YoBleGattOperationQueue.OpKind.WRITE_DESC, target, null, status, BleErrorCode.NOTIFY_FAILED, "writeDescriptor"));
         }
 
         @Override
         public void onMtuChanged(int mtu, int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    linkTuner.onPlatformMtuChanged(mtu, status);
-                }
-            });
+            post(() -> linkTuner.onPlatformMtuChanged(mtu, status));
         }
 
         @Override
         public void onPhyUpdate(@NonNull BlePhyConfig phy, int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    linkTuner.onPlatformPhyUpdate(phy, status);
-                }
-            });
+            post(() -> linkTuner.onPlatformPhyUpdate(phy, status));
         }
 
         @Override
         public void onPhyRead(@NonNull BlePhyConfig phy, int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    linkTuner.onPlatformPhyRead(phy, status);
-                }
-            });
+            post(() -> linkTuner.onPlatformPhyRead(phy, status));
         }
 
         @Override
         public void onConnectionUpdated(int interval, int latency, int timeout, int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    linkTuner.onPlatformConnectionUpdated(interval, latency, timeout, status);
-                }
-            });
+            post(() -> linkTuner.onPlatformConnectionUpdated(interval, latency, timeout, status));
         }
 
         @Override
         public void onReadRemoteRssi(int rssi, int status) {
-            runtime.state(() -> {
-                if (gen == activeAttemptGen) {
-                    linkTuner.onPlatformRssiRead(rssi, status);
-                }
-            });
+            post(() -> linkTuner.onPlatformRssiRead(rssi, status));
         }
 
         @Override
         public void onReliableWriteCompleted(int status) {
-            runtime.state(() -> {
-                if (gen != activeAttemptGen) {
-                    return;
-                }
-                YoBleGattOperationQueue.QueuedOperation active = operationQueue.currentInFlight();
-                YoBleGattOperationQueue.OpKind targetKind =
-                        active != null && active.kind() == YoBleGattOperationQueue.OpKind.RELIABLE_ABORT
-                                ? YoBleGattOperationQueue.OpKind.RELIABLE_ABORT
-                                : YoBleGattOperationQueue.OpKind.RELIABLE_EXECUTE;
-                if (status == 0) {
-                    operationQueue.succeedInFlightIfMatches(targetKind, null);
-                } else {
-                    operationQueue.failInFlightIfMatches(targetKind,
-                            YoBleErrorMapper.fromGattStatus(status, BleErrorCode.WRITE_FAILED,
-                                    MODULE, deviceId, null, "reliableWriteCompleted"));
+            post(() -> {
+                BleFailure failure = status == 0 ? null : YoBleErrorMapper.fromGattStatus(
+                        status, BleErrorCode.WRITE_FAILED, MODULE, deviceId, null, "reliableWrite");
+                if (!operationQueue.complete(YoBleGattOperationQueue.OpKind.RELIABLE_ABORT, null, null, failure)) {
+                    operationQueue.complete(YoBleGattOperationQueue.OpKind.RELIABLE_EXECUTE, null, null, failure);
                 }
             });
+        }
+
+        private void complete(@NonNull YoBleGattOperationQueue.OpKind kind,
+                              @NonNull BleGattTarget target,
+                              @Nullable Object payload,
+                              int status,
+                              @NonNull BleErrorCode fallback,
+                              @NonNull String label) {
+            BleFailure failure = status == 0 ? null : YoBleErrorMapper.fromGattStatus(
+                    status, fallback, MODULE, deviceId, target, label);
+            operationQueue.complete(kind, target, status == 0 ? payload : null, failure);
         }
     }
 }

@@ -19,6 +19,12 @@ import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleRequestResponseConfig;
 import com.yovo.lib_bluetooth.model.ble.BleValueObserver;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +40,8 @@ public final class YoBleRequestResponseCoordinator {
     private final YoBleSessionContext context;
     private final YoBleGattOperationHandler gattHandler;
     private final AtomicLong seq = new AtomicLong();
+    private final Map<BleGattTarget, Deque<LaneItem>> lanes = new LinkedHashMap<>();
+    private final Set<BleGattTarget> laneBusy = new HashSet<>();
 
     public YoBleRequestResponseCoordinator(@NonNull YoBleSessionContext context,
                                            @NonNull YoBleGattOperationHandler gattHandler) {
@@ -44,8 +52,33 @@ public final class YoBleRequestResponseCoordinator {
     @NonNull
     public BleOperationHandle sendAndWait(@NonNull BleRequestResponseConfig config,
                                           @NonNull BleValueObserver<byte[]> observer) {
+        context.runtime().checkStateThread();
+        if (!context.isReady()) {
+            String opId = "ble-req-resp-" + seq.incrementAndGet();
+            BleFailure f = YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
+                    "BLE connection is not READY for sendAndWait", context.deviceId());
+            context.runtime().callback(() -> observer.onFailed(f));
+            return BleOperationHandle.completed(opId);
+        }
+        if (config.responseMatcher() == null) {
+            BleGattTarget key = config.responseTarget().withoutDescriptor();
+            if (!laneBusy.add(key)) {
+                LaneItem item = new LaneItem(config, observer);
+                lanes.computeIfAbsent(key, ignored -> new ArrayDeque<>()).add(item);
+                return new BleOperationHandle(item.opId, () -> context.runtime().state(() -> cancelLaneItem(key, item)));
+            }
+            return beginSendAndWait(config, observer, () -> releaseLane(key));
+        }
+        return beginSendAndWait(config, observer, () -> { });
+    }
+
+    private BleOperationHandle beginSendAndWait(@NonNull BleRequestResponseConfig config,
+                                                @NonNull BleValueObserver<byte[]> observer,
+                                                @NonNull Runnable onFinished) {
         String opId = "ble-req-resp-" + seq.incrementAndGet();
         if (!context.isReady()) {
+            onFinished.run();
             BleFailure f = YoBleErrorMapper.failure(
                     BleErrorCode.CONNECTION_NOT_READY, MODULE,
                     "BLE connection is not READY for sendAndWait", context.deviceId());
@@ -61,15 +94,23 @@ public final class YoBleRequestResponseCoordinator {
         final int[] chunkIndex = {0};
 
         YoBleNotificationRouter.RawPacketInterceptor[] interceptorHolder = new YoBleNotificationRouter.RawPacketInterceptor[1];
+        AtomicBoolean cleaned = new AtomicBoolean(false);
         Runnable cleanup = () -> {
-            YoTimeoutHandle t = timeoutRef.getAndSet(null);
-            if (t != null) {
-                t.cancel();
+            if (!cleaned.compareAndSet(false, true)) {
+                return;
             }
-            if (interceptorHolder[0] != null) {
-                context.notificationRouter().unregisterInterceptor(
-                        config.responseTarget(), interceptorHolder[0]);
-            }
+            context.runtime().state(() -> {
+                YoTimeoutHandle t = timeoutRef.getAndSet(null);
+                if (t != null) {
+                    t.cancel();
+                }
+                if (interceptorHolder[0] != null) {
+                    context.notificationRouter().unregisterInterceptor(
+                            config.responseTarget(), interceptorHolder[0]);
+                }
+                context.notificationRouter().releaseHold(config.responseTarget());
+                onFinished.run();
+            });
         };
 
         interceptorHolder[0] = (sourceTarget, incomingChunk) -> {
@@ -79,8 +120,20 @@ public final class YoBleRequestResponseCoordinator {
             byte[] candidatePayload;
             BleDataMerger merger = config.dataMerger();
             if (merger != null) {
-                BleDataMerger.Output output = merger.merge(
-                        accumulated[0], incomingChunk, chunkIndex[0]++);
+                BleDataMerger.Output output;
+                try {
+                    output = merger.merge(accumulated[0], incomingChunk, chunkIndex[0]++);
+                } catch (Throwable thrown) {
+                    if (finished.compareAndSet(false, true)) {
+                        cleanup.run();
+                        BleFailure f = YoBleErrorMapper.failure(
+                                BleErrorCode.PAYLOAD_MERGE_FAILED, MODULE,
+                                "DataMerger threw", thrown, BleFailure.NO_RAW_STATUS,
+                                context.deviceId(), config.responseTarget(), null);
+                        context.runtime().callback(() -> observer.onFailed(f));
+                    }
+                    return;
+                }
                 if (output.status() == BleMergeResult.INVALID) {
                     if (finished.compareAndSet(false, true)) {
                         cleanup.run();
@@ -102,7 +155,21 @@ public final class YoBleRequestResponseCoordinator {
             }
 
             Predicate<byte[]> matcher = config.responseMatcher();
-            if (matcher == null || matcher.test(candidatePayload)) {
+            boolean matched;
+            try {
+                matched = matcher == null || matcher.test(candidatePayload);
+            } catch (Throwable thrown) {
+                if (finished.compareAndSet(false, true)) {
+                    cleanup.run();
+                    BleFailure f = YoBleErrorMapper.failure(
+                            BleErrorCode.PAYLOAD_MERGE_FAILED, MODULE,
+                            "response matcher threw", thrown, BleFailure.NO_RAW_STATUS,
+                            context.deviceId(), config.responseTarget(), null);
+                    context.runtime().callback(() -> observer.onFailed(f));
+                }
+                return;
+            }
+            if (matched) {
                 if (finished.compareAndSet(false, true)) {
                     cleanup.run();
                     byte[] finalBytes = candidatePayload.clone();
@@ -189,5 +256,53 @@ public final class YoBleRequestResponseCoordinator {
                 context.runtime().callback(() -> observer.onFailed(cancelledErr));
             }
         });
+    }
+
+    private void releaseLane(@NonNull BleGattTarget key) {
+        Deque<LaneItem> queue = lanes.get(key);
+        while (queue != null && !queue.isEmpty()) {
+            LaneItem next = queue.poll();
+            if (next == null || next.cancelled.get()) {
+                continue;
+            }
+            next.started = beginSendAndWait(next.config, next.observer, () -> releaseLane(key));
+            return;
+        }
+        laneBusy.remove(key);
+        lanes.remove(key);
+    }
+
+    private void cancelLaneItem(@NonNull BleGattTarget key, @NonNull LaneItem item) {
+        if (!item.cancelled.compareAndSet(false, true)) {
+            return;
+        }
+        Deque<LaneItem> queue = lanes.get(key);
+        if (queue != null) {
+            queue.remove(item);
+        }
+        BleOperationHandle started = item.started;
+        if (started != null) {
+            started.cancel();
+            return;
+        }
+        BleFailure cancelled = YoBleErrorMapper.failure(
+                BleErrorCode.OPERATION_CANCELLED, MODULE,
+                "sendAndWait cancelled: " + item.opId, context.deviceId());
+        context.runtime().callback(() -> item.observer.onFailed(cancelled));
+    }
+
+    private final class LaneItem {
+        final String opId = "ble-req-resp-" + seq.incrementAndGet();
+        @NonNull
+        final BleRequestResponseConfig config;
+        @NonNull
+        final BleValueObserver<byte[]> observer;
+        final AtomicBoolean cancelled = new AtomicBoolean();
+        volatile BleOperationHandle started;
+
+        LaneItem(@NonNull BleRequestResponseConfig config, @NonNull BleValueObserver<byte[]> observer) {
+            this.config = config;
+            this.observer = observer;
+        }
     }
 }

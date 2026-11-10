@@ -6,8 +6,10 @@ import com.yovo.lib_bluetooth.internal.common.diagnostics.YoDumpable;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleDiagnosticReport;
 
+import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
+
 import java.util.List;
-import java.util.function.IntFunction;
+import java.util.function.Function;
 
 /**
  * BLE 诊断报告构建器，实现 {@link YoDumpable} 输出统一结构化与可读快照。
@@ -19,7 +21,7 @@ public final class YoBleDumpBuilder implements YoDumpable {
     private final boolean scanning;
     private final long nowMillis;
     private final List<BleConnectionSnapshot> activeConnections;
-    private final IntFunction<Integer> pendingQueueCountLookup;
+    private final Function<BleDeviceId, Integer> pendingQueueCountLookup;
     private final YoBleTimelineRecorder timeline;
 
     public YoBleDumpBuilder(boolean bleSupported,
@@ -27,7 +29,7 @@ public final class YoBleDumpBuilder implements YoDumpable {
                             boolean scanning,
                             long nowMillis,
                             @NonNull List<BleConnectionSnapshot> activeConnections,
-                            @NonNull IntFunction<Integer> pendingQueueCountLookup,
+                            @NonNull Function<BleDeviceId, Integer> pendingQueueCountLookup,
                             @NonNull YoBleTimelineRecorder timeline) {
         this.bleSupported = bleSupported;
         this.adapterEnabled = adapterEnabled;
@@ -51,7 +53,7 @@ public final class YoBleDumpBuilder implements YoDumpable {
                 .append('\n');
         for (int i = 0; i < activeConnections.size(); i++) {
             BleConnectionSnapshot c = activeConnections.get(i);
-            int pending = pendingQueueCountLookup.apply(i);
+            int pending = pendingQueueCountLookup.apply(c.deviceId());
             sb.append("  [").append(i).append("] ")
                     .append(c.deviceId())
                     .append(" state=").append(c.state())

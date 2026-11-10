@@ -4,6 +4,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.CompletionHandler;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.OpKind;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.StartResult;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.model.ble.BleBondState;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
@@ -21,350 +24,257 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * GATT 服务发现管理器：
- * <ul>
- *   <li>已配对设备保留可配置延时（规避系统秘钥协商与发现服务冲突）；</li>
- *   <li>支持受控缓存刷新（{@code refreshDeviceCache}）；</li>
- *   <li>支持 Service Changed (0x1801/0x2A05 on API 24-30 及 API 31+ {@code onServiceChanged}) 自动重发现；</li>
- *   <li>构建不可变 {@link BleGattDatabaseSnapshot}。</li>
- * </ul>
+ * 服务发现。缓存刷新作为队列中的 REFRESH_CACHE，完成后再发现；
+ * 已配对设备在第一次发现前等待配置的延时。
  */
 public final class YoBleServiceDiscoveryManager {
 
     private static final String MODULE = "ble-discovery";
 
     private static final class Waiter {
-        final long id;
+        @NonNull
+        final String id;
+        final boolean refresh;
         @NonNull
         final BleValueObserver<BleGattDatabaseSnapshot> observer;
 
-        Waiter(long id, @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
+        Waiter(@NonNull String id, boolean refresh, @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
             this.id = id;
+            this.refresh = refresh;
             this.observer = observer;
         }
     }
 
+    @NonNull
     private final YoBleSessionContext context;
-    private final AtomicLong discoverySeq = new AtomicLong();
-    private final AtomicLong waiterSeq = new AtomicLong();
-    private final List<Waiter> pendingWaiters = new ArrayList<>();
-    private long activeDiscoveryEpoch = 0L;
-    private boolean discoveryInProgress = false;
-    private boolean rediscoveryQueued = false;
-    private boolean serviceChangedSubscribed = false;
+    private final AtomicLong seq = new AtomicLong();
+    @NonNull
+    private final List<Waiter> waiters = new ArrayList<>();
+    private boolean busy;
+    private int epoch;
     @Nullable
-    private YoTimeoutHandle bondedDelayHandle;
+    private String activeOpId;
     @Nullable
-    private String activeQueueOpId;
+    private YoTimeoutHandle delayHandle;
     @Nullable
     private Runnable serviceChangedUnsubscribe;
+    private boolean serviceChangedSubscribed;
 
     public YoBleServiceDiscoveryManager(@NonNull YoBleSessionContext context) {
         this.context = context;
     }
 
     @NonNull
-    public synchronized BleOperationHandle discoverServices(boolean forceRefresh,
-                                                            boolean autoHandleServiceChanged,
-                                                            @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
-        long waiterId = waiterSeq.incrementAndGet();
-        String handleId = "ble-discover-" + waiterId;
+    public BleOperationHandle discover(boolean forceRediscover,
+                                       boolean refreshCache,
+                                       @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
+        context.runtime().checkStateThread();
+        String opId = "ble-discover-" + seq.incrementAndGet();
         if (!context.isConnected()) {
-            BleFailure failure = YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "BLE device is not connected", context.deviceId());
-            context.runtime().callback(() -> observer.onFailed(failure));
-            return BleOperationHandle.completed(handleId);
+            observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE, "not connected", context.deviceId()));
+            return BleOperationHandle.completed(opId);
         }
-
-        if (!forceRefresh && context.currentDatabase() != null && !discoveryInProgress) {
-            BleGattDatabaseSnapshot cached = context.currentDatabase();
-            context.runtime().callback(() -> observer.onSuccess(cached));
-            return BleOperationHandle.completed(handleId);
+        BleGattDatabaseSnapshot cached = context.currentDatabase();
+        if (!forceRediscover && !refreshCache && cached != null) {
+            observer.onSuccess(cached);
+            return BleOperationHandle.completed(opId);
         }
-
-        pendingWaiters.add(new Waiter(waiterId, observer));
-        BleOperationHandle handle = new BleOperationHandle(
-                handleId, () -> context.runtime().state(() -> cancelWaiter(waiterId)));
-
-        if (discoveryInProgress) {
-            return handle;
+        if (refreshCache && !context.bleConfig().allowHiddenApiCacheRefresh()) {
+            observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.HIDDEN_API_BLOCKED, MODULE, "cache refresh is disabled", context.deviceId()));
+            return BleOperationHandle.completed(opId);
         }
-        discoveryInProgress = true;
-        final long epoch = ++activeDiscoveryEpoch;
-
-        if (forceRefresh) {
-            YoBleGattTransport transport = context.transport();
-            if (transport != null && context.bleConfig().allowHiddenApiCacheRefresh()) {
-                boolean refreshed = transport.refreshDeviceCache();
-                context.timeline().record(MODULE, "refreshDeviceCache=" + refreshed);
-            }
+        waiters.add(new Waiter(opId, refreshCache, observer));
+        if (!busy) {
+            busy = true;
+            long delay = context.bondState() == BleBondState.BONDED ? context.bondedDiscoveryDelayMillis() : 0L;
+            int generation = epoch;
+            delayHandle = context.runtime().stateDelayed(() -> enqueueDiscover(generation, refreshCache), delay);
         }
-
-        long delayMs = context.bondState() == BleBondState.BONDED
-                ? context.bondedDiscoveryDelayMillis() : 0L;
-        if (delayMs > 0L) {
-            if (bondedDelayHandle != null) {
-                bondedDelayHandle.cancel();
-            }
-            context.timeline().record(MODULE,
-                    "delaying service discovery " + delayMs + "ms for bonded device");
-            bondedDelayHandle = context.runtime().scheduler().schedule(
-                    () -> context.runtime().state(() -> enqueueDiscover(epoch, autoHandleServiceChanged)),
-                    delayMs);
-        } else {
-            enqueueDiscover(epoch, autoHandleServiceChanged);
-        }
-        return handle;
+        return new BleOperationHandle(opId, () -> context.runtime().state(() -> cancelWaiter(opId)));
     }
 
-    public void onPlatformServicesDiscovered(int rawStatus, boolean autoHandleServiceChanged) {
-        YoBleGattOperationQueue.QueuedOperation op =
-                context.operationQueue().completeInFlightIfMatches(
-                        YoBleGattOperationQueue.OpKind.DISCOVER_SERVICES);
-        if (op == null) {
+    public void onPlatformServicesDiscovered(int status) {
+        context.runtime().checkStateThread();
+        activeOpId = null;
+        if (status != 0) {
+            finish(YoBleErrorMapper.fromGattStatus(status, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
+                    context.deviceId(), null, "discoverServices"));
             return;
         }
-        synchronized (this) {
-            activeQueueOpId = null;
-        }
-        if (rawStatus != 0) {
-            BleFailure failure = YoBleErrorMapper.fromGattStatus(
-                    rawStatus, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
-                    context.deviceId(), null, "discoverServices");
-            completeFailure(failure);
-            return;
-        }
-
         YoBleGattTransport transport = context.transport();
-        BleGattDatabaseSnapshot db = transport != null
-                ? transport.captureDatabaseSnapshot(context.nowMillis())
-                : new BleGattDatabaseSnapshot(
-                        context.deviceId(), new ArrayList<>(), context.nowMillis());
-
-        context.onDatabaseUpdated(db);
-        context.snapshotStore().recordGattDatabase(db);
-        context.timeline().record(MODULE, "services discovered count=" + db.services().size());
-
-        // 若存在 0x1801/0x2A05 且 API<31（或通用开启），订阅 Service Changed Indication
-        boolean shouldSubscribeSc = false;
-        synchronized (this) {
-            if (autoHandleServiceChanged && db.hasServiceChangedCharacteristic()
-                    && !serviceChangedSubscribed && serviceChangedUnsubscribe == null
-                    && context.capabilityInspector().sdkInt() < 31) {
-                serviceChangedSubscribed = true;
-                shouldSubscribeSc = true;
-            }
+        if (transport == null) {
+            finish(YoBleErrorMapper.failure(BleErrorCode.CONNECTION_NOT_READY, MODULE, "transport closed", context.deviceId()));
+            return;
         }
-        if (shouldSubscribeSc) {
-            BleGattTarget scTarget = BleGattTarget.characteristic(
-                    BleGattDatabaseSnapshot.GENERIC_ATTRIBUTE_SERVICE_UUID,
-                    BleGattDatabaseSnapshot.SERVICE_CHANGED_CHARACTERISTIC_UUID);
-            Runnable unsub = context.notificationRouter().subscribeDuringSetup(scTarget, BleNotificationSetupMode.COMPAT,
-                    new BleNotificationObserver() {
-                        @Override
-                        public void onCharacteristicChanged(@NonNull com.yovo.lib_bluetooth.model.ble.BleDeviceId deviceId,
-                                                            @NonNull BleGattTarget target,
-                                                            @NonNull byte[] value) {
-                            onServiceChangedTriggered(autoHandleServiceChanged);
-                        }
-
-                        @Override
-                        public void onNotificationFailed(@NonNull BleFailure failure) {
-                            synchronized (YoBleServiceDiscoveryManager.this) {
-                                serviceChangedSubscribed = false;
-                                serviceChangedUnsubscribe = null;
-                            }
-                        }
-                    });
-            synchronized (this) {
-                if (serviceChangedSubscribed) {
-                    serviceChangedUnsubscribe = unsub;
-                } else {
-                    unsub.run();
-                }
-            }
-        }
-
-        completeSuccess(db);
-        context.notifyConnectionObservers(obs -> obs.onServicesDiscovered(context.deviceId(), db));
-
-        boolean triggerQueuedRediscovery;
-        synchronized (this) {
-            triggerQueuedRediscovery = rediscoveryQueued;
-            if (triggerQueuedRediscovery) {
-                rediscoveryQueued = false;
-            }
-        }
-        if (triggerQueuedRediscovery) {
-            context.onDatabaseCleared();
-            context.snapshotStore().clearGattDatabase(context.deviceId(), context.nowMillis());
-            discoverServices(true, autoHandleServiceChanged, new BleValueObserver<BleGattDatabaseSnapshot>() {
-                @Override
-                public void onSuccess(@NonNull BleGattDatabaseSnapshot value) {
-                }
-            });
-        }
+        BleGattDatabaseSnapshot database = transport.captureDatabaseSnapshot(context.nowMillis());
+        context.onDatabaseUpdated(database);
+        context.snapshotStore().recordGattDatabase(database);
+        subscribeServiceChanged(database);
+        context.notifyConnectionObservers(observer -> observer.onServicesDiscovered(context.deviceId(), database));
+        finishSuccess(database);
     }
 
-    public synchronized void onServiceChangedTriggered(boolean autoHandleServiceChanged) {
-        if (!autoHandleServiceChanged || !context.isConnected()) {
-            return;
-        }
-        context.timeline().record(MODULE, "ServiceChanged received -> refreshing GATT database");
-        if (discoveryInProgress) {
-            rediscoveryQueued = true;
-            return;
-        }
+    public void onServiceChanged() {
+        context.runtime().checkStateThread();
         context.onDatabaseCleared();
         context.snapshotStore().clearGattDatabase(context.deviceId(), context.nowMillis());
-        discoverServices(true, true, new BleValueObserver<BleGattDatabaseSnapshot>() {
+        boolean refresh = context.bleConfig().allowHiddenApiCacheRefresh();
+        discover(true, refresh, new BleValueObserver<BleGattDatabaseSnapshot>() {
             @Override
             public void onSuccess(@NonNull BleGattDatabaseSnapshot value) {
+                context.notificationRouter().restoreSubscriptions(() -> { });
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                context.timeline().record(MODULE, "service changed rediscovery failed: " + failure.errorCode());
             }
         });
     }
 
-    public synchronized void reset() {
-        activeDiscoveryEpoch++;
-        discoveryInProgress = false;
-        rediscoveryQueued = false;
-        serviceChangedSubscribed = false;
-        if (bondedDelayHandle != null) {
-            bondedDelayHandle.cancel();
-            bondedDelayHandle = null;
-        }
-        String qOpId = activeQueueOpId;
-        activeQueueOpId = null;
-        if (qOpId != null) {
-            context.operationQueue().cancel(qOpId);
+    public void reset() {
+        context.runtime().checkStateThread();
+        epoch++;
+        busy = false;
+        activeOpId = null;
+        if (delayHandle != null) {
+            delayHandle.cancel();
+            delayHandle = null;
         }
         if (serviceChangedUnsubscribe != null) {
             serviceChangedUnsubscribe.run();
             serviceChangedUnsubscribe = null;
         }
-        pendingWaiters.clear();
+        serviceChangedSubscribed = false;
+        BleFailure dropped = YoBleErrorMapper.failure(
+                BleErrorCode.CONNECTION_NOT_READY, MODULE, "discovery reset", context.deviceId());
+        for (Waiter waiter : new ArrayList<>(waiters)) {
+            waiter.observer.onFailed(dropped);
+        }
+        waiters.clear();
     }
 
-    private void cancelWaiter(long waiterId) {
-        Waiter cancelledWaiter = null;
-        String queueOpToCancel = null;
-        synchronized (this) {
-            for (int i = 0; i < pendingWaiters.size(); i++) {
-                if (pendingWaiters.get(i).id == waiterId) {
-                    cancelledWaiter = pendingWaiters.remove(i);
-                    break;
-                }
-            }
-            if (cancelledWaiter == null) {
-                return;
-            }
-            if (pendingWaiters.isEmpty() && discoveryInProgress) {
-                discoveryInProgress = false;
-                rediscoveryQueued = false;
-                activeDiscoveryEpoch++;
-                if (bondedDelayHandle != null) {
-                    bondedDelayHandle.cancel();
-                    bondedDelayHandle = null;
-                }
-                queueOpToCancel = activeQueueOpId;
-                activeQueueOpId = null;
-            }
-        }
-        BleFailure cancelFailure = YoBleErrorMapper.failure(
-                BleErrorCode.OPERATION_CANCELLED, MODULE,
-                "Service discovery cancelled", context.deviceId());
-        BleValueObserver<BleGattDatabaseSnapshot> obs = cancelledWaiter.observer;
-        context.runtime().callback(() -> obs.onFailed(cancelFailure));
-        if (queueOpToCancel != null) {
-            context.operationQueue().cancel(queueOpToCancel);
-        }
-    }
-
-    private void enqueueDiscover(long epoch, boolean autoHandleServiceChanged) {
-        synchronized (this) {
-            if (!discoveryInProgress || epoch != activeDiscoveryEpoch) {
-                return;
-            }
-            bondedDelayHandle = null;
-        }
-        if (!context.isConnected()) {
-            completeFailure(YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "Connection closed before discoverServices executed", context.deviceId()));
+    private void enqueueDiscover(int generation, boolean refreshFirst) {
+        if (generation != epoch) {
             return;
         }
-        String qOpId = "discover-" + discoverySeq.incrementAndGet();
-        synchronized (this) {
-            if (!discoveryInProgress || epoch != activeDiscoveryEpoch) {
-                return;
-            }
-            activeQueueOpId = qOpId;
+        if (refreshFirst) {
+            String refreshId = "ble-refresh-" + seq.incrementAndGet();
+            activeOpId = refreshId;
+            context.operationQueue().enqueue(refreshId, OpKind.REFRESH_CACHE, null, BleOperationPriority.HIGH,
+                    context.operationTimeoutMillis(), this::startRefresh, new CompletionHandler() {
+                        @Override
+                        public void onSuccess(@Nullable Object payload) {
+                            enqueueDiscover(generation, false);
+                        }
+
+                        @Override
+                        public void onCancelled() {
+                            finish(YoBleErrorMapper.failure(BleErrorCode.OPERATION_CANCELLED, MODULE,
+                                    "cache refresh cancelled", context.deviceId()));
+                        }
+
+                        @Override
+                        public void onFailed(@NonNull BleFailure failure) {
+                            finish(failure);
+                        }
+                    });
+            return;
         }
-        context.operationQueue().enqueue(
-                qOpId,
-                YoBleGattOperationQueue.OpKind.DISCOVER_SERVICES,
-                null,
-                BleOperationPriority.HIGH,
-                context.operationTimeoutMillis(),
-                () -> {
+        String discoverId = "ble-disc-" + seq.incrementAndGet();
+        activeOpId = discoverId;
+        context.operationQueue().enqueue(discoverId, OpKind.DISCOVER_SERVICES, null, BleOperationPriority.HIGH,
+                context.operationTimeoutMillis(), () -> {
                     YoBleGattTransport transport = context.transport();
                     if (transport == null || !transport.discoverServices()) {
-                        return YoBleErrorMapper.failure(
-                                BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
-                                "BluetoothGatt.discoverServices() returned false",
-                                context.deviceId());
+                        return StartResult.failed(YoBleErrorMapper.failure(
+                                BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE, "discoverServices rejected", context.deviceId()));
                     }
-                    return null;
-                },
-                new YoBleGattOperationQueue.CompletionHandler() {
+                    return StartResult.pending();
+                }, new CompletionHandler() {
                     @Override
                     public void onCancelled() {
-                        synchronized (YoBleServiceDiscoveryManager.this) {
-                            if (epoch != activeDiscoveryEpoch) {
-                                return;
-                            }
-                            activeQueueOpId = null;
-                        }
-                        completeFailure(YoBleErrorMapper.failure(
-                                BleErrorCode.OPERATION_CANCELLED, MODULE,
-                                "Service discovery cancelled", context.deviceId()));
+                        finish(YoBleErrorMapper.failure(BleErrorCode.OPERATION_CANCELLED, MODULE,
+                                "discovery cancelled", context.deviceId()));
                     }
 
                     @Override
                     public void onFailed(@NonNull BleFailure failure) {
-                        synchronized (YoBleServiceDiscoveryManager.this) {
-                            if (epoch != activeDiscoveryEpoch) {
-                                return;
-                            }
-                            activeQueueOpId = null;
-                        }
-                        completeFailure(failure);
+                        finish(failure);
                     }
                 });
     }
 
-    private void completeSuccess(@NonNull BleGattDatabaseSnapshot snapshot) {
-        List<Waiter> waiters;
-        synchronized (this) {
-            discoveryInProgress = false;
-            waiters = new ArrayList<>(pendingWaiters);
-            pendingWaiters.clear();
+    @NonNull
+    private StartResult startRefresh() {
+        YoBleGattTransport transport = context.transport();
+        if (transport == null || !transport.refreshDeviceCache()) {
+            return StartResult.failed(YoBleErrorMapper.failure(
+                    BleErrorCode.HIDDEN_API_FAILED, MODULE, "refreshDeviceCache rejected", context.deviceId()));
         }
+        context.runtime().stateDelayed(() -> context.operationQueue().complete(
+                OpKind.REFRESH_CACHE, null, null, null), YoBleGattOperationQueue.CACHE_REFRESH_SETTLE_MS);
+        return StartResult.pending();
+    }
+
+    private void subscribeServiceChanged(@NonNull BleGattDatabaseSnapshot database) {
+        if (serviceChangedSubscribed || context.capabilityInspector().sdkInt() >= 31
+                || !database.hasServiceChangedCharacteristic()) {
+            return;
+        }
+        serviceChangedSubscribed = true;
+        BleGattTarget target = BleGattTarget.characteristic(
+                BleGattDatabaseSnapshot.GENERIC_ATTRIBUTE_SERVICE_UUID,
+                BleGattDatabaseSnapshot.SERVICE_CHANGED_CHARACTERISTIC_UUID);
+        serviceChangedUnsubscribe = context.notificationRouter().subscribeDuringSetup(
+                target, BleNotificationSetupMode.COMPAT, new BleNotificationObserver() {
+                    @Override
+                    public void onCharacteristicChanged(@NonNull com.yovo.lib_bluetooth.model.ble.BleDeviceId deviceId,
+                                                        @NonNull BleGattTarget changed,
+                                                        @NonNull byte[] value) {
+                        context.runtime().state(() -> onServiceChanged());
+                    }
+                });
+    }
+
+    private void cancelWaiter(@NonNull String opId) {
+        Waiter removed = null;
         for (Waiter waiter : waiters) {
-            context.runtime().callback(() -> waiter.observer.onSuccess(snapshot));
+            if (waiter.id.equals(opId)) {
+                removed = waiter;
+                break;
+            }
+        }
+        if (removed == null) {
+            return;
+        }
+        waiters.remove(removed);
+        removed.observer.onFailed(YoBleErrorMapper.failure(
+                BleErrorCode.OPERATION_CANCELLED, MODULE, "discovery cancelled", context.deviceId()));
+        if (waiters.isEmpty() && activeOpId != null) {
+            context.operationQueue().cancel(activeOpId);
         }
     }
 
-    private void completeFailure(@NonNull BleFailure failure) {
-        List<Waiter> waiters;
-        synchronized (this) {
-            discoveryInProgress = false;
-            waiters = new ArrayList<>(pendingWaiters);
-            pendingWaiters.clear();
+    private void finishSuccess(@NonNull BleGattDatabaseSnapshot database) {
+        busy = false;
+        activeOpId = null;
+        List<Waiter> done = new ArrayList<>(waiters);
+        waiters.clear();
+        for (Waiter waiter : done) {
+            waiter.observer.onSuccess(database);
         }
-        for (Waiter waiter : waiters) {
-            context.runtime().callback(() -> waiter.observer.onFailed(failure));
+    }
+
+    private void finish(@NonNull BleFailure failure) {
+        busy = false;
+        activeOpId = null;
+        List<Waiter> done = new ArrayList<>(waiters);
+        waiters.clear();
+        for (Waiter waiter : done) {
+            waiter.observer.onFailed(failure);
         }
     }
 }

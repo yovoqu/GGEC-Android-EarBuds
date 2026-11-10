@@ -7,7 +7,6 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
-import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattTransport;
 import com.yovo.lib_bluetooth.internal.ble.pairing.YoBleBondController;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
@@ -17,8 +16,10 @@ import com.yovo.lib_bluetooth.model.ble.BleConnectionConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionPriority;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
+import com.yovo.lib_bluetooth.model.ble.BleConnectionState;
 import com.yovo.lib_bluetooth.model.ble.BleDataSplitter;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
+import com.yovo.lib_bluetooth.model.ble.BleDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleGattDatabaseSnapshot;
@@ -38,23 +39,25 @@ import com.yovo.lib_bluetooth.model.ble.BleWriteType;
 import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
- * 多设备并发 BLE GATT 会话管理器：严格隔离每台设备的会话/队列/路由/链路状态，
- * 负责连接前检、重复连接复用/替换、重连、全局 BT OFF 清理与释放。
+ * 多设备会话表。表的写入只发生在 state 线程，跨线程只读已发布的快照和队列长度。
  */
 public final class YoBleConnectionManager implements YoReleasable {
 
     private static final String MODULE = "ble-connection-mgr";
+    private static final int ENDED_SESSION_CAP = 16;
 
     private final YoBleRuntime runtime;
     private final BleConfig bleConfig;
@@ -65,12 +68,12 @@ public final class YoBleConnectionManager implements YoReleasable {
     private final YoBleTimelineRecorder timeline;
     private final LongSupplier clockMillis;
 
-    private final Map<BleDeviceId, YoBleGattSession> sessions = new LinkedHashMap<>();
-    private final Map<BleDeviceId, BleConnectionConfig> lastConnectionConfigs = new LinkedHashMap<>();
-    private final Map<BleDeviceId, Long> lastClosedAtMillis = new LinkedHashMap<>();
+    private final ConcurrentHashMap<BleDeviceId, YoBleGattSession> sessions = new ConcurrentHashMap<>();
+    private final Map<BleDeviceId, Boolean> endedOrder = new LinkedHashMap<>(16, 0.75f, true);
+    private final ConcurrentHashMap<BleDeviceId, Long> lastClosedAtMillis = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<BleConnectionObserver> globalObservers = new CopyOnWriteArrayList<>();
     private final AtomicLong opSeq = new AtomicLong();
-    private volatile boolean released = false;
+    private volatile boolean released;
 
     public YoBleConnectionManager(@NonNull YoBleRuntime runtime,
                                   @NonNull BleConfig bleConfig,
@@ -96,151 +99,61 @@ public final class YoBleConnectionManager implements YoReleasable {
                                       @NonNull BleConnectionObserver observer) {
         String opId = "ble-connect-" + opSeq.incrementAndGet();
         AtomicBoolean cancelled = new AtomicBoolean(false);
-
         runtime.state(() -> {
             if (cancelled.get()) {
                 return;
             }
             BleFailure preflight = checkConnectPreflight(deviceId);
             if (preflight != null) {
-                timeline.record(MODULE, "connect preflight rejected " + deviceId
-                        + ": " + preflight.errorCode());
                 runtime.callback(() -> observer.onConnectionFailed(preflight));
                 return;
             }
-            synchronized (lastConnectionConfigs) {
-                lastConnectionConfigs.put(deviceId, config);
-            }
-
-            YoBleGattSession existing;
-            synchronized (sessions) {
-                existing = sessions.get(deviceId);
-            }
-
-            if (existing != null && existing.isReady()) {
+            YoBleGattSession existing = sessions.get(deviceId);
+            if (existing != null && existing.isLive()) {
                 existing.attachObserver(observer);
-                BleConnectionSnapshot readySnap = existing.snapshot();
-                BleGattDatabaseSnapshot db = existing.currentDatabase();
-                runtime.callback(() -> observer.onConnectionStateChanged(readySnap));
-                if (db != null) {
-                    runtime.callback(() -> observer.onServicesDiscovered(deviceId, db));
-                }
+                replay(existing, observer);
                 return;
             }
-
-            if (existing != null) {
-                existing.releaseSession();
-                synchronized (sessions) {
-                    sessions.remove(deviceId, existing);
-                }
+            if (existing != null && existing.isDisconnecting()) {
+                existing.whenEnded(() -> {
+                    if (!cancelled.get()) {
+                        openSession(deviceId, config, observer);
+                    }
+                });
+                return;
             }
-
-            long lastClosed;
-            synchronized (lastClosedAtMillis) {
-                Long ts = lastClosedAtMillis.get(deviceId);
-                lastClosed = ts == null ? 0L : ts;
-            }
-
-            YoBleGattSession session = new YoBleGattSession(
-                    deviceId,
-                    runtime,
-                    bleConfig,
-                    config,
-                    capabilityInspector,
-                    connectionPlatform,
-                    bondController,
-                    snapshotStore,
-                    timeline,
-                    clockMillis,
-                    globalObservers,
-                    observer,
-                    lastClosed,
-                    (id, ts) -> {
-                        synchronized (lastClosedAtMillis) {
-                            lastClosedAtMillis.put(id, ts);
-                        }
-                    });
-            synchronized (sessions) {
-                sessions.put(deviceId, session);
-            }
-            session.startConnect();
+            openSession(deviceId, config, observer);
         });
-
-        return new BleOperationHandle(opId, () -> {
-            if (cancelled.compareAndSet(false, true)) {
-                disconnect(deviceId);
+        return new BleOperationHandle(opId, () -> runtime.state(() -> {
+            if (!cancelled.compareAndSet(false, true)) {
+                return;
             }
-        });
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session == null || session.isEnded()) {
+                return;
+            }
+            session.detachObserver(observer);
+            if (!session.isReady() && session.observerCount() == 0) {
+                session.userDisconnect();
+            }
+        }));
     }
 
     @NonNull
     public Result<Void> reconnect(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
-        }
         BleFailure preflight = checkConnectPreflight(deviceId);
         if (preflight != null) {
             return Result.failure(preflight);
         }
-        YoBleGattSession existing;
-        synchronized (sessions) {
-            existing = sessions.get(deviceId);
-        }
-        BleConnectionConfig historicalConfig = null;
-        if (existing == null) {
-            synchronized (lastConnectionConfigs) {
-                historicalConfig = lastConnectionConfigs.get(deviceId);
-            }
-        }
-        if (existing == null && historicalConfig == null) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.DEVICE_INVALID, MODULE,
-                    "No existing session config to reconnect for " + deviceId, deviceId));
+        if (!sessions.containsKey(deviceId)) {
+            return Result.failure(missing(deviceId));
         }
         runtime.state(() -> {
-            if (released) {
-                return;
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session != null && session.isEnded()) {
+                endedOrder.remove(deviceId);
+                session.startConnect();
             }
-            YoBleGattSession current;
-            synchronized (sessions) {
-                current = sessions.get(deviceId);
-            }
-            BleConnectionConfig cfg;
-            if (current != null) {
-                cfg = current.connectionConfig();
-                current.releaseSession();
-                synchronized (sessions) {
-                    sessions.remove(deviceId, current);
-                }
-            } else {
-                synchronized (lastConnectionConfigs) {
-                    cfg = lastConnectionConfigs.get(deviceId);
-                }
-            }
-            if (cfg == null) {
-                return;
-            }
-            long lastClosed;
-            synchronized (lastClosedAtMillis) {
-                Long ts = lastClosedAtMillis.get(deviceId);
-                lastClosed = ts == null ? 0L : ts;
-            }
-            YoBleGattSession fresh = new YoBleGattSession(
-                    deviceId, runtime, bleConfig, cfg, capabilityInspector,
-                    connectionPlatform, bondController, snapshotStore, timeline,
-                    clockMillis, globalObservers, new BleConnectionObserver() {
-                    },
-                    lastClosed,
-                    (id, ts) -> {
-                        synchronized (lastClosedAtMillis) {
-                            lastClosedAtMillis.put(id, ts);
-                        }
-                    });
-            synchronized (sessions) {
-                sessions.put(deviceId, fresh);
-            }
-            fresh.startConnect();
         });
         return Result.success(null);
     }
@@ -248,15 +161,11 @@ public final class YoBleConnectionManager implements YoReleasable {
     @NonNull
     public Result<Void> disconnect(@NonNull BleDeviceId deviceId) {
         if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
+            return Result.failure(releasedFailure(deviceId));
         }
         runtime.state(() -> {
-            YoBleGattSession session;
-            synchronized (sessions) {
-                session = sessions.remove(deviceId);
-            }
-            if (session != null) {
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session != null && !session.isEnded()) {
                 session.userDisconnect();
             }
         });
@@ -266,17 +175,13 @@ public final class YoBleConnectionManager implements YoReleasable {
     @NonNull
     public Result<Void> disconnectAll() {
         if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released"));
+            return Result.failure(releasedFailure(null));
         }
         runtime.state(() -> {
-            List<YoBleGattSession> copy;
-            synchronized (sessions) {
-                copy = new ArrayList<>(sessions.values());
-                sessions.clear();
-            }
-            for (YoBleGattSession s : copy) {
-                s.userDisconnect();
+            for (YoBleGattSession session : sessions.values()) {
+                if (!session.isEnded()) {
+                    session.userDisconnect();
+                }
             }
         });
         return Result.success(null);
@@ -284,68 +189,49 @@ public final class YoBleConnectionManager implements YoReleasable {
 
     @NonNull
     public Result<BleConnectionSnapshot> getConnectionSnapshot(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
-        }
         if (!BleDeviceId.isValid(deviceId.value())) {
             return Result.failure(YoBleErrorMapper.failure(
                     BleErrorCode.DEVICE_INVALID, MODULE, "Invalid MAC address: " + deviceId, deviceId));
         }
-        YoBleGattSession session;
-        synchronized (sessions) {
-            session = sessions.get(deviceId);
+        BleDeviceSnapshot stored = snapshotStore.get(deviceId);
+        if (stored != null && stored.connectionSnapshot() != null) {
+            return Result.success(stored.connectionSnapshot());
         }
-        if (session == null) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.DEVICE_INVALID, MODULE,
-                    "BLE session not found for " + deviceId, deviceId));
-        }
-        return Result.success(session.snapshot());
+        return Result.success(new BleConnectionSnapshot(deviceId, BleConnectionState.IDLE, clockMillis.getAsLong()));
     }
 
     @NonNull
     public Result<List<BleConnectionSnapshot>> getConnectedDevices() {
         if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released"));
+            return Result.failure(releasedFailure(null));
         }
-        List<YoBleGattSession> copy;
-        synchronized (sessions) {
-            copy = new ArrayList<>(sessions.values());
-        }
-        List<BleConnectionSnapshot> list = new ArrayList<>();
-        for (YoBleGattSession session : copy) {
-            BleConnectionSnapshot snap = session.snapshot();
-            if (snap.isConnected()) {
-                list.add(snap);
+        List<BleConnectionSnapshot> connected = new ArrayList<>();
+        for (BleDeviceSnapshot device : snapshotStore.all()) {
+            BleConnectionSnapshot connection = device.connectionSnapshot();
+            if (connection != null && isLinkUp(connection.state())) {
+                connected.add(connection);
             }
         }
-        return Result.success(Collections.unmodifiableList(list));
+        return Result.success(connected);
     }
 
     @NonNull
     public List<BleConnectionSnapshot> exportActiveSnapshots() {
-        List<YoBleGattSession> copy;
-        synchronized (sessions) {
-            copy = new ArrayList<>(sessions.values());
+        List<BleConnectionSnapshot> active = new ArrayList<>();
+        for (BleDeviceSnapshot device : snapshotStore.all()) {
+            BleConnectionSnapshot connection = device.connectionSnapshot();
+            if (connection != null && connection.state() != BleConnectionState.IDLE
+                    && connection.state() != BleConnectionState.DISCONNECTED
+                    && connection.state() != BleConnectionState.FAILED) {
+                active.add(connection);
+            }
         }
-        List<BleConnectionSnapshot> list = new ArrayList<>(copy.size());
-        for (YoBleGattSession s : copy) {
-            list.add(s.snapshot());
-        }
-        return list;
+        return active;
     }
 
-    public int pendingCountAtSnapshotIndex(int index) {
-        List<YoBleGattSession> copy;
-        synchronized (sessions) {
-            copy = new ArrayList<>(sessions.values());
-        }
-        if (index < 0 || index >= copy.size()) {
-            return 0;
-        }
-        return copy.get(index).operationQueue().pendingCount();
+    public int pendingCount(@NonNull BleDeviceId deviceId) {
+        YoBleGattSession session = sessions.get(deviceId);
+        return session == null ? 0 : session.publishedPendingCount();
     }
 
     @NonNull
@@ -355,33 +241,34 @@ public final class YoBleConnectionManager implements YoReleasable {
         return new BleOperationHandle(opId, () -> globalObservers.remove(observer));
     }
 
-    // ── 链路调优、发现与 GATT 操作代理 ──────────────────────────────
-
     @NonNull
     public BleOperationHandle requestMtu(@NonNull BleDeviceId deviceId,
                                          int mtu,
                                          @NonNull BleValueObserver<Integer> observer) {
-        return dispatchSessionHandle("mtu", deviceId,
-                f -> observer.onFailed(f),
-                session -> session.linkTuner().requestMtu(mtu, observer));
+        return onSession(deviceId, observer::onFailed, session -> session.linkTuner().requestMtu(mtu, hop(observer)));
     }
 
     @NonNull
     public Result<Integer> overrideMtu(@NonNull BleDeviceId deviceId, int mtu) {
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
+        if (!isLinkUp(publishedState(deviceId))) {
+            return Result.failure(missing(deviceId));
         }
-        return r.getValue().linkTuner().overrideMtu(mtu);
+        int clamped = Math.max(23, Math.min(517, mtu));
+        runtime.state(() -> {
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session != null) {
+                session.linkTuner().overrideMtu(clamped);
+            }
+        });
+        return Result.success(clamped);
     }
 
     @NonNull
     public BleOperationHandle requestConnectionPriority(@NonNull BleDeviceId deviceId,
                                                         @NonNull BleConnectionPriority priority,
                                                         @NonNull BleValueObserver<Void> observer) {
-        return dispatchSessionHandle("conn-prio", deviceId,
-                observer::onFailed,
-                session -> session.linkTuner().requestConnectionPriority(priority, observer));
+        return onSession(deviceId, observer::onFailed,
+                session -> session.linkTuner().requestConnectionPriority(priority, hop(observer)));
     }
 
     @NonNull
@@ -390,86 +277,45 @@ public final class YoBleConnectionManager implements YoReleasable {
                                               @NonNull BlePhy rxPhy,
                                               @NonNull BlePhyOptions phyOptions,
                                               @NonNull BleValueObserver<BlePhyConfig> observer) {
-        return dispatchSessionHandle("set-phy", deviceId,
-                observer::onFailed,
-                session -> session.linkTuner().setPreferredPhy(txPhy, rxPhy, phyOptions, observer));
+        return onSession(deviceId, observer::onFailed,
+                session -> session.linkTuner().setPreferredPhy(txPhy, rxPhy, phyOptions, hop(observer)));
     }
 
     @NonNull
     public BleOperationHandle readPhy(@NonNull BleDeviceId deviceId,
                                       @NonNull BleValueObserver<BlePhyConfig> observer) {
-        return dispatchSessionHandle("read-phy", deviceId,
-                observer::onFailed,
-                session -> session.linkTuner().readPhy(observer));
+        return onSession(deviceId, observer::onFailed, session -> session.linkTuner().readPhy(hop(observer)));
     }
 
     @NonNull
     public BleOperationHandle readRemoteRssi(@NonNull BleDeviceId deviceId,
                                              @NonNull BleValueObserver<Integer> observer) {
-        return dispatchSessionHandle("rssi", deviceId,
-                observer::onFailed,
-                session -> session.linkTuner().readRemoteRssi(observer));
+        return onSession(deviceId, observer::onFailed, session -> session.linkTuner().readRemoteRssi(hop(observer)));
     }
 
     @NonNull
     public BleOperationHandle discoverServices(@NonNull BleDeviceId deviceId,
-                                               boolean forceRefresh,
+                                               boolean forceRediscover,
                                                @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
-        return dispatchSessionHandle("discover", deviceId,
-                observer::onFailed,
-                session -> {
-                    if (forceRefresh && !bleConfig.allowHiddenApiCacheRefresh()) {
-                        BleFailure blocked = YoBleErrorMapper.failure(
-                                BleErrorCode.HIDDEN_API_BLOCKED, MODULE,
-                                "forceRefresh requires BleConfig.allowHiddenApiCacheRefresh(true)", deviceId);
-                        runtime.callback(() -> observer.onFailed(blocked));
-                        return BleOperationHandle.completed("ble-discover-blocked-" + opSeq.incrementAndGet());
-                    }
-                    return session.serviceDiscoveryManager().discoverServices(
-                            forceRefresh,
-                            session.connectionConfig().autoHandleServiceChanged(),
-                            observer);
-                });
+        return onSession(deviceId, observer::onFailed,
+                session -> session.serviceDiscoveryManager().discover(forceRediscover, false, hop(observer)));
     }
 
     @NonNull
     public Result<BleGattDatabaseSnapshot> getServices(@NonNull BleDeviceId deviceId) {
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
-        }
-        BleGattDatabaseSnapshot db = r.getValue().currentDatabase();
-        if (db == null) {
+        BleDeviceSnapshot stored = snapshotStore.get(deviceId);
+        if (stored == null || stored.gattDatabase() == null) {
             return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "Services have not been discovered yet", deviceId));
+                    BleErrorCode.SERVICE_NOT_FOUND, MODULE, "services not discovered", deviceId));
         }
-        return Result.success(db);
+        return Result.success(stored.gattDatabase());
     }
 
     @NonNull
-    public Result<Void> refreshDeviceCache(@NonNull BleDeviceId deviceId) {
-        if (!bleConfig.allowHiddenApiCacheRefresh()) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.HIDDEN_API_BLOCKED, MODULE,
-                    "refreshDeviceCache requires BleConfig.allowHiddenApiCacheRefresh(true)",
-                    deviceId));
-        }
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
-        }
-        YoBleGattTransport transport = r.getValue().transport();
-        if (transport == null) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "GATT transport unavailable", deviceId));
-        }
-        boolean ok = transport.refreshDeviceCache();
-        timeline.record(MODULE, "refreshDeviceCache(" + deviceId + ")=" + ok);
-        return ok ? Result.success(null) : Result.failure(YoBleErrorMapper.failure(
-                BleErrorCode.HIDDEN_API_FAILED, MODULE,
-                "BluetoothGatt.refresh() returned false", deviceId));
+    public BleOperationHandle refreshDeviceCache(@NonNull BleDeviceId deviceId,
+                                                 @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
+        return onSession(deviceId, observer::onFailed,
+                session -> session.serviceDiscoveryManager().discover(true, true, hop(observer)));
     }
 
     @NonNull
@@ -477,9 +323,8 @@ public final class YoBleConnectionManager implements YoReleasable {
                                    @NonNull BleGattTarget target,
                                    @NonNull BleOperationPriority priority,
                                    @NonNull BleGattObserver observer) {
-        return dispatchSessionHandle("read", deviceId,
-                observer::onFailed,
-                session -> session.gattOperationHandler().read(target, priority, observer));
+        BleGattObserver hopped = hop(observer);
+        return onSession(deviceId, hopped::onFailed, session -> session.gattOperationHandler().read(target, priority, hopped));
     }
 
     @NonNull
@@ -489,11 +334,9 @@ public final class YoBleConnectionManager implements YoReleasable {
                                     @NonNull BleWriteType writeType,
                                     @NonNull BleOperationPriority priority,
                                     @NonNull BleGattObserver observer) {
-        byte[] copy = value.clone();
-        return dispatchSessionHandle("write", deviceId,
-                observer::onFailed,
-                session -> session.gattOperationHandler().write(
-                        target, copy, writeType, priority, observer));
+        BleGattObserver hopped = hop(observer);
+        return onSession(deviceId, hopped::onFailed,
+                session -> session.gattOperationHandler().write(target, value, writeType, priority, hopped));
     }
 
     @NonNull
@@ -501,59 +344,57 @@ public final class YoBleConnectionManager implements YoReleasable {
                                          @NonNull BleGattTarget target,
                                          @NonNull byte[] value,
                                          @NonNull BleWriteType writeType,
-                                         @Nullable BleDataSplitter customSplitter,
+                                         @Nullable BleDataSplitter splitter,
                                          @NonNull BleTransferProgressObserver observer) {
-        byte[] copy = value.clone();
-        return dispatchSessionHandle("write-split", deviceId,
-                observer::onFailed,
-                session -> session.longWriteCoordinator().writeSplit(
-                        target, copy, writeType, customSplitter, observer));
+        return onSession(deviceId, observer::onFailed,
+                session -> session.longWriteCoordinator().writeSplit(target, value, writeType, splitter, observer));
     }
 
     @NonNull
     public Result<Void> beginReliableWrite(@NonNull BleDeviceId deviceId) {
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
+        if (publishedState(deviceId) != BleConnectionState.READY) {
+            return Result.failure(missing(deviceId));
         }
-        return r.getValue().reliableWriteCoordinator().beginReliableWrite();
+        YoBleGattSession session = sessions.get(deviceId);
+        if (session == null) {
+            return Result.failure(missing(deviceId));
+        }
+        return session.reliableWriteCoordinator().beginFromAnyThread();
     }
 
     @NonNull
     public BleOperationHandle executeReliableWrite(@NonNull BleDeviceId deviceId,
                                                    @NonNull BleGattObserver observer) {
-        return dispatchSessionHandle("reliable-exec", deviceId,
-                observer::onFailed,
-                session -> session.reliableWriteCoordinator().executeReliableWrite(observer));
+        BleGattObserver hopped = hop(observer);
+        return onSession(deviceId, hopped::onFailed, session -> session.reliableWriteCoordinator().execute(hopped));
     }
 
     @NonNull
     public BleOperationHandle abortReliableWrite(@NonNull BleDeviceId deviceId,
                                                  @NonNull BleGattObserver observer) {
-        return dispatchSessionHandle("reliable-abort", deviceId,
-                observer::onFailed,
-                session -> session.reliableWriteCoordinator().abortReliableWrite(observer));
+        BleGattObserver hopped = hop(observer);
+        return onSession(deviceId, hopped::onFailed, session -> session.reliableWriteCoordinator().abort(hopped));
     }
 
     @NonNull
     public Result<Integer> getPendingOperationCount(@NonNull BleDeviceId deviceId) {
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
+        YoBleGattSession session = sessions.get(deviceId);
+        if (session == null) {
+            return Result.failure(missing(deviceId));
         }
-        return Result.success(r.getValue().operationQueue().pendingCount());
+        return Result.success(session.publishedPendingCount());
     }
 
     @NonNull
     public Result<Integer> clearPendingOperations(@NonNull BleDeviceId deviceId) {
-        Result<YoBleGattSession> r = requireSessionSync(deviceId);
-        if (r.isFailure()) {
-            return Result.failure(r.getFailure());
+        YoBleGattSession session = sessions.get(deviceId);
+        if (session == null) {
+            return Result.failure(missing(deviceId));
         }
-        int cleared = r.getValue().operationQueue().clearAll(YoBleErrorMapper.failure(
-                BleErrorCode.OPERATION_CANCELLED, MODULE,
-                "Cleared pending GATT operations by caller", deviceId));
-        return Result.success(cleared);
+        int published = session.publishedPendingCount();
+        runtime.state(() -> session.operationQueue().clearPending(YoBleErrorMapper.failure(
+                BleErrorCode.OPERATION_CANCELLED, MODULE, "pending operations cleared", deviceId)));
+        return Result.success(published);
     }
 
     @NonNull
@@ -561,36 +402,9 @@ public final class YoBleConnectionManager implements YoReleasable {
                                         @NonNull BleGattTarget target,
                                         @NonNull BleNotificationSetupMode setupMode,
                                         @NonNull BleNotificationObserver observer) {
-        String opId = "ble-sub-" + opSeq.incrementAndGet();
-        AtomicBoolean cancelled = new AtomicBoolean(false);
-        AtomicReference<Runnable> unsubRef = new AtomicReference<>();
-
-        runtime.state(() -> {
-            if (cancelled.get()) {
-                return;
-            }
-            YoBleGattSession session = activeSessionLocked(deviceId);
-            if (session == null) {
-                BleFailure f = sessionMissingFailure(deviceId);
-                runtime.callback(() -> observer.onNotificationFailed(f));
-                return;
-            }
-            Runnable unsub = session.notificationRouter().subscribe(target, setupMode, observer);
-            unsubRef.set(unsub);
-            if (cancelled.get()) {
-                unsub.run();
-            }
-        });
-
-        return new BleOperationHandle(opId, () -> {
-            if (cancelled.compareAndSet(false, true)) {
-                runtime.state(() -> {
-                    Runnable unsub = unsubRef.get();
-                    if (unsub != null) {
-                        unsub.run();
-                    }
-                });
-            }
+        return onSession(deviceId, observer::onNotificationFailed, session -> {
+            Runnable unsubscribe = session.notificationRouter().subscribe(target, setupMode, observer);
+            return new BleOperationHandle("ble-sub-" + opSeq.incrementAndGet(), unsubscribe);
         });
     }
 
@@ -599,39 +413,32 @@ public final class YoBleConnectionManager implements YoReleasable {
                                         @NonNull BleGattTarget target,
                                         boolean enabled,
                                         @NonNull BleGattObserver observer) {
-        return dispatchSessionHandle("notify", deviceId,
-                observer::onFailed,
-                session -> session.notificationRouter().setNotifyCompat(target, enabled, observer));
+        BleGattObserver hopped = hop(observer);
+        return onSession(deviceId, hopped::onFailed,
+                session -> session.notificationRouter().setNotify(target, enabled, hopped));
     }
 
     @NonNull
     public BleOperationHandle sendAndWait(@NonNull BleDeviceId deviceId,
                                           @NonNull BleRequestResponseConfig config,
                                           @NonNull BleValueObserver<byte[]> observer) {
-        return dispatchSessionHandle("req-resp", deviceId,
-                observer::onFailed,
+        return onSession(deviceId, observer::onFailed,
                 session -> session.requestResponseCoordinator().sendAndWait(config, observer));
     }
 
-    // ── 系统广播转发与释放 ──────────────────────────────────────────
-
     public void onAdapterTurnedOff() {
         runtime.state(() -> {
-            List<YoBleGattSession> copy;
-            synchronized (sessions) {
-                copy = new ArrayList<>(sessions.values());
-            }
-            for (YoBleGattSession s : copy) {
-                s.onAdapterTurnedOff();
+            for (YoBleGattSession session : new ArrayList<>(sessions.values())) {
+                session.onAdapterTurnedOff();
             }
         });
     }
 
     public void onBondStateChanged(@NonNull BleDeviceId deviceId, @NonNull BleBondState newState) {
         runtime.state(() -> {
-            YoBleGattSession s = activeSessionLocked(deviceId);
-            if (s != null) {
-                s.onPlatformBondStateChanged(newState);
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session != null && !session.isEnded()) {
+                session.onPlatformBondStateChanged(newState);
             }
         });
     }
@@ -640,111 +447,159 @@ public final class YoBleConnectionManager implements YoReleasable {
     public void release() {
         released = true;
         runtime.state(() -> {
-            List<YoBleGattSession> copy;
-            synchronized (sessions) {
-                copy = new ArrayList<>(sessions.values());
-                sessions.clear();
+            for (YoBleGattSession session : new ArrayList<>(sessions.values())) {
+                session.forceClose();
             }
-            for (YoBleGattSession s : copy) {
-                s.releaseSession();
-            }
-            synchronized (lastConnectionConfigs) {
-                lastConnectionConfigs.clear();
-            }
-            globalObservers.clear();
+            sessions.clear();
+            endedOrder.clear();
         });
     }
 
-    // ── 辅助方法 ────────────────────────────────────────────────────
+    private void openSession(@NonNull BleDeviceId deviceId,
+                             @NonNull BleConnectionConfig config,
+                             @NonNull BleConnectionObserver observer) {
+        YoBleGattSession previous = sessions.get(deviceId);
+        if (previous != null) {
+            endedOrder.remove(deviceId);
+            sessions.remove(deviceId, previous);
+        }
+        long lastClosed = lastClosedAtMillis.getOrDefault(deviceId, 0L);
+        YoBleGattSession session = new YoBleGattSession(
+                deviceId, runtime, bleConfig, config, capabilityInspector, connectionPlatform,
+                bondController, snapshotStore, timeline, clockMillis, globalObservers, observer, lastClosed,
+                lastClosedAtMillis::put);
+        sessions.put(deviceId, session);
+        session.whenEnded(() -> rememberEnded(deviceId, session));
+        session.startConnect();
+    }
 
-    private interface SessionHandleAction {
-        @NonNull
-        BleOperationHandle execute(@NonNull YoBleGattSession session);
+    private void rememberEnded(@NonNull BleDeviceId deviceId, @NonNull YoBleGattSession session) {
+        if (sessions.get(deviceId) != session) {
+            return;
+        }
+        endedOrder.remove(deviceId);
+        endedOrder.put(deviceId, Boolean.TRUE);
+        while (endedOrder.size() > ENDED_SESSION_CAP) {
+            BleDeviceId eldest = endedOrder.keySet().iterator().next();
+            endedOrder.remove(eldest);
+            YoBleGattSession old = sessions.get(eldest);
+            if (old != null && old.isEnded()) {
+                sessions.remove(eldest, old);
+            }
+        }
+    }
+
+    private void replay(@NonNull YoBleGattSession session, @NonNull BleConnectionObserver observer) {
+        BleConnectionSnapshot snapshot = session.snapshot();
+        BleGattDatabaseSnapshot database = session.currentDatabase();
+        runtime.callback(() -> {
+            observer.onConnectionStateChanged(snapshot);
+            if (database != null) {
+                observer.onServicesDiscovered(session.deviceId(), database);
+            }
+        });
     }
 
     @NonNull
-    private BleOperationHandle dispatchSessionHandle(@NonNull String tag,
-                                                     @NonNull BleDeviceId deviceId,
-                                                     @NonNull java.util.function.Consumer<BleFailure> errorSink,
-                                                     @NonNull SessionHandleAction action) {
-        String opId = "ble-" + tag + "-" + opSeq.incrementAndGet();
+    private BleOperationHandle onSession(@NonNull BleDeviceId deviceId,
+                                         @NonNull Consumer<BleFailure> onError,
+                                         @NonNull Function<YoBleGattSession, BleOperationHandle> action) {
+        String opId = "ble-op-" + opSeq.incrementAndGet();
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AtomicReference<BleOperationHandle> inner = new AtomicReference<>();
-
         runtime.state(() -> {
-            if (cancelled.get()) {
-                BleFailure cancelErr = YoBleErrorMapper.failure(
-                        BleErrorCode.OPERATION_CANCELLED, MODULE,
-                        "Operation cancelled before execution: " + opId, deviceId);
-                runtime.callback(() -> errorSink.accept(cancelErr));
-                return;
-            }
-            YoBleGattSession session = activeSessionLocked(deviceId);
-            if (session == null) {
-                BleFailure f = sessionMissingFailure(deviceId);
-                runtime.callback(() -> errorSink.accept(f));
-                return;
-            }
-            BleOperationHandle h = action.execute(session);
-            inner.set(h);
-            if (cancelled.get()) {
-                h.cancel();
-            }
-        });
-
-        return new BleOperationHandle(opId, () -> {
-            if (cancelled.compareAndSet(false, true)) {
-                BleOperationHandle h = inner.get();
-                if (h != null) {
-                    h.cancel();
+            if (cancelled.get() || released) {
+                if (released) {
+                    runtime.callback(() -> onError.accept(releasedFailure(deviceId)));
                 }
+                return;
+            }
+            YoBleGattSession session = sessions.get(deviceId);
+            if (session == null || session.isEnded() || !session.isLive() && !session.isReady()) {
+                runtime.callback(() -> onError.accept(missing(deviceId)));
+                return;
+            }
+            BleOperationHandle handle = action.apply(session);
+            inner.set(handle);
+            if (cancelled.get()) {
+                handle.cancel();
+            }
+        });
+        return new BleOperationHandle(opId, () -> {
+            if (!cancelled.compareAndSet(false, true)) {
+                return;
+            }
+            BleOperationHandle handle = inner.get();
+            if (handle != null) {
+                handle.cancel();
             }
         });
     }
 
     @NonNull
-    private Result<YoBleGattSession> requireSessionSync(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
-        }
-        if (!BleDeviceId.isValid(deviceId.value())) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.DEVICE_INVALID, MODULE, "Invalid MAC address: " + deviceId, deviceId));
-        }
-        YoBleGattSession session = activeSessionLocked(deviceId);
-        if (session == null) {
-            return Result.failure(sessionMissingFailure(deviceId));
-        }
-        return Result.success(session);
-    }
+    private <T> BleValueObserver<T> hop(@NonNull BleValueObserver<T> observer) {
+        return new BleValueObserver<T>() {
+            @Override
+            public void onSuccess(@NonNull T value) {
+                runtime.callback(() -> observer.onSuccess(value));
+            }
 
-    @Nullable
-    private YoBleGattSession activeSessionLocked(@NonNull BleDeviceId deviceId) {
-        synchronized (sessions) {
-            return sessions.get(deviceId);
-        }
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                runtime.callback(() -> observer.onFailed(failure));
+            }
+        };
     }
 
     @NonNull
-    private BleFailure sessionMissingFailure(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return YoBleErrorMapper.failure(BleErrorCode.RELEASED, MODULE, "Client released", deviceId);
-        }
-        if (!BleDeviceId.isValid(deviceId.value())) {
-            return YoBleErrorMapper.failure(
-                    BleErrorCode.DEVICE_INVALID, MODULE, "Invalid MAC address: " + deviceId, deviceId);
-        }
-        return YoBleErrorMapper.failure(
-                BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                "No active BLE session for " + deviceId, deviceId);
+    private BleGattObserver hop(@NonNull BleGattObserver observer) {
+        return new BleGattObserver() {
+            @Override
+            public void onRead(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target, @NonNull byte[] value) {
+                runtime.callback(() -> observer.onRead(deviceId, target, value));
+            }
+
+            @Override
+            public void onWrite(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target) {
+                runtime.callback(() -> observer.onWrite(deviceId, target));
+            }
+
+            @Override
+            public void onDescriptorRead(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target, @NonNull byte[] value) {
+                runtime.callback(() -> observer.onDescriptorRead(deviceId, target, value));
+            }
+
+            @Override
+            public void onDescriptorWrite(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target) {
+                runtime.callback(() -> observer.onDescriptorWrite(deviceId, target));
+            }
+
+            @Override
+            public void onNotifyChanged(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target, boolean enabled) {
+                runtime.callback(() -> observer.onNotifyChanged(deviceId, target, enabled));
+            }
+
+            @Override
+            public void onCharacteristicChanged(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target, @NonNull byte[] value) {
+                runtime.callback(() -> observer.onCharacteristicChanged(deviceId, target, value));
+            }
+
+            @Override
+            public void onReliableWriteCompleted(@NonNull BleDeviceId deviceId, boolean committed) {
+                runtime.callback(() -> observer.onReliableWriteCompleted(deviceId, committed));
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                runtime.callback(() -> observer.onFailed(failure));
+            }
+        };
     }
 
     @Nullable
     private BleFailure checkConnectPreflight(@NonNull BleDeviceId deviceId) {
         if (released || runtime.isReleased()) {
-            return YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId);
+            return releasedFailure(deviceId);
         }
         if (!BleDeviceId.isValid(deviceId.value())) {
             return YoBleErrorMapper.failure(
@@ -760,9 +615,39 @@ public final class YoBleConnectionManager implements YoReleasable {
         }
         if (!capabilityInspector.hasConnectPermission()) {
             return YoBleErrorMapper.failure(
-                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
-                    "Missing BLUETOOTH_CONNECT permission", deviceId);
+                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE, "Missing BLUETOOTH_CONNECT permission", deviceId);
         }
         return null;
+    }
+
+    @NonNull
+    private BleConnectionState publishedState(@NonNull BleDeviceId deviceId) {
+        BleDeviceSnapshot stored = snapshotStore.get(deviceId);
+        if (stored == null || stored.connectionSnapshot() == null) {
+            return BleConnectionState.IDLE;
+        }
+        return stored.connectionSnapshot().state();
+    }
+
+    private static boolean isLinkUp(@NonNull BleConnectionState state) {
+        return state == BleConnectionState.CONNECTED
+                || state == BleConnectionState.BONDING_WAIT
+                || state == BleConnectionState.DISCOVERING_SERVICES
+                || state == BleConnectionState.INITIALIZING
+                || state == BleConnectionState.READY;
+    }
+
+    @NonNull
+    private BleFailure missing(@NonNull BleDeviceId deviceId) {
+        if (released) {
+            return releasedFailure(deviceId);
+        }
+        return YoBleErrorMapper.failure(
+                BleErrorCode.CONNECTION_NOT_READY, MODULE, "No active BLE session for " + deviceId, deviceId);
+    }
+
+    @NonNull
+    private BleFailure releasedFailure(@Nullable BleDeviceId deviceId) {
+        return YoBleErrorMapper.failure(BleErrorCode.RELEASED, MODULE, "Client released", deviceId);
     }
 }

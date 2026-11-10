@@ -56,7 +56,7 @@ public final class YoBleAndroidModuleGraph {
 
         YoBleAndroidReceiverRegistry registry = new YoBleAndroidReceiverRegistry();
         YoBleAdapterStateReceiver adapterReceiver =
-                new YoBleAdapterStateReceiver(core::onAdapterTurnedOff);
+                new YoBleAdapterStateReceiver(core::onAdapterStateChanged);
         YoBleBondStateReceiver bondReceiver =
                 new YoBleBondStateReceiver(core::onBondStateChanged);
 

@@ -3,11 +3,16 @@ package com.yovo.lib_bluetooth.internal.ble.gatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleGattStatus;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.CompletionHandler;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.OpKind;
+import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.StartResult;
+import com.yovo.lib_bluetooth.internal.ble.transfer.YoBleMtuPayloadCalculator;
+import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
+import com.yovo.lib_bluetooth.model.ble.BleGattCharacteristicInfo;
 import com.yovo.lib_bluetooth.model.ble.BleGattDatabaseSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleGattObserver;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
@@ -18,108 +23,56 @@ import com.yovo.lib_bluetooth.model.ble.BleWriteType;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 统一处理 Characteristic 与 Descriptor 的序列化读写入队及回调分发（含 pre-O 认证失败自动重试）。
+ * 读写入口。观察者回调发生在 state 线程；公开 API 由连接管理器再派发到用户回调线程。
+ * 属性、长度在入队前检查，启动时再查一次目标是否仍在。
  */
 public final class YoBleGattOperationHandler {
 
-    private static final String MODULE = "ble-gatt-io";
+    private static final String MODULE = "ble-gatt";
 
+    @NonNull
     private final YoBleSessionContext context;
-    private final YoBleReliableWriteCoordinator reliableWriteCoordinator;
-    private final AtomicLong opSeq = new AtomicLong();
+    @NonNull
+    private final YoBleReliableWriteCoordinator reliableWrite;
+    private final AtomicLong seq = new AtomicLong();
 
     public YoBleGattOperationHandler(@NonNull YoBleSessionContext context,
-                                     @NonNull YoBleReliableWriteCoordinator reliableWriteCoordinator) {
+                                     @NonNull YoBleReliableWriteCoordinator reliableWrite) {
         this.context = context;
-        this.reliableWriteCoordinator = reliableWriteCoordinator;
+        this.reliableWrite = reliableWrite;
     }
 
     @NonNull
     public BleOperationHandle read(@NonNull BleGattTarget target,
                                    @NonNull BleOperationPriority priority,
                                    @NonNull BleGattObserver observer) {
-        String opId = "ble-read-" + opSeq.incrementAndGet();
-        if (!context.isReady()) {
-            BleFailure failure = YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "BLE connection is not READY for read", context.deviceId());
-            context.runtime().callback(() -> observer.onFailed(failure));
+        String opId = "ble-read-" + seq.incrementAndGet();
+        BleFailure rejected = rejectIfNotReady(target);
+        if (rejected != null) {
+            observer.onFailed(rejected);
             return BleOperationHandle.completed(opId);
         }
+        submitRead(opId, target, priority, observer, new boolean[]{false});
+        return cancelHandle(opId);
+    }
 
-        BleFailure existenceError = checkTargetExists(target);
-        if (existenceError != null) {
-            context.runtime().callback(() -> observer.onFailed(existenceError));
-            return BleOperationHandle.completed(opId);
-        }
-
-        YoBleGattOperationQueue.OpKind kind = target.isDescriptorTarget()
-                ? YoBleGattOperationQueue.OpKind.READ_DESC
-                : YoBleGattOperationQueue.OpKind.READ_CHAR;
-
-        context.operationQueue().enqueue(
-                opId,
-                kind,
-                target,
-                priority,
-                context.operationTimeoutMillis(),
-                () -> {
-                    YoBleGattTransport transport = context.transport();
-                    if (transport == null) {
-                        return YoBleErrorMapper.failure(
-                                BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                                "Transport closed", context.deviceId());
+    private void submitRead(@NonNull String opId,
+                            @NonNull BleGattTarget target,
+                            @NonNull BleOperationPriority priority,
+                            @NonNull BleGattObserver observer,
+                            @NonNull boolean[] authTried) {
+        OpKind kind = target.isDescriptorTarget() ? OpKind.READ_DESC : OpKind.READ_CHAR;
+        context.operationQueue().enqueue(opId, kind, target, priority, context.operationTimeoutMillis(),
+                () -> startRead(target, kind),
+                completion(opId, target, observer, false,
+                        () -> submitRead(opId, target, priority, observer, authTried), authTried, payload -> {
+                    byte[] bytes = payload instanceof byte[] ? (byte[]) payload : new byte[0];
+                    if (target.isDescriptorTarget()) {
+                        observer.onDescriptorRead(context.deviceId(), target, bytes);
+                    } else {
+                        observer.onRead(context.deviceId(), target, bytes);
                     }
-                    boolean ok = target.isDescriptorTarget()
-                            ? transport.readDescriptor(target)
-                            : transport.readCharacteristic(target);
-                    if (!ok) {
-                        return YoBleErrorMapper.failure(
-                                BleErrorCode.READ_FAILED, MODULE,
-                                (target.isDescriptorTarget() ? "readDescriptor" : "readCharacteristic")
-                                        + " returned false",
-                                null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
-                    }
-                    context.timeline().record(MODULE, "read tx " + target);
-                    return null;
-                },
-                new YoBleGattOperationQueue.CompletionHandler() {
-                    @Override
-                    public void onSuccess(@Nullable Object payload) {
-                        byte[] bytes = payload instanceof byte[] ? ((byte[]) payload).clone() : new byte[0];
-                        context.timeline().record(MODULE, "read rx " + target
-                                + " " + YoBleTimelineRecorder.summarizeBytes(bytes));
-                        if (target.isDescriptorTarget()) {
-                            context.runtime().callback(() ->
-                                    observer.onDescriptorRead(context.deviceId(), target, bytes));
-                        } else {
-                            context.runtime().callback(() ->
-                                    observer.onRead(context.deviceId(), target, bytes));
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled() {
-                        BleFailure f = YoBleErrorMapper.failure(
-                                BleErrorCode.OPERATION_CANCELLED, MODULE,
-                                "Read cancelled: " + opId,
-                                null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
-                        context.runtime().callback(() -> observer.onFailed(f));
-                    }
-
-                    @Override
-                    public void onFailed(@NonNull BleFailure failure) {
-                        if (failure.rawStatusCode() != BleFailure.NO_RAW_STATUS
-                                && YoBleGattStatus.isAuthOrEncryptionError(failure.rawStatusCode())
-                                && context.handleAuthErrorIfConfigured(failure, () ->
-                                        read(target, BleOperationPriority.HIGH, observer))) {
-                            return;
-                        }
-                        context.runtime().callback(() -> observer.onFailed(failure));
-                    }
-                });
-
-        return new BleOperationHandle(opId, () -> context.operationQueue().cancel(opId));
+                }));
     }
 
     @NonNull
@@ -128,132 +81,202 @@ public final class YoBleGattOperationHandler {
                                     @NonNull BleWriteType writeType,
                                     @NonNull BleOperationPriority priority,
                                     @NonNull BleGattObserver observer) {
-        String opId = "ble-write-" + opSeq.incrementAndGet();
+        String opId = "ble-write-" + seq.incrementAndGet();
         byte[] copy = value.clone();
-
-        if (!context.isReady()) {
-            BleFailure failure = YoBleErrorMapper.failure(
-                    BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                    "BLE connection is not READY for write", context.deviceId());
-            context.runtime().callback(() -> observer.onFailed(failure));
+        BleFailure rejected = rejectIfNotReady(target);
+        if (rejected == null) {
+            rejected = validateWrite(target, copy, writeType);
+        }
+        if (rejected != null) {
+            observer.onFailed(rejected);
             return BleOperationHandle.completed(opId);
         }
+        boolean transactional = reliableWrite.markIfTransaction(priority);
+        BleOperationPriority queuedPriority = transactional ? BleOperationPriority.NORMAL : priority;
+        submitWrite(opId, target, copy, writeType, queuedPriority, transactional, observer, new boolean[]{false});
+        return cancelHandle(opId);
+    }
 
-        BleFailure existenceError = checkTargetExists(target);
-        if (existenceError != null) {
-            context.runtime().callback(() -> observer.onFailed(existenceError));
-            return BleOperationHandle.completed(opId);
-        }
-
-        YoBleGattOperationQueue.OpKind kind = target.isDescriptorTarget()
-                ? YoBleGattOperationQueue.OpKind.WRITE_DESC
-                : YoBleGattOperationQueue.OpKind.WRITE_CHAR;
-
-        context.operationQueue().enqueue(
-                opId,
-                kind,
-                target,
-                priority,
-                context.operationTimeoutMillis(),
-                () -> {
-                    YoBleGattTransport transport = context.transport();
-                    if (transport == null) {
-                        return YoBleErrorMapper.failure(
-                                BleErrorCode.CONNECTION_NOT_READY, MODULE,
-                                "Transport closed", context.deviceId());
-                    }
-                    if (!target.isDescriptorTarget() && reliableWriteCoordinator.isInTransaction()) {
-                        reliableWriteCoordinator.recordExpectedEcho(target, copy);
-                    }
-                    boolean ok = target.isDescriptorTarget()
-                            ? transport.writeDescriptor(target, copy)
-                            : transport.writeCharacteristic(target, copy, writeType);
-                    if (!ok) {
-                        if (!target.isDescriptorTarget() && reliableWriteCoordinator.isInTransaction()) {
-                            reliableWriteCoordinator.popExpectedEcho(target);
-                        }
-                        return YoBleErrorMapper.failure(
-                                BleErrorCode.WRITE_FAILED, MODULE,
-                                (target.isDescriptorTarget() ? "writeDescriptor" : "writeCharacteristic")
-                                        + " returned false",
-                                null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
-                    }
-                    context.timeline().record(MODULE, "write tx " + target
-                            + " " + YoBleTimelineRecorder.summarizeBytes(copy));
-                    return null;
-                },
-                new YoBleGattOperationQueue.CompletionHandler() {
-                    @Override
-                    public void onSuccess(@Nullable Object payload) {
-                        if (!target.isDescriptorTarget() && reliableWriteCoordinator.isInTransaction()) {
-                            byte[] echoed = payload instanceof byte[] ? (byte[]) payload : null;
-                            if (!reliableWriteCoordinator.verifyEcho(target, echoed)) {
-                                BleFailure mismatch = YoBleErrorMapper.failure(
-                                        BleErrorCode.RELIABLE_WRITE_MISMATCH, MODULE,
-                                        "Reliable write echo value mismatch on " + target,
-                                        null, BleFailure.NO_RAW_STATUS, context.deviceId(), target,
-                                        "Abort reliable write transaction and retry");
-                                context.runtime().callback(() -> observer.onFailed(mismatch));
-                                return;
+    private void submitWrite(@NonNull String opId,
+                             @NonNull BleGattTarget target,
+                             @NonNull byte[] value,
+                             @NonNull BleWriteType writeType,
+                             @NonNull BleOperationPriority priority,
+                             boolean transactional,
+                             @NonNull BleGattObserver observer,
+                             @NonNull boolean[] authTried) {
+        OpKind kind = target.isDescriptorTarget() ? OpKind.WRITE_DESC : OpKind.WRITE_CHAR;
+        context.operationQueue().enqueue(opId, kind, target, priority, context.operationTimeoutMillis(),
+                transactional,
+                () -> startWrite(target, value, writeType, kind),
+                completion(opId, target, observer, transactional,
+                        () -> submitWrite(opId, target, value, writeType, priority, transactional, observer, authTried),
+                        authTried, payload -> {
+                            if (target.isDescriptorTarget()) {
+                                observer.onDescriptorWrite(context.deviceId(), target);
+                            } else {
+                                observer.onWrite(context.deviceId(), target);
                             }
-                        }
-                        if (target.isDescriptorTarget()) {
-                            context.runtime().callback(() ->
-                                    observer.onDescriptorWrite(context.deviceId(), target));
-                        } else {
-                            context.runtime().callback(() ->
-                                    observer.onWrite(context.deviceId(), target));
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled() {
-                        BleFailure f = YoBleErrorMapper.failure(
-                                BleErrorCode.OPERATION_CANCELLED, MODULE,
-                                "Write cancelled: " + opId,
-                                null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
-                        context.runtime().callback(() -> observer.onFailed(f));
-                    }
-
-                    @Override
-                    public void onFailed(@NonNull BleFailure failure) {
-                        if (failure.rawStatusCode() != BleFailure.NO_RAW_STATUS
-                                && YoBleGattStatus.isAuthOrEncryptionError(failure.rawStatusCode())
-                                && context.handleAuthErrorIfConfigured(failure, () ->
-                                        write(target, copy, writeType, BleOperationPriority.HIGH, observer))) {
-                            return;
-                        }
-                        context.runtime().callback(() -> observer.onFailed(failure));
-                    }
-                });
-
-        return new BleOperationHandle(opId, () -> context.operationQueue().cancel(opId));
+                        }));
     }
 
     @Nullable
-    private BleFailure checkTargetExists(@NonNull BleGattTarget target) {
-        BleGattDatabaseSnapshot db = context.currentDatabase();
-        if (db == null) {
-            return null; // 未自动服务发现时不阻塞；底层 getService 兜底
+    private BleFailure rejectIfNotReady(@NonNull BleGattTarget target) {
+        if (!context.isReady()) {
+            return YoBleErrorMapper.failure(BleErrorCode.CONNECTION_NOT_READY, MODULE,
+                    "connection is not READY", context.deviceId());
         }
-        if (db.findService(target.serviceUuid(), target.serviceInstanceId()) == null) {
-            return YoBleErrorMapper.failure(
-                    BleErrorCode.SERVICE_NOT_FOUND, MODULE,
-                    "GATT service not found: " + target.serviceUuid(),
-                    null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
+        return missingTarget(target);
+    }
+
+    @Nullable
+    private BleFailure missingTarget(@NonNull BleGattTarget target) {
+        BleGattDatabaseSnapshot database = context.currentDatabase();
+        if (database == null) {
+            return null;
         }
-        if (db.findCharacteristic(target) == null) {
+        if (database.findCharacteristic(target) == null) {
             return YoBleErrorMapper.failure(
-                    BleErrorCode.CHARACTERISTIC_NOT_FOUND, MODULE,
-                    "GATT characteristic not found: " + target.characteristicUuid(),
-                    null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
+                    target.isDescriptorTarget() ? BleErrorCode.DESCRIPTOR_NOT_FOUND
+                            : database.findService(target.serviceUuid(), target.serviceInstanceId()) == null
+                            ? BleErrorCode.SERVICE_NOT_FOUND : BleErrorCode.CHARACTERISTIC_NOT_FOUND,
+                    MODULE, "GATT target not in database", context.deviceId());
         }
-        if (target.isDescriptorTarget() && db.findDescriptor(target) == null) {
-            return YoBleErrorMapper.failure(
-                    BleErrorCode.DESCRIPTOR_NOT_FOUND, MODULE,
-                    "GATT descriptor not found: " + target.descriptorUuid(),
-                    null, BleFailure.NO_RAW_STATUS, context.deviceId(), target, null);
+        if (target.isDescriptorTarget() && database.findDescriptor(target) == null) {
+            return YoBleErrorMapper.failure(BleErrorCode.DESCRIPTOR_NOT_FOUND, MODULE,
+                    "descriptor not in database", context.deviceId());
         }
         return null;
+    }
+
+    @Nullable
+    private BleFailure validateWrite(@NonNull BleGattTarget target,
+                                     @NonNull byte[] value,
+                                     @NonNull BleWriteType writeType) {
+        if (target.isDescriptorTarget()) {
+            return null;
+        }
+        BleGattDatabaseSnapshot database = context.currentDatabase();
+        BleGattCharacteristicInfo info = database == null ? null : database.findCharacteristic(target);
+        if (info != null) {
+            boolean allowed = writeType == BleWriteType.WITH_RESPONSE ? info.isWritableWithResponse()
+                    : writeType == BleWriteType.WITHOUT_RESPONSE ? info.isWritableWithoutResponse()
+                    : info.isSignedWritable();
+            if (!allowed) {
+                return YoBleErrorMapper.failure(BleErrorCode.REQUEST_NOT_SUPPORTED, MODULE,
+                        "characteristic does not support " + writeType, context.deviceId());
+            }
+        }
+        int max = YoBleMtuPayloadCalculator.effectiveMaxChunkSize(
+                context.currentMtu(), context.overriddenMtu(), writeType);
+        int limit = writeType == BleWriteType.WITH_RESPONSE
+                ? BleConnectionSnapshot.MAX_ATT_WRITE_PAYLOAD : max;
+        if (value.length > limit) {
+            return YoBleErrorMapper.failure(BleErrorCode.INVALID_OFFSET_OR_LENGTH, MODULE,
+                    "write length " + value.length + " exceeds " + limit, context.deviceId());
+        }
+        return null;
+    }
+
+    @NonNull
+    private StartResult startRead(@NonNull BleGattTarget target, @NonNull OpKind kind) {
+        BleFailure missing = missingTarget(target);
+        if (missing != null) {
+            return StartResult.failed(missing);
+        }
+        YoBleGattTransport transport = context.transport();
+        if (transport == null) {
+            return StartResult.failed(YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE, "transport closed", context.deviceId()));
+        }
+        boolean started = kind == OpKind.READ_DESC
+                ? transport.readDescriptor(target) : transport.readCharacteristic(target);
+        if (!started) {
+            return StartResult.failed(YoBleErrorMapper.failure(
+                    BleErrorCode.READ_FAILED, MODULE, "read rejected", context.deviceId()));
+        }
+        return StartResult.pending();
+    }
+
+    @NonNull
+    private StartResult startWrite(@NonNull BleGattTarget target,
+                                   @NonNull byte[] value,
+                                   @NonNull BleWriteType writeType,
+                                   @NonNull OpKind kind) {
+        BleFailure missing = missingTarget(target);
+        if (missing != null) {
+            return StartResult.failed(missing);
+        }
+        if (!target.isDescriptorTarget()) {
+            reliableWrite.recordExpectedEcho(value);
+        }
+        YoBleGattTransport transport = context.transport();
+        if (transport == null) {
+            return StartResult.failed(YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE, "transport closed", context.deviceId()));
+        }
+        boolean started = kind == OpKind.WRITE_DESC
+                ? transport.writeDescriptor(target, value)
+                : transport.writeCharacteristic(target, value, writeType);
+        if (!started) {
+            return StartResult.failed(YoBleErrorMapper.failure(
+                    BleErrorCode.WRITE_FAILED, MODULE, "write rejected", context.deviceId()));
+        }
+        return StartResult.pending();
+    }
+
+    @NonNull
+    private CompletionHandler completion(@NonNull String opId,
+                                         @NonNull BleGattTarget target,
+                                         @NonNull BleGattObserver observer,
+                                         boolean transactional,
+                                         @NonNull Runnable retry,
+                                         @NonNull boolean[] authTried,
+                                         @NonNull PayloadConsumer onOk) {
+        return new CompletionHandler() {
+            @Override
+            public void onSuccess(@Nullable Object payload) {
+                if (!target.isDescriptorTarget() && transactional) {
+                    BleFailure mismatch = reliableWrite.verifyEcho(payload instanceof byte[]
+                            ? (byte[]) payload : null);
+                    if (mismatch != null) {
+                        reliableWrite.poison(mismatch);
+                        observer.onFailed(mismatch);
+                        return;
+                    }
+                }
+                onOk.accept(payload);
+            }
+
+            @Override
+            public void onCancelled() {
+                observer.onFailed(YoBleErrorMapper.failure(
+                        BleErrorCode.OPERATION_CANCELLED, MODULE, "cancelled " + opId, context.deviceId()));
+            }
+
+            @Override
+            public void onFailed(@NonNull BleFailure failure) {
+                if (transactional) {
+                    reliableWrite.poison(failure);
+                }
+                if (!authTried[0] && failure.rawStatusCode() >= 0
+                        && YoBleGattStatus.isAuthOrEncryptionError(failure.rawStatusCode())) {
+                    authTried[0] = true;
+                    context.recoverFromAuthError(failure, retry, () -> observer.onFailed(failure));
+                    return;
+                }
+                observer.onFailed(failure);
+            }
+        };
+    }
+
+    @NonNull
+    private BleOperationHandle cancelHandle(@NonNull String opId) {
+        return new BleOperationHandle(opId, () -> context.runtime().state(
+                () -> context.operationQueue().cancel(opId)));
+    }
+
+    private interface PayloadConsumer {
+        void accept(@Nullable Object payload);
     }
 }
