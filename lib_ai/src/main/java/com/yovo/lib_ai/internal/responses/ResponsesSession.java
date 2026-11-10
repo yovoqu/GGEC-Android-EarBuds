@@ -15,9 +15,7 @@ import com.yovo.lib_ai.internal.runtime.OrderedCallbacks;
 import com.yovo.lib_ai.internal.transport.OkHttpTransport;
 import com.yovo.lib_ai.internal.transport.WebSocketPipe;
 import com.yovo.lib_ai.responses.YoResponseInput;
-import com.yovo.lib_ai.responses.YoResponseObject;
 import com.yovo.lib_ai.responses.YoResponseRequest;
-import com.yovo.lib_ai.responses.YoResponseStreamEvent;
 import com.yovo.lib_ai.responses.YoResponseStreamListener;
 
 import org.json.JSONException;

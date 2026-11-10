@@ -12,7 +12,6 @@ import com.yovo.lib_ai.platform.YoServiceTarget;
 import com.yovo.lib_ai.retrieval.YoFileRef;
 import com.yovo.lib_ai.retrieval.YoFileUploadRequest;
 
-import org.json.JSONObject;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;

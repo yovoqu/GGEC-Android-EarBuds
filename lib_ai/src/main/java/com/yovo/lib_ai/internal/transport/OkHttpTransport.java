@@ -3,6 +3,8 @@ package com.yovo.lib_ai.internal.transport;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.error.YoAiTransportException;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiDiagnosticsBus;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiLogger;
 import com.yovo.lib_ai.internal.runtime.CancelToken;
 
 import java.io.IOException;
@@ -23,6 +25,7 @@ import okhttp3.ResponseBody;
 
 public final class OkHttpTransport {
 
+    private static final String TAG = "OkHttpTransport";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final int MAX_ERROR_BODY_CHARS = 8192;
 
@@ -62,6 +65,8 @@ public final class OkHttpTransport {
                     long delay = retryDelay(response, attempt);
                     response.close();
                     attempt++;
+                    YoAiLogger.w(TAG, "HTTP " + code + " retry " + attempt + "/" + maxRetries
+                            + " after " + delay + "ms: " + spec.url());
                     sleep(token, delay);
                     continue;
                 }
@@ -75,9 +80,11 @@ public final class OkHttpTransport {
                     sleep(token, backoff(attempt - 1));
                     continue;
                 }
-                throw new YoAiTransportException(
+                YoAiTransportException failure = new YoAiTransportException(
                         exception.getMessage() == null ? "Request failed" : exception.getMessage(),
                         exception);
+                YoAiDiagnosticsBus.get().recordFailure(failure);
+                throw failure;
             }
         }
     }
@@ -95,6 +102,9 @@ public final class OkHttpTransport {
 
     private HttpExchange toExchange(Response response, boolean stream) throws IOException {
         String requestId = requestId(response);
+        if (!response.isSuccessful()) {
+            YoAiLogger.w(TAG, "HTTP " + response.code() + " " + response.request().url());
+        }
         ResponseBody responseBody = response.body();
         if (stream && response.isSuccessful()) {
             if (responseBody == null) {

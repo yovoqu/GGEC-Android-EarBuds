@@ -35,6 +35,7 @@ public final class YoAiClient implements AutoCloseable {
     private final YoImageGeneration imageGeneration;
     private final YoVideoGeneration videoGeneration;
     private final Closer closer;
+    private final YoAiDiagnosticSource diagnosticSource;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public YoAiClient(
@@ -53,7 +54,8 @@ public final class YoAiClient implements AutoCloseable {
             @NonNull YoSynthesis synthesis,
             @NonNull YoImageGeneration imageGeneration,
             @NonNull YoVideoGeneration videoGeneration,
-            @NonNull Closer closer) {
+            @NonNull Closer closer,
+            @NonNull YoAiDiagnosticSource diagnosticSource) {
         this.chat = chat;
         this.responses = responses;
         this.messages = messages;
@@ -70,6 +72,7 @@ public final class YoAiClient implements AutoCloseable {
         this.imageGeneration = imageGeneration;
         this.videoGeneration = videoGeneration;
         this.closer = closer;
+        this.diagnosticSource = diagnosticSource;
     }
 
     @NonNull
@@ -216,6 +219,14 @@ public final class YoAiClient implements AutoCloseable {
     public YoVideoGeneration videoGeneration() {
         ensureOpen();
         return videoGeneration;
+    }
+
+    /** 导出当前诊断快照（近期失败/异常/事件时间线 + dump 文本）。 */
+    @NonNull
+    public YoAiDiagnosticReport exportDiagnosticReport() {
+        ensureOpen();
+        return new YoAiDiagnosticReport(
+                System.currentTimeMillis(), diagnosticSource.timeline(), diagnosticSource.dumpReport());
     }
 
     @Override

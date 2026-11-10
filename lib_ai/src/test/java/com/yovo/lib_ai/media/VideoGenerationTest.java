@@ -18,7 +18,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.LongSupplier;
 
 /**
  * F20 视频生成：请求编码、提交拿 task_id、轮询成功、超时。

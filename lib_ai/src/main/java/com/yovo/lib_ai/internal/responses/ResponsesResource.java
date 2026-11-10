@@ -1,7 +1,6 @@
 package com.yovo.lib_ai.internal.responses;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiCall;
 import com.yovo.lib_ai.api.YoResponses;

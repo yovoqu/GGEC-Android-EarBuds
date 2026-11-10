@@ -30,6 +30,7 @@ android {
 }
 
 dependencies {
+    implementation project(':lib_common')
     implementation 'androidx.annotation:annotation:1.9.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
@@ -97,6 +98,83 @@ tasks.register('checkLibAiPublicBoundary') {
     }
 }
 
+tasks.register('checkLibAiLogSeam') {
+    group = 'verification'
+    description = 'Only YoAiLogger may import lib_common.log (single logging seam).'
+    doLast {
+        def offenders = []
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+            exclude 'src/main/java/com/yovo/lib_ai/internal/common/diagnostics/YoAiLogger.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                if (line =~ /^\s*import\s+com\.yovo\.lib_common\.log\./) {
+                    offenders << "${rel}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Only YoAiLogger may import lib_common.log:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkLibAiProviderBoundary') {
+    group = 'verification'
+    description = 'Non-provider/YoAiLogger code must not import lib_common.'
+    doLast {
+        def offenders = []
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+            exclude 'src/main/java/com/yovo/lib_ai/provider/lib_common/**'
+            exclude 'src/main/java/com/yovo/lib_ai/internal/common/diagnostics/YoAiLogger.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                if (line =~ /^\s*import\s+com\.yovo\.lib_common\./) {
+                    offenders << "${rel}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('lib_ai 非 provider/YoAiLogger 代码禁止 import lib_common:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkNoStrayLogging') {
+    group = 'verification'
+    description = 'Fail on android.util.Log / System.out/err / printStackTrace / direct YoLog outside YoAiLogger.'
+    doLast {
+        def offenders = []
+        def seam = 'com/yovo/lib_ai/internal/common/diagnostics/YoAiLogger.java'
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                def trimmed = line.trim()
+                if (trimmed.contains('import android.util.Log')
+                        || trimmed.contains('System.out')
+                        || trimmed.contains('System.err')
+                        || trimmed.contains('printStackTrace')) {
+                    offenders << "${rel}:${index}: ${trimmed}"
+                }
+                if (!rel.endsWith(seam) && (trimmed =~ /\bYoLog\s*\./)) {
+                    offenders << "${rel}:${index}: direct YoLog outside YoAiLogger: ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Stray logging detected:\n' + offenders.join('\n'))
+        }
+    }
+}
+
 tasks.named('check') {
-    dependsOn 'checkLibAiPublicBoundary'
+    dependsOn 'checkLibAiPublicBoundary',
+            'checkLibAiLogSeam',
+            'checkLibAiProviderBoundary',
+            'checkNoStrayLogging'
 }

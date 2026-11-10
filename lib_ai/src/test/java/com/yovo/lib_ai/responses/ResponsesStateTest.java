@@ -6,7 +6,6 @@ import static org.junit.Assert.assertTrue;
 
 import com.yovo.lib_ai.internal.responses.ResponsesCodec;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 

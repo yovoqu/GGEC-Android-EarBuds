@@ -3,7 +3,6 @@ package com.yovo.lib_ai.retrieval;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;

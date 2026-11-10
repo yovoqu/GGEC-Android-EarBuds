@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoImageGeneration;
+import com.yovo.lib_ai.api.YoAiDiagnostics;
 import com.yovo.lib_ai.api.YoJob;
 import com.yovo.lib_ai.error.YoAiHttpException;
 import com.yovo.lib_ai.error.YoAiProtocolException;
@@ -262,7 +263,9 @@ public final class YoImageServiceImpl implements YoImageGeneration, AutoCloseabl
                 // 保留 HTTP 状态作为消息。
             }
         }
-        return new YoAiHttpException(message, status, response.requestId(), type, body);
+        YoAiHttpException exception = new YoAiHttpException(message, status, response.requestId(), type, body);
+        YoAiDiagnostics.recordFailure(exception);
+        return exception;
     }
 
     public static final class Builder {

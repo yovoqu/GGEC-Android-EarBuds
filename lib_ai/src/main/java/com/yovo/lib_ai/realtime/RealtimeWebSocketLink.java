@@ -1,5 +1,7 @@
 package com.yovo.lib_ai.realtime;
 
+import com.yovo.lib_ai.api.YoAiDiagnostics;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -42,6 +44,7 @@ import okhttp3.WebSocketListener;
  */
 final class RealtimeWebSocketLink implements YoRealtime.Connection {
 
+    private static final String TAG = "YoRealtime";
     private static final long CONNECT_TIMEOUT_MILLIS = 10_000L;
     private static final long WRITE_TIMEOUT_MILLIS = 10_000L;
     private static final long PING_INTERVAL_MILLIS = 20_000L;
@@ -79,6 +82,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
         @Override
         public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
             socket.set(webSocket);
+            YoAiDiagnostics.i(TAG, "websocket opened");
             if (closed.get()) {
                 webSocket.close(1000, "bye");
             }
@@ -97,6 +101,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
             if (closed.get()) {
                 return;
             }
+            YoAiDiagnostics.e(TAG, "websocket failure", throwable);
             terminate(false, failureKind(response, throwable), failureMessage(response, throwable));
         }
 
@@ -106,6 +111,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
             if (closed.get()) {
                 return;
             }
+            YoAiDiagnostics.w(TAG, "websocket closing code=" + code);
             terminate(false, YoAiErrorKind.NETWORK, "连接被服务端关闭（" + code
                     + (reason.isEmpty() ? "" : " " + reason) + "）");
         }
@@ -115,6 +121,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
             if (closed.get()) {
                 return;
             }
+            YoAiDiagnostics.i(TAG, "websocket closed code=" + code);
             terminate(false, YoAiErrorKind.NETWORK, "连接被服务端关闭（" + code
                     + (reason.isEmpty() ? "" : " " + reason) + "）");
         }
@@ -134,6 +141,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
         }
         this.config = config;
         this.listener = listener;
+        YoAiDiagnostics.i(TAG, "realtime open: " + RealtimeProtocol.webSocketUrl(config));
         try {
             Request.Builder builder = new Request.Builder().url(RealtimeProtocol.webSocketUrl(config));
             for (Map.Entry<String, String> header : RealtimeProtocol.handshakeHeaders(config).entrySet()) {
@@ -145,6 +153,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
                 handle.cancel();
             }
         } catch (RuntimeException exception) {
+            YoAiDiagnostics.e(TAG, "realtime open failed", exception);
             terminate(false, YoAiErrorKind.PROTOCOL, "建立 WebSocket 失败：" + messageOf(exception));
         }
     }
@@ -187,6 +196,7 @@ final class RealtimeWebSocketLink implements YoRealtime.Connection {
 
     @Override
     public void close() {
+        YoAiDiagnostics.d(TAG, "close requested");
         terminate(true, null, null);
     }
 

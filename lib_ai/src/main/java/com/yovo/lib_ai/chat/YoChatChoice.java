@@ -1,6 +1,5 @@
 package com.yovo.lib_ai.chat;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 public final class YoChatChoice {
