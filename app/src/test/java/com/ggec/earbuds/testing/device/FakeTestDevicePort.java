@@ -16,6 +16,8 @@ public final class FakeTestDevicePort implements DevicePort {
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private boolean scanning;
     private Consumer<ScanResult> activeResultConsumer;
+    private Consumer<List<ScanResult>> activeBatchConsumer;
+    private Consumer<ScanFailure> activeFailureConsumer;
     private Runnable activeFinishedCallback;
     public String lastConnectedModel;
     public String lastConnectedVariant;
@@ -54,22 +56,59 @@ public final class FakeTestDevicePort implements DevicePort {
 
     @Override
     public void startScan(Consumer<ScanResult> onResult, Runnable onFinished) {
+        startScan(onResult, null, onFinished);
+    }
+
+    @Override
+    public void startScan(Consumer<ScanResult> onResult,
+                          Consumer<ScanFailure> onFailed,
+                          Runnable onFinished) {
         scanning = true;
         activeResultConsumer = onResult;
+        activeBatchConsumer = null;
+        activeFailureConsumer = onFailed;
+        activeFinishedCallback = onFinished;
+    }
+
+    @Override
+    public void startScanBatch(Consumer<List<ScanResult>> onResults,
+                               Consumer<ScanFailure> onFailed,
+                               Runnable onFinished) {
+        scanning = true;
+        activeResultConsumer = null;
+        activeBatchConsumer = onResults;
+        activeFailureConsumer = onFailed;
         activeFinishedCallback = onFinished;
     }
 
     public void emitScanResults(List<ScanResult> results) {
-        if (!scanning || activeResultConsumer == null) {
+        if (!scanning) {
             return;
         }
-        for (ScanResult result : results) {
-            activeResultConsumer.accept(result);
+        if (activeBatchConsumer != null) {
+            activeBatchConsumer.accept(results);
+            return;
         }
+        if (activeResultConsumer != null) {
+            for (ScanResult result : results) {
+                activeResultConsumer.accept(result);
+            }
+        }
+    }
+
+    public void emitScanFailure(ScanFailure failure) {
+        scanning = false;
+        if (activeFailureConsumer != null) {
+            Consumer<ScanFailure> failureConsumer = activeFailureConsumer;
+            activeFailureConsumer = null;
+            failureConsumer.accept(failure);
+        }
+        finishScan();
     }
 
     public void finishScan() {
         scanning = false;
+        activeFailureConsumer = null;
         if (activeFinishedCallback != null) {
             Runnable done = activeFinishedCallback;
             activeFinishedCallback = null;
@@ -80,6 +119,10 @@ public final class FakeTestDevicePort implements DevicePort {
     @Override
     public void stopScan() {
         scanning = false;
+        activeResultConsumer = null;
+        activeBatchConsumer = null;
+        activeFailureConsumer = null;
+        activeFinishedCallback = null;
     }
 
     @Override

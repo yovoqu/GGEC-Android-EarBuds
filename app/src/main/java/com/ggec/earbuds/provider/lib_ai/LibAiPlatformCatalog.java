@@ -1,4 +1,4 @@
-package com.ggec.earbuds.data.ai.gateway;
+package com.ggec.earbuds.provider.lib_ai;
 
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.domain.ai.model.AiProtocol;

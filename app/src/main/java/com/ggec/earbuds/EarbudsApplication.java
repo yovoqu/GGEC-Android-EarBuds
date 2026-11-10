@@ -4,8 +4,9 @@ import android.app.Application;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.provider.lib_common.YoLogProvider;
+import com.ggec.earbuds.provider.lib_common.WindowProvider;
 import com.ggec.earbuds.wiring.AppContainer;
-import com.yovo.lib_common.system.refresh_rate.YoRefreshRate;
 
 /**
  * 进程入口：只做与具体页面无关的窗口级配置。
@@ -24,9 +25,11 @@ public final class EarbudsApplication extends Application implements AppContaine
     @Override
     public void onCreate() {
         super.onCreate();
+        // 日志必须最先初始化：全进程唯一 owner，重复调用为幂等 no-op。
+        YoLogProvider.install(this);
         container = new AppContainer(this);
         // 必须在任何 Activity 创建之前注册，否则首个 Activity 的 onResume 收不到。
-        YoRefreshRate.installHighRefreshForAllActivities(this);
+        WindowProvider.installHighRefresh(this);
     }
 
     @NonNull

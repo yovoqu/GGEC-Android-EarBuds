@@ -1,5 +1,6 @@
 package com.ggec.earbuds.data.ai.voice;
 
+import com.ggec.earbuds.provider.lib_ai.RealtimeLinkAdapter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
