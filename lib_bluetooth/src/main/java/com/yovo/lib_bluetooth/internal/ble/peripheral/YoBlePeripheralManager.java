@@ -7,6 +7,7 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleGattStatus;
+import com.yovo.lib_bluetooth.internal.ble.error.YoBleScanAdvertiseStatus;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
@@ -27,11 +28,15 @@ import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.common.Result;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -45,6 +50,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  */
 public final class YoBlePeripheralManager implements YoReleasable {
+
+    private static final int MAX_PREPARED_WRITES = 64;
+    private static final int MAX_PREPARED_VALUE_LENGTH = 512;
 
     private static final String MODULE = "ble-peripheral";
 
@@ -65,6 +73,27 @@ public final class YoBlePeripheralManager implements YoReleasable {
             this.offset = offset;
             this.data = data.clone();
         }
+    }
+
+    private static final class PendingNotify {
+        @NonNull
+        final BleGattTarget target;
+        final boolean confirm;
+        @NonNull
+        final byte[] value;
+
+        PendingNotify(@NonNull BleGattTarget target, boolean confirm, @NonNull byte[] value) {
+            this.target = target;
+            this.confirm = confirm;
+            this.value = value;
+        }
+    }
+
+    private static final class ClientLink {
+        volatile int mtu = 23;
+        final ConcurrentHashMap<BleGattTarget, Integer> cccd = new ConcurrentHashMap<>();
+        final ArrayDeque<PendingNotify> queue = new ArrayDeque<>();
+        boolean busy;
     }
 
     private final YoBleRuntime runtime;
@@ -97,6 +126,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
     private final Map<BleGattTarget, byte[]> sharedDescValues = new LinkedHashMap<>();
     private final Map<BleDeviceId, Map<BleGattTarget, byte[]>> perClientDescValues = new LinkedHashMap<>();
     private final Map<BleDeviceId, List<PreparedWriteOp>> preparedWrites = new LinkedHashMap<>();
+    private final ConcurrentHashMap<BleDeviceId, ClientLink> clients = new ConcurrentHashMap<>();
 
     private volatile boolean released = false;
 
@@ -207,14 +237,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
                             advertising = false;
                             advertisingOrStarting = false;
                             advertiseObserver = null;
-                            BleErrorCode mapped;
-                            if (errorCode == 1 /* ADVERTISE_FAILED_DATA_TOO_LARGE */) {
-                                mapped = BleErrorCode.ADVERTISE_DATA_TOO_LARGE;
-                            } else if (errorCode == 5 /* ADVERTISE_FAILED_FEATURE_UNSUPPORTED */) {
-                                mapped = BleErrorCode.UNSUPPORTED_OPERATION;
-                            } else {
-                                mapped = BleErrorCode.ADVERTISE_FAILED;
-                            }
+                            BleErrorCode mapped = YoBleScanAdvertiseStatus.toAdvertiseErrorCode(errorCode);
                             BleFailure f = YoBleErrorMapper.failure(
                                     mapped, MODULE,
                                     detail != null ? detail : ("Advertising failed: " + errorCode),
@@ -307,16 +330,37 @@ public final class YoBlePeripheralManager implements YoReleasable {
                     BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
                     "Missing BLUETOOTH_CONNECT permission", clientDeviceId));
         }
-        byte[] copy = value.clone();
-        boolean ok = platform.notifyCharacteristic(clientDeviceId, target, confirm, copy);
-        if (!ok) {
+        ClientLink link = clients.get(clientDeviceId);
+        if (link == null) {
             return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.GATT_SERVER_NOTIFY_FAILED, MODULE,
-                    "notifyCharacteristicChanged returned false", clientDeviceId));
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE, "client is not connected", clientDeviceId));
         }
-        timeline.record(MODULE, "server notify " + clientDeviceId + " target=" + target
-                + " " + YoBleTimelineRecorder.summarizeBytes(copy));
+        int flags = link.cccd.getOrDefault(target.withoutDescriptor(), 0);
+        boolean subscribed = confirm ? (flags & 0x02) != 0 : (flags & 0x01) != 0;
+        if (!subscribed) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.NOTIFY_FAILED, MODULE,
+                    confirm ? "client has not enabled indications" : "client has not enabled notifications",
+                    clientDeviceId));
+        }
+        int maxPayload = Math.max(0, link.mtu - 3);
+        if (value.length > maxPayload) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.INVALID_OFFSET_OR_LENGTH, MODULE,
+                    "notify length " + value.length + " exceeds " + maxPayload, clientDeviceId));
+        }
+        byte[] copy = value.clone();
+        runtime.state(() -> enqueueNotify(clientDeviceId, target, confirm, copy));
         return Result.success(null);
+    }
+
+    @NonNull
+    public Result<List<BleDeviceId>> getConnectedClients() {
+        if (released) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.RELEASED, MODULE, "Client released"));
+        }
+        return Result.success(new ArrayList<>(clients.keySet()));
     }
 
     @NonNull
@@ -388,9 +432,11 @@ public final class YoBlePeripheralManager implements YoReleasable {
                         return;
                     }
                     if (status != 0) {
-                        BleFailure f = YoBleErrorMapper.fromGattStatus(
-                                status, BleErrorCode.GATT_SERVER_START_FAILED,
-                                MODULE, new BleDeviceId("00:00:00:00:00:00"), null, "addService");
+                        BleErrorCode mapped = YoBleGattStatus.toGattErrorCode(
+                                status, BleErrorCode.GATT_SERVER_START_FAILED);
+                        BleFailure f = YoBleErrorMapper.failure(
+                                mapped, MODULE, "addService failed: " + YoBleGattStatus.describe(status),
+                                null, status, null, null, null);
                         stopGattServerInternal(false);
                         runtime.callback(() -> observer.onFailed(f));
                         return;
@@ -411,6 +457,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
                         return;
                     }
                     if (connected) {
+                        clients.putIfAbsent(clientDeviceId, new ClientLink());
                         perClientCharValues.computeIfAbsent(clientDeviceId, k -> new LinkedHashMap<>());
                         perClientDescValues.computeIfAbsent(clientDeviceId, k -> new LinkedHashMap<>());
                         timeline.record(MODULE, "GATT server client connected: " + clientDeviceId);
@@ -419,6 +466,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
                         perClientCharValues.remove(clientDeviceId);
                         perClientDescValues.remove(clientDeviceId);
                         preparedWrites.remove(clientDeviceId);
+                        clients.remove(clientDeviceId);
                         timeline.record(MODULE, "GATT server client disconnected: " + clientDeviceId);
                         runtime.callback(() -> observer.onClientDisconnected(clientDeviceId));
                     }
@@ -476,15 +524,25 @@ public final class YoBlePeripheralManager implements YoReleasable {
             @Override
             public void onNotificationSent(@NonNull BleDeviceId clientDeviceId, int status) {
                 runtime.state(() -> {
-                    if (serverGen == gen) {
-                        runtime.callback(() -> observer.onNotificationSent(clientDeviceId, status));
+                    if (serverGen != gen) {
+                        return;
                     }
+                    ClientLink link = clients.get(clientDeviceId);
+                    if (link != null) {
+                        link.busy = false;
+                    }
+                    runtime.callback(() -> observer.onNotificationSent(clientDeviceId, status));
+                    pumpNotify(clientDeviceId);
                 });
             }
 
             @Override
             public void onMtuChanged(@NonNull BleDeviceId clientDeviceId, int mtu) {
                 runtime.state(() -> {
+                    ClientLink link = clients.get(clientDeviceId);
+                    if (link != null) {
+                        link.mtu = Math.max(23, mtu);
+                    }
                     if (serverGen == gen) {
                         runtime.callback(() -> observer.onMtuChanged(clientDeviceId, mtu));
                     }
@@ -580,6 +638,9 @@ public final class YoBlePeripheralManager implements YoReleasable {
         }
         byte[] copy = value.clone();
         if (preparedWrite) {
+            if (!acceptPreparedWrite(clientDeviceId, requestId, responseNeeded, offset, copy)) {
+                return;
+            }
             preparedWrites.computeIfAbsent(clientDeviceId, k -> new ArrayList<>())
                     .add(new PreparedWriteOp(false, key, offset, copy));
             if (responseNeeded) {
@@ -639,6 +700,9 @@ public final class YoBlePeripheralManager implements YoReleasable {
         BleGattTarget key = normalizeDescKey(rawTarget);
         byte[] copy = value.clone();
         if (preparedWrite) {
+            if (!acceptPreparedWrite(clientDeviceId, requestId, responseNeeded, offset, copy)) {
+                return;
+            }
             preparedWrites.computeIfAbsent(clientDeviceId, k -> new ArrayList<>())
                     .add(new PreparedWriteOp(true, key, offset, copy));
             if (responseNeeded) {
@@ -647,7 +711,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
             }
             return;
         }
-        applyDescriptorWrite(clientDeviceId, key, offset, copy, observer);
+        applyDescriptorWrite(clientDeviceId, key, offset, copy, observer, true);
         if (responseNeeded) {
             platform.sendResponse(clientDeviceId, requestId,
                     YoBleGattStatus.GATT_SUCCESS, offset, copy);
@@ -668,20 +732,87 @@ public final class YoBlePeripheralManager implements YoReleasable {
             return;
         }
 
+        Set<BleGattTarget> characteristics = new LinkedHashSet<>();
+        Set<BleGattTarget> descriptors = new LinkedHashSet<>();
         for (PreparedWriteOp op : pending) {
             if (op.isDescriptor) {
-                applyDescriptorWrite(clientDeviceId, op.target, op.offset, op.data, observer);
+                applyDescriptorWrite(clientDeviceId, op.target, op.offset, op.data, observer, false);
+                descriptors.add(op.target);
             } else {
                 if (serverConfig == null || serverConfig.autoHandleClientValues()) {
                     applyCharacteristicWrite(clientDeviceId, op.target, op.offset, op.data);
                 }
-                byte[] updated = readCharacteristicValue(clientDeviceId, op.target);
-                byte[] emitted = updated != null ? updated.clone() : op.data.clone();
-                runtime.callback(() -> observer.onClientWriteCharacteristic(
-                        clientDeviceId, op.target, emitted, true));
+                characteristics.add(op.target);
             }
         }
+        for (BleGattTarget target : characteristics) {
+            byte[] updated = readCharacteristicValue(clientDeviceId, target);
+            byte[] emitted = updated != null ? updated.clone() : new byte[0];
+            runtime.callback(() -> observer.onClientWriteCharacteristic(
+                    clientDeviceId, target, emitted, true));
+        }
+        for (BleGattTarget target : descriptors) {
+            notifyDescriptorWrite(clientDeviceId, target, observer);
+        }
         platform.sendResponse(clientDeviceId, requestId, YoBleGattStatus.GATT_SUCCESS, 0, null);
+    }
+
+    private void enqueueNotify(@NonNull BleDeviceId clientDeviceId,
+                                @NonNull BleGattTarget target,
+                                boolean confirm,
+                                @NonNull byte[] value) {
+        ClientLink link = clients.get(clientDeviceId);
+        if (link == null || !serverRunning) {
+            BleFailure failure = YoBleErrorMapper.failure(
+                    BleErrorCode.CONNECTION_NOT_READY, MODULE, "client left before notify", clientDeviceId);
+            if (serverObserver != null) {
+                runtime.callback(() -> serverObserver.onFailed(failure));
+            }
+            return;
+        }
+        link.queue.add(new PendingNotify(target, confirm, value));
+        pumpNotify(clientDeviceId);
+    }
+
+    private void pumpNotify(@NonNull BleDeviceId clientDeviceId) {
+        ClientLink link = clients.get(clientDeviceId);
+        while (link != null && !link.busy) {
+            PendingNotify next = link.queue.poll();
+            if (next == null) {
+                return;
+            }
+            link.busy = true;
+            boolean started = platform.notifyCharacteristic(clientDeviceId, next.target, next.confirm, next.value);
+            if (started) {
+                return;
+            }
+            link.busy = false;
+            BleFailure failure = YoBleErrorMapper.failure(
+                    BleErrorCode.GATT_SERVER_NOTIFY_FAILED, MODULE,
+                    "notifyCharacteristicChanged returned false", clientDeviceId);
+            if (serverObserver != null) {
+                runtime.callback(() -> serverObserver.onFailed(failure));
+            }
+        }
+    }
+
+    private boolean acceptPreparedWrite(@NonNull BleDeviceId clientDeviceId,
+                                        int requestId,
+                                        boolean responseNeeded,
+                                        int offset,
+                                        @NonNull byte[] value) {
+        List<PreparedWriteOp> pending = preparedWrites.get(clientDeviceId);
+        int count = pending == null ? 0 : pending.size();
+        if (count >= MAX_PREPARED_WRITES || offset < 0 || offset + value.length > MAX_PREPARED_VALUE_LENGTH) {
+            if (responseNeeded) {
+                int status = count >= MAX_PREPARED_WRITES
+                        ? YoBleGattStatus.GATT_PREPARE_Q_FULL
+                        : YoBleGattStatus.GATT_INVALID_ATTRIBUTE_LENGTH;
+                platform.sendResponse(clientDeviceId, requestId, status, offset, null);
+            }
+            return false;
+        }
+        return true;
     }
 
     @Nullable
@@ -742,7 +873,8 @@ public final class YoBlePeripheralManager implements YoReleasable {
                                       @NonNull BleGattTarget key,
                                       int offset,
                                       @NonNull byte[] value,
-                                      @NonNull BleGattServerObserver observer) {
+                                      @NonNull BleGattServerObserver observer,
+                                      boolean notify) {
         byte[] existing = readDescriptorValue(clientDeviceId, key);
         byte[] merged = patchBytes(existing != null ? existing : new byte[0], offset, value);
 
@@ -755,13 +887,30 @@ public final class YoBlePeripheralManager implements YoReleasable {
                     .put(key, merged);
         }
 
-        if (isCccd && merged.length >= 2) {
-            boolean notify = (merged[0] & 0x01) != 0;
-            boolean indicate = (merged[0] & 0x02) != 0;
-            BleGattTarget charTarget = key.withoutDescriptor();
-            runtime.callback(() -> observer.onClientSubscriptionChanged(
-                    clientDeviceId, charTarget, notify, indicate));
+        if (notify) {
+            notifyDescriptorWrite(clientDeviceId, key, observer);
         }
+    }
+
+    private void notifyDescriptorWrite(@NonNull BleDeviceId clientDeviceId,
+                                       @NonNull BleGattTarget key,
+                                       @NonNull BleGattServerObserver observer) {
+        if (!BleGattDatabaseSnapshot.CCCD_UUID.equals(key.descriptorUuid())) {
+            return;
+        }
+        byte[] merged = readDescriptorValue(clientDeviceId, key);
+        if (merged == null || merged.length < 2) {
+            return;
+        }
+        boolean notifications = (merged[0] & 0x01) != 0;
+        boolean indications = (merged[0] & 0x02) != 0;
+        BleGattTarget charTarget = key.withoutDescriptor();
+        ClientLink link = clients.get(clientDeviceId);
+        if (link != null) {
+            link.cccd.put(charTarget, (notifications ? 0x01 : 0) | (indications ? 0x02 : 0));
+        }
+        runtime.callback(() -> observer.onClientSubscriptionChanged(
+                clientDeviceId, charTarget, notifications, indications));
     }
 
     @NonNull
@@ -799,6 +948,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
         sharedDescValues.clear();
         perClientDescValues.clear();
         preparedWrites.clear();
+        clients.clear();
         if (wasOpened) {
             try {
                 platform.stopGattServer();
