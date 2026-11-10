@@ -21,14 +21,19 @@ import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntimeConfig;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanController;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
+import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleDiagnosticReport;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
@@ -52,6 +57,9 @@ public final class YoBleModuleCore {
     public final YoBleL2capManager l2capManager;
     public final YoBlePeripheralManager peripheralManager;
 
+    private final CopyOnWriteArrayList<BleAdapterStateObserver> adapterObservers = new CopyOnWriteArrayList<>();
+    private final AtomicLong adapterObserverSeq = new AtomicLong();
+    private volatile BleAdapterState adapterState;
     private volatile boolean released = false;
 
     public YoBleModuleCore(@NonNull BleConfig config,
@@ -67,6 +75,7 @@ public final class YoBleModuleCore {
         this.runtime = new YoBleRuntime(runtimeConfig);
         this.capabilityInspector = capabilityInspector;
         this.clockMillis = clockMillis;
+        this.adapterState = capabilityInspector.adapterState();
         this.snapshotStore = new YoBleDeviceSnapshotStore();
         this.timeline = new YoBleTimelineRecorder(config.diagnosticsTimelineCapacity());
 
@@ -95,7 +104,22 @@ public final class YoBleModuleCore {
     }
 
     public boolean isAdapterEnabled() {
-        return capabilityInspector.isAdapterEnabled();
+        return getAdapterState() == BleAdapterState.ON;
+    }
+
+    @NonNull
+    public BleAdapterState getAdapterState() {
+        BleAdapterState published = adapterState;
+        return published == null ? BleAdapterState.UNKNOWN : published;
+    }
+
+    @NonNull
+    public BleOperationHandle observeAdapterState(@NonNull BleAdapterStateObserver observer) {
+        String opId = "ble-adapter-" + adapterObserverSeq.incrementAndGet();
+        adapterObservers.add(observer);
+        BleAdapterState current = getAdapterState();
+        runtime.callback(() -> observer.onAdapterStateChanged(current, current));
+        return new BleOperationHandle(opId, () -> adapterObservers.remove(observer));
     }
 
     @NonNull
@@ -138,19 +162,28 @@ public final class YoBleModuleCore {
                 scanController.isScanning(),
                 clockMillis.getAsLong(),
                 connectionManager.exportActiveSnapshots(),
-                connectionManager::pendingCountAtSnapshotIndex,
+                connectionManager::pendingCount,
                 timeline);
         return Result.success(builder.buildReport());
     }
 
-    public void onAdapterTurnedOff() {
+    public void onAdapterStateChanged(@NonNull BleAdapterState current) {
         if (released) {
             return;
         }
-        timeline.record(MODULE, "system BluetoothAdapter turned OFF -> cleaning BLE subsystems");
-        scanController.onAdapterTurnedOff();
-        connectionManager.onAdapterTurnedOff();
-        peripheralManager.onAdapterTurnedOff();
+        BleAdapterState previous = getAdapterState();
+        adapterState = current;
+        timeline.record(MODULE, "adapter state " + previous + " -> " + current);
+        if (current == BleAdapterState.OFF || current == BleAdapterState.TURNING_OFF) {
+            scanController.onAdapterTurnedOff();
+            connectionManager.onAdapterTurnedOff();
+            bondController.onAdapterTurnedOff();
+            l2capManager.onAdapterTurnedOff();
+            peripheralManager.onAdapterTurnedOff();
+        }
+        for (BleAdapterStateObserver observer : adapterObservers) {
+            runtime.callback(() -> observer.onAdapterStateChanged(previous, current));
+        }
     }
 
     public void onBondStateChanged(@NonNull BleDeviceId deviceId,

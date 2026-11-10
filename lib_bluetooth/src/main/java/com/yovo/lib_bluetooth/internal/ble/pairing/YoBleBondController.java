@@ -26,20 +26,33 @@ import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
- * BLE 配对（Bond）域控制器：统一管理配对发起、取消、解绑（隐藏 API 受控）、系统状态变化追踪及会话等待协同。
+ * 配对等待表只在 state 线程上改。取消只摘掉自己的等待者；仅当本库发起且没有其他等待者时才取消系统配对。
  */
 public final class YoBleBondController implements YoReleasable {
 
     private static final String MODULE = "ble-bond";
     private static final long DEFAULT_BOND_TIMEOUT_MS = 30_000L;
+
+    public static final int UNBOND_REASON_AUTH_FAILED = 1;
+    public static final int UNBOND_REASON_AUTH_REJECTED = 2;
+    public static final int UNBOND_REASON_AUTH_CANCELED = 3;
+    public static final int UNBOND_REASON_REMOTE_DEVICE_DOWN = 4;
+    public static final int UNBOND_REASON_DISCOVERY_IN_PROGRESS = 5;
+    public static final int UNBOND_REASON_AUTH_TIMEOUT = 6;
+    public static final int UNBOND_REASON_REPEATED_ATTEMPTS = 7;
+    public static final int UNBOND_REASON_REMOTE_AUTH_CANCELED = 8;
+    public static final int UNBOND_REASON_REMOVED = 9;
 
     private static final class PendingBondWaiter {
         @NonNull
@@ -61,16 +74,17 @@ public final class YoBleBondController implements YoReleasable {
     private final LongSupplier clockMillis;
     private final CopyOnWriteArrayList<BleBondObserver> observers = new CopyOnWriteArrayList<>();
     private final Map<BleDeviceId, List<PendingBondWaiter>> waiters = new LinkedHashMap<>();
+    private final Set<BleDeviceId> initiatedByLibrary = new HashSet<>();
     private final AtomicLong seq = new AtomicLong();
-    private volatile boolean released = false;
+    private volatile boolean released;
 
     public YoBleBondController(@NonNull YoBleRuntime runtime,
-                                 @NonNull BleConfig config,
-                                 @NonNull YoBleCapabilityInspector capabilityInspector,
-                                 @NonNull YoBleBondPlatform bondPlatform,
-                                 @NonNull YoBleDeviceSnapshotStore snapshotStore,
-                                 @NonNull YoBleTimelineRecorder timeline,
-                                 @NonNull LongSupplier clockMillis) {
+                               @NonNull BleConfig config,
+                               @NonNull YoBleCapabilityInspector capabilityInspector,
+                               @NonNull YoBleBondPlatform bondPlatform,
+                               @NonNull YoBleDeviceSnapshotStore snapshotStore,
+                               @NonNull YoBleTimelineRecorder timeline,
+                               @NonNull LongSupplier clockMillis) {
         this.runtime = runtime;
         this.config = config;
         this.capabilityInspector = capabilityInspector;
@@ -82,14 +96,9 @@ public final class YoBleBondController implements YoReleasable {
 
     @NonNull
     public Result<List<BleDeviceSnapshot>> getBondedDevices() {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released"));
-        }
-        if (!capabilityInspector.hasConnectPermission()) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
-                    "Missing BLUETOOTH_CONNECT permission"));
+        BleFailure denied = permissionPreflight(null);
+        if (denied != null) {
+            return Result.failure(denied);
         }
         if (!capabilityInspector.isBleSupported()) {
             return Result.failure(YoBleErrorMapper.failure(
@@ -124,83 +133,41 @@ public final class YoBleBondController implements YoReleasable {
     public BleOperationHandle createBond(@NonNull BleDeviceId deviceId,
                                          @NonNull BleValueObserver<BleDeviceSnapshot> observer) {
         String opId = "ble-bond-" + seq.incrementAndGet();
-        if (released) {
-            BleFailure f = YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId);
-            runtime.callback(() -> observer.onFailed(f));
-            return BleOperationHandle.completed(opId);
-        }
-        if (!BleDeviceId.isValid(deviceId.value())) {
-            BleFailure f = YoBleErrorMapper.failure(
-                    BleErrorCode.DEVICE_INVALID, MODULE, "Invalid MAC address: " + deviceId, deviceId);
-            runtime.callback(() -> observer.onFailed(f));
-            return BleOperationHandle.completed(opId);
-        }
-        if (!capabilityInspector.hasConnectPermission()) {
-            BleFailure f = YoBleErrorMapper.failure(
-                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
-                    "Missing BLUETOOTH_CONNECT permission for createBond", deviceId);
-            runtime.callback(() -> observer.onFailed(f));
+        BleFailure denied = permissionPreflight(deviceId);
+        if (denied != null) {
+            runtime.callback(() -> observer.onFailed(denied));
             return BleOperationHandle.completed(opId);
         }
         if (!capabilityInspector.isAdapterEnabled()) {
-            BleFailure f = YoBleErrorMapper.failure(
-                    BleErrorCode.BLUETOOTH_DISABLED, MODULE, "Bluetooth adapter disabled", deviceId);
-            runtime.callback(() -> observer.onFailed(f));
+            runtime.callback(() -> observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.BLUETOOTH_DISABLED, MODULE, "Bluetooth adapter disabled", deviceId)));
             return BleOperationHandle.completed(opId);
         }
-
-        BleBondState current = bondPlatform.getBondState(deviceId);
-        if (current == BleBondState.BONDED) {
-            snapshotStore.recordBondState(deviceId, BleBondState.BONDED, clockMillis.getAsLong());
-            BleDeviceSnapshot snap = snapshotStore.get(deviceId);
-            BleDeviceSnapshot resolved = snap != null ? snap : fallbackSnapshot(deviceId, BleBondState.BONDED);
-            runtime.callback(() -> observer.onSuccess(resolved));
-            return BleOperationHandle.completed(opId);
-        }
-
-        PendingBondWaiter waiter = new PendingBondWaiter(observer);
-        waiter.timeoutHandle = runtime.scheduler().schedule(
-                () -> runtime.state(() -> onBondTimeout(deviceId, waiter)),
-                DEFAULT_BOND_TIMEOUT_MS);
-
-        synchronized (this) {
-            waiters.computeIfAbsent(deviceId, k -> new ArrayList<>()).add(waiter);
-        }
-
-        if (current != BleBondState.BONDING) {
-            YoBleBondPlatform.ActionResult res = bondPlatform.createBond(deviceId);
-            if (!res.success()) {
-                removeWaiter(deviceId, waiter);
-                BleFailure f = YoBleErrorMapper.failure(
-                        res.errorCode() != null ? res.errorCode() : BleErrorCode.BOND_FAILED,
-                        MODULE,
-                        res.detail() != null ? res.detail() : "createBond failed",
-                        deviceId);
-                runtime.callback(() -> observer.onFailed(f));
-                return BleOperationHandle.completed(opId);
-            }
-            timeline.record(MODULE, "createBond initiated: " + deviceId);
+        AtomicBoolean started = new AtomicBoolean(false);
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        PendingBondWaiter[] slot = new PendingBondWaiter[1];
+        Runnable begin = () -> beginBond(deviceId, observer, started, cancelled, slot);
+        if (runtime.isStateThread()) {
+            begin.run();
         } else {
-            timeline.record(MODULE, "already bonding, attached waiter: " + deviceId);
+            runtime.state(begin);
         }
-
-        return new BleOperationHandle(opId, () -> {
-            removeWaiter(deviceId, waiter);
-            cancelBondProcess(deviceId);
-        });
+        return new BleOperationHandle(opId, () -> runtime.state(() -> {
+            cancelled.set(true);
+            PendingBondWaiter waiter = slot[0];
+            if (waiter == null || !removeWaiter(deviceId, waiter, true)) {
+                return;
+            }
+            runtime.callback(() -> waiter.observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.OPERATION_CANCELLED, MODULE, "bond cancelled", deviceId)));
+        }));
     }
 
     @NonNull
     public Result<Void> cancelBondProcess(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
-        }
-        if (!capabilityInspector.hasConnectPermission()) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
-                    "Missing BLUETOOTH_CONNECT permission", deviceId));
+        BleFailure denied = permissionPreflight(deviceId);
+        if (denied != null) {
+            return Result.failure(denied);
         }
         YoBleBondPlatform.ActionResult res = bondPlatform.cancelBondProcess(deviceId);
         if (!res.success()) {
@@ -210,20 +177,17 @@ public final class YoBleBondController implements YoReleasable {
                     res.detail() != null ? res.detail() : "cancelBondProcess failed",
                     deviceId));
         }
+        runtime.state(() -> failDevice(deviceId, YoBleErrorMapper.failure(
+                BleErrorCode.BOND_CANCELLED, MODULE, "cancelBondProcess", deviceId)));
         timeline.record(MODULE, "cancelBondProcess: " + deviceId);
         return Result.success(null);
     }
 
     @NonNull
     public Result<Void> removeBond(@NonNull BleDeviceId deviceId) {
-        if (released) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId));
-        }
-        if (!capabilityInspector.hasConnectPermission()) {
-            return Result.failure(YoBleErrorMapper.failure(
-                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
-                    "Missing BLUETOOTH_CONNECT permission", deviceId));
+        BleFailure denied = permissionPreflight(deviceId);
+        if (denied != null) {
+            return Result.failure(denied);
         }
         if (!config.allowHiddenApiBondRemoval()) {
             return Result.failure(YoBleErrorMapper.failure(
@@ -251,106 +215,224 @@ public final class YoBleBondController implements YoReleasable {
         return new BleOperationHandle(opId, () -> observers.remove(observer));
     }
 
-    /** 由系统 BroadcastReceiver 推送配对状态迁移事件。 */
     public void onPlatformBondStateChanged(@NonNull BleDeviceId deviceId,
                                            @NonNull BleBondState previous,
                                            @NonNull BleBondState current,
                                            int rawReason) {
-        if (released) {
-            return;
-        }
-        snapshotStore.recordBondState(deviceId, current, clockMillis.getAsLong());
-        timeline.record(MODULE, "bond state " + deviceId + ": " + previous + " -> " + current
-                + " (reason=" + rawReason + ")");
-
-        for (BleBondObserver obs : observers) {
-            runtime.callback(() -> obs.onBondStateChanged(deviceId, previous, current, rawReason));
-        }
-
-        if (current == BleBondState.BONDED) {
-            List<PendingBondWaiter> list = drainWaiters(deviceId);
-            BleDeviceSnapshot snap = snapshotStore.get(deviceId);
-            BleDeviceSnapshot resolved = snap != null ? snap : fallbackSnapshot(deviceId, BleBondState.BONDED);
-            for (PendingBondWaiter w : list) {
-                if (w.timeoutHandle != null) {
-                    w.timeoutHandle.cancel();
-                }
-                runtime.callback(() -> w.observer.onSuccess(resolved));
-            }
-        } else if (current == BleBondState.NONE) {
-            List<PendingBondWaiter> list = drainWaiters(deviceId);
-            if (!list.isEmpty()) {
-                BleErrorCode code = rawReason == 9 /* CANCEL / REMOVED */ || rawReason == 0
-                        ? BleErrorCode.BOND_FAILED : BleErrorCode.AUTHENTICATION_FAILED;
-                BleFailure f = YoBleErrorMapper.failure(
-                        code, MODULE,
-                        "Bonding aborted or rejected (reason=" + rawReason + ")",
-                        null, rawReason, deviceId, null, null);
-                for (PendingBondWaiter w : list) {
-                    if (w.timeoutHandle != null) {
-                        w.timeoutHandle.cancel();
-                    }
-                    runtime.callback(() -> w.observer.onFailed(f));
-                }
-            }
-        }
+        runtime.state(() -> applyPlatformBondState(deviceId, previous, current, rawReason));
     }
 
-    @NonNull
-    private BleDeviceSnapshot fallbackSnapshot(@NonNull BleDeviceId deviceId,
-                                               @NonNull BleBondState state) {
-        long now = clockMillis.getAsLong();
-        BleDeviceIdentity identity = new BleDeviceIdentity(
-                deviceId, "", null, BleAddressType.UNKNOWN, BleDeviceType.UNKNOWN, now);
-        return new BleDeviceSnapshot(identity, state, null, null, null, now);
+    public void onAdapterTurnedOff() {
+        runtime.state(() -> failAll(YoBleErrorMapper.failure(
+                BleErrorCode.BLUETOOTH_DISABLED, MODULE, "adapter turned off during bonding")));
     }
 
     @Override
     public void release() {
         released = true;
         observers.clear();
-        synchronized (this) {
-            for (List<PendingBondWaiter> list : waiters.values()) {
-                for (PendingBondWaiter w : list) {
-                    if (w.timeoutHandle != null) {
-                        w.timeoutHandle.cancel();
-                    }
-                }
-            }
-            waiters.clear();
+        runtime.state(() -> failAll(YoBleErrorMapper.failure(
+                BleErrorCode.RELEASED, MODULE, "Client released")));
+    }
+
+    private void beginBond(@NonNull BleDeviceId deviceId,
+                           @NonNull BleValueObserver<BleDeviceSnapshot> observer,
+                           @NonNull AtomicBoolean started,
+                           @NonNull AtomicBoolean cancelled,
+                           @NonNull PendingBondWaiter[] slot) {
+        if (cancelled.get()) {
+            runtime.callback(() -> observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.OPERATION_CANCELLED, MODULE, "bond cancelled", deviceId)));
+            return;
+        }
+        if (released) {
+            runtime.callback(() -> observer.onFailed(YoBleErrorMapper.failure(
+                    BleErrorCode.RELEASED, MODULE, "Client released", deviceId)));
+            return;
+        }
+        BleBondState current = bondPlatform.getBondState(deviceId);
+        if (current == BleBondState.BONDED) {
+            snapshotStore.recordBondState(deviceId, BleBondState.BONDED, clockMillis.getAsLong());
+            BleDeviceSnapshot snap = snapshotStore.get(deviceId);
+            BleDeviceSnapshot resolved = snap != null ? snap : fallbackSnapshot(deviceId, BleBondState.BONDED);
+            runtime.callback(() -> observer.onSuccess(resolved));
+            return;
+        }
+        PendingBondWaiter waiter = new PendingBondWaiter(observer);
+        slot[0] = waiter;
+        started.set(true);
+        waiters.computeIfAbsent(deviceId, key -> new ArrayList<>()).add(waiter);
+        waiter.timeoutHandle = runtime.stateDelayed(
+                () -> onBondTimeout(deviceId, waiter), DEFAULT_BOND_TIMEOUT_MS);
+        if (current == BleBondState.BONDING) {
+            timeline.record(MODULE, "already bonding, attached waiter: " + deviceId);
+            return;
+        }
+        YoBleBondPlatform.ActionResult res = bondPlatform.createBond(deviceId);
+        if (!res.success()) {
+            removeWaiter(deviceId, waiter, false);
+            runtime.callback(() -> observer.onFailed(YoBleErrorMapper.failure(
+                    res.errorCode() != null ? res.errorCode() : BleErrorCode.BOND_FAILED,
+                    MODULE,
+                    res.detail() != null ? res.detail() : "createBond failed",
+                    deviceId)));
+            return;
+        }
+        initiatedByLibrary.add(deviceId);
+        timeline.record(MODULE, "createBond initiated: " + deviceId);
+    }
+
+    private void applyPlatformBondState(@NonNull BleDeviceId deviceId,
+                                        @NonNull BleBondState previous,
+                                        @NonNull BleBondState current,
+                                        int rawReason) {
+        if (released) {
+            return;
+        }
+        snapshotStore.recordBondState(deviceId, current, clockMillis.getAsLong());
+        timeline.record(MODULE, "bond state " + deviceId + ": " + previous + " -> " + current
+                + " (" + describeUnbondReason(rawReason) + ")");
+        for (BleBondObserver obs : observers) {
+            runtime.callback(() -> obs.onBondStateChanged(deviceId, previous, current, rawReason));
+        }
+        if (current == BleBondState.BONDED) {
+            completeDevice(deviceId);
+        } else if (current == BleBondState.NONE && waiters.containsKey(deviceId)) {
+            failDevice(deviceId, YoBleErrorMapper.failure(
+                    errorForUnbond(rawReason), MODULE,
+                    "Bonding ended: " + describeUnbondReason(rawReason),
+                    null, rawReason, deviceId, null, null));
         }
     }
 
     private void onBondTimeout(@NonNull BleDeviceId deviceId, @NonNull PendingBondWaiter waiter) {
-        if (!removeWaiter(deviceId, waiter)) {
+        if (!removeWaiter(deviceId, waiter, true)) {
             return;
         }
-        BleFailure f = YoBleErrorMapper.failure(
-                BleErrorCode.GATT_OPERATION_TIMEOUT, MODULE,
-                "Bonding timed out after " + DEFAULT_BOND_TIMEOUT_MS + "ms", deviceId);
-        runtime.callback(() -> waiter.observer.onFailed(f));
+        runtime.callback(() -> waiter.observer.onFailed(YoBleErrorMapper.failure(
+                BleErrorCode.BOND_TIMEOUT, MODULE,
+                "Bonding timed out after " + DEFAULT_BOND_TIMEOUT_MS + "ms", deviceId)));
     }
 
-    private synchronized boolean removeWaiter(@NonNull BleDeviceId deviceId,
-                                              @NonNull PendingBondWaiter waiter) {
+    private void completeDevice(@NonNull BleDeviceId deviceId) {
+        List<PendingBondWaiter> list = takeWaiters(deviceId);
+        BleDeviceSnapshot snap = snapshotStore.get(deviceId);
+        BleDeviceSnapshot resolved = snap != null ? snap : fallbackSnapshot(deviceId, BleBondState.BONDED);
+        for (PendingBondWaiter waiter : list) {
+            runtime.callback(() -> waiter.observer.onSuccess(resolved));
+        }
+    }
+
+    private void failDevice(@NonNull BleDeviceId deviceId, @NonNull BleFailure failure) {
+        for (PendingBondWaiter waiter : takeWaiters(deviceId)) {
+            runtime.callback(() -> waiter.observer.onFailed(failure));
+        }
+    }
+
+    private void failAll(@NonNull BleFailure failure) {
+        List<BleDeviceId> devices = new ArrayList<>(waiters.keySet());
+        for (BleDeviceId deviceId : devices) {
+            BleFailure scoped = YoBleErrorMapper.failure(
+                    failure.errorCode(), MODULE, failure.message(), deviceId);
+            failDevice(deviceId, scoped);
+        }
+    }
+
+    private boolean removeWaiter(@NonNull BleDeviceId deviceId,
+                                 @NonNull PendingBondWaiter waiter,
+                                 boolean cancelPlatformIfLast) {
+        cancelTimeout(waiter);
+        List<PendingBondWaiter> list = waiters.get(deviceId);
+        if (list == null || !list.remove(waiter)) {
+            return false;
+        }
+        if (!list.isEmpty()) {
+            return true;
+        }
+        waiters.remove(deviceId);
+        if (cancelPlatformIfLast && initiatedByLibrary.remove(deviceId)) {
+            bondPlatform.cancelBondProcess(deviceId);
+        } else {
+            initiatedByLibrary.remove(deviceId);
+        }
+        return true;
+    }
+
+    @NonNull
+    private List<PendingBondWaiter> takeWaiters(@NonNull BleDeviceId deviceId) {
+        initiatedByLibrary.remove(deviceId);
+        List<PendingBondWaiter> list = waiters.remove(deviceId);
+        if (list == null) {
+            return Collections.emptyList();
+        }
+        for (PendingBondWaiter waiter : list) {
+            cancelTimeout(waiter);
+        }
+        return list;
+    }
+
+    private static void cancelTimeout(@NonNull PendingBondWaiter waiter) {
         if (waiter.timeoutHandle != null) {
             waiter.timeoutHandle.cancel();
             waiter.timeoutHandle = null;
         }
-        List<PendingBondWaiter> list = waiters.get(deviceId);
-        if (list == null) {
-            return false;
-        }
-        boolean removed = list.remove(waiter);
-        if (list.isEmpty()) {
-            waiters.remove(deviceId);
-        }
-        return removed;
     }
 
     @NonNull
-    private synchronized List<PendingBondWaiter> drainWaiters(@NonNull BleDeviceId deviceId) {
-        List<PendingBondWaiter> list = waiters.remove(deviceId);
-        return list == null ? Collections.emptyList() : list;
+    static BleErrorCode errorForUnbond(int rawReason) {
+        switch (rawReason) {
+            case UNBOND_REASON_AUTH_FAILED:
+            case UNBOND_REASON_AUTH_REJECTED:
+                return BleErrorCode.AUTHENTICATION_FAILED;
+            case UNBOND_REASON_AUTH_CANCELED:
+            case UNBOND_REASON_REMOTE_AUTH_CANCELED:
+            case UNBOND_REASON_REMOVED:
+                return BleErrorCode.BOND_CANCELLED;
+            case UNBOND_REASON_AUTH_TIMEOUT:
+                return BleErrorCode.BOND_TIMEOUT;
+            default:
+                return BleErrorCode.BOND_FAILED;
+        }
+    }
+
+    @NonNull
+    static String describeUnbondReason(int rawReason) {
+        switch (rawReason) {
+            case UNBOND_REASON_AUTH_FAILED: return "UNBOND_REASON_AUTH_FAILED (1)";
+            case UNBOND_REASON_AUTH_REJECTED: return "UNBOND_REASON_AUTH_REJECTED (2)";
+            case UNBOND_REASON_AUTH_CANCELED: return "UNBOND_REASON_AUTH_CANCELED (3)";
+            case UNBOND_REASON_REMOTE_DEVICE_DOWN: return "UNBOND_REASON_REMOTE_DEVICE_DOWN (4)";
+            case UNBOND_REASON_DISCOVERY_IN_PROGRESS: return "UNBOND_REASON_DISCOVERY_IN_PROGRESS (5)";
+            case UNBOND_REASON_AUTH_TIMEOUT: return "UNBOND_REASON_AUTH_TIMEOUT (6)";
+            case UNBOND_REASON_REPEATED_ATTEMPTS: return "UNBOND_REASON_REPEATED_ATTEMPTS (7)";
+            case UNBOND_REASON_REMOTE_AUTH_CANCELED: return "UNBOND_REASON_REMOTE_AUTH_CANCELED (8)";
+            case UNBOND_REASON_REMOVED: return "UNBOND_REASON_REMOVED (9)";
+            default: return "UNBOND_REASON_" + rawReason;
+        }
+    }
+
+    @Nullable
+    private BleFailure permissionPreflight(@Nullable BleDeviceId deviceId) {
+        if (released) {
+            return YoBleErrorMapper.failure(BleErrorCode.RELEASED, MODULE, "Client released", deviceId);
+        }
+        if (deviceId != null && !BleDeviceId.isValid(deviceId.value())) {
+            return YoBleErrorMapper.failure(
+                    BleErrorCode.DEVICE_INVALID, MODULE, "Invalid MAC address: " + deviceId, deviceId);
+        }
+        if (!capabilityInspector.hasConnectPermission()) {
+            return YoBleErrorMapper.failure(
+                    BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE,
+                    "Missing BLUETOOTH_CONNECT permission", deviceId);
+        }
+        return null;
+    }
+
+    @NonNull
+    private BleDeviceSnapshot fallbackSnapshot(@NonNull BleDeviceId deviceId, @NonNull BleBondState state) {
+        long now = clockMillis.getAsLong();
+        BleDeviceIdentity identity = new BleDeviceIdentity(
+                deviceId, "", null, BleAddressType.UNKNOWN, BleDeviceType.UNKNOWN, now);
+        return new BleDeviceSnapshot(identity, state, null, null, null, now);
     }
 }

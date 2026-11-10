@@ -66,6 +66,7 @@ public enum BleErrorCode {
     // ── 配对与隐藏 API ─────────────────────────────────────────────
     BOND_FAILED,
     BOND_CANCELLED,
+    BOND_TIMEOUT,
     HIDDEN_API_BLOCKED,
     HIDDEN_API_FAILED,
 

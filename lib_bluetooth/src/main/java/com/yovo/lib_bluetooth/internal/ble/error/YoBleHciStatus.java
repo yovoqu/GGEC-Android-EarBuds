@@ -45,8 +45,20 @@ public final class YoBleHciStatus {
     public static final int GATT_ERROR_133 = 133;
     /** Android GATT_FAILURE = 257 (0x0101) */
     public static final int GATT_FAILURE_257 = 257;
+    /**
+     * Android 14+ {@code BluetoothGatt.GATT_CONNECTION_TIMEOUT} = 147 (0x93)：直连 30s 内未建链
+     * （对端不在范围内或未发可连接广播）。旧版本同场景上报 133。
+     */
+    public static final int GATT_CONNECTION_TIMEOUT_147 = 0x93;
 
     private YoBleHciStatus() {
+    }
+
+    /** 建链阶段平台自身超时（非库超时）。 */
+    public static boolean isConnectTimeout(int status) {
+        return status == GATT_CONNECTION_TIMEOUT_147
+                || status == PAGE_TIMEOUT
+                || status == DIRECTED_ADVERTISING_TIMEOUT;
     }
 
     public static boolean isLinkLoss(int status) {
@@ -71,6 +83,8 @@ public final class YoBleHciStatus {
                 || status == CONNECTION_FAILED_TO_ESTABLISH
                 || status == CONNECTION_TIMEOUT
                 || status == PAGE_TIMEOUT
+                || status == GATT_CONNECTION_TIMEOUT_147
+                || status == GATT_FAILURE_257
                 || status == UNKNOWN_CONNECTION_IDENTIFIER
                 || status == INSTANT_PASSED
                 || status == CONTROLLER_BUSY;
@@ -80,6 +94,9 @@ public final class YoBleHciStatus {
     public static BleErrorCode toPublicErrorCode(int status) {
         if (status == GATT_ERROR_133) {
             return BleErrorCode.GATT_ERROR_133;
+        }
+        if (isConnectTimeout(status)) {
+            return BleErrorCode.CONNECT_TIMEOUT;
         }
         if (isLinkLoss(status)) {
             return BleErrorCode.LINK_LOSS;
@@ -130,6 +147,7 @@ public final class YoBleHciStatus {
             case GATT_ERROR_133: return "GATT_ERROR (133 / 0x85)";
             case GATT_CONN_CANCEL: return "GATT_CONN_CANCEL (256 / 0x100)";
             case GATT_FAILURE_257: return "GATT_FAILURE (257 / 0x101)";
+            case GATT_CONNECTION_TIMEOUT_147: return "GATT_CONNECTION_TIMEOUT (147 / 0x93)";
             default: return "HCI_STATUS_0x" + Integer.toHexString(status).toUpperCase(Locale.ROOT);
         }
     }

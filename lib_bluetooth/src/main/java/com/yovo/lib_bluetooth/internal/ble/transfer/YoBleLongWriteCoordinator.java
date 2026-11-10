@@ -77,8 +77,18 @@ public final class YoBleLongWriteCoordinator {
             context.runtime().callback(() -> observer.onCompleted(context.deviceId(), target, 0L));
             return BleOperationHandle.completed(opId);
         }
-
-        long totalBytes = value.length;
+        long totalBytes = 0L;
+        for (byte[] chunk : chunks) {
+            if (chunk.length > maxChunk) {
+                BleFailure f = YoBleErrorMapper.failure(
+                        BleErrorCode.INVALID_OFFSET_OR_LENGTH, MODULE,
+                        "splitter chunk " + chunk.length + " exceeds " + maxChunk,
+                        context.deviceId());
+                context.runtime().callback(() -> observer.onFailed(f));
+                return BleOperationHandle.completed(opId);
+            }
+            totalBytes += chunk.length;
+        }
         int totalChunks = chunks.size();
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AtomicBoolean terminalEmitted = new AtomicBoolean(false);

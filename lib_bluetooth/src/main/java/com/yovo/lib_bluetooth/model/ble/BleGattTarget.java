@@ -97,6 +97,25 @@ public final class BleGattTarget {
         return descriptorUuid != null;
     }
 
+    /**
+     * 完成回调与排队操作的宽松匹配：UUID 必须相同；任一侧 instanceId 未指定则不比较；
+     * 描述符 UUID 两边都为空视为特征操作，否则必须相等。
+     */
+    public boolean matches(@NonNull BleGattTarget other) {
+        if (!serviceUuid.equals(other.serviceUuid) || !characteristicUuid.equals(other.characteristicUuid)) {
+            return false;
+        }
+        if (serviceInstanceId >= 0 && other.serviceInstanceId >= 0
+                && serviceInstanceId != other.serviceInstanceId) {
+            return false;
+        }
+        if (characteristicInstanceId >= 0 && other.characteristicInstanceId >= 0
+                && characteristicInstanceId != other.characteristicInstanceId) {
+            return false;
+        }
+        return Objects.equals(descriptorUuid, other.descriptorUuid);
+    }
+
     /** 忽略具体 descriptorUuid，返回归属特征层的寻址键。 */
     @NonNull
     public BleGattTarget withoutDescriptor() {

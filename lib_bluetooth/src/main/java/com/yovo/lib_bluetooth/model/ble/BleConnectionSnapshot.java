@@ -92,7 +92,7 @@ public final class BleConnectionSnapshot {
     /** 根据当前 MTU 与 Bluetooth Core Spec 512 字节属性写上限计算单包最大有效载荷。 */
     public int maxWritePayloadBytes(@NonNull BleWriteType writeType) {
         int overhead = writeType == BleWriteType.SIGNED ? 15 : 3;
-        return Math.max(20, Math.min(mtu - overhead, MAX_ATT_WRITE_PAYLOAD));
+        return Math.max(0, Math.min(mtu - overhead, MAX_ATT_WRITE_PAYLOAD));
     }
 
     @NonNull

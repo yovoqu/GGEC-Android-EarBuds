@@ -21,6 +21,6 @@ public final class YoBleMtuPayloadCalculator {
         int mtu = overriddenMtu != null ? overriddenMtu : negotiatedMtu;
         int effectiveMtu = Math.max(BleConnectionSnapshot.DEFAULT_ATT_MTU, mtu);
         int overhead = writeType == BleWriteType.SIGNED ? 15 : 3;
-        return Math.max(20, Math.min(effectiveMtu - overhead, BleConnectionSnapshot.MAX_ATT_WRITE_PAYLOAD));
+        return Math.max(0, Math.min(effectiveMtu - overhead, BleConnectionSnapshot.MAX_ATT_WRITE_PAYLOAD));
     }
 }

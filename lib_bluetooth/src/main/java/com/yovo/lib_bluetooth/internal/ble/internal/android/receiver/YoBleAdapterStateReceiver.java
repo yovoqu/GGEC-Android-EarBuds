@@ -8,15 +8,19 @@ import android.content.IntentFilter;
 
 import androidx.annotation.NonNull;
 
+import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
+
+import java.util.function.Consumer;
+
 /**
- * 监听系统 {@link BluetoothAdapter#ACTION_STATE_CHANGED}，一旦关闭即时触发 BLE 全量清理。
+ * 监听系统 {@link BluetoothAdapter#ACTION_STATE_CHANGED}，把全部适配器状态交给核心。
  */
 public final class YoBleAdapterStateReceiver extends BroadcastReceiver {
 
-    private final Runnable onAdapterTurnedOff;
+    private final Consumer<BleAdapterState> onAdapterStateChanged;
 
-    public YoBleAdapterStateReceiver(@NonNull Runnable onAdapterTurnedOff) {
-        this.onAdapterTurnedOff = onAdapterTurnedOff;
+    public YoBleAdapterStateReceiver(@NonNull Consumer<BleAdapterState> onAdapterStateChanged) {
+        this.onAdapterStateChanged = onAdapterStateChanged;
     }
 
     public void register(@NonNull Context context,
@@ -30,8 +34,22 @@ public final class YoBleAdapterStateReceiver extends BroadcastReceiver {
             return;
         }
         int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
-        if (state == BluetoothAdapter.STATE_OFF || state == BluetoothAdapter.STATE_TURNING_OFF) {
-            onAdapterTurnedOff.run();
+        onAdapterStateChanged.accept(map(state));
+    }
+
+    @NonNull
+    private static BleAdapterState map(int state) {
+        switch (state) {
+            case BluetoothAdapter.STATE_OFF:
+                return BleAdapterState.OFF;
+            case BluetoothAdapter.STATE_TURNING_ON:
+                return BleAdapterState.TURNING_ON;
+            case BluetoothAdapter.STATE_ON:
+                return BleAdapterState.ON;
+            case BluetoothAdapter.STATE_TURNING_OFF:
+                return BleAdapterState.TURNING_OFF;
+            default:
+                return BleAdapterState.UNKNOWN;
         }
     }
 }

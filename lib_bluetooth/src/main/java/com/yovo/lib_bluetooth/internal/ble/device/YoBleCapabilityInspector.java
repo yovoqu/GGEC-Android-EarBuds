@@ -8,6 +8,7 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothCapabilityChecker;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
@@ -34,8 +35,27 @@ public final class YoBleCapabilityInspector {
     }
 
     public boolean isAdapterEnabled() {
+        return adapterState() == BleAdapterState.ON;
+    }
+
+    @NonNull
+    public BleAdapterState adapterState() {
         BluetoothAdapter adapter = adapterProvider.adapter();
-        return adapter != null && adapter.isEnabled();
+        if (adapter == null) {
+            return BleAdapterState.UNKNOWN;
+        }
+        switch (adapter.getState()) {
+            case BluetoothAdapter.STATE_OFF:
+                return BleAdapterState.OFF;
+            case BluetoothAdapter.STATE_TURNING_ON:
+                return BleAdapterState.TURNING_ON;
+            case BluetoothAdapter.STATE_ON:
+                return BleAdapterState.ON;
+            case BluetoothAdapter.STATE_TURNING_OFF:
+                return BleAdapterState.TURNING_OFF;
+            default:
+                return BleAdapterState.UNKNOWN;
+        }
     }
 
     public boolean hasScanPermission() {

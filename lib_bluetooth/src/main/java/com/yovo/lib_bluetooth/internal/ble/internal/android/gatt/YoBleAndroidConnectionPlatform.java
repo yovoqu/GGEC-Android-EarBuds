@@ -58,6 +58,8 @@ public final class YoBleAndroidConnectionPlatform implements YoBleConnectionPlat
         BluetoothGatt gatt;
         try {
             gatt = YoBleGattCompat.connectLe(appContext, device, autoConnect, cb);
+        } catch (SecurityException security) {
+            throw security;
         } catch (Throwable t) {
             YoBluetoothLogger.w(TAG, "connectGatt threw for " + deviceId, t);
             return null;
