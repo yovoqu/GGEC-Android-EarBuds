@@ -1,0 +1,119 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.biz_ggec_hs'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation project(':lib_bluetooth')
+    implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def bizGgecHsRoot = project.projectDir
+
+tasks.register('checkBizGgecHsBoundary') {
+    group = 'verification'
+    description = 'Keep HS protocol off lib_bluetooth internals and keep BLE calls inside the provider.'
+    doLast {
+        def offenders = []
+        def rel = { File file -> project.rootDir.relativePath(file).replace('\\', '/') }
+
+        fileTree(bizGgecHsRoot) {
+            include 'src/main/java/**/*.java'
+            include 'src/test/java/**/*.java'
+        }.each { file ->
+            def path = rel(file)
+            def inProvider = path.contains('biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/provider/lib_bluetooth/')
+            def inProtocol = path.contains('/internal/protocol/')
+            def inBroadcast = path.contains('/internal/broadcast/')
+            file.eachLine { line, index ->
+                if (line =~ /import\s+com\.yovo\.lib_bluetooth\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (!inProvider && line =~ /import\s+com\.yovo\.lib_bluetooth\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (inProvider && (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.protocol\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.broadcast\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if ((inProtocol || inBroadcast) && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./
+                        || line =~ /import\s+android\.bluetooth\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (inProtocol && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.broadcast\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (inBroadcast && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.protocol\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                def rootFacade = path ==~ /.*\/biz_ggec_hs\/src\/main\/java\/com\/yovo\/biz_ggec_hs\/YoHs[^\/]*\.java/
+                def publicSurface = path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
+                        || path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/model/')
+                        || rootFacade
+                if (publicSurface && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
+                        || line =~ /import\s+android\.bluetooth\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if ((path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
+                        || path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/model/'))
+                        && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+            }
+        }
+
+        fileTree(project.rootDir) {
+            include '**/*.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'biz_ggec_hs/**'
+        }.each { file ->
+            def path = rel(file)
+            file.eachLine { line, index ->
+                if (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_ggec_hs 边界被打破:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkBizGgecHsBoundary'
+}
