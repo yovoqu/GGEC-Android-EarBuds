@@ -5,20 +5,18 @@ import androidx.annotation.NonNull;
 import java.util.Objects;
 
 /**
- * BLE 运行时配置：统一配置 state / IO 线程池、回调派发线程策略与关闭超时。
+ * BLE 运行时配置：state 线程名、IO 线程池大小与回调派发线程策略。
  */
 public final class YoBleRuntimeConfig {
 
     private final String stateThreadName;
     private final int ioThreadPoolSize;
     private final boolean callbackOnMainThread;
-    private final long shutdownTimeoutSeconds;
 
     private YoBleRuntimeConfig(Builder builder) {
         this.stateThreadName = builder.stateThreadName;
         this.ioThreadPoolSize = builder.ioThreadPoolSize;
         this.callbackOnMainThread = builder.callbackOnMainThread;
-        this.shutdownTimeoutSeconds = builder.shutdownTimeoutSeconds;
     }
 
     @NonNull
@@ -34,10 +32,6 @@ public final class YoBleRuntimeConfig {
         return callbackOnMainThread;
     }
 
-    public long shutdownTimeoutSeconds() {
-        return shutdownTimeoutSeconds;
-    }
-
     @NonNull
     public static Builder builder() {
         return new Builder();
@@ -47,7 +41,6 @@ public final class YoBleRuntimeConfig {
         private String stateThreadName = "yo-ble-state";
         private int ioThreadPoolSize = 2;
         private boolean callbackOnMainThread = true;
-        private long shutdownTimeoutSeconds = 3L;
 
         @NonNull
         public Builder stateThreadName(@NonNull String stateThreadName) {
@@ -64,12 +57,6 @@ public final class YoBleRuntimeConfig {
         @NonNull
         public Builder callbackOnMainThread(boolean callbackOnMainThread) {
             this.callbackOnMainThread = callbackOnMainThread;
-            return this;
-        }
-
-        @NonNull
-        public Builder shutdownTimeoutSeconds(long shutdownTimeoutSeconds) {
-            this.shutdownTimeoutSeconds = Math.max(1L, shutdownTimeoutSeconds);
             return this;
         }
 
