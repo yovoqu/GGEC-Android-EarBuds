@@ -1,6 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.runtime;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
@@ -72,7 +72,7 @@ public final class YoCbtRuntimeScope implements YoReleasable {
         if (!scopeGuard.markReleased()) {
             return;
         }
-        YoBluetoothLogger.d(TAG, "YoCbtRuntimeScope 已释放（运行时已释放="
+        YoBtLogger.d(TAG, "YoCbtRuntimeScope 已释放（运行时已释放="
                 + runtime.isReleased() + "）");
     }
 }

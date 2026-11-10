@@ -7,7 +7,7 @@ import android.content.IntentFilter;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -41,7 +41,7 @@ public final class YoBleAndroidReceiverRegistry {
         Context app = context.getApplicationContext();
         ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_EXPORTED);
         entries.add(new Entry(receiver, app));
-        YoBluetoothLogger.d(TAG, "Registered receiver: " + receiver.getClass().getSimpleName());
+        YoBtLogger.d(TAG, "Registered receiver: " + receiver.getClass().getSimpleName());
     }
 
     public void unregisterAll() {

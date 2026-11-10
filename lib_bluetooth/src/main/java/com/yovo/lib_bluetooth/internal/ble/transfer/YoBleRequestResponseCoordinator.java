@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.internal.ble.transfer;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationHandler;

@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android;
 
 import android.content.Context;
-import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
@@ -262,7 +261,7 @@ public final class YoCbtAndroidModuleGraph {
         YoCbtScoAudioStateTracker scoAudioStateTracker = new YoCbtScoAudioStateTracker();
         YoCbtProfileBroadcastApplier profileBroadcastApplier = new YoCbtProfileBroadcastApplier(
                 profileStateRepository, a2dpProfileController, headsetProfileController,
-                scoAudioStateTracker, runtime.eventHub(), runtime);
+                scoAudioStateTracker, runtime.eventBus(), runtime);
         YoCbtAndroidProfileBroadcastHandler androidProfileBroadcastHandler =
                 new YoCbtAndroidProfileBroadcastHandler(mapper, profileBroadcastApplier);
         YoCbtProfileReceiverAdapter profileReceiverAdapter = new YoCbtProfileReceiverAdapter(

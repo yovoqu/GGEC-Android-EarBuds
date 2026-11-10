@@ -4,7 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
@@ -245,7 +245,7 @@ public final class YoCbtSppConnection {
                     writer.start();
 
                     transition(YoCbtSppConnectionState.CONNECTED, null);
-                    runtime.eventHub().publish(YoCbtEvents.SPP_CONNECTION, snapshot());
+                    runtime.eventBus().publish(YoCbtEvents.SPP_CONNECTION, snapshot());
                     return;
                 } catch (Throwable e) {
                     if (terminal.get()) return;
@@ -344,7 +344,7 @@ public final class YoCbtSppConnection {
 
     private void fail(YoCbtErrorCode code, String message, Throwable throwable) {
         if (!terminal.compareAndSet(false, true)) return;
-        YoBluetoothLogger.e(TAG, message + "，连接ID=" + connectionId, throwable);
+        BluetoothDiagnosticsBus.get().recordException(TAG, message + "，连接ID=" + connectionId, throwable);
 
         pendingFailure = failure(code, message, throwable);
         transition(YoCbtSppConnectionState.FAILED, pendingFailure);

@@ -1,6 +1,5 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.headset;
 
-import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothProfile;
 
 import androidx.annotation.NonNull;

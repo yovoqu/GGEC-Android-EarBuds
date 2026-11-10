@@ -15,7 +15,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -179,14 +179,14 @@ public final class YoCbtSdpReceiverAdapter implements YoCbtLiveSdpPort {
 
         YoCbtDeviceIdentity identity = mapper.map(device, null);
         if (identity == null) {
-            YoBluetoothLogger.w(TAG, "从 ACTION_UUID 映射设备失败");
+            YoBtLogger.w(TAG, "从 ACTION_UUID 映射设备失败");
             return;
         }
 
         YoCbtDeviceId deviceId = identity.getDeviceId();
         PendingOperation op = operations.remove(deviceId);
         if (op == null) {
-            YoBluetoothLogger.d(TAG, "未跟踪设备的 ACTION_UUID: " + deviceId);
+            YoBtLogger.d(TAG, "未跟踪设备的 ACTION_UUID: " + deviceId);
             return;
         }
         op.timeoutHandle.cancel();

@@ -7,7 +7,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.os.Build;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -65,7 +65,7 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
         try {
             androidState = a2dpProxy.getConnectionState(device);
         } catch (Exception e) {
-            YoBluetoothLogger.w(TAG, "获取连接状态失败，设备 " + deviceId.value(), e);
+            YoBtLogger.w(TAG, "获取连接状态失败，设备 " + deviceId.value(), e);
             return YoCbtProfileConnectionState.ERROR;
         }
 
@@ -86,7 +86,7 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
         try {
             androidDevices = a2dpProxy.getConnectedDevices();
         } catch (Exception e) {
-            YoBluetoothLogger.w(TAG, "获取已连接设备失败", e);
+            YoBtLogger.w(TAG, "获取已连接设备失败", e);
             return Collections.emptyList();
         }
 
@@ -123,7 +123,7 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
                 activeDevice = (BluetoothDevice) BluetoothA2dp.class
                         .getMethod("getActiveDevice").invoke(a2dpProxy);
             } catch (Throwable e) {
-                YoBluetoothLogger.w(TAG, "获取当前活跃设备失败", e);
+                YoBtLogger.w(TAG, "获取当前活跃设备失败", e);
                 return false;
             }
         }
@@ -144,7 +144,7 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
         try {
             return adapter.getRemoteDevice(deviceId.value());
         } catch (IllegalArgumentException e) {
-            YoBluetoothLogger.w(TAG, "无效的设备地址: " + deviceId.value(), e);
+            YoBtLogger.w(TAG, "无效的设备地址: " + deviceId.value(), e);
             return null;
         }
     }

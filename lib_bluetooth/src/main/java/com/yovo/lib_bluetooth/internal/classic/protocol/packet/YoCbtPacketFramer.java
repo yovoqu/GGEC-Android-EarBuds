@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.protocol.packet;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;

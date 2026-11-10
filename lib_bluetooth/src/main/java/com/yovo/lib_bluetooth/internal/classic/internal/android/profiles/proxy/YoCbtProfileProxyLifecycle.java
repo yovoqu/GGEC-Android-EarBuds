@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.proxy;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
@@ -57,7 +57,7 @@ final class YoCbtProfileProxyLifecycle {
                 adapter, session.profileType().getAndroidProfile(), proxy);
         session.markClosed();
         if (result.isFailure()) {
-            YoBluetoothLogger.w(TAG, "关闭 ProfileProxy 失败，类型 " + session.profileType()
+            YoBtLogger.w(TAG, "关闭 ProfileProxy 失败，类型 " + session.profileType()
                     + "：" + result.getFailure().getMessage());
         }
         return YoResult.success(null);

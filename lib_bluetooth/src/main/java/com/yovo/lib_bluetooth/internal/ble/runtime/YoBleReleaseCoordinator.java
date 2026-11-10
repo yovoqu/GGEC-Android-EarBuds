@@ -2,7 +2,7 @@ package com.yovo.lib_bluetooth.internal.ble.runtime;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
 
 import java.util.ArrayList;
@@ -44,7 +44,8 @@ public final class YoBleReleaseCoordinator {
             try {
                 resource.release();
             } catch (Throwable t) {
-                YoBluetoothLogger.w(TAG, "释放组件异常: " + resource.getClass().getSimpleName(), t);
+                BluetoothDiagnosticsBus.get().recordException(TAG,
+                        "释放组件异常: " + resource.getClass().getSimpleName(), t);
             }
         }
     }

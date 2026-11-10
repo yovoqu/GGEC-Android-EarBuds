@@ -15,7 +15,7 @@ import com.yovo.lib_bluetooth.internal.ble.internal.android.compat.YoBleScanComp
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform.StartResult;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 
@@ -121,7 +121,7 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
                 }
                 return StartResult.ok();
             } catch (IllegalArgumentException unsupportedParam) {
-                YoBluetoothLogger.w(TAG, "Primary startScan rejected args, falling back to software filter scan",
+                YoBtLogger.w(TAG, "Primary startScan rejected args, falling back to software filter scan",
                         unsupportedParam);
                 try {
                     ScanSettings fallbackSettings = YoBleScanCompat.toFallbackScanSettings(config);

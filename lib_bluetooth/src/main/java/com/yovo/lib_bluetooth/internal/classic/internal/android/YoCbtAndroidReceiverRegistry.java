@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
 import androidx.core.content.ContextCompat;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
-
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import androidx.annotation.NonNull;
 
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -49,7 +49,7 @@ public final class YoCbtAndroidReceiverRegistry {
 
         // 检查是否已注册（基于对象身份）
         if (isRegistered(receiver)) {
-            YoBluetoothLogger.d(TAG, "接收器 " + receiver + " 已注册——跳过");
+            YoBtLogger.d(TAG, "接收器 " + receiver + " 已注册——跳过");
             return false;
         }
 
@@ -57,7 +57,7 @@ public final class YoCbtAndroidReceiverRegistry {
         ContextCompat.registerReceiver(appContext, receiver, filter, ContextCompat.RECEIVER_EXPORTED);
 
         receivers.add(new ReceiverEntry(receiver, appContext));
-        YoBluetoothLogger.d(TAG, "接收器已注册: " + receiver);
+        YoBtLogger.d(TAG, "接收器已注册: " + receiver);
         return true;
     }
 
@@ -91,7 +91,7 @@ public final class YoCbtAndroidReceiverRegistry {
         }
 
         if (found == null) {
-            YoBluetoothLogger.d(TAG, "接收器 " + receiver + " 未注册——跳过注销");
+            YoBtLogger.d(TAG, "接收器 " + receiver + " 未注册——跳过注销");
             return false;
         }
 
@@ -99,13 +99,13 @@ public final class YoCbtAndroidReceiverRegistry {
             found.context.unregisterReceiver(receiver);
         } catch (IllegalArgumentException e) {
             // 系统已注销（例如进程终止）
-            YoBluetoothLogger.w(TAG, "注销接收器出错: " + receiver, e);
+            YoBtLogger.w(TAG, "注销接收器出错: " + receiver, e);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "注销接收器时发生意外错误: " + receiver, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "注销接收器时发生意外错误: " + receiver, e);
         }
 
         receivers.remove(found);
-        YoBluetoothLogger.d(TAG, "接收器已注销: " + receiver);
+        YoBtLogger.d(TAG, "接收器已注销: " + receiver);
         return true;
     }
 
@@ -119,15 +119,15 @@ public final class YoCbtAndroidReceiverRegistry {
             try {
                 entry.context.unregisterReceiver(entry.receiver);
             } catch (IllegalArgumentException e) {
-                YoBluetoothLogger.w(TAG, "unregisterAll 期间注销接收器出错: "
+                YoBtLogger.w(TAG, "unregisterAll 期间注销接收器出错: "
                         + entry.receiver, e);
             } catch (Exception e) {
-                YoBluetoothLogger.e(TAG, "unregisterAll 期间发生意外错误: "
+                YoBtLogger.e(TAG, "unregisterAll 期间发生意外错误: "
                         + entry.receiver, e);
             }
         }
         receivers.clear();
-        YoBluetoothLogger.d(TAG, "全部接收器已注销");
+        YoBtLogger.d(TAG, "全部接收器已注销");
     }
 
     /**

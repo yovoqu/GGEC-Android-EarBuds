@@ -5,8 +5,8 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
@@ -24,7 +24,6 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtCapabilitySour
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
-import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntimeScope;
 
 import java.util.Collections;
 import java.util.EnumMap;
@@ -167,7 +166,7 @@ public final class YoCbtDiscoveryController {
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         state.set(YoCbtDiscoveryState.IDLE);
-        YoBluetoothLogger.d(TAG, "cancelForConnect：发现流程已取消");
+        YoBtLogger.d(TAG, "cancelForConnect：发现流程已取消");
     }
 
     public boolean isDiscovering() {
@@ -193,13 +192,13 @@ public final class YoCbtDiscoveryController {
 
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
-        YoBluetoothLogger.d(TAG, "发现控制器已释放");
+        YoBtLogger.d(TAG, "发现控制器已释放");
     }
 
     private void onDiscoveryStarted() {
         YoCbtDiscoveryOperationContext session = activeSession.get();
         if (session == null || session.completed.get()) return;
-        YoBluetoothLogger.d(TAG, "收到 ACTION_DISCOVERY_STARTED：操作=" + session.operationId);
+        YoBtLogger.d(TAG, "收到 ACTION_DISCOVERY_STARTED：操作=" + session.operationId);
     }
 
     private void onDiscoveryFinished() {
@@ -219,7 +218,7 @@ public final class YoCbtDiscoveryController {
         notifyStateChanged(session, YoCbtDiscoveryState.FINISHED);
         state.set(YoCbtDiscoveryState.IDLE);
 
-        YoBluetoothLogger.d(TAG, "发现完成：操作=" + session.operationId
+        YoBtLogger.d(TAG, "发现完成：操作=" + session.operationId
                 + "，设备数=" + session.results.size());
         publishDiscoveryEvent(new YoCbtDiscoveryEvent.DiscoveryFinishedEvent(
                 session.eventSession, session.results.size(), System.currentTimeMillis()));
@@ -262,7 +261,7 @@ public final class YoCbtDiscoveryController {
         runtime.callback(() -> session.observer.onDeviceFound(result));
         publishDiscoveryEvent(new YoCbtDiscoveryEvent.DeviceFoundEvent(observed, !isNew, now));
 
-        YoBluetoothLogger.d(TAG, "发现设备: " + identity.getDisplayName()
+        YoBtLogger.d(TAG, "发现设备: " + identity.getDisplayName()
                 + " [" + deviceId + "] 信号强度=" + rssi
                 + (isNew ? "（新设备）" : "（已更新）"));
     }
@@ -317,10 +316,10 @@ public final class YoCbtDiscoveryController {
                 });
             }, session.config.getTimeoutMillis());
 
-            YoBluetoothLogger.d(TAG, "发现已启动：操作=" + session.operationId
+            YoBtLogger.d(TAG, "发现已启动：操作=" + session.operationId
                     + "，超时=" + session.config.getTimeoutMillis() + "毫秒");
         } catch (Throwable t) {
-            YoBluetoothLogger.e(TAG, "启动发现时发生异常", t);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "启动发现时发生异常", t);
             failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
                     "Exception during discovery initiation", t);
         }
@@ -339,7 +338,7 @@ public final class YoCbtDiscoveryController {
         activeSession.compareAndSet(session, null);
         state.set(YoCbtDiscoveryState.IDLE);
         notifyStateChanged(session, YoCbtDiscoveryState.IDLE);
-        YoBluetoothLogger.d(TAG, "发现已停止：操作=" + session.operationId);
+        YoBtLogger.d(TAG, "发现已停止：操作=" + session.operationId);
     }
 
     private void failDiscovery(@NonNull YoCbtDiscoveryOperationContext session,
@@ -368,7 +367,7 @@ public final class YoCbtDiscoveryController {
                 System.currentTimeMillis()));
 
         state.set(YoCbtDiscoveryState.IDLE);
-        YoBluetoothLogger.e(TAG, "发现失败：操作=" + session.operationId
+        YoBtLogger.e(TAG, "发现失败：操作=" + session.operationId
                 + "，错误码=" + errorCode + "，信息=" + message, cause);
     }
 
@@ -395,7 +394,7 @@ public final class YoCbtDiscoveryController {
     }
 
     private void publishDiscoveryEvent(@NonNull YoCbtDiscoveryEvent event) {
-        runtime.eventHub().publish(YoCbtEvents.DISCOVERY, event);
+        runtime.eventBus().publish(YoCbtEvents.DISCOVERY, event);
     }
 
     private void releaseSessionScope(@Nullable YoCbtDiscoveryOperationContext session) {

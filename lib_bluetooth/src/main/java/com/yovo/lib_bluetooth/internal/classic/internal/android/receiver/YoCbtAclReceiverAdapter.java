@@ -8,7 +8,7 @@ import android.content.IntentFilter;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.internal.classic.internal.android.YoCbtAndroidDeviceMapper;
@@ -100,7 +100,7 @@ public final class YoCbtAclReceiverAdapter {
 
         YoCbtDeviceIdentity identity = mapper.map(device, null);
         if (identity == null) {
-            YoBluetoothLogger.w(TAG, "按 action 映射蓝牙设备失败: " + action);
+            YoBtLogger.w(TAG, "按 action 映射蓝牙设备失败: " + action);
             return;
         }
 
@@ -110,7 +110,7 @@ public final class YoCbtAclReceiverAdapter {
         long timestamp = System.currentTimeMillis();
         final YoCbtDeviceSnapshot snapshot = tracker.updateAclState(identity, state, timestamp);
 
-        runtime.eventHub().publish(YoCbtEvents.ACL_LINK_CHANGED, snapshot);
+        runtime.eventBus().publish(YoCbtEvents.ACL_LINK_CHANGED, snapshot);
         runtime.callback(() -> notifyObservers(snapshot));
     }
 
@@ -133,7 +133,7 @@ public final class YoCbtAclReceiverAdapter {
             case BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED:
                 return YoCbtAclLinkState.DISCONNECT_REQUESTED;
             default:
-                YoBluetoothLogger.w(TAG, "未知 ACL action: " + action);
+                YoBtLogger.w(TAG, "未知 ACL action: " + action);
                 return null;
         }
     }

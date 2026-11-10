@@ -11,7 +11,6 @@ import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkState;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtCapabilitySource;
 
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

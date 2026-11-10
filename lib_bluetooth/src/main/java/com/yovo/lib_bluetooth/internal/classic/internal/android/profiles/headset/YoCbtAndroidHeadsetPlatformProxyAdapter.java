@@ -5,8 +5,8 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothProfile;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
-
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -127,13 +127,13 @@ public final class YoCbtAndroidHeadsetPlatformProxyAdapter {
     public boolean startVoiceRecognition(@NonNull YoCbtDeviceId deviceId) {
         BluetoothDevice device = toAndroidDevice(deviceId);
         if (device == null) {
-            YoBluetoothLogger.w(TAG, "启动语音识别失败：无法解析设备 " + deviceId);
+            YoBtLogger.w(TAG, "启动语音识别失败：无法解析设备 " + deviceId);
             return false;
         }
         try {
             return headsetProxy.startVoiceRecognition(device);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "启动语音识别时设备 " + deviceId + " 抛出异常", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "启动语音识别时设备 " + deviceId + " 抛出异常", e);
             return false;
         }
     }
@@ -149,13 +149,13 @@ public final class YoCbtAndroidHeadsetPlatformProxyAdapter {
     public boolean stopVoiceRecognition(@NonNull YoCbtDeviceId deviceId) {
         BluetoothDevice device = toAndroidDevice(deviceId);
         if (device == null) {
-            YoBluetoothLogger.w(TAG, "停止语音识别失败：无法解析设备 " + deviceId);
+            YoBtLogger.w(TAG, "停止语音识别失败：无法解析设备 " + deviceId);
             return false;
         }
         try {
             return headsetProxy.stopVoiceRecognition(device);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "停止语音识别时设备 " + deviceId + " 抛出异常", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "停止语音识别时设备 " + deviceId + " 抛出异常", e);
             return false;
         }
     }
@@ -178,7 +178,7 @@ public final class YoCbtAndroidHeadsetPlatformProxyAdapter {
             case BluetoothProfile.STATE_DISCONNECTING:
                 return YoCbtProfileConnectionState.DISCONNECTING;
             default:
-                YoBluetoothLogger.w(TAG, "无法识别的连接状态: " + state);
+                YoBtLogger.w(TAG, "无法识别的连接状态: " + state);
                 return YoCbtProfileConnectionState.UNKNOWN;
         }
     }
@@ -197,7 +197,7 @@ public final class YoCbtAndroidHeadsetPlatformProxyAdapter {
             case BluetoothHeadset.STATE_AUDIO_CONNECTED:
                 return YoCbtHeadsetAudioState.AUDIO_CONNECTED;
             default:
-                YoBluetoothLogger.w(TAG, "无法识别的音频状态: " + audioState);
+                YoBtLogger.w(TAG, "无法识别的音频状态: " + audioState);
                 return YoCbtHeadsetAudioState.UNKNOWN;
         }
     }
@@ -217,7 +217,7 @@ public final class YoCbtAndroidHeadsetPlatformProxyAdapter {
             return android.bluetooth.BluetoothAdapter.getDefaultAdapter()
                     .getRemoteDevice(deviceId.value());
         } catch (IllegalArgumentException e) {
-            YoBluetoothLogger.e(TAG, "无效的设备地址: " + deviceId.value(), e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "无效的设备地址: " + deviceId.value(), e);
             return null;
         }
     }

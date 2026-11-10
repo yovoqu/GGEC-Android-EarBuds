@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.api.YoCbtClient;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClient;
@@ -18,7 +17,6 @@ import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryConfig;
 import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryObserver;
 import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryResult;
 import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryState;
-import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkObserver;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkSnapshot;
@@ -52,6 +50,9 @@ import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpoint;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpointSource;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppSecurityMode;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoEventTimeline;
+import com.yovo.lib_bluetooth.model.classic.CbtDiagnosticReport;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkState;
@@ -94,7 +95,6 @@ import com.yovo.lib_bluetooth.model.classic.CbtSppStateObserver;
 import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -528,6 +528,18 @@ public final class ClassicClientImpl implements YoCbtClient {
     @Override
     public boolean isAdapterEnabled() {
         return delegate.isAdapterEnabled();
+    }
+
+    @Override
+    @NonNull
+    public Result<CbtDiagnosticReport> exportDiagnosticReport() {
+        BluetoothDiagnosticsBus bus = BluetoothDiagnosticsBus.get();
+        List<String> entries = new ArrayList<>();
+        for (YoEventTimeline.TimedEvent event : bus.timelineSnapshot()) {
+            entries.add(event.toString());
+        }
+        return Result.success(
+                new CbtDiagnosticReport(System.currentTimeMillis(), entries, bus.dumpReport()));
     }
 
     @Override

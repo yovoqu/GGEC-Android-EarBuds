@@ -1,7 +1,9 @@
 package com.yovo.lib_bluetooth.internal.classic.runtime;
 
 import android.os.Looper;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
@@ -33,7 +35,7 @@ public final class YoCbtRuntime {
     private final ScheduledExecutorService schedulerExecutor;
     private final YoDispatcher callbackDispatcher;
     private final YoTaskScheduler scheduler;
-    private final YoCbtEventHub eventHub = new YoCbtEventHub();
+    private final BluetoothEventBus eventBus = new BluetoothEventBus();
 
     // 在首次执行时捕获单线程 state 执行器线程，用于线程检查
     private final AtomicReference<Thread> stateThreadRef = new AtomicReference<>(null);
@@ -103,8 +105,13 @@ public final class YoCbtRuntime {
     }
 
     @NonNull
-    public YoCbtEventHub eventHub() {
-        return eventHub;
+    public BluetoothEventBus eventBus() {
+        return eventBus;
+    }
+
+    @NonNull
+    public BluetoothDiagnosticsBus diagnostics() {
+        return BluetoothDiagnosticsBus.get();
     }
 
     // ── 生命周期 ────────────────────────────────────────────────────
@@ -126,13 +133,13 @@ public final class YoCbtRuntime {
      */
     public void release() {
         if (!closeGuard.markReleased()) {
-            YoBluetoothLogger.w(TAG, "release() 被重复调用——已忽略");
+            YoBtLogger.w(TAG, "release() 被重复调用——已忽略");
             return;
         }
 
-        YoBluetoothLogger.i(TAG, "正在释放 YoCbtRuntime ...");
+        YoBtLogger.i(TAG, "正在释放 YoCbtRuntime ...");
 
-        eventHub.clear();
+        eventBus.clear();
         shutdownExecutor(ioExecutor, "io");
         shutdownExecutor(schedulerExecutor, "scheduler");
         if (callbackExecutor != null) {
@@ -140,25 +147,25 @@ public final class YoCbtRuntime {
         }
         shutdownExecutor(stateExecutor, "state");
 
-        YoBluetoothLogger.i(TAG, "YoCbtRuntime 释放成功");
+        YoBtLogger.i(TAG, "YoCbtRuntime 释放成功");
     }
 
     private void shutdownExecutor(@NonNull ExecutorService executor, @NonNull String name) {
-        YoBluetoothLogger.d(TAG, "正在关闭 " + name + " 执行器 ...");
+        YoBtLogger.d(TAG, "正在关闭 " + name + " 执行器 ...");
         executor.shutdown();
         try {
             if (!executor.awaitTermination(shutdownTimeoutSeconds, TimeUnit.SECONDS)) {
-                YoBluetoothLogger.w(TAG, name + " 执行器未在 "
+                YoBtLogger.w(TAG, name + " 执行器未在 "
                         + shutdownTimeoutSeconds + " 秒内终止——强制关闭");
                 executor.shutdownNow();
                 if (!executor.awaitTermination(1L, TimeUnit.SECONDS)) {
-                    YoBluetoothLogger.e(TAG, name + " 执行器在 shutdownNow() 后仍未能终止");
+                    YoBtLogger.e(TAG, name + " 执行器在 shutdownNow() 后仍未能终止");
                 }
             } else {
-                YoBluetoothLogger.d(TAG, name + " 执行器已正常终止");
+                YoBtLogger.d(TAG, name + " 执行器已正常终止");
             }
         } catch (InterruptedException e) {
-            YoBluetoothLogger.e(TAG, "等待 " + name + " 执行器关闭时被中断", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "等待 " + name + " 执行器关闭时被中断", e);
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }

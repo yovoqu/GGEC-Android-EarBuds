@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.discovery;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkState;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondState;

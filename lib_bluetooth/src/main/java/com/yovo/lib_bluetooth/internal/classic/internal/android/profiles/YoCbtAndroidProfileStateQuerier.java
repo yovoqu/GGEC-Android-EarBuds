@@ -10,7 +10,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -63,7 +63,7 @@ public final class YoCbtAndroidProfileStateQuerier {
         try {
             androidState = adapter.getProfileConnectionState(type.getAndroidProfile());
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取 Profile 连接状态失败：" + type, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取 Profile 连接状态失败：" + type, e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_PROFILE_STATE_QUERY_FAILED,
                     "getProfileConnectionState threw: " + e.getMessage(),
@@ -135,7 +135,7 @@ public final class YoCbtAndroidProfileStateQuerier {
         try {
             connectionState = proxy.getConnectionState(device);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取连接状态失败，设备 " + deviceId + "，Profile " + type, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取连接状态失败，设备 " + deviceId + "，Profile " + type, e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_PROFILE_STATE_QUERY_FAILED,
                     "getConnectionState threw: " + e.getMessage(),
@@ -219,7 +219,7 @@ public final class YoCbtAndroidProfileStateQuerier {
             List<BluetoothDevice> connected = proxy.getConnectedDevices();
             return connected != null ? connected.size() : 1;
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取已连接设备失败：" + type, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取已连接设备失败：" + type, e);
             return 1;
         }
     }
@@ -257,7 +257,7 @@ public final class YoCbtAndroidProfileStateQuerier {
                 return adapter.getRemoteDevice(deviceId.value());
             }
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "解析蓝牙设备失败: " + deviceId, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "解析蓝牙设备失败: " + deviceId, e);
         }
         return null;
     }

@@ -7,7 +7,7 @@ import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 /**
  * @author tingfeng.yang
  * @date 2026-06-18
- * @description 通过 {@link com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEventHub} 发布的运行时服务发现事件。
+ * @description 通过 {@code BluetoothEventBus} 发布的运行时服务发现事件。
  */
 public final class YoCbtServiceDiscoveryEvent {
 

@@ -8,6 +8,7 @@ import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.api.YoCbtClient;
 import com.yovo.lib_bluetooth.internal.ble.BleClientImpl;
 import com.yovo.lib_bluetooth.internal.classic.ClassicClientImpl;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtConfig;
 import com.yovo.lib_bluetooth.provider.lib_common.BluetoothProviderInstaller;
@@ -22,12 +23,14 @@ public final class BluetoothSdkCore {
 
     @NonNull
     public static YoCbtClient classic(@NonNull Context context, @NonNull CbtConfig config) {
+        YoBtLogger.ensureInitialized(context);
         BluetoothProviderInstaller.installAll();
         return new ClassicClientImpl(context, config);
     }
 
     @NonNull
     public static YoBleClient ble(@NonNull Context context, @NonNull BleConfig config) {
+        YoBtLogger.ensureInitialized(context);
         BluetoothProviderInstaller.installAll();
         return new BleClientImpl(context, config);
     }

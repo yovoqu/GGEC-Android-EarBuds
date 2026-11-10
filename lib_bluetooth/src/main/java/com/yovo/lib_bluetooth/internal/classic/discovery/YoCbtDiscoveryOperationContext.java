@@ -4,9 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceClass;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
-import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntimeScope;
 
 import java.util.LinkedHashMap;

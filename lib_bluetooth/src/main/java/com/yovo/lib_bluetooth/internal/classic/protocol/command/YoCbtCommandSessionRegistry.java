@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic.protocol.command;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.protocol.codec.YoCbtRawPacketCodec;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionId;

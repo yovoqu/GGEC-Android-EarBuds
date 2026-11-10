@@ -2,7 +2,8 @@ package com.yovo.lib_bluetooth.internal.classic.spp.io;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
@@ -112,7 +113,7 @@ public final class YoCbtSppWriter {
      */
     public void start() {
         if (!running.compareAndSet(false, true)) {
-            YoBluetoothLogger.w(TAG, "写入器已在运行，连接 " + connectionId);
+            YoBtLogger.w(TAG, "写入器已在运行，连接 " + connectionId);
             return;
         }
         String threadName = "yo-cbt-spp-writer-" + connectionId;
@@ -120,7 +121,7 @@ public final class YoCbtSppWriter {
         thread.setDaemon(true);
         writerThread.set(thread);
         thread.start();
-        YoBluetoothLogger.d(TAG, "写入器已启动，连接 " + connectionId + "，线程 " + threadName);
+        YoBtLogger.d(TAG, "写入器已启动，连接 " + connectionId + "，线程 " + threadName);
     }
 
     /**
@@ -131,7 +132,7 @@ public final class YoCbtSppWriter {
         if (!running.compareAndSet(true, false)) {
             return;
         }
-        YoBluetoothLogger.d(TAG, "正在停止写入器，连接 " + connectionId);
+        YoBtLogger.d(TAG, "正在停止写入器，连接 " + connectionId);
         Thread thread = writerThread.getAndSet(null);
         if (thread != null && thread.isAlive()) {
             thread.interrupt();
@@ -152,7 +153,7 @@ public final class YoCbtSppWriter {
 
     private void runLoop() {
         Thread currentThread = Thread.currentThread();
-        YoBluetoothLogger.d(TAG, "写入循环已开始，连接 " + connectionId);
+        YoBtLogger.d(TAG, "写入循环已开始，连接 " + connectionId);
 
         try {
             while (running.get() && !currentThread.isInterrupted()) {
@@ -175,7 +176,7 @@ public final class YoCbtSppWriter {
                     if (!running.get() || currentThread.isInterrupted()) {
                         break;
                     }
-                    YoBluetoothLogger.e(TAG, "写入出错，连接 " + connectionId, e);
+                    BluetoothDiagnosticsBus.get().recordException(TAG, "写入出错，连接 " + connectionId, e);
                     YoCbtFailure failure = new YoCbtFailure(
                             YoCbtErrorCode.YO_CBT_SPP_WRITE_FAILED,
                             "SPP write failed: " + e.getMessage(),
@@ -208,7 +209,7 @@ public final class YoCbtSppWriter {
             running.set(false);
             writerThread.compareAndSet(currentThread, null);
             writeQueue.clear();
-            YoBluetoothLogger.d(TAG, "写入循环已结束，连接 " + connectionId);
+            YoBtLogger.d(TAG, "写入循环已结束，连接 " + connectionId);
         }
     }
 }

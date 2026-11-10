@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.diagnostics;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoEventTimeline;
 
 import java.util.ArrayList;
@@ -28,7 +28,7 @@ public final class YoBleTimelineRecorder {
 
     public void record(@NonNull String domainTag, @NonNull String message) {
         timeline.record(domainTag, message);
-        YoBluetoothLogger.d(TAG, "[" + domainTag + "] " + message);
+        YoBtLogger.d(TAG, "[" + domainTag + "] " + message);
     }
 
     public int size() {
