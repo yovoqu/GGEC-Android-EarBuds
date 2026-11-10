@@ -15,6 +15,9 @@ import java.util.function.Consumer;
 public interface YoBleL2capPlatform {
 
     interface SocketConnection {
+        @NonNull
+        BleDeviceId remoteDeviceId();
+
         int read(@NonNull byte[] buffer) throws IOException;
 
         void write(@NonNull byte[] data) throws IOException;
@@ -22,17 +25,21 @@ public interface YoBleL2capPlatform {
         void close() throws IOException;
     }
 
+    interface ListeningSocket {
+        int psm();
+
+        @NonNull
+        SocketConnection accept() throws IOException;
+
+        void close() throws IOException;
+    }
+
     @NonNull
     SocketConnection openClientChannel(@NonNull BleDeviceId deviceId,
                                        int psm,
-                                       boolean secure) throws IOException;
+                                       boolean secure,
+                                       @Nullable Consumer<Closeable> cancelHookConsumer) throws IOException;
 
     @NonNull
-    default SocketConnection openClientChannel(@NonNull BleDeviceId deviceId,
-                                               int psm,
-                                               boolean secure,
-                                               @Nullable Consumer<Closeable> cancelHookConsumer)
-            throws IOException {
-        return openClientChannel(deviceId, psm, secure);
-    }
+    ListeningSocket openServer(boolean secure, @Nullable Consumer<Closeable> cancelHookConsumer) throws IOException;
 }

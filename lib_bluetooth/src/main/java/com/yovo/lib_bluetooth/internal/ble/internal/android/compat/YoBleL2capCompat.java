@@ -1,7 +1,9 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android.compat;
 
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.os.Build;
 
@@ -27,5 +29,11 @@ public final class YoBleL2capCompat {
         return secure
                 ? device.createL2capChannel(psm)
                 : device.createInsecureL2capChannel(psm);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    @NonNull
+    public static BluetoothServerSocket listen(@NonNull BluetoothAdapter adapter, boolean secure) throws IOException {
+        return secure ? adapter.listenUsingL2capChannel() : adapter.listenUsingInsecureL2capChannel();
     }
 }
