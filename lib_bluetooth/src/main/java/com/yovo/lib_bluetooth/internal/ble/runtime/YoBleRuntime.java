@@ -6,30 +6,45 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoDispatcher;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoExecutors;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
+import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoCloseGuard;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * BLE 内部核心运行时：统一管理单线程 state 串行执行器、IO 线程池、定时器、回调分发器与优雅释放顺序。
+ * BLE 内部核心运行时：BLE 模块唯一的线程模型。
+ *
+ * <p>四个执行上下文：
+ * <ul>
+ *     <li>{@link #state(Runnable)}：单线程串行 state 线程。BLE 所有领域组件（会话、队列、订阅、配对、
+ *     扫描、外设…）的可变状态只允许在该线程读写，组件内部因此不需要任何锁。</li>
+ *     <li>{@link #callback(Runnable)}：用户回调派发（主线程或独立回调线程）。库内部状态绝不在此线程修改。</li>
+ *     <li>{@link #io(Runnable)}：阻塞式 IO（L2CAP 建链等），不得触碰领域状态。</li>
+ *     <li>{@link #scheduler()} / {@link #stateDelayed(Runnable, long)}：定时器；到期后必须回到 state 线程。</li>
+ * </ul>
+ *
+ * <p>生命周期 ACTIVE → CLOSING → CLOSED：
+ * {@link #release()} 不阻塞调用线程。进入 CLOSING 后 {@link #isReleased()} 立即为 {@code true}（门面据此拒绝新请求），
+ * 但 state / callback 仍继续接收任务，保证各组件在释放前投递的清理任务以及清理任务产生的终态回调
+ * （挂起操作失败、连接断开等）全部送达；待 state 线程排空后才关闭各执行器进入 CLOSED。
  */
 public final class YoBleRuntime implements YoReleasable {
 
     private static final String TAG = "YoBleRuntime";
+    /** 关闭阶段排空 state 队列的最大自投递轮数，防止外部持续投递导致无法收敛。 */
+    private static final int MAX_DRAIN_ROUNDS = 16;
+    private static final YoTimeoutHandle NOOP_HANDLE = () -> { };
 
-    private final long shutdownTimeoutSeconds;
-    private final String stateThreadName;
     private final YoCloseGuard closeGuard = new YoCloseGuard();
     @NonNull
     private final ExecutorService stateExecutor;
-    @NonNull
-    private final YoDispatcher stateDispatcher;
     @NonNull
     private final ExecutorService ioExecutor;
     @Nullable
@@ -40,59 +55,76 @@ public final class YoBleRuntime implements YoReleasable {
     private final ScheduledExecutorService schedulerExecutor;
     @NonNull
     private final YoTaskScheduler scheduler;
-    private final YoBleEventHub eventHub = new YoBleEventHub();
-    private final AtomicReference<Thread> stateThreadRef = new AtomicReference<>(null);
+    /** 已提交但尚未执行完的 state 任务数，仅用于关闭阶段判断是否排空。 */
+    private final AtomicInteger pendingStateTasks = new AtomicInteger();
+    /** 当前 state 线程；由线程工厂在创建线程时同步写入。 */
+    @Nullable
+    private volatile Thread stateThread;
 
     public YoBleRuntime() {
         this(YoBleRuntimeConfig.builder().build());
     }
 
     public YoBleRuntime(@NonNull YoBleRuntimeConfig config) {
-        this.stateThreadName = config.stateThreadName();
-        this.shutdownTimeoutSeconds = config.shutdownTimeoutSeconds();
-
-        this.stateExecutor = YoExecutors.single(stateThreadName);
-        this.stateDispatcher = stateExecutor::execute;
-        stateExecutor.execute(() -> stateThreadRef.set(Thread.currentThread()));
-
-        this.ioExecutor = YoExecutors.fixed("yo-ble-io", config.ioThreadPoolSize());
-
-        this.schedulerExecutor = YoExecutors.scheduled("yo-ble-scheduler");
-        this.scheduler = YoExecutors.scheduler(schedulerExecutor);
-
+        final String stateThreadName = config.stateThreadName();
+        this.stateExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, stateThreadName);
+            stateThread = thread;
+            return thread;
+        });
+        this.ioExecutor = Executors.newFixedThreadPool(config.ioThreadPoolSize(), numbered("yo-ble-io"));
+        this.schedulerExecutor = Executors.newSingleThreadScheduledExecutor(
+                runnable -> new Thread(runnable, "yo-ble-scheduler"));
+        final YoTaskScheduler rawScheduler = YoExecutors.scheduler(schedulerExecutor);
+        this.scheduler = (task, delayMillis) -> {
+            try {
+                return rawScheduler.schedule(task, delayMillis);
+            } catch (RejectedExecutionException closed) {
+                return NOOP_HANDLE;
+            }
+        };
         if (config.callbackOnMainThread()) {
             this.callbackExecutor = null;
             this.callbackDispatcher = YoExecutors.mainDispatcher();
         } else {
-            this.callbackExecutor = YoExecutors.single("yo-ble-callback");
+            this.callbackExecutor = Executors.newSingleThreadExecutor(
+                    runnable -> new Thread(runnable, "yo-ble-callback"));
             this.callbackDispatcher = callbackExecutor::execute;
         }
     }
 
+    /** 投递到 state 线程串行执行；任务异常被隔离记录，不会杀死 state 线程。CLOSED 后投递被丢弃。 */
     public void state(@NonNull Runnable task) {
-        if (!isReleased()) {
-            try {
-                stateDispatcher.dispatch(task);
-            } catch (RejectedExecutionException ignored) {
-            }
+        pendingStateTasks.incrementAndGet();
+        try {
+            stateExecutor.execute(() -> runStateTask(task));
+        } catch (RejectedExecutionException closed) {
+            pendingStateTasks.decrementAndGet();
         }
     }
 
+    /** 延时后回到 state 线程执行，返回可取消句柄。 */
+    @NonNull
+    public YoTimeoutHandle stateDelayed(@NonNull Runnable task, long delayMillis) {
+        return scheduler.schedule(() -> state(task), delayMillis);
+    }
+
+    /** 投递阻塞式 IO 任务。 */
     public void io(@NonNull Runnable task) {
-        if (!isReleased()) {
-            try {
-                ioExecutor.execute(task);
-            } catch (RejectedExecutionException ignored) {
-            }
+        try {
+            ioExecutor.execute(task);
+        } catch (RejectedExecutionException ignored) {
         }
     }
 
+    /**
+     * 向用户回调线程派发。用户代码抛出的异常不做吞没（按平台惯例由调用线程的未捕获处理器暴露），
+     * 避免掩盖业务缺陷。
+     */
     public void callback(@NonNull Runnable task) {
-        if (!isReleased()) {
-            try {
-                callbackDispatcher.dispatch(task);
-            } catch (RejectedExecutionException ignored) {
-            }
+        try {
+            callbackDispatcher.dispatch(task);
+        } catch (RejectedExecutionException ignored) {
         }
     }
 
@@ -101,39 +133,19 @@ public final class YoBleRuntime implements YoReleasable {
         return scheduler;
     }
 
-    @NonNull
-    public YoBleEventHub eventHub() {
-        return eventHub;
+    public boolean isStateThread() {
+        return Thread.currentThread() == stateThread;
     }
 
+    /** 线程封闭断言：领域组件的状态方法入口调用。 */
     public void checkStateThread() {
-        Thread current = Thread.currentThread();
-        Thread expected = stateThreadRef.get();
-        if (expected == null) {
-            if (!current.getName().startsWith(stateThreadName)) {
-                throw new IllegalStateException(
-                        "Must be called from BLE state thread, called from: " + current.getName());
-            }
-        } else if (current != expected) {
+        if (!isStateThread()) {
             throw new IllegalStateException(
-                    "Must be called from BLE state thread (" + expected.getName()
-                            + "), called from: " + current.getName());
+                    "Must be called from BLE state thread, called from: " + Thread.currentThread().getName());
         }
     }
 
-    public void checkIoThread() {
-        Thread current = Thread.currentThread();
-        if (!current.getName().startsWith("yo-ble-io")) {
-            throw new IllegalStateException(
-                    "Must be called from BLE IO thread, called from: " + current.getName());
-        }
-    }
-
-    @NonNull
-    public YoBleRuntimeScope createScope() {
-        return new YoBleRuntimeScope(this);
-    }
-
+    /** CLOSING 或 CLOSED 时为 {@code true}。 */
     public boolean isReleased() {
         return closeGuard.isReleased();
     }
@@ -141,31 +153,43 @@ public final class YoBleRuntime implements YoReleasable {
     @Override
     public void release() {
         if (!closeGuard.markReleased()) {
-            YoBluetoothLogger.w(TAG, "YoBleRuntime 重复释放，已忽略");
             return;
         }
-        YoBluetoothLogger.i(TAG, "正在释放 YoBleRuntime ...");
-        eventHub.clear();
-        shutdownExecutor(ioExecutor, "io");
-        shutdownExecutor(schedulerExecutor, "scheduler");
-        if (callbackExecutor != null) {
-            shutdownExecutor(callbackExecutor, "callback");
-        }
-        shutdownExecutor(stateExecutor, "state");
-        YoBluetoothLogger.i(TAG, "YoBleRuntime 释放完成");
+        YoBluetoothLogger.i(TAG, "YoBleRuntime 进入 CLOSING，等待 state 线程排空");
+        state(() -> finishRelease(0));
     }
 
-    private void shutdownExecutor(@NonNull ExecutorService executor, @NonNull String name) {
-        executor.shutdown();
+    private void runStateTask(@NonNull Runnable task) {
         try {
-            if (!executor.awaitTermination(shutdownTimeoutSeconds, TimeUnit.SECONDS)) {
-                YoBluetoothLogger.w(TAG, name + " 执行器超时未结束，强制 shutdownNow");
-                executor.shutdownNow();
-                executor.awaitTermination(1L, TimeUnit.SECONDS);
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
+            task.run();
+        } catch (Throwable t) {
+            YoBluetoothLogger.e(TAG, "state 线程任务异常（已隔离）", t);
+        } finally {
+            pendingStateTasks.decrementAndGet();
         }
+    }
+
+    /**
+     * 在 state 线程执行：只要队列里还有其它任务（清理任务及其再投递的任务）就把自己排到队尾，
+     * 排空后关闭全部执行器。已入队的回调 / IO 任务仍会执行完（shutdown 而非 shutdownNow）。
+     */
+    private void finishRelease(int round) {
+        if (pendingStateTasks.get() > 1 && round < MAX_DRAIN_ROUNDS) {
+            state(() -> finishRelease(round + 1));
+            return;
+        }
+        schedulerExecutor.shutdownNow();
+        ioExecutor.shutdown();
+        if (callbackExecutor != null) {
+            callbackExecutor.shutdown();
+        }
+        stateExecutor.shutdown();
+        YoBluetoothLogger.i(TAG, "YoBleRuntime 已 CLOSED");
+    }
+
+    @NonNull
+    private static ThreadFactory numbered(@NonNull String prefix) {
+        final AtomicInteger sequence = new AtomicInteger();
+        return runnable -> new Thread(runnable, prefix + "-" + sequence.incrementAndGet());
     }
 }
