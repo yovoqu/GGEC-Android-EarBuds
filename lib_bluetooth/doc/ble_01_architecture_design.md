@@ -1,6 +1,6 @@
 # BLE 模块全量架构设计文档 (`ble_01_architecture_design`)
 
-> 日期：2026-11-09  
+> 日期：2026-11-10  
 > 目标：以 **能力域优先 + 端口/适配器 + 运行时组件** 重建 `lib_bluetooth` 的 BLE（`yoble`）模块，对标 `yocbt`（Classic）与 Nordic / Weliem / Polidea 标杆架构。
 
 ---
@@ -21,10 +21,10 @@
 4. **线程与生命周期不变式**：
    - `YoBleRuntime` 提供四类职责清晰的执行环境：
      - `stateExecutor`（单线程 `yo-ble-state`）：所有会话状态机、扫描状态、队列出队/完成、路由表、缓存读写**严格在 State 线程串行执行**，无锁零竞态，并支持 `checkStateThread()` 断言；
-     - `ioExecutor`（定长池 `yo-ble-io`）：专用于阻塞式 I/O（如 L2CAP `InputStream`/`OutputStream` 读写）；
-     - `scheduler`（单线程定时 `yo-ble-scheduler`）：专用于超时定时器、扫描 Lost 检测、退避重连延迟、Android 13 PHY 回调兜底、ConnectionPriority 回调兜底；
+     - `ioExecutor`（定长池 `yo-ble-io`）：专用于有界阻塞操作（例如 L2CAP 建连）；每条 L2CAP 通道的读循环使用自己的守护线程，避免占满 IO 池；
+     - `scheduler`（单线程定时 `yo-ble-scheduler`）：专用于超时定时器、扫描 Lost 检测、退避重连延迟、Android 13 PHY 回调兜底、ConnectionPriority 回调兜底；到期任务回到 state 线程；
      - `callbackDispatcher`：默认主线程 `MainLooper`，可通过配置切换至专用单线程回调执行器 `yo-ble-callback`；
-   - 通过 `YoBleRuntimeConfig` 与 `YoBleRuntimeScope` 管理操作级作用域与资源优雅释放（IO -> Scheduler -> Callback -> State 顺序关闭），`release()` 幂等且永久阻止后续新操作提交。
+   - 领域可变状态只在 state 线程改写。跨线程只读快照仓库和队列已发布的 pending 计数。`release()` 幂等且非阻塞：组件先在 state 线程收口，运行时排空剩余 state 任务后关闭执行器，不等待线程结束。用户回调异常不吞掉。
 
 ---
 
@@ -69,14 +69,15 @@ com.yovo.lib_bluetooth
 │   ├── BleGattDatabaseSnapshot.java     # 设备完整 GATT 树快照 + 查找辅助
 │   ├── BleGattObserver.java             # onRead / onWrite / onDescriptorRead / onDescriptorWrite / onNotifyChanged / onCharacteristicChanged / onFailed
 │   ├── BleNotificationObserver.java     # 独立 Notify/Indicate 数据回调 + onEnabled / onDisabled / onError
-│   ├── BleNotificationHandle.java       # 继承/委派 BleOperationHandle + 显式取消订阅
 │   ├── BleDataSplitter.java             # 分片策略接口（默认 MTU 512 限制分片）
 │   ├── BleDataMerger.java               # 合包策略接口（流式帧合并）
 │   ├── BleTransferProgressObserver.java # 长包传输每片进度/完成/失败回调
 │   ├── BleRequestResponseConfig.java    # 触发写入 + 等待 Notify/Indicate 响应匹配与超时配置
-│   ├── BleReliableWriteObserver.java    # 事务 ReliableWrite 回调
+│   ├── BleAdapterState.java             # 适配器状态，不暴露 Android 整型
+│   ├── BleAdapterStateObserver.java
 │   ├── BleL2capChannelObserver.java     # API 29+ L2CAP CoC 通道回调
-│   ├── BleL2capChannelHandle.java       # L2CAP 流写与关闭句柄
+│   ├── BleL2capChannelHandle.java       # L2CAP 同步写、异步写与关闭句柄
+│   ├── BleL2capServerObserver.java      # 系统分配 PSM 的 L2CAP 服务端回调
 │   ├── BleAdvertiseConfig.java          # Legacy + Extended AdvertisingSet 参数
 │   ├── BleAdvertiseData.java            # Broadcast 载荷（ServiceUUIDs/ServiceData/ManufacturerData/IncludeDeviceName/TxPower）
 │   ├── BleAdvertiseObserver.java
@@ -85,9 +86,10 @@ com.yovo.lib_bluetooth
 │   ├── BleValueObserver.java            # 通用异步 Result<T> 回调（MTU/PHY/RSSI/Discovery/Bond/L2CAP 等）
 │   └── BleDiagnosticReport.java         # 结构化只读诊断报告快照（状态摘要+事件时间线+dump文本）
 └── internal/ble/
-    ├── BleClientImpl.java               # YoBleClient 门面实现，委派 YoBleCore / Platform Graph
-    ├── runtime/                         # YoBleRuntime, YoBleRuntimeConfig, YoBleRuntimeScope, YoBleEventHub, YoBleReleaseCoordinator
-    ├── error/                           # YoBleErrorCode, YoBleGattStatus, YoBleHciStatus, YoBleFailure, BleErrorMapper
+    ├── BleClientImpl.java               # YoBleClient 门面实现，委派 YoBleModuleCore
+    ├── YoBleModuleCore.java             # 组装扫描、连接、配对、L2CAP、外设，并转发适配器与配对广播
+    ├── runtime/                         # YoBleRuntime, YoBleRuntimeConfig, YoBleReleaseCoordinator
+    ├── error/                           # YoBleErrorMapper, YoBleGattStatus, YoBleHciStatus, YoBleScanAdvertiseStatus
     ├── device/                          # YoBleDeviceSnapshotStore, YoBleCapabilityInspector
     ├── scan/                            # YoBleScanPlatform, YoBleScanController, YoBleScanRecordParser, YoBleScanFilterMatcher, YoBleScanCallbackEmulator, YoBleScanThrottleGuard
     ├── connection/                      # YoBleConnectionPlatform, YoBleConnectionManager, YoBleGattSession, YoBleConnectionStateMachine, YoBleReconnectPolicy
@@ -105,8 +107,8 @@ com.yovo.lib_bluetooth
     │   ├── YoBleAndroidPeripheralPlatform.java
     │   ├── compat/                      # YoBleGattCompat (API 24-37 read/write/notify/serviceChanged), YoBleScanCompat, YoBleAdvertiseCompat, YoBleL2capCompat
     │   ├── hiddenapi/                   # YoBleHiddenApiPolicy, YoBleGattCacheRefresher, YoBleBondReflection
-    ├── receiver/                        # YoBleAndroidReceiverRegistry, YoBleAdapterStateReceiver, YoBleBondStateReceiver
-    └── gatt/                            # YoBleAndroidConnectionPlatform, YoBleAndroidGattCallbackBridge, YoBleAndroidGattTransport
+    │   ├── receiver/                    # YoBleAndroidReceiverRegistry, YoBleAdapterStateReceiver, YoBleBondStateReceiver
+    │   └── gatt/                        # YoBleAndroidConnectionPlatform, YoBleAndroidGattCallbackBridge, YoBleAndroidGattTransport
 ```
 
 ### 2.2 模块依赖方向图
@@ -176,6 +178,8 @@ flowchart TD
 4. **软硬协同过滤 + 回调模式仿真 (`YoBleScanFilterMatcher` & `YoBleScanCallbackEmulator`)**：
    - 支持硬件下推 `ScanFilter`，同时在软件侧精准补齐：Device Name 正则/子串、Service UUID + Mask、Service Solicitation UUID + Mask、Service Data + Mask、Manufacturer Data + Mask、Min RSSI、RequireConnectable；
    - 支持 `CALLBACK_TYPE_ALL_MATCHES`、`CALLBACK_TYPE_FIRST_MATCH`、`CALLBACK_TYPE_MATCH_LOST` 跨版本仿真与周期清理定时器、重复结果节流去重（`deduplicationWindowMillis`）以及批处理 `flushBatchScanResults()`。
+5. **软件批处理与长扫描重启**：`reportDelayMillis > 0` 且硬件不支持 offload batching，或平台返回 `SCAN_FAILED_FEATURE_UNSUPPORTED` 时，以 delay 0 启动扫描，结果在 state 线程按该间隔聚合成 `onBatchScanResults`。`MATCH_LOST` 清扫仍立即回调。超时为 0 或大于 25 分钟时，每 25 分钟停掉平台扫描再拉起，不计入 5-in-30s 限流，也不再次回调 `onScanStarted`。
+6. **适配器状态**：`YoBleModuleCore` 发布 `BleAdapterState`。`OFF` 与 `TURNING_OFF` 仍清理扫描、连接、配对、L2CAP 和外设。`observeAdapterState` 订阅时先回放当前状态。
 
 ### 3.2 连接与会话状态机 (`connection/`)
 1. **严谨的状态机 (`YoBleConnectionStateMachine` 封装 `YoStateMachine<BleConnectionState>`)**：
@@ -187,15 +191,15 @@ flowchart TD
      - 蓝牙适配器全局关闭 (`ACTION_STATE_CHANGED -> STATE_OFF / STATE_TURNING_OFF`)：立即强制清理所有在途 `BluetoothGatt`（解决 Pixel 等设备 BT 关闭不回调 `onConnectionStateChange` 的经典坑）并触发 `DISCONNECTED` + `BLUETOOTH_DISABLED` 原因。
 2. **连接稳定性与自动重连 (`YoBleReconnectPolicy`)**：
    - 支持配置 `maxRetries` + 指数退避延迟（`retryDelayMillis`），针对瞬态连接失败（如著名的 **GATT 133 (`0x85`)**、`0x3E HCI_CONN_FAIL_TO_ESTABLISH`、`connectGatt == null`）先关闭释放、强制等待 **`closeDelayMillis` (默认 200ms，对齐 RxAndroidBle/Nordic 实践)** 再发起重试。
-   - **AutoConnect 优化**：支持 `directTimeoutMillis` 快速直连探测或纯后台 `autoConnect=true`，并在 `autoConnect=true` 意外掉线且非用户主动断开时保持状态机向重连迁移。
+   - **AutoConnect**：`autoConnect=false` 时每次直连，带连接超时和有限次重试，链路丢失即终态。`autoConnect=true` 时第一次仍是带超时的直连；进入 `READY` 之后的意外丢链改为 `connectGatt(autoConnect=true)`，库不再加连接超时，退避也不计入 `maxRetryCount`，直到用户断开、适配器关闭或 `release()`。用户断开先进入 `DISCONNECTING`，等断开回调或约 2 秒后再 `close()`。
    - **Bond 并发协同**：若策略要求连接前/中确保加密（`ENSURE_BONDED`）或远端已处于 `BOND_BONDED`，在发现服务前预留可配置的 `bondedDiscoveryDelayMillis`（对标 blessed-android，避免系统正在协商加密 Key 时提前发 GATT PDU 引发竞态）。
 
 ### 3.3 GATT 操作队列、服务发现与 Notification 多播路由 (`gatt/`)
 1. **`YoBleGattOperationQueue`（每连接独立队列）**：
    - 按 `BleOperationPriority` (`HIGH` / `NORMAL` / `LOW`) + FIFO 序列编号调度。
    - Android BLE 系统栈严格单并发约束：**任何时刻仅允许 1 个在途 GATT PDU**（Read/Write Char/Desc、DiscoverServices、RequestMtu、ReadPhy/SetPhy、ReadRemoteRssi、ReliableWrite Execute/Abort）。
-   - **真实可取消句柄**：未出队的 Pending 请求可直接移除并回调 `OPERATION_CANCELLED`；在途操作支持超时保护与会话关闭清空。
-   - **死锁保护**：无论成功、ATT 失败、超时还是突然断连，必定释放 `inFlight` 槽位并驱动下一条入队操作。
+   - **真实可取消句柄**：未出队的 Pending 请求可直接移除并回调 `OPERATION_CANCELLED`。在途操作被取消或超时后立刻通知调用方，但槽位保留到匹配的平台回调，或保留到启动时刻加超时再加 5 秒宽限，避免迟到回调完成下一条同类操作。完成按操作种类和 `BleGattTarget` 一起匹配。
+   - **公开清空与拆会话**：`clearPendingOperations` 只清尚未发出的请求。断链和释放才清空在途槽位。
 2. **`YoBleServiceDiscoveryManager`**：
    - 发现成功后构建不可变 **`BleGattDatabaseSnapshot`**（含 Service `instanceId`、Characteristic `instanceId` / properties / permissions、Descriptors），解决同 UUID 多特征场景精确寻址问题；
    - **Service Changed 处理**：API 31+ 监听系统 `onServiceChanged`；API 24–30 若远端存在 `0x1801` / `0x2A05` Service Changed CCCD，自动开启 Indication 订阅并在收到通知后主动刷新缓存并重新 `discoverServices()`；
@@ -207,12 +211,13 @@ flowchart TD
 
 ### 3.4 长包传输、ReliableWrite 与请求响应模式 (`transfer/` & `gatt/`)
 1. **MTU 载荷上限计算 (`YoBleMtuPayloadCalculator`)**：
-   - 严格遵循 `effectiveMaxWriteLength(mtu, writeType)` = `Math.min(mtu - 3, 512)`（若 `SIGNED` 则扣减 12 字节签名尾：`Math.min(mtu - 15, 512)`；默认保守最低 `20`）。
+   - 有效载荷是 `max(0, min(mtu - overhead, 512))`。`SIGNED` 的 overhead 是 15，其余写类型是 3。MTU 23 的签名写上限是 8，不再抬到 20。
 2. **分片长写与合包 (`YoBleLongWriteCoordinator`)**：
    - 默认实现 `YoBleDefaultDataSplitter` 按 `maxChunkSize` 自动切分；也允许调用方自定义 **`BleDataSplitter`**（适配私有帧头/序号协议，服务 EarBuds OTA 与离线日志/录音大包上传）。
    - 支持分片进度反馈 (`BleTransferProgressObserver`)、每片成功才发下一片（`WITH_RESPONSE` 流控或可配写间歇延时适配 `WITHOUT_RESPONSE` 防止内核缓冲区溢出 `GATT_BUSY`）、单包/全包取消与超时。
 3. **请求-响应触发等待 (`YoBleRequestResponseCoordinator`)**：
    - 先注册一次性匹配的 Notification 过滤守卫，再入队触发指令（写/读请求），收到匹配 Notify/Indicate 包（或经 `BleDataMerger` 合包判定完整）后完成 Future/回调；若超过超时时间自动清理监听并上报 `OPERATION_TIMEOUT`（解决蓝牙命令发送与异步回包跨回调竞态问题）。
+   - `responseMatcher() == null` 时，同一响应目标在 state 线程上串行：前一条结束并释放通知占位后才开始下一条。自定义 matcher 不进入这条车道。
 4. **Reliable Write 事务 (`YoBleReliableWriteCoordinator`)**：
    - 支持 `beginReliableWrite(deviceId)` -> 多次校验回显 `write` -> `executeReliableWrite(deviceId)` / `abortReliableWrite(deviceId)`，底层状态异常自动回滚。
 
@@ -227,15 +232,16 @@ flowchart TD
    - 通过 `YoBleBondStateReceiver` 监听 `ACTION_BOND_STATE_CHANGED` 及配对弹窗意图事件；
    - 对 Android < 26 遇到 `0x05/0x08/0x0F/0x89` 鉴权/加密错误支持触发自动配对后重试当前 GATT 请求。
 3. **L2CAP CoC 面向连接高速通道 (`channel/YoBleL2capManager`)**：
-   - API 29+ 封装 `createL2capChannel(psm)` / `createInsecureL2capChannel(psm)` 与 `BluetoothServerSocket` 数据读写流（运行在 `ioExecutor`），暴露统一收包回调、流写入与关闭句柄；
+   - API 29+ 封装 `createL2capChannel(psm)` / `createInsecureL2capChannel(psm)`。建连走 IO 池，建连成功后每条通道用自己的读线程收包，避免读循环占满 `yo-ble-io`。同步 `write` 保留；`writeAsync` 进入该通道自己的写线程，队列上限 32。
+   - `openL2capServer(secure, observer)` 使用系统分配的 PSM。`accept` 跑在 `yo-ble-l2cap-accept`，每个接入连接再开读线程。取消会关闭监听 socket。
    - API < 29 安全降级并返回 `BleErrorCode.UNSUPPORTED_OPERATION`，不崩溃、不泄漏 `BluetoothSocket`。
 4. **BLE 外设广播与 GATT Server (`peripheral/YoBlePeripheralManager`)**：
    - 支持 Legacy Advertising (API 24+) 与 Extended AdvertisingSet (API 26+) 配置广播与扫描响应包；
-   - 支持托管 `BluetoothGattServer`：添加本地服务/特征/描述符、多连接客户端特征值 **Shared vs Per-Client 隔离存储**、Prepared Write (`executeWrite`) 缓冲提交/回滚、主动向订阅客户端发送 `notify` / `indicate` 确认；
+   - 支持托管 `BluetoothGattServer`：添加本地服务/特征/描述符、多连接客户端特征值 **Shared vs Per-Client 隔离存储**、Prepared Write (`executeWrite`) 缓冲提交/回滚。`notifyServerCharacteristic` 先检查该客户端的 CCCD 与 `mtu - 3`，再按客户端排队，由 `onNotificationSent` 泵出下一条。`getConnectedClients()` 返回当前接入的客户端。
    - 全程受 `BLUETOOTH_ADVERTISE` / `BLUETOOTH_CONNECT` 权限前检保护。
 
 ### 3.6 错误体系与可观测诊断 (`error/`, `diagnostics/`)
-- **`YoBleHciStatus` & `YoBleGattStatus`**：覆盖蓝牙核心规范全部常见 HCI 原因码（`0x00..0x3E`，特别是 `0x08 LINK_LOSS`、`0x13 REMOTE_USER_TERMINATED`、`0x16 LOCAL_HOST_TERMINATED`、`0x22 LMP_RESPONSE_TIMEOUT`、`0x3E CONN_FAIL_TO_ESTABLISH`）与 ATT/Android GATT 状态码（`0x00..0x101`，包括 `0x05/0x08/0x0F/0x80..0x89/133/0x101/257`）。
+- **`YoBleHciStatus`、`YoBleGattStatus` 与 `YoBleScanAdvertiseStatus`**：HCI 原因码与 ATT/GATT 状态码分开映射。扫描失败 1–6 和广播失败 1–5 放在 `YoBleScanAdvertiseStatus`，不放进 GATT 状态表。直连超时在 Android 14+ 可能是状态 147。
 - **`BleErrorCode` + `BleFailure`**：扩展公开枚举至完整 30+ 语义化错误码，增加 `rawStatusCode`、`recoverable`、`retryable`、`traceId`、`suggestedAction`。
 - **诊断 (`YoDumpable` + `YoEventTimeline`)**：每个 SDK 实例与每个会话内置环形事件时间线，公开 `exportDiagnosticsReport()` 一键导出当前连接、扫描窗口、队列深度与近 256 条时序日志。
 
@@ -244,10 +250,10 @@ flowchart TD
 ## 4. 对外公开门面 `YoBleClient` 全量契约概览
 
 `api/YoBleClient.java` 仅依赖 `model/ble/**` 与 `model/common/Result`，覆盖七大能力组：
-1. **能力与环境查询**：`isBleSupported()`、`isAdapterEnabled()`、`getDeviceSnapshot(deviceId)`、`getDeviceSnapshots()`、`getConnectedDevices()`、`getBondedDevices()`
+1. **能力与环境查询**：`isBleSupported()`、`isAdapterEnabled()`、`getAdapterState()`、`observeAdapterState(observer)`、`getDeviceSnapshot(deviceId)`、`getDeviceSnapshots()`、`getConnectedDevices()`、`getBondedDevices()`
 2. **扫描控制**：`scan(config, observer)`、`stopScan()`、`flushBatchScanResults()`、`isScanning()`
 3. **连接与链路控制**：`connect(deviceId, config, observer)`、`reconnect(deviceId)`、`disconnect(deviceId)`、`disconnectAll()`、`getConnectionSnapshot(deviceId)`、`observeConnectionState(observer)`、`requestMtu(deviceId, mtu, observer)`、`overrideMtu(deviceId, mtu)`、`requestConnectionPriority(deviceId, priority, observer)`、`setPreferredPhy(deviceId, tx, rx, options, observer)`、`readPhy(deviceId, observer)`、`readRemoteRssi(deviceId, observer)`
-4. **服务发现与缓存**：`discoverServices(deviceId, forceRefresh, observer)`、`getServices(deviceId)`、`refreshDeviceCache(deviceId)`
+4. **服务发现与缓存**：`discoverServices(deviceId, forceRefresh, observer)` 的 `forceRefresh` 只要求平台重新发现服务，不调用隐藏的缓存刷新。`refreshDeviceCache(deviceId, observer)` 在允许隐藏 API 时排队刷新缓存、等待稳定后再发现，并把新的 GATT 数据库交给观察者。`getServices(deviceId)` 读已发布快照。
 5. **GATT 读写与长包/事务**：`read(deviceId, target, observer)`、`write(deviceId, target, value, writeType, observer)`、`writeSplit(deviceId, target, value, writeType, splitter, progressObserver)`、`readDescriptor/writeDescriptor`（通过 `target.descriptor(...)` 统一支持并生效）、`beginReliableWrite(deviceId)`、`executeReliableWrite(deviceId, observer)`、`abortReliableWrite(deviceId, observer)`、`getPendingOperationCount(deviceId)`、`clearPendingOperations(deviceId)`
 6. **通知与请求响应**：`subscribe(deviceId, target, setupMode, observer)`、`setNotify(...)`、`sendAndWait(deviceId, requestConfig, observer)`
-7. **配对、L2CAP CoC、外设端、诊断与释放**：`createBond`、`cancelBond`、`removeBond`、`observeBondState`、`openL2capChannel(deviceId, psm, secure, observer)`、`startAdvertising(config, advertiseData, scanResponse, observer)`、`stopAdvertising()`、`startGattServer(config, observer)`、`notifyServerCharacteristic(deviceId, target, confirm, value)`、`stopGattServer()`、`exportDiagnosticReport()`、`release()`
+7. **配对、L2CAP CoC、外设端、诊断与释放**：`createBond`、`cancelBond`、`removeBond`、`observeBondState`、`openL2capChannel(deviceId, psm, secure, observer)`、`openL2capServer(secure, observer)`、`startAdvertising(config, advertiseData, scanResponse, observer)`、`stopAdvertising()`、`startGattServer(config, observer)`、`getConnectedClients()`、`notifyServerCharacteristic(deviceId, target, confirm, value)`、`stopGattServer()`、`exportDiagnosticReport()`、`release()`

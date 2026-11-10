@@ -3,6 +3,8 @@ package com.yovo.lib_bluetooth.api;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseData;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseObserver;
@@ -21,6 +23,7 @@ import com.yovo.lib_bluetooth.model.ble.BleGattServerConfig;
 import com.yovo.lib_bluetooth.model.ble.BleGattServerObserver;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleL2capChannelObserver;
+import com.yovo.lib_bluetooth.model.ble.BleL2capServerObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationSetupMode;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
@@ -53,6 +56,12 @@ public interface YoBleClient {
     boolean isBleSupported();
 
     boolean isAdapterEnabled();
+
+    @NonNull
+    BleAdapterState getAdapterState();
+
+    @NonNull
+    BleOperationHandle observeAdapterState(@NonNull BleAdapterStateObserver observer);
 
     @NonNull
     Result<BleDeviceSnapshot> getDeviceSnapshot(@NonNull BleDeviceId deviceId);
@@ -139,7 +148,8 @@ public interface YoBleClient {
     Result<BleGattDatabaseSnapshot> getServices(@NonNull BleDeviceId deviceId);
 
     @NonNull
-    Result<Void> refreshDeviceCache(@NonNull BleDeviceId deviceId);
+    BleOperationHandle refreshDeviceCache(@NonNull BleDeviceId deviceId,
+                                         @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer);
 
     // ── 6. 串行 GATT 队列：特征/描述符读写、事务与取消 ──────────────
 
@@ -239,6 +249,9 @@ public interface YoBleClient {
                                         boolean secure,
                                         @NonNull BleL2capChannelObserver observer);
 
+    @NonNull
+    BleOperationHandle openL2capServer(boolean secure, @NonNull BleL2capServerObserver observer);
+
     // ── 10. 外设广播（Advertiser）与本地 GATT Server ───────────────
 
     @NonNull
@@ -253,6 +266,9 @@ public interface YoBleClient {
     @NonNull
     BleOperationHandle startGattServer(@NonNull BleGattServerConfig config,
                                        @NonNull BleGattServerObserver observer);
+
+    @NonNull
+    Result<List<BleDeviceId>> getConnectedClients();
 
     @NonNull
     Result<Void> notifyServerCharacteristic(@NonNull BleDeviceId clientDeviceId,
