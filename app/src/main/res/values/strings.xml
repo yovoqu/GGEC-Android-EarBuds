@@ -148,6 +148,8 @@
 
     <!-- 扫描 -->
     <string name="device_scan_title">添加设备</string>
+    <string name="device_scan_filter_all">全部设备</string>
+    <string name="device_scan_filter_desc">筛选设备类型</string>
     <string name="device_scan_start">开始搜索</string>
     <string name="device_scan_stop">停止搜索</string>
     <string name="device_scan_idle_title">搜索附近的耳机</string>
@@ -156,8 +158,17 @@
     <string name="device_scan_searching_hint">请确认耳机已开启并靠近手机。</string>
     <string name="device_scan_empty_title">没有发现附近的耳机</string>
     <string name="device_scan_empty_body">打开耳机配对模式并靠近手机后重新搜索。</string>
+    <string name="device_scan_filter_empty_title">当前筛选下暂无设备</string>
+    <string name="device_scan_filter_empty_body">已发现附近耳机，切换右上角设备类型可查看全部结果。</string>
     <string name="device_scan_found_count">发现 %1$d 台附近耳机</string>
     <string name="device_scan_paired">已配对</string>
+    <string name="device_scan_error_bluetooth_disabled">蓝牙未开启，请先开启手机蓝牙后再搜索。</string>
+    <string name="device_scan_error_permission">需要蓝牙权限才能搜索附近耳机。</string>
+    <string name="device_scan_error_permission_settings">蓝牙权限已被关闭，请前往系统设置开启后再搜索。</string>
+    <string name="device_scan_error_location_disabled">请先开启系统位置信息服务后再搜索蓝牙设备。</string>
+    <string name="device_scan_error_ble_unsupported">当前设备不支持低功耗蓝牙扫描。</string>
+    <string name="device_scan_error_throttled">搜索过于频繁，请稍等片刻再试。</string>
+    <string name="device_scan_error_failed">搜索启动失败，请重试。</string>
 
     <!-- 设置分组 -->
     <string name="device_section_eq">均衡器</string>

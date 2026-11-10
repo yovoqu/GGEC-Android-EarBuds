@@ -10,7 +10,6 @@ import androidx.lifecycle.viewmodel.CreationExtras;
 import com.ggec.earbuds.data.device.DeviceProfileCatalogImpl;
 import com.ggec.earbuds.data.device.EmptyDeviceControlsPort;
 import com.ggec.earbuds.data.device.FileDevicePreferences;
-import com.ggec.earbuds.data.device.IdleDevicePort;
 import com.ggec.earbuds.domain.device.port.DeviceControlsPort;
 import com.ggec.earbuds.domain.device.port.DevicePort;
 import com.ggec.earbuds.domain.device.port.DevicePreferences;
@@ -20,6 +19,7 @@ import com.ggec.earbuds.domain.device.usecase.EditDeviceControls;
 import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
+import com.ggec.earbuds.provider.lib_bluetooth.HsDevicePort;
 import com.ggec.earbuds.ui.device.DevicePage;
 import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
@@ -31,7 +31,8 @@ import java.io.File;
 
 /**
  * 设备功能装配根：唯一知道端口与目录实现的地方。
- * 接真实 SDK 时，只需把 {@link IdleDevicePort} 与 {@link EmptyDeviceControlsPort} 换成 SDK 适配器。
+ * 扫描端口已接入 {@link HsDevicePort}（同时支持 HS01 与 HS02 广播）；
+ * 协议连接与控制端口 {@link EmptyDeviceControlsPort} 待后续按设备会话接入。
  */
 public final class DeviceGraph {
 
@@ -49,7 +50,7 @@ public final class DeviceGraph {
         File directory = new File(appContext.getFilesDir(), "device");
         DeviceProfileCatalog catalog = new DeviceProfileCatalogImpl();
         this.preferences = new FileDevicePreferences(directory);
-        this.port = new IdleDevicePort();
+        this.port = new HsDevicePort(appContext);
         DeviceControlsPort controls = new EmptyDeviceControlsPort();
         this.loadProfiles = new LoadDeviceProfiles(catalog);
         this.observeDevice = new ObserveDevice(port);
@@ -68,7 +69,7 @@ public final class DeviceGraph {
     @NonNull
     public ViewModelProvider.Factory scanFactory() {
         return new Factory<>(ScanViewModel.class,
-                () -> new ScanViewModel(scanDevices, connectDevice));
+                () -> new ScanViewModel(scanDevices, connectDevice, loadProfiles));
     }
 
     @NonNull

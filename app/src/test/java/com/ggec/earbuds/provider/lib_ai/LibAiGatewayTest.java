@@ -1,4 +1,4 @@
-package com.ggec.earbuds.data.ai.gateway;
+package com.ggec.earbuds.provider.lib_ai;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;

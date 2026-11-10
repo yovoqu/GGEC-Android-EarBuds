@@ -1,4 +1,4 @@
-package com.ggec.earbuds.data.ai.gateway;
+package com.ggec.earbuds.provider.lib_ai;
 
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.yovo.lib_ai.api.YoAiClient;

@@ -44,6 +44,7 @@ dependencies {
     implementation project(':lib_bluetooth')
     implementation project(':lib_ai')
     implementation project(':biz_appupdate')
+    implementation project(':biz_ggec_hs')
 
     implementation files('libs/youi_kit-1.0.0.aar')
     implementation 'androidx.appcompat:appcompat:1.8.0'
@@ -317,4 +318,113 @@ tasks.register('checkFrameworkToastForbidden') {
 
 tasks.named('preBuild').configure {
     dependsOn 'checkFrameworkToastForbidden'
+}
+
+tasks.register('checkSingleYoLogInit') {
+    group = 'verification'
+    description = 'Only YoLogBootstrap may call YoLog.init; App must initialize YoLog via provider.'
+    doLast {
+        def offenders = []
+        def bootstrapPath = '/lib_common/src/main/java/com/yovo/lib_common/log/YoLogBootstrap.java'
+        fileTree(project.rootDir) {
+            include '**/*.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude '**/src/test/**'
+            exclude '**/src/androidTest/**'
+        }.each { file ->
+            def abs = file.absolutePath.replace('\\', '/')
+            if (abs.endsWith(bootstrapPath)) {
+                return
+            }
+            def rel = project.rootDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+            file.eachLine { line, index ->
+                if (line =~ /\bYoLog\s*\.\s*init\s*\(/) {
+                    offenders << "${rel}:${index + 1}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Direct YoLog.init is forbidden (use YoLogBootstrap.initOnce/ensureInitialized):\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkSingleYoLogInit'
+}
+
+tasks.register('checkAppSdkProviderBoundary') {
+    group = 'verification'
+    description = 'Only provider/** may import bluetooth/ai/lib_common/biz SDKs (incremental).'
+    doLast {
+        def offenders = []
+        fileTree(project.file('src/main/java')) {
+            include '**/*.java'
+        }.each { file ->
+            def rel = project.rootDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+            if (rel.contains('/provider/')) {
+                return
+            }
+            file.eachLine { line, index ->
+                def businessSdk = line =~ /^\s*import\s+com\.yovo\.(lib_bluetooth|lib_ai|biz_ggec_hs)\./
+                def libCommonCapability = (line =~ /^\s*import\s+com\.yovo\.lib_common\./) \
+                        && !(line =~ /^\s*import\s+com\.yovo\.lib_common\.event\./)
+                if (businessSdk || libCommonCapability) {
+                    offenders << "${rel}:${index + 1}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'App 非 provider 代码禁止 import 蓝牙/biz SDK（须经 provider/lib_bluetooth）:\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkAppSdkProviderBoundary'
+}
+
+tasks.register('checkAppMvvmLayers') {
+    group = 'verification'
+    description = 'Strict MVVM layering: VM no android UI; domain no android/data/ui; ui no data; data no ui.'
+    doLast {
+        def offenders = []
+        def rel = { File f -> project.rootDir.toPath().relativize(f.toPath()).toString().replace('\\', '/') }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/*ViewModel.java'
+        }.each { f -> f.eachLine { l, i ->
+            if (l =~ /^\s*import\s+android\.(view|widget|content|app)\./) {
+                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
+            } } }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/domain')) {
+            include '**/*.java'
+        }.each { f -> f.eachLine { l, i ->
+            if (l =~ /^\s*import\s+(android\.|com\.ggec\.earbuds\.(data|ui)\.)/) {
+                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
+            } } }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/*.java'
+        }.each { f -> f.eachLine { l, i ->
+            if (l =~ /^\s*import\s+com\.ggec\.earbuds\.data\./) {
+                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
+            } } }
+        fileTree(project.file('src/main/java/com/ggec/earbuds/data')) {
+            include '**/*.java'
+        }.each { f -> f.eachLine { l, i ->
+            if (l =~ /^\s*import\s+com\.ggec\.earbuds\.ui\./) {
+                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
+            } } }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('MVVM layer violation:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn 'checkAppMvvmLayers'
 }

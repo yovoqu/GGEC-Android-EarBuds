@@ -1,4 +1,4 @@
-package com.ggec.earbuds.data.ai.voice;
+package com.ggec.earbuds.provider.lib_ai;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -171,7 +171,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         listener.onOutput(output);
     }
 
-    static AiFailureKind kindOf(@Nullable YoAiErrorKind kind) {
+    public static AiFailureKind kindOf(@Nullable YoAiErrorKind kind) {
         if (kind == null) {
             return AiFailureKind.UNKNOWN;
         }

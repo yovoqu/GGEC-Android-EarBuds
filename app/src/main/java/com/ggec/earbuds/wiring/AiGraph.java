@@ -7,13 +7,14 @@ import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
+import com.ggec.earbuds.provider.lib_ai.LibAiProvider;
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
-import com.ggec.earbuds.data.ai.gateway.LibAiChatGateway;
-import com.ggec.earbuds.data.ai.gateway.LibAiClientPool;
-import com.ggec.earbuds.data.ai.gateway.LibAiModelGateway;
-import com.ggec.earbuds.data.ai.gateway.LibAiPlatformCatalog;
-import com.ggec.earbuds.data.ai.gateway.LibAiSpeedTestGateway;
-import com.ggec.earbuds.data.ai.gateway.LibAiVoiceModelGateway;
+import com.ggec.earbuds.provider.lib_ai.LibAiChatGateway;
+import com.ggec.earbuds.provider.lib_ai.LibAiClientPool;
+import com.ggec.earbuds.provider.lib_ai.LibAiModelGateway;
+import com.ggec.earbuds.provider.lib_ai.LibAiPlatformCatalog;
+import com.ggec.earbuds.provider.lib_ai.LibAiSpeedTestGateway;
+import com.ggec.earbuds.provider.lib_ai.LibAiVoiceModelGateway;
 import com.ggec.earbuds.data.ai.json.AiConversationJson;
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
 import com.ggec.earbuds.data.ai.settings.AiSettingsRepositoryImpl;
@@ -22,7 +23,7 @@ import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
 import com.ggec.earbuds.data.ai.store.EncryptedSecretStore;
 import com.ggec.earbuds.data.ai.store.FileAiDocumentStore;
 import com.ggec.earbuds.data.ai.store.SecretStore;
-import com.ggec.earbuds.data.ai.voice.RealtimeLinkAdapter;
+import com.ggec.earbuds.provider.lib_ai.RealtimeLinkAdapter;
 import com.ggec.earbuds.data.ai.voice.RealtimeVoiceSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
@@ -95,6 +96,7 @@ public final class AiGraph {
 
     public AiGraph(@NonNull Context context, @NonNull AppExecutors executors) {
         this.context = context;
+        LibAiProvider.install(context);
         AiClock clock = System::currentTimeMillis;
         this.clock = clock;
         this.voiceState = executors.voiceState();

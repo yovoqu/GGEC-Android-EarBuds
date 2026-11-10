@@ -23,6 +23,8 @@ public record ScanResult(
     }
 
     public boolean sameDevice(ScanResult other) {
-        return other != null && mac.equalsIgnoreCase(other.mac);
+        return other != null
+                && mac.equalsIgnoreCase(other.mac)
+                && modelId.equals(other.modelId);
     }
 }
