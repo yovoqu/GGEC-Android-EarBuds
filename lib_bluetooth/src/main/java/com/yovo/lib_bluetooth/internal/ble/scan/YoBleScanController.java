@@ -7,7 +7,7 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
-import com.yovo.lib_bluetooth.internal.ble.error.YoBleGattStatus;
+import com.yovo.lib_bluetooth.internal.ble.error.YoBleScanAdvertiseStatus;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
@@ -35,6 +35,8 @@ public final class YoBleScanController implements YoReleasable {
 
     private static final String MODULE = "ble-scan";
     private static final long LOST_SWEEP_INTERVAL_MS = 1_000L;
+    /** 系统把超过 30 分钟的扫描降级为 opportunistic 之前主动重启。 */
+    private static final long LONG_SCAN_RESTART_MS = 25L * 60L * 1000L;
 
     private final YoBleRuntime runtime;
     private final YoBleCapabilityInspector capabilityInspector;
@@ -48,6 +50,7 @@ public final class YoBleScanController implements YoReleasable {
 
     private long activeGeneration = 0L;
     private volatile boolean scanning = false;
+    private volatile boolean pendingStart = false;
     @Nullable
     private BleScanConfig activeConfig;
     @Nullable
@@ -58,6 +61,12 @@ public final class YoBleScanController implements YoReleasable {
     private YoTimeoutHandle delayedStartHandle;
     @Nullable
     private YoTimeoutHandle lostSweepHandle;
+    @Nullable
+    private YoTimeoutHandle batchFlushHandle;
+    @Nullable
+    private YoTimeoutHandle longScanRestartHandle;
+    private final List<BleScanResult> softwareBatch = new ArrayList<>();
+    private boolean softwareBatching;
     private volatile boolean released = false;
 
     public YoBleScanController(@NonNull YoBleRuntime runtime,
@@ -90,6 +99,14 @@ public final class YoBleScanController implements YoReleasable {
 
     @NonNull
     public Result<Void> stopScan() {
+        if (released) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.RELEASED, MODULE, "BLE client already released"));
+        }
+        if (!scanning && !pendingStart) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.ILLEGAL_STATE, MODULE, "No BLE scan is active"));
+        }
         runtime.state(() -> stopActiveInternal(true));
         return Result.success(null);
     }
@@ -101,9 +118,15 @@ public final class YoBleScanController implements YoReleasable {
                     BleErrorCode.RELEASED, MODULE, "BLE client already released"));
         }
         if (!scanning) {
-            return Result.success(null);
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.ILLEGAL_STATE, MODULE, "No BLE scan is active"));
         }
-        scanPlatform.flushPendingScanResults();
+        runtime.state(() -> {
+            if (scanning && !released) {
+                scanPlatform.flushPendingScanResults();
+                flushSoftwareBatch();
+            }
+        });
         return Result.success(null);
     }
 
@@ -151,39 +174,37 @@ public final class YoBleScanController implements YoReleasable {
             return;
         }
 
-        // 先停止旧扫描或待启动计划（含取消超时定时 handle）
-        stopActiveInternal(activeObserver != null);
+        long delayMs = config.throttlePolicy() == BleScanThrottlePolicy.UNRESTRICTED
+                ? 0L : throttleGuard.requiredDelayMillis();
+        if (delayMs > 0L && config.throttlePolicy() == BleScanThrottlePolicy.FAIL_FAST) {
+            BleFailure throttled = YoBleErrorMapper.failure(
+                    BleErrorCode.SCAN_THROTTLED, MODULE,
+                    "BLE scan throttled (max starts within 30s reached), retry after "
+                            + delayMs + "ms",
+                    null, YoBleScanAdvertiseStatus.SCAN_FAILED_SCANNING_TOO_FREQUENTLY,
+                    null, null, "Wait " + delayMs + "ms before calling scan()");
+            timeline.record(MODULE, "scan throttled (FAIL_FAST), waitMs=" + delayMs);
+            emitFailure(observer, throttled);
+            return;
+        }
+
+        stopActiveInternal(scanning);
 
         activeGeneration = generation;
         activeConfig = config;
         activeObserver = observer;
         callbackEmulator.reset();
 
-        long delayMs = config.throttlePolicy() == BleScanThrottlePolicy.UNRESTRICTED
-                ? 0L : throttleGuard.requiredDelayMillis();
         if (delayMs > 0L) {
-            if (config.throttlePolicy() == BleScanThrottlePolicy.FAIL_FAST) {
-                activeConfig = null;
-                activeObserver = null;
-                BleFailure throttled = YoBleErrorMapper.failure(
-                        BleErrorCode.SCAN_THROTTLED, MODULE,
-                        "BLE scan throttled (max starts within 30s reached), retry after "
-                                + delayMs + "ms",
-                        null, YoBleGattStatus.SCAN_FAILED_SCANNING_TOO_FREQUENTLY,
-                        null, null, "Wait " + delayMs + "ms before calling scan()");
-                timeline.record(MODULE, "scan throttled (FAIL_FAST), waitMs=" + delayMs);
-                emitFailure(observer, throttled);
-                return;
-            }
-            // DELAY_UNTIL_WINDOW_FREE：延迟等待滑窗空出再发起真实扫描
-            scanning = true;
+            pendingStart = true;
             timeline.record(MODULE, "scan delayed by throttle guard: waitMs=" + delayMs);
             delayedStartHandle = runtime.scheduler().schedule(
                     () -> runtime.state(() -> {
-                        if (!scanning || released || activeGeneration != generation) {
+                        if (!pendingStart || released || activeGeneration != generation) {
                             return;
                         }
                         delayedStartHandle = null;
+                        pendingStart = false;
                         launchPlatformScan(generation, config, observer);
                     }),
                     delayMs);
@@ -196,54 +217,133 @@ public final class YoBleScanController implements YoReleasable {
     private void launchPlatformScan(long generation,
                                     @NonNull BleScanConfig config,
                                     @NonNull BleScanObserver observer) {
+        launchPlatformScan(generation, config, observer, true);
+    }
+
+    private void launchPlatformScan(long generation,
+                                    @NonNull BleScanConfig config,
+                                    @NonNull BleScanObserver observer,
+                                    boolean firstStart) {
         if (released || activeGeneration != generation) {
             return;
         }
-        throttleGuard.recordScanStarted();
-        String platformError = scanPlatform.startPlatformScan(config,
-                new YoBleScanPlatform.PlatformCallback() {
-                    @Override
-                    public void onScanResult(@NonNull BleScanResult result) {
-                        runtime.state(() -> handlePlatformResult(generation, result));
-                    }
+        YoBleScanPlatform.PlatformCallback callback = new YoBleScanPlatform.PlatformCallback() {
+            @Override
+            public void onScanResult(@NonNull BleScanResult result) {
+                runtime.state(() -> handlePlatformResult(generation, result));
+            }
 
-                    @Override
-                    public void onBatchScanResults(@NonNull List<BleScanResult> results) {
-                        runtime.state(() -> handlePlatformBatch(generation, results));
-                    }
+            @Override
+            public void onBatchScanResults(@NonNull List<BleScanResult> results) {
+                runtime.state(() -> handlePlatformBatch(generation, results));
+            }
 
-                    @Override
-                    public void onPlatformScanFailed(int rawErrorCode, @Nullable String detail) {
-                        runtime.state(() -> handlePlatformFailure(generation, rawErrorCode, detail));
-                    }
-                });
-
-        if (platformError != null) {
+            @Override
+            public void onPlatformScanFailed(int rawErrorCode, @Nullable String detail) {
+                runtime.state(() -> handlePlatformFailure(generation, rawErrorCode, detail));
+            }
+        };
+        softwareBatching = config.reportDelayMillis() > 0L && !scanPlatform.supportsHardwareBatching();
+        BleScanConfig platformConfig = softwareBatching ? config.withReportDelayMillis(0L) : config;
+        YoBleScanPlatform.StartResult platformResult = scanPlatform.startPlatformScan(platformConfig, callback);
+        if (!platformResult.success
+                && !softwareBatching
+                && config.reportDelayMillis() > 0L
+                && platformResult.rawCode == YoBleScanAdvertiseStatus.SCAN_FAILED_FEATURE_UNSUPPORTED) {
+            softwareBatching = true;
+            platformResult = scanPlatform.startPlatformScan(config.withReportDelayMillis(0L), callback);
+        }
+        if (!platformResult.success) {
+            softwareBatching = false;
             scanning = false;
+            pendingStart = false;
             activeConfig = null;
             activeObserver = null;
+            BleErrorCode code = platformResult.rawCode == 0
+                    ? BleErrorCode.SCAN_START_FAILED
+                    : YoBleScanAdvertiseStatus.toScanErrorCode(platformResult.rawCode);
             BleFailure failure = YoBleErrorMapper.failure(
-                    BleErrorCode.SCAN_START_FAILED, MODULE, platformError);
-            timeline.record(MODULE, "platform startScan error: " + platformError);
+                    code, MODULE,
+                    platformResult.detail != null ? platformResult.detail : "platform startScan failed",
+                    null, platformResult.rawCode, null, null, null);
+            timeline.record(MODULE, "platform startScan error: " + code + " " + platformResult.detail);
             emitFailure(observer, failure);
             return;
         }
 
+        if (firstStart) {
+            throttleGuard.recordScanStarted();
+        }
         scanning = true;
+        pendingStart = false;
         timeline.record(MODULE, "scan started gen=" + generation
                 + ", filters=" + config.filters().size()
-                + ", timeoutMs=" + config.timeoutMillis());
-        runtime.callback(observer::onScanStarted);
+                + ", timeoutMs=" + config.timeoutMillis()
+                + ", softwareBatch=" + softwareBatching
+                + ", restart=" + !firstStart);
+        if (firstStart) {
+            runtime.callback(observer::onScanStarted);
+            if (config.timeoutMillis() > 0L) {
+                timeoutHandle = runtime.scheduler().schedule(
+                        () -> runtime.state(() -> stopGeneration(generation, true)),
+                        config.timeoutMillis());
+            }
+            if (config.callbackType() == BleScanCallbackType.MATCH_LOST
+                    || config.callbackType() == BleScanCallbackType.FIRST_MATCH_AND_LOST) {
+                scheduleLostSweep(generation);
+            }
+        }
+        armLongScanRestart(generation, config);
+        if (softwareBatching) {
+            scheduleSoftwareFlush(generation);
+        }
+    }
 
-        if (config.timeoutMillis() > 0L) {
-            timeoutHandle = runtime.scheduler().schedule(
-                    () -> runtime.state(() -> stopGeneration(generation, true)),
-                    config.timeoutMillis());
+    private void armLongScanRestart(long generation, @NonNull BleScanConfig config) {
+        if (longScanRestartHandle != null) {
+            longScanRestartHandle.cancel();
         }
-        if (config.callbackType() == BleScanCallbackType.MATCH_LOST
-                || config.callbackType() == BleScanCallbackType.FIRST_MATCH_AND_LOST) {
-            scheduleLostSweep(generation);
+        long timeout = config.timeoutMillis();
+        if (timeout > 0L && timeout <= LONG_SCAN_RESTART_MS) {
+            longScanRestartHandle = null;
+            return;
         }
+        longScanRestartHandle = runtime.stateDelayed(() -> restartLongScan(generation), LONG_SCAN_RESTART_MS);
+    }
+
+    private void restartLongScan(long generation) {
+        if (!scanning || released || activeGeneration != generation || activeConfig == null || activeObserver == null) {
+            return;
+        }
+        try {
+            scanPlatform.stopPlatformScan();
+        } catch (Throwable ignored) {
+        }
+        launchPlatformScan(generation, activeConfig, activeObserver, false);
+    }
+
+    private void scheduleSoftwareFlush(long generation) {
+        if (!softwareBatching || activeConfig == null) {
+            return;
+        }
+        long delay = Math.max(1L, activeConfig.reportDelayMillis());
+        batchFlushHandle = runtime.stateDelayed(() -> {
+            if (!softwareBatching || !scanning || activeGeneration != generation) {
+                return;
+            }
+            flushSoftwareBatch();
+            scheduleSoftwareFlush(generation);
+        }, delay);
+    }
+
+    private void flushSoftwareBatch() {
+        if (softwareBatch.isEmpty() || activeObserver == null) {
+            return;
+        }
+        List<BleScanResult> copy = new ArrayList<>(softwareBatch);
+        softwareBatch.clear();
+        BleScanObserver observer = activeObserver;
+        runtime.callback(() -> observer.onBatchScanResults(copy));
     }
 
     private void scheduleLostSweep(long generation) {
@@ -275,6 +375,10 @@ public final class YoBleScanController implements YoReleasable {
         snapshotStore.recordScanResult(result);
         List<BleScanResult> emitted = callbackEmulator.onResult(
                 activeConfig, result, clockMillis.getAsLong());
+        if (softwareBatching) {
+            softwareBatch.addAll(emitted);
+            return;
+        }
         BleScanObserver observer = activeObserver;
         if (observer != null && !emitted.isEmpty()) {
             for (BleScanResult item : emitted) {
@@ -296,6 +400,10 @@ public final class YoBleScanController implements YoReleasable {
             snapshotStore.recordScanResult(r);
             filtered.addAll(callbackEmulator.onResult(activeConfig, r, now));
         }
+        if (softwareBatching) {
+            softwareBatch.addAll(filtered);
+            return;
+        }
         BleScanObserver observer = activeObserver;
         if (observer != null && !filtered.isEmpty()) {
             runtime.callback(() -> observer.onBatchScanResults(filtered));
@@ -303,12 +411,12 @@ public final class YoBleScanController implements YoReleasable {
     }
 
     private void handlePlatformFailure(long generation, int rawErrorCode, @Nullable String detail) {
-        if (!scanning || activeGeneration != generation) {
+        if (released || !scanning || activeGeneration != generation) {
             return;
         }
         BleScanObserver observer = activeObserver;
         stopActiveInternal(false);
-        BleErrorCode code = YoBleGattStatus.toScanErrorCode(rawErrorCode);
+        BleErrorCode code = YoBleScanAdvertiseStatus.toScanErrorCode(rawErrorCode);
         BleFailure failure = YoBleErrorMapper.failure(
                 code, MODULE,
                 detail != null ? detail : ("Platform BLE scan failed: " + rawErrorCode),
@@ -339,21 +447,38 @@ public final class YoBleScanController implements YoReleasable {
             lostSweepHandle.cancel();
             lostSweepHandle = null;
         }
-        if (!scanning) {
+        if (batchFlushHandle != null) {
+            batchFlushHandle.cancel();
+            batchFlushHandle = null;
+        }
+        if (longScanRestartHandle != null) {
+            longScanRestartHandle.cancel();
+            longScanRestartHandle = null;
+        }
+        boolean wasScanning = scanning;
+        pendingStart = false;
+        scanning = false;
+        if (!wasScanning && activeObserver == null) {
             return;
         }
-        scanning = false;
         BleScanObserver observer = activeObserver;
+        if (wasScanning) {
+            flushSoftwareBatch();
+        }
+        softwareBatching = false;
+        softwareBatch.clear();
         activeConfig = null;
         activeObserver = null;
         callbackEmulator.reset();
-        try {
-            scanPlatform.stopPlatformScan();
-        } catch (Throwable ignored) {
-        }
-        timeline.record(MODULE, "scan stopped gen=" + activeGeneration);
-        if (notifyStopped && observer != null) {
-            runtime.callback(observer::onScanStopped);
+        if (wasScanning) {
+            try {
+                scanPlatform.stopPlatformScan();
+            } catch (Throwable ignored) {
+            }
+            timeline.record(MODULE, "scan stopped gen=" + activeGeneration);
+            if (notifyStopped && observer != null) {
+                runtime.callback(observer::onScanStopped);
+            }
         }
     }
 

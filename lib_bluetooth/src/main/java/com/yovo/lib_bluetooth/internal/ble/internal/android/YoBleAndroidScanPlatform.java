@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.ble.internal.android.compat.YoBleScanCompat;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
+import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform.StartResult;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
 import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
@@ -44,17 +45,23 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
         this.adapterProvider = adapterProvider;
     }
 
-    @Nullable
     @Override
-    public String startPlatformScan(@NonNull BleScanConfig config,
-                                    @NonNull PlatformCallback callback) {
+    public boolean supportsHardwareBatching() {
+        BluetoothAdapter adapter = adapterProvider.adapter();
+        return adapter != null && adapter.isOffloadedScanBatchingSupported();
+    }
+
+    @NonNull
+    @Override
+    public YoBleScanPlatform.StartResult startPlatformScan(@NonNull BleScanConfig config,
+                                         @NonNull PlatformCallback callback) {
         BluetoothAdapter adapter = adapterProvider.adapter();
         if (adapter == null || !adapter.isEnabled()) {
-            return "Bluetooth adapter unavailable or disabled";
+            return StartResult.failed(0, "Bluetooth adapter unavailable or disabled");
         }
         BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
         if (scanner == null) {
-            return "BluetoothLeScanner unavailable";
+            return StartResult.failed(0, "BluetoothLeScanner unavailable");
         }
 
         synchronized (scanLock) {
@@ -112,23 +119,23 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
                 } else {
                     scanner.startScan(filters, settings, androidCallback);
                 }
-                return null;
+                return StartResult.ok();
             } catch (IllegalArgumentException unsupportedParam) {
                 YoBluetoothLogger.w(TAG, "Primary startScan rejected args, falling back to software filter scan",
                         unsupportedParam);
                 try {
                     ScanSettings fallbackSettings = YoBleScanCompat.toFallbackScanSettings(config);
                     scanner.startScan(null, fallbackSettings, androidCallback);
-                    return null;
+                    return StartResult.ok();
                 } catch (Throwable fallbackErr) {
                     activeCallback = null;
                     activeScanner = null;
-                    return "BluetoothLeScanner.startScan failed: " + fallbackErr.getMessage();
+                    return StartResult.failed(0, "BluetoothLeScanner.startScan failed: " + fallbackErr.getMessage());
                 }
             } catch (Throwable t) {
                 activeCallback = null;
                 activeScanner = null;
-                return "BluetoothLeScanner.startScan failed: " + t.getMessage();
+                return StartResult.failed(0, "BluetoothLeScanner.startScan failed: " + t.getMessage());
             }
         }
     }
