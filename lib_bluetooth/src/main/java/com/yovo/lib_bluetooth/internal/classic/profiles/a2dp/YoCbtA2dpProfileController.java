@@ -2,7 +2,7 @@ package com.yovo.lib_bluetooth.internal.classic.profiles.a2dp;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -44,7 +44,7 @@ public final class YoCbtA2dpProfileController {
         try {
             return YoResult.success(profilePort.getConnectedDevices());
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取已连接设备失败", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取已连接设备失败", e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_A2DP_STATE_QUERY_FAILED,
                     "Failed to list connected devices: " + e.getMessage(),
@@ -72,7 +72,7 @@ public final class YoCbtA2dpProfileController {
                     YoCbtProfileStateSource.ANDROID_PROFILE_PROXY);
             return YoResult.success(deviceState);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取设备状态失败，设备 " + deviceId.value(), e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取设备状态失败，设备 " + deviceId.value(), e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_A2DP_STATE_QUERY_FAILED,
                     "Failed to query device state: " + e.getMessage(),
@@ -105,7 +105,7 @@ public final class YoCbtA2dpProfileController {
             try {
                 observer.onA2dpStateChanged(state);
             } catch (Exception e) {
-                YoBluetoothLogger.e(TAG, "通知期间观察者抛出异常", e);
+                BluetoothDiagnosticsBus.get().recordException(TAG, "通知期间观察者抛出异常", e);
             }
         }
     }

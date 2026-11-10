@@ -2,7 +2,6 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles;
 
 import android.annotation.SuppressLint;
 
-import android.bluetooth.BluetoothA2dp;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothProfile;
@@ -10,7 +9,7 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtAddressType;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceType;
@@ -55,7 +54,7 @@ public final class YoCbtAndroidProfileBroadcastHandler {
         int prevState = intent.getIntExtra(BluetoothProfile.EXTRA_PREVIOUS_STATE,
                 BluetoothProfile.STATE_DISCONNECTED);
 
-        YoBluetoothLogger.d(TAG, "A2DP 状态变化，设备 " + device.getAddress()
+        YoBtLogger.d(TAG, "A2DP 状态变化，设备 " + device.getAddress()
                 + "：" + prevState + " -> " + state);
 
         YoCbtDeviceIdentity identity = mapIdentity(device);
@@ -76,7 +75,7 @@ public final class YoCbtAndroidProfileBroadcastHandler {
         int prevState = intent.getIntExtra(BluetoothProfile.EXTRA_PREVIOUS_STATE,
                 BluetoothProfile.STATE_DISCONNECTED);
 
-        YoBluetoothLogger.d(TAG, "耳机状态变化，设备 " + device.getAddress()
+        YoBtLogger.d(TAG, "耳机状态变化，设备 " + device.getAddress()
                 + "：" + prevState + " -> " + state);
 
         applier.applyHeadsetConnection(mapIdentity(device), mapConnectionState(state), observers);
@@ -91,7 +90,7 @@ public final class YoCbtAndroidProfileBroadcastHandler {
                 BluetoothHeadset.STATE_AUDIO_DISCONNECTED);
         YoCbtHeadsetAudioState audioState = mapAudioState(audioStateInt);
 
-        YoBluetoothLogger.d(TAG, "耳机音频状态变化，设备 " + device.getAddress()
+        YoBtLogger.d(TAG, "耳机音频状态变化，设备 " + device.getAddress()
                 + "：" + audioState);
 
         applier.applyHeadsetAudio(mapIdentity(device), audioState, observers);

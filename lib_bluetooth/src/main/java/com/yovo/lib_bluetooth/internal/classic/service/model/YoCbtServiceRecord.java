@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.internal.classic.service.model;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import java.util.Objects;
 import java.util.UUID;

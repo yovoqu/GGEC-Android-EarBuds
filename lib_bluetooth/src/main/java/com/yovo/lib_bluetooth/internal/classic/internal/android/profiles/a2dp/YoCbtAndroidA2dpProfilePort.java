@@ -8,7 +8,7 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -96,7 +96,7 @@ public final class YoCbtAndroidA2dpProfilePort implements YoCbtA2dpProfilePort {
             }
             return YoResult.success(YoCbtDeviceId.fromAddress(activeDevice.getAddress()));
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "查询当前活跃设备失败", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "查询当前活跃设备失败", e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_A2DP_STATE_QUERY_FAILED,
                     "Active device query failed: " + e.getMessage(),

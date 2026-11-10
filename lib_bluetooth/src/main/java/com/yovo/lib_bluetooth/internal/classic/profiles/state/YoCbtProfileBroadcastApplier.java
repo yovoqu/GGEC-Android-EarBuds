@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.classic.profiles.state;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshot;
@@ -15,7 +15,7 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtHeadsetAudi
 import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtHeadsetDeviceState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtHeadsetProfileController;
 import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtScoAudioStateTracker;
-import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEventHub;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 
@@ -37,7 +37,7 @@ public final class YoCbtProfileBroadcastApplier {
     @Nullable
     private final YoCbtHeadsetProfileController headsetController;
     private final YoCbtScoAudioStateTracker scoAudioStateTracker;
-    private final YoCbtEventHub eventHub;
+    private final BluetoothEventBus eventBus;
     private final YoCbtRuntime runtime;
 
     public YoCbtProfileBroadcastApplier(
@@ -45,13 +45,13 @@ public final class YoCbtProfileBroadcastApplier {
             @Nullable YoCbtA2dpProfileController a2dpController,
             @Nullable YoCbtHeadsetProfileController headsetController,
             @NonNull YoCbtScoAudioStateTracker scoAudioStateTracker,
-            @NonNull YoCbtEventHub eventHub,
+            @NonNull BluetoothEventBus eventBus,
             @NonNull YoCbtRuntime runtime) {
         this.stateRepository = stateRepository;
         this.a2dpController = a2dpController;
         this.headsetController = headsetController;
         this.scoAudioStateTracker = scoAudioStateTracker;
-        this.eventHub = eventHub;
+        this.eventBus = eventBus;
         this.runtime = runtime;
     }
 
@@ -168,13 +168,13 @@ public final class YoCbtProfileBroadcastApplier {
 
     private void notifyObservers(@NonNull List<YoCbtProfileStateObserver> observers,
                                  @NonNull YoCbtDeviceProfileState state) {
-        eventHub.publish(YoCbtEvents.PROFILE_STATE_CHANGED, state);
+        eventBus.publish(YoCbtEvents.PROFILE_STATE_CHANGED, state);
         for (YoCbtProfileStateObserver observer : observers) {
             runtime.callback(() -> {
                 try {
                     observer.onProfileStateChanged(state);
                 } catch (Exception e) {
-                    YoBluetoothLogger.e(TAG, "观察者抛出异常", e);
+                    BluetoothDiagnosticsBus.get().recordException(TAG, "观察者抛出异常", e);
                 }
             });
         }

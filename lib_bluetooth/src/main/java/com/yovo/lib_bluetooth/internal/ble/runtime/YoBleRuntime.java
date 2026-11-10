@@ -7,7 +7,9 @@ import com.yovo.lib_bluetooth.internal.common.concurrency.YoDispatcher;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoExecutors;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoCloseGuard;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
 
@@ -55,6 +57,8 @@ public final class YoBleRuntime implements YoReleasable {
     private final ScheduledExecutorService schedulerExecutor;
     @NonNull
     private final YoTaskScheduler scheduler;
+    @NonNull
+    private final BluetoothEventBus eventBus = new BluetoothEventBus();
     /** 已提交但尚未执行完的 state 任务数，仅用于关闭阶段判断是否排空。 */
     private final AtomicInteger pendingStateTasks = new AtomicInteger();
     /** 当前 state 线程；由线程工厂在创建线程时同步写入。 */
@@ -133,6 +137,16 @@ public final class YoBleRuntime implements YoReleasable {
         return scheduler;
     }
 
+    @NonNull
+    public BluetoothEventBus eventBus() {
+        return eventBus;
+    }
+
+    @NonNull
+    public BluetoothDiagnosticsBus diagnostics() {
+        return BluetoothDiagnosticsBus.get();
+    }
+
     public boolean isStateThread() {
         return Thread.currentThread() == stateThread;
     }
@@ -155,7 +169,7 @@ public final class YoBleRuntime implements YoReleasable {
         if (!closeGuard.markReleased()) {
             return;
         }
-        YoBluetoothLogger.i(TAG, "YoBleRuntime 进入 CLOSING，等待 state 线程排空");
+        YoBtLogger.i(TAG, "YoBleRuntime 进入 CLOSING，等待 state 线程排空");
         state(() -> finishRelease(0));
     }
 
@@ -163,7 +177,7 @@ public final class YoBleRuntime implements YoReleasable {
         try {
             task.run();
         } catch (Throwable t) {
-            YoBluetoothLogger.e(TAG, "state 线程任务异常（已隔离）", t);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "state 线程任务异常（已隔离）", t);
         } finally {
             pendingStateTasks.decrementAndGet();
         }
@@ -178,13 +192,14 @@ public final class YoBleRuntime implements YoReleasable {
             state(() -> finishRelease(round + 1));
             return;
         }
+        eventBus.clear();
         schedulerExecutor.shutdownNow();
         ioExecutor.shutdown();
         if (callbackExecutor != null) {
             callbackExecutor.shutdown();
         }
         stateExecutor.shutdown();
-        YoBluetoothLogger.i(TAG, "YoBleRuntime 已 CLOSED");
+        YoBtLogger.i(TAG, "YoBleRuntime 已 CLOSED");
     }
 
     @NonNull

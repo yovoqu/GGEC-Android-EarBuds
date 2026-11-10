@@ -8,7 +8,7 @@ import android.content.Intent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClient;
@@ -33,9 +33,7 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommand;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandObserver;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandRequest;
-import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandResult;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandSession;
-import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandSessionRegistry;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryConfig;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryObserver;
@@ -91,7 +89,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     public YoCbtAndroidClient(@NonNull Context context, @NonNull CbtInternalClientConfig clientConfig) {
         this.modules = YoCbtAndroidModuleGraph.create(context, clientConfig, this::collectProfileObservers);
-        YoBluetoothLogger.i(TAG, "YoCbtAndroidClient 已创建，SDK=" + android.os.Build.VERSION.SDK_INT);
+        YoBtLogger.i(TAG, "YoCbtAndroidClient 已创建，SDK=" + android.os.Build.VERSION.SDK_INT);
 
         modules.bondStateReceiver.addObserver(snapshot -> {
             for (YoCbtBondStateObserver o : bondObservers) o.onBondStateChanged(snapshot);
@@ -105,7 +103,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     }
 
     private void wireEventSubscriptions() {
-        modules.runtime.eventHub().subscribe(YoCbtEvents.ACL_LINK_CHANGED, payload -> {
+        modules.runtime.eventBus().subscribe(YoCbtEvents.ACL_LINK_CHANGED, payload -> {
             if (!(payload instanceof YoCbtDeviceSnapshot)) return;
             YoCbtDeviceSnapshot snapshot = (YoCbtDeviceSnapshot) payload;
             if (snapshot.getAclLinkState() != YoCbtAclLinkState.DISCONNECTED) return;
@@ -127,21 +125,21 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     public CbtInternalOperationHandle discover(@NonNull YoCbtDiscoveryConfig config,
                                           @NonNull YoCbtDiscoveryObserver observer) {
         if (released) {
-            YoBluetoothLogger.w(TAG, "客户端已释放，无法开始发现");
+            YoBtLogger.w(TAG, "客户端已释放，无法开始发现");
             modules.runtime.callback(() -> observer.onDiscoveryFailed(
                     failure(YoCbtErrorCode.YO_CBT_RELEASED, "Classic client released", null)));
             return new CbtInternalOperationHandle(nextOperationId("discovery"), () -> {});
         }
         String id = nextOperationId("discovery");
-        YoBluetoothLogger.i(TAG, "开始经典蓝牙发现，操作=" + id);
+        YoBtLogger.i(TAG, "开始经典蓝牙发现，操作=" + id);
         YoResult<Void> started = modules.discoveryController.start(config, observer);
         if (started.isFailure()) {
-            YoBluetoothLogger.w(TAG, "经典蓝牙发现启动失败");
+            YoBtLogger.w(TAG, "经典蓝牙发现启动失败");
             YoCbtFailure discoveryFailure = (YoCbtFailure) started.getFailure();
             modules.runtime.callback(() -> observer.onDiscoveryFailed(discoveryFailure));
             return new CbtInternalOperationHandle(id, () -> {});
         }
-        YoBluetoothLogger.d(TAG, "经典蓝牙发现已启动，操作=" + id);
+        YoBtLogger.d(TAG, "经典蓝牙发现已启动，操作=" + id);
         return new CbtInternalOperationHandle(id, modules.discoveryController::stop);
     }
 
@@ -159,19 +157,19 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     @Override
     public YoResult<Void> createBond(@NonNull YoCbtDeviceId deviceId) {
-        YoBluetoothLogger.i(TAG, "发起配对，设备=" + deviceId.value());
+        YoBtLogger.i(TAG, "发起配对，设备=" + deviceId.value());
         return modules.bondOperationController.createBond(modules.appContext, deviceId);
     }
 
     @Override
     public YoResult<Void> cancelBondProcess(@NonNull YoCbtDeviceId deviceId) {
-        YoBluetoothLogger.i(TAG, "取消配对流程，设备=" + deviceId.value());
+        YoBtLogger.i(TAG, "取消配对流程，设备=" + deviceId.value());
         return modules.bondOperationController.cancelBondProcess(deviceId);
     }
 
     @Override
     public YoResult<Void> removeBond(@NonNull YoCbtDeviceId deviceId) {
-        YoBluetoothLogger.i(TAG, "解除配对，设备=" + deviceId.value());
+        YoBtLogger.i(TAG, "解除配对，设备=" + deviceId.value());
         return modules.bondOperationController.removeBond(deviceId);
     }
 
@@ -235,12 +233,12 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
                                                   @NonNull YoCbtServiceDiscoveryConfig config,
                                                   @NonNull YoCbtServiceDiscoveryObserver observer) {
         if (released) {
-            YoBluetoothLogger.w(TAG, "客户端已释放，无法执行 SDP 服务发现");
+            YoBtLogger.w(TAG, "客户端已释放，无法执行 SDP 服务发现");
             modules.runtime.callback(() -> observer.onServiceDiscoveryFailed(
                     failure(YoCbtErrorCode.YO_CBT_RELEASED, "Classic client released", null)));
             return new CbtInternalOperationHandle(nextOperationId("service"), () -> {});
         }
-        YoBluetoothLogger.i(TAG, "开始 SDP 服务发现，设备=" + deviceId.value());
+        YoBtLogger.i(TAG, "开始 SDP 服务发现，设备=" + deviceId.value());
         return modules.serviceDiscoveryClient.discover(deviceId, config, observer);
     }
 
@@ -366,13 +364,13 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
                                            @NonNull YoCbtSppConnectionObserver observer) {
         String opId = nextOperationId("spp");
         if (released) {
-            YoBluetoothLogger.w(TAG, "客户端已释放，无法连接 SPP，设备=" + deviceId.value());
+            YoBtLogger.w(TAG, "客户端已释放，无法连接 SPP，设备=" + deviceId.value());
             return new CbtInternalOperationHandle(opId, () -> {});
         }
 
         YoCbtErrorCode permissionDenied = sppConnectPermissionDenied();
         if (permissionDenied != null) {
-            YoBluetoothLogger.w(TAG, "SPP 连接缺少权限 " + permissionDenied
+            YoBtLogger.w(TAG, "SPP 连接缺少权限 " + permissionDenied
                     + "，设备=" + deviceId.value());
             failSppStart(opId, deviceId, endpoint, observer, new YoCbtFailure(
                     permissionDenied,
@@ -384,7 +382,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
             return new CbtInternalOperationHandle(opId, () -> {});
         }
 
-        YoBluetoothLogger.i(TAG, "开始 SPP 连接，设备=" + deviceId.value()
+        YoBtLogger.i(TAG, "开始 SPP 连接，设备=" + deviceId.value()
                 + "，端点=" + endpoint + "，操作=" + opId);
         modules.discoveryController.cancelForConnect();
 
@@ -394,7 +392,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
                 resolveSdpEndpoints(deviceId), resolveRequestedChannel(deviceId, endpoint));
 
         if (connectResult.isFailure()) {
-            YoBluetoothLogger.w(TAG, "SPP 连接启动失败，设备=" + deviceId.value()
+            YoBtLogger.w(TAG, "SPP 连接启动失败，设备=" + deviceId.value()
                     + "，端点=" + endpoint);
             failSppStart(opId, deviceId, endpoint, observer,
                     (YoCbtFailure) connectResult.getFailure());
@@ -402,7 +400,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
         }
 
         YoCbtSppConnectionId connectionId = connectResult.getValue();
-        YoBluetoothLogger.i(TAG, "SPP 连接已发起，连接 ID=" + connectionId);
+        YoBtLogger.i(TAG, "SPP 连接已发起，连接 ID=" + connectionId);
         return new CbtInternalOperationHandle(opId, () -> {
             removeCommandSession(connectionId);
             modules.sppManager.cancelConnect(connectionId);
@@ -494,14 +492,14 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     @Override
     public YoResult<Void> disconnectSpp(@NonNull YoCbtSppConnectionId connectionId) {
-        YoBluetoothLogger.i(TAG, "断开 SPP 连接，连接 ID=" + connectionId);
+        YoBtLogger.i(TAG, "断开 SPP 连接，连接 ID=" + connectionId);
         removeCommandSession(connectionId);
         return modules.sppManager.disconnect(connectionId);
     }
 
     @Override
     public YoResult<Void> disconnectSppByDevice(@NonNull YoCbtDeviceId deviceId) {
-        YoBluetoothLogger.i(TAG, "按设备断开 SPP 连接，设备=" + deviceId.value());
+        YoBtLogger.i(TAG, "按设备断开 SPP 连接，设备=" + deviceId.value());
         YoResult<List<YoCbtSppConnectionSnapshot>> snapshots = getSppConnections(deviceId);
         if (snapshots.isSuccess() && snapshots.getValue() != null) {
             for (YoCbtSppConnectionSnapshot s : snapshots.getValue()) {
@@ -513,14 +511,14 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     @Override
     public YoResult<Void> disconnectAllSpp() {
-        YoBluetoothLogger.i(TAG, "断开全部 SPP 连接");
+        YoBtLogger.i(TAG, "断开全部 SPP 连接");
         clearCommandSessions();
         return modules.sppManager.disconnectAll();
     }
 
     @Override
     public YoResult<Void> send(@NonNull YoCbtSppConnectionId connectionId, @NonNull byte[] data) {
-        YoBluetoothLogger.d(TAG, "发送 SPP 数据，连接 ID=" + connectionId
+        YoBtLogger.d(TAG, "发送 SPP 数据，连接 ID=" + connectionId
                 + "，长度=" + data.length);
         return modules.sppManager.send(connectionId, data);
     }
@@ -580,9 +578,9 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     public void release() {
         if (released) return;
         released = true;
-        YoBluetoothLogger.i(TAG, "正在释放 YoCbtAndroidClient");
+        YoBtLogger.i(TAG, "正在释放 YoCbtAndroidClient");
         modules.releaseAll();
-        YoBluetoothLogger.i(TAG, "YoCbtAndroidClient 释放完成");
+        YoBtLogger.i(TAG, "YoCbtAndroidClient 释放完成");
     }
 
     // ── Profile observer wiring ──────────────────────────────────
@@ -678,7 +676,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     }
 
     private void notifyProfileStateChanged(@NonNull YoCbtDeviceProfileState state) {
-        modules.runtime.eventHub().publish(YoCbtEvents.PROFILE_STATE_CHANGED, state);
+        modules.runtime.eventBus().publish(YoCbtEvents.PROFILE_STATE_CHANGED, state);
         List<YoCbtProfileStateObserver> observers;
         synchronized (profileObservers) {
             List<YoCbtProfileStateObserver> registered =

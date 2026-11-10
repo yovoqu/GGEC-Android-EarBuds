@@ -1,4 +1,4 @@
-package com.yovo.lib_bluetooth.internal.classic.runtime;
+package com.yovo.lib_bluetooth.internal.common.diagnostics;
 
 import androidx.annotation.NonNull;
 
@@ -8,15 +8,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * @author tingfeng.yang
- * @date 2026-06-18
- * @description yocbt 运行时进程内事件总线，按事件类型发布与订阅跨模块消息。
+ * 蓝牙模块统一运行时事件总线（BLE 与 Classic 共用）。
+ *
+ * <p>按事件类型（字符串常量）发布 / 订阅跨组件、跨能力域的进程内事件。
+ * 由各运行时（{@code YoCbtRuntime} / {@code YoBleRuntime}）持有独立实例，随运行时释放而清空。
+ * 本类取代原 Classic 私有的 {@code YoCbtEventHub}，消除重复实现并让 BLE 具备对称的事件通道。</p>
  */
-public final class YoCbtEventHub {
+public final class BluetoothEventBus {
 
     private final ConcurrentHashMap<String, CopyOnWriteArrayList<Consumer<Object>>> listeners;
 
-    public YoCbtEventHub() {
+    public BluetoothEventBus() {
         this.listeners = new ConcurrentHashMap<>();
     }
 
@@ -28,7 +30,9 @@ public final class YoCbtEventHub {
      */
     public void publish(@NonNull String eventType, Object payload) {
         CopyOnWriteArrayList<Consumer<Object>> subscribers = listeners.get(eventType);
-        if (subscribers == null || subscribers.isEmpty()) return;
+        if (subscribers == null || subscribers.isEmpty()) {
+            return;
+        }
         for (Consumer<Object> listener : subscribers) {
             listener.accept(payload);
         }
@@ -46,9 +50,6 @@ public final class YoCbtEventHub {
 
     /**
      * 取消订阅。使用引用相等性，必须传入与订阅时相同的 {@code Consumer} 实例。
-     *
-     * @param eventType 要取消订阅的事件类型
-     * @param listener  要移除的消费者
      */
     public void unsubscribe(@NonNull String eventType, @NonNull Consumer<Object> listener) {
         CopyOnWriteArrayList<Consumer<Object>> subscribers = listeners.get(eventType);
@@ -60,27 +61,21 @@ public final class YoCbtEventHub {
         }
     }
 
-    /**
-     * 移除所有事件类型的全部订阅者。
-     */
+    /** 移除所有事件类型的全部订阅者。 */
     public void clear() {
         listeners.clear();
     }
 
-    /**
-     * 返回当前有活跃订阅的事件类型数量。
-     */
+    /** 返回当前有活跃订阅的事件类型数量。 */
     public int eventTypeCount() {
         return listeners.size();
     }
 
-    /**
-     * 返回所有事件类型的订阅者总数。
-     */
+    /** 返回所有事件类型的订阅者总数。 */
     public int subscriberCount() {
         int count = 0;
-        for (CopyOnWriteArrayList<Consumer<Object>> subscribers : listeners.values()) {
-            count += subscribers.size();
+        for (Map.Entry<String, CopyOnWriteArrayList<Consumer<Object>>> entry : listeners.entrySet()) {
+            count += entry.getValue().size();
         }
         return count;
     }

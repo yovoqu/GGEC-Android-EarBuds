@@ -6,7 +6,7 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
@@ -252,7 +252,7 @@ public final class YoBleGattOperationQueue {
         Op op = inFlight;
         if (op == null || op.kind != kind || !sameTarget(op.target, target)) {
             if (op != null) {
-                YoBluetoothLogger.d(TAG, "忽略不匹配的 GATT 回调 kind=" + kind + " target=" + target);
+                YoBtLogger.d(TAG, "忽略不匹配的 GATT 回调 kind=" + kind + " target=" + target);
             }
             return false;
         }

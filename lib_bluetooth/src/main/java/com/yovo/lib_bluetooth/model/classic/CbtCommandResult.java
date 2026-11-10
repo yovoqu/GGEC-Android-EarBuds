@@ -1,6 +1,5 @@
 package com.yovo.lib_bluetooth.model.classic;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**

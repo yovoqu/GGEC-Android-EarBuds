@@ -4,7 +4,7 @@ import android.bluetooth.BluetoothGatt;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import java.lang.reflect.Method;
 
@@ -21,17 +21,17 @@ public final class YoBleGattCacheRefresher {
     public static boolean refresh(@NonNull BluetoothGatt gatt,
                                   @NonNull YoBleHiddenApiPolicy policy) {
         if (policy != YoBleHiddenApiPolicy.EXPLICITLY_ENABLED) {
-            YoBluetoothLogger.w(TAG, "BluetoothGatt.refresh() blocked by YoBleHiddenApiPolicy.DISABLED");
+            YoBtLogger.w(TAG, "BluetoothGatt.refresh() blocked by YoBleHiddenApiPolicy.DISABLED");
             return false;
         }
         try {
             Method method = gatt.getClass().getMethod("refresh");
             Object result = method.invoke(gatt);
             boolean ok = result instanceof Boolean && (Boolean) result;
-            YoBluetoothLogger.d(TAG, "BluetoothGatt.refresh() -> " + ok);
+            YoBtLogger.d(TAG, "BluetoothGatt.refresh() -> " + ok);
             return ok;
         } catch (Throwable t) {
-            YoBluetoothLogger.w(TAG, "BluetoothGatt.refresh() reflection failed", t);
+            YoBtLogger.w(TAG, "BluetoothGatt.refresh() reflection failed", t);
             return false;
         }
     }

@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.classic.spp.connection;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 
 import java.util.concurrent.atomic.AtomicReference;
@@ -70,7 +70,7 @@ public final class YoCbtSppConnectionLifecycle {
         }
         YoCbtSppConnectionState previous = currentPhase.getAndSet(phase);
         if (previous != phase) {
-            YoBluetoothLogger.d(TAG, "连接 " + connectionId + " 阶段：" + previous + " -> " + phase);
+            YoBtLogger.d(TAG, "连接 " + connectionId + " 阶段：" + previous + " -> " + phase);
         }
     }
 

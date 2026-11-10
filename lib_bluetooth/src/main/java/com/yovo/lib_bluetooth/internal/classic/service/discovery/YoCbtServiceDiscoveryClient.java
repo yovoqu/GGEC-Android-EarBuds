@@ -7,7 +7,7 @@ import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalOperationHandle;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
-import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEventHub;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntimeScope;
@@ -194,7 +194,7 @@ public final class YoCbtServiceDiscoveryClient implements YoCbtLiveSdpPort.Liste
     }
 
     private void publish(@NonNull YoCbtServiceDiscoveryEvent.Kind kind, @NonNull YoCbtDeviceId deviceId) {
-        YoCbtEventHub hub = runtime.eventHub();
+        BluetoothEventBus hub = runtime.eventBus();
         hub.publish(YoCbtEvents.SDP, new YoCbtServiceDiscoveryEvent(kind, deviceId));
     }
 

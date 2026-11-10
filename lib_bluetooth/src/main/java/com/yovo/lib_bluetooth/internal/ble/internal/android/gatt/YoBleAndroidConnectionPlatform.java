@@ -14,7 +14,7 @@ import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattTransport;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.compat.YoBleGattCompat;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.hiddenapi.YoBleHiddenApiPolicy;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -61,7 +61,7 @@ public final class YoBleAndroidConnectionPlatform implements YoBleConnectionPlat
         } catch (SecurityException security) {
             throw security;
         } catch (Throwable t) {
-            YoBluetoothLogger.w(TAG, "connectGatt threw for " + deviceId, t);
+            YoBtLogger.w(TAG, "connectGatt threw for " + deviceId, t);
             return null;
         }
         if (gatt == null) {

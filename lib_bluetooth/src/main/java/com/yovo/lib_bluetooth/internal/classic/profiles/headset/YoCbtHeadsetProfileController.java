@@ -2,7 +2,7 @@ package com.yovo.lib_bluetooth.internal.classic.profiles.headset;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -43,7 +43,7 @@ public final class YoCbtHeadsetProfileController {
         try {
             return YoResult.success(profilePort.getConnectedDevices());
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取已连接设备失败", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取已连接设备失败", e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_HEADSET_STATE_QUERY_FAILED,
                     "Exception querying connected devices: " + e.getMessage(),
@@ -69,7 +69,7 @@ public final class YoCbtHeadsetProfileController {
                     YoCbtProfileStateSource.ANDROID_PROFILE_PROXY);
             return YoResult.success(deviceState);
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "查询耳机设备状态失败，设备 " + deviceId, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "查询耳机设备状态失败，设备 " + deviceId, e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_HEADSET_STATE_QUERY_FAILED,
                     "Exception querying device state: " + e.getMessage(),
@@ -88,7 +88,7 @@ public final class YoCbtHeadsetProfileController {
         try {
             return YoResult.success(profilePort.getAudioState(deviceId));
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "查询音频状态失败，设备 " + deviceId, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "查询音频状态失败，设备 " + deviceId, e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_HEADSET_AUDIO_STATE_UNKNOWN,
                     "Exception querying audio state: " + e.getMessage(),
@@ -111,7 +111,7 @@ public final class YoCbtHeadsetProfileController {
             try {
                 observer.onHeadsetStateChanged(state);
             } catch (Exception e) {
-                YoBluetoothLogger.e(TAG, "通知期间观察者抛出异常", e);
+                BluetoothDiagnosticsBus.get().recordException(TAG, "通知期间观察者抛出异常", e);
             }
         }
     }

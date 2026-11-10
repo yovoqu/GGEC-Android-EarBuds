@@ -6,7 +6,6 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConfig;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpoint;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpointSource;
-import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppSecurityMode;
 
 import java.util.ArrayList;
 import java.util.Collections;

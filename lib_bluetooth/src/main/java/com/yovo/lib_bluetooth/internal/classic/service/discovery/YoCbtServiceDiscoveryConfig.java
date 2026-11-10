@@ -7,7 +7,6 @@ import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.service.model.YoCbtSdpRequest;
 import com.yovo.lib_bluetooth.internal.classic.service.resolve.YoCbtSppUuidPolicy;
 
-import java.util.Objects;
 import java.util.UUID;
 
 /**

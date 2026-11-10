@@ -12,7 +12,6 @@ import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdenti
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceType;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtBondedDevice;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtObservedDevice;
-import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtResolvedDevice;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondState;
 
 import org.junit.Before;

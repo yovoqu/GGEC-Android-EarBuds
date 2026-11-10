@@ -2,12 +2,12 @@ package com.yovo.lib_bluetooth.internal.classic.spp.io;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionId;
-import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionSnapshot;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -66,7 +66,7 @@ public final class YoCbtSppReader implements Runnable {
      */
     public void start() {
         if (!running.compareAndSet(false, true)) {
-            YoBluetoothLogger.w(TAG, "读取器已在运行，连接 " + connectionId);
+            YoBtLogger.w(TAG, "读取器已在运行，连接 " + connectionId);
             return;
         }
         String threadName = "yo-cbt-spp-reader-" + connectionId;
@@ -74,7 +74,7 @@ public final class YoCbtSppReader implements Runnable {
         thread.setDaemon(true);
         readerThread.set(thread);
         thread.start();
-        YoBluetoothLogger.d(TAG, "读取器已启动，连接 " + connectionId + "，线程 " + threadName);
+        YoBtLogger.d(TAG, "读取器已启动，连接 " + connectionId + "，线程 " + threadName);
     }
 
     /**
@@ -85,7 +85,7 @@ public final class YoCbtSppReader implements Runnable {
         if (!running.compareAndSet(true, false)) {
             return;
         }
-        YoBluetoothLogger.d(TAG, "正在停止读取器，连接 " + connectionId);
+        YoBtLogger.d(TAG, "正在停止读取器，连接 " + connectionId);
         Thread thread = readerThread.getAndSet(null);
         if (thread != null && thread.isAlive()) {
             thread.interrupt();
@@ -99,7 +99,7 @@ public final class YoCbtSppReader implements Runnable {
     @Override
     public void run() {
         Thread currentThread = Thread.currentThread();
-        YoBluetoothLogger.d(TAG, "读取循环已开始，连接 " + connectionId);
+        YoBtLogger.d(TAG, "读取循环已开始，连接 " + connectionId);
 
         byte[] buffer = new byte[bufferSize];
         ByteArrayOutputStream batch = new ByteArrayOutputStream(bufferSize);
@@ -134,7 +134,7 @@ public final class YoCbtSppReader implements Runnable {
                 dispatchBatch(batch);
             }
         } catch (Throwable e) {
-            YoBluetoothLogger.e(TAG, "读取出错，连接 " + connectionId, e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "读取出错，连接 " + connectionId, e);
             if (running.get()) {
                 YoCbtFailure failure = new YoCbtFailure(
                         YoCbtErrorCode.YO_CBT_SPP_READ_FAILED,
@@ -155,7 +155,7 @@ public final class YoCbtSppReader implements Runnable {
         } finally {
             running.set(false);
             readerThread.compareAndSet(currentThread, null);
-            YoBluetoothLogger.d(TAG, "读取循环已结束，连接 " + connectionId);
+            YoBtLogger.d(TAG, "读取循环已结束，连接 " + connectionId);
         }
     }
 

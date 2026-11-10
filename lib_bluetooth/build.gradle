@@ -46,6 +46,7 @@ tasks.register('checkLibBluetoothProviderBoundary') {
         fileTree(project.projectDir) {
             include 'src/main/java/**/*.java'
             exclude 'src/main/java/com/yovo/lib_bluetooth/provider/lib_common/**'
+            exclude 'src/main/java/com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
         }.each { file ->
             file.text.eachLine { line, index ->
                 if (line =~ /^\s*import\s+com\.yovo\.lib_common\./) {
@@ -97,6 +98,62 @@ tasks.register('checkLibBluetoothApiSurface') {
     }
 }
 
+tasks.register('checkLibBluetoothLogSeam') {
+    group = 'verification'
+    description = 'Ensure YoBtLogger is the single logging seam: only it (and provider layer) may import lib_common.log.'
+    doLast {
+        def offenders = []
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+            exclude 'src/main/java/com/yovo/lib_bluetooth/provider/**'
+            exclude 'src/main/java/com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
+        }.each { file ->
+            file.text.eachLine { line, index ->
+                if (line =~ /^\s*import\s+com\.yovo\.lib_common\.log\./) {
+                    offenders << "${file}:${index}: ${line.trim()}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Only YoBtLogger may import lib_common.log (single logging seam):\n'
+                            + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkNoStrayLogging') {
+    group = 'verification'
+    description = 'Fail on android.util.Log / System.out/err / printStackTrace / direct YoLog calls outside YoBtLogger.'
+    doLast {
+        def offenders = []
+        def logSeam = 'com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            def rel = project.relativePath(file).replace('\\', '/')
+            file.text.eachLine { line, index ->
+                def trimmed = line.trim()
+                if (trimmed.contains('import android.util.Log')
+                        || trimmed.contains('System.out')
+                        || trimmed.contains('System.err')
+                        || trimmed.contains('printStackTrace')) {
+                    offenders << "${rel}:${index}: ${trimmed}"
+                }
+                if (!rel.endsWith(logSeam)
+                        && !rel.contains('/provider/lib_common/')
+                        && (trimmed =~ /\bYoLog\s*\./)) {
+                    offenders << "${rel}:${index}: direct YoLog call outside YoBtLogger: ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('Stray logging detected:\n' + offenders.join('\n'))
+        }
+    }
+}
+
 tasks.named('check') {
-    dependsOn 'checkLibBluetoothProviderBoundary', 'checkLibBluetoothApiSurface'
+    dependsOn 'checkLibBluetoothProviderBoundary', 'checkLibBluetoothApiSurface',
+            'checkLibBluetoothLogSeam', 'checkNoStrayLogging'
 }

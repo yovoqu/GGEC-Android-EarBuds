@@ -3,14 +3,13 @@ package com.yovo.lib_bluetooth.api;
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtAclLinkSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkState;
 import com.yovo.lib_bluetooth.model.classic.CbtBondStateObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtCommand;
 import com.yovo.lib_bluetooth.model.classic.CbtCommandObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtCommandResult;
 import com.yovo.lib_bluetooth.model.classic.CbtConnectedDeviceObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
+import com.yovo.lib_bluetooth.model.classic.CbtDiagnosticReport;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileState;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
@@ -139,6 +138,9 @@ public interface YoCbtClient {
     Result<List<CbtDeviceSnapshot>> getDeviceSnapshots();
 
     boolean isAdapterEnabled();
+
+    @NonNull
+    Result<CbtDiagnosticReport> exportDiagnosticReport();
 
     void release();
 }

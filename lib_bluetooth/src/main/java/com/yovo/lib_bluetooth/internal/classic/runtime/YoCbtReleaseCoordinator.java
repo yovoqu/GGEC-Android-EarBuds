@@ -1,13 +1,13 @@
 package com.yovo.lib_bluetooth.internal.classic.runtime;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
 
 import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
  * @author tingfeng.yang
@@ -54,7 +54,7 @@ public final class YoCbtReleaseCoordinator {
      */
     public synchronized void releaseAll() {
         if (released) {
-            YoBluetoothLogger.w(TAG, "releaseAll() 被重复调用——已忽略");
+            YoBtLogger.w(TAG, "releaseAll() 被重复调用——已忽略");
             return;
         }
         released = true;
@@ -65,10 +65,10 @@ public final class YoCbtReleaseCoordinator {
             YoReleasable component = components.get(name);
             if (component != null) {
                 try {
-                    YoBluetoothLogger.d(TAG, "正在释放组件: " + name);
+                    YoBtLogger.d(TAG, "正在释放组件: " + name);
                     component.release();
                 } catch (Throwable t) {
-                    YoBluetoothLogger.e(TAG, "释放组件 '" + name + "' 出错", t);
+                    BluetoothDiagnosticsBus.get().recordException(TAG, "释放组件 '" + name + "' 出错", t);
                 }
             }
         }

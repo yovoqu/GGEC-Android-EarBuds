@@ -4,8 +4,8 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBluetoothLogger;
-
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -67,7 +67,7 @@ public final class YoCbtAndroidProfileProxyAdapter {
                     null, null, null, null,
                     "Grant BLUETOOTH_CONNECT permission"));
         } catch (Exception e) {
-            YoBluetoothLogger.e(TAG, "获取 ProfileProxy 时发生意外错误", e);
+            BluetoothDiagnosticsBus.get().recordException(TAG, "获取 ProfileProxy 时发生意外错误", e);
             return YoResult.failure(new YoCbtFailure(
                     YoCbtErrorCode.YO_CBT_PROFILE_PROXY_GET_FAILED,
                     "getProfileProxy threw: " + e.getMessage(),
@@ -111,7 +111,7 @@ public final class YoCbtAndroidProfileProxyAdapter {
                     null, null, null, null,
                     "Grant BLUETOOTH_CONNECT permission"));
         } catch (Exception e) {
-            YoBluetoothLogger.w(TAG, "关闭 ProfileProxy 出错，类型 " + profileType, e);
+            YoBtLogger.w(TAG, "关闭 ProfileProxy 出错，类型 " + profileType, e);
             return YoResult.failure(new YoCbtFailure(
                     YoCbtErrorCode.YO_CBT_PROFILE_PROXY_LIFECYCLE_ERROR,
                     "closeProfileProxy threw: " + e.getMessage(),

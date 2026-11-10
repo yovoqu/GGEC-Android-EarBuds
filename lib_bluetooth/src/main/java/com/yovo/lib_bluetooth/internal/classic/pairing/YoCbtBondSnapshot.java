@@ -10,15 +10,12 @@ import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdenti
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtCapabilitySource;
-import com.yovo.lib_bluetooth.internal.classic.profiles.a2dp.YoCbtA2dpDeviceState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.state.YoCbtDeviceProfileState;
-import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtHeadsetDeviceState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionSnapshot;
 
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 

@@ -3,7 +3,7 @@ package com.yovo.lib_bluetooth.internal.classic.runtime;
 /**
  * @author tingfeng.yang
  * @date 2026-06-18
- * @description {@link YoCbtEventHub} 使用的事件类型常量定义。
+ * @description {@code BluetoothEventBus} 使用的事件类型常量定义。
  */
 public final class YoCbtEvents {
 
