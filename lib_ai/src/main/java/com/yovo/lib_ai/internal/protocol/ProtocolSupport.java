@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.error.YoAiHttpException;
 import com.yovo.lib_ai.error.YoAiProtocolException;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiDiagnosticsBus;
 import com.yovo.lib_ai.internal.json.Jsons;
 import com.yovo.lib_ai.internal.runtime.CancelToken;
 import com.yovo.lib_ai.internal.runtime.OrderedCallbacks;
@@ -76,7 +77,10 @@ public final class ProtocolSupport {
                 message = "HTTP " + status;
             }
         }
-        return new YoAiHttpException(message, status, requestId, type, Jsons.truncate(body, 8192));
+        YoAiHttpException exception = new YoAiHttpException(
+                message, status, requestId, type, Jsons.truncate(body, 8192));
+        YoAiDiagnosticsBus.get().recordFailure(exception);
+        return exception;
     }
 
     public static void fail(

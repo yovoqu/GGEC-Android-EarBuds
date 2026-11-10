@@ -11,7 +11,6 @@ import com.yovo.lib_ai.chat.YoChatStreamListener;
 import com.yovo.lib_ai.chat.YoChatPartEncoder;
 import com.yovo.lib_ai.chat.YoChatRequestPolicy;
 import com.yovo.lib_ai.platform.YoServiceTarget;
-import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.internal.protocol.ProtocolSupport;
 import com.yovo.lib_ai.internal.protocol.WirePaths;
 import com.yovo.lib_ai.internal.runtime.CallRegistry;

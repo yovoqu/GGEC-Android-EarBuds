@@ -3,22 +3,24 @@ package com.yovo.lib_ai.wiring;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiClient;
+import com.yovo.lib_ai.api.YoAiDiagnosticSource;
+import com.yovo.lib_ai.api.YoAiDiagnostics;
 import com.yovo.lib_ai.api.YoAnthropicMessages;
 import com.yovo.lib_ai.api.YoBatch;
 import com.yovo.lib_ai.api.YoChatCompletions;
 import com.yovo.lib_ai.api.YoCompletions;
 import com.yovo.lib_ai.api.YoEmbeddings;
 import com.yovo.lib_ai.api.YoFiles;
-import com.yovo.lib_ai.api.YoImageGeneration;
 import com.yovo.lib_ai.api.YoLatencyProbe;
 import com.yovo.lib_ai.api.YoModeration;
 import com.yovo.lib_ai.api.YoModels;
 import com.yovo.lib_ai.api.YoProtocol;
 import com.yovo.lib_ai.api.YoRerank;
 import com.yovo.lib_ai.api.YoResponses;
-import com.yovo.lib_ai.api.YoSynthesis;
 import com.yovo.lib_ai.api.YoTokenCounter;
-import com.yovo.lib_ai.api.YoVideoGeneration;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiDiagnosticsBus;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiDiagnosticsInstaller;
+import com.yovo.lib_ai.internal.common.diagnostics.YoAiLogger;
 import com.yovo.lib_ai.internal.chat.ChatCompletionsResource;
 import com.yovo.lib_ai.internal.completion.CompletionsResource;
 import com.yovo.lib_ai.internal.messages.MessagesResource;
@@ -62,6 +64,8 @@ import okhttp3.OkHttpClient;
  */
 public final class YoAiAssembly {
 
+    private static final String TAG = "YoAiAssembly";
+
     private YoAiAssembly() {
     }
 
@@ -74,6 +78,7 @@ public final class YoAiAssembly {
             long readTimeoutMillis,
             long writeTimeoutMillis,
             @Nullable Executor callbackExecutor) {
+        YoAiLogger.i(TAG, "opening YoAiClient: platforms=" + platforms.size());
         OkHttpClient httpClient = OkHttpTransport.newClient(
                 connectTimeoutMillis,
                 readTimeoutMillis,
@@ -174,6 +179,18 @@ public final class YoAiAssembly {
                 .build();
 
         ExecutorService callbackToClose = ownedCallback;
+        YoAiDiagnosticsInstaller.installSink();
+        YoAiDiagnosticSource diagnosticSource = new YoAiDiagnosticSource() {
+            @Override
+            public java.util.List<String> timeline() {
+                return YoAiDiagnosticsBus.get().timelineSnapshot();
+            }
+
+            @Override
+            public String dumpReport() {
+                return YoAiDiagnosticsBus.get().dumpReport();
+            }
+        };
         return new YoAiClient(
                 chat,
                 responses,
@@ -191,11 +208,13 @@ public final class YoAiAssembly {
                 imageGeneration,
                 videoGeneration,
                 () -> {
+                    YoAiLogger.i(TAG, "closing YoAiClient");
+                    YoAiDiagnosticsBus.get().recordEvent("client.close", "YoAiClient");
                     synthesis.close();
                     imageGeneration.close();
                     videoGeneration.close();
                     shutdown(registry, network, httpClient, callbackToClose);
-                });
+                }, diagnosticSource);
     }
 
     private static void registerRetrievalServices(

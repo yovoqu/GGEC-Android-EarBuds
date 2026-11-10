@@ -1,7 +1,6 @@
 package com.yovo.lib_ai.internal.retrieval;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.retrieval.YoFileUploadRequest;
 

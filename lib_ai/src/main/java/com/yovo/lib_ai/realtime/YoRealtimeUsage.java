@@ -1,6 +1,5 @@
 package com.yovo.lib_ai.realtime;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.math.BigDecimal;

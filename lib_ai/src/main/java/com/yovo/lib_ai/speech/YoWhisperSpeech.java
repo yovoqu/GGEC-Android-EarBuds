@@ -3,6 +3,7 @@ package com.yovo.lib_ai.speech;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_ai.api.YoAiDiagnostics;
 import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.error.YoAiErrors;
 import com.yovo.lib_ai.error.YoAiException;
@@ -219,12 +220,14 @@ public final class YoWhisperSpeech implements YoSpeech, AutoCloseable {
                 // 错误体不是 JSON（网关的 HTML 错误页等），保留 "HTTP <status>" 作为消息。
             }
         }
-        return new YoAiHttpException(
+        YoAiHttpException exception = new YoAiHttpException(
                 message,
                 status,
                 response.requestId(),
                 type,
                 body.length() <= MAX_ERROR_BODY_CHARS ? body : body.substring(0, MAX_ERROR_BODY_CHARS));
+        YoAiDiagnostics.recordFailure(exception);
+        return exception;
     }
 
     @Nullable

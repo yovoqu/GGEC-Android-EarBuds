@@ -1,9 +1,9 @@
 package com.yovo.lib_ai.speech;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiCall;
+import com.yovo.lib_ai.api.YoAiDiagnostics;
 import com.yovo.lib_ai.api.YoSynthesis;
 import com.yovo.lib_ai.error.YoAiException;
 import com.yovo.lib_ai.error.YoAiHttpException;
@@ -175,7 +175,10 @@ public final class YoSpeechSynthesis implements YoSynthesis, AutoCloseable {
                 // 错误体不是 JSON，保留 "HTTP <status>"。
             }
         }
-        return new YoAiHttpException(message, status, response.requestId(), type, body);
+        YoAiHttpException exception = new YoAiHttpException(
+                message, status, response.requestId(), type, body);
+        YoAiDiagnostics.recordFailure(exception);
+        return exception;
     }
 
     /** 极简取消句柄：流式回调在片段之间检查该标志。 */
