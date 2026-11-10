@@ -36,14 +36,6 @@ public final class YoBleAndroidL2capPlatform implements YoBleL2capPlatform {
     @Override
     public SocketConnection openClientChannel(@NonNull BleDeviceId deviceId,
                                               int psm,
-                                              boolean secure) throws IOException {
-        return openClientChannel(deviceId, psm, secure, null);
-    }
-
-    @NonNull
-    @Override
-    public SocketConnection openClientChannel(@NonNull BleDeviceId deviceId,
-                                              int psm,
                                               boolean secure,
                                               @Nullable Consumer<Closeable> cancelHookConsumer)
             throws IOException {
@@ -82,6 +74,12 @@ public final class YoBleAndroidL2capPlatform implements YoBleL2capPlatform {
         }
 
         return new SocketConnection() {
+            @NonNull
+            @Override
+            public BleDeviceId remoteDeviceId() {
+                return deviceId;
+            }
+
             @Override
             public int read(@NonNull byte[] buffer) throws IOException {
                 return in.read(buffer);
@@ -96,6 +94,67 @@ public final class YoBleAndroidL2capPlatform implements YoBleL2capPlatform {
             @Override
             public void close() throws IOException {
                 socket.close();
+            }
+        };
+    }
+
+    @NonNull
+    @Override
+    public ListeningSocket openServer(boolean secure, @Nullable Consumer<Closeable> cancelHookConsumer)
+            throws IOException {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw new IOException("L2CAP CoC requires API 29+");
+        }
+        BluetoothAdapter adapter = adapterProvider.adapter();
+        if (adapter == null) {
+            throw new IOException("BluetoothAdapter unavailable");
+        }
+        android.bluetooth.BluetoothServerSocket server = YoBleL2capCompat.listen(adapter, secure);
+        if (cancelHookConsumer != null) {
+            cancelHookConsumer.accept(server::close);
+        }
+        return new ListeningSocket() {
+            @Override
+            public int psm() {
+                return server.getPsm();
+            }
+
+            @NonNull
+            @Override
+            public SocketConnection accept() throws IOException {
+                BluetoothSocket accepted = server.accept();
+                BluetoothDevice remote = accepted.getRemoteDevice();
+                BleDeviceId remoteId = new BleDeviceId(remote.getAddress());
+                InputStream in = accepted.getInputStream();
+                OutputStream out = accepted.getOutputStream();
+                return new SocketConnection() {
+                    @NonNull
+                    @Override
+                    public BleDeviceId remoteDeviceId() {
+                        return remoteId;
+                    }
+
+                    @Override
+                    public int read(@NonNull byte[] buffer) throws IOException {
+                        return in.read(buffer);
+                    }
+
+                    @Override
+                    public void write(@NonNull byte[] data) throws IOException {
+                        out.write(data);
+                        out.flush();
+                    }
+
+                    @Override
+                    public void close() throws IOException {
+                        accepted.close();
+                    }
+                };
+            }
+
+            @Override
+            public void close() throws IOException {
+                server.close();
             }
         };
     }
