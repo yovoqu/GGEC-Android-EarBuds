@@ -51,14 +51,6 @@ public final class YoBleGattStatus {
     public static final int GATT_VALUE_OUT_OF_RANGE = 0xFF;
     public static final int GATT_FAILURE = 0x101;
 
-    // ScanCallback / AdvertiseCallback constants aligned with Android framework
-    public static final int SCAN_FAILED_ALREADY_STARTED = 1;
-    public static final int SCAN_FAILED_APPLICATION_REGISTRATION_FAILED = 2;
-    public static final int SCAN_FAILED_INTERNAL_ERROR = 3;
-    public static final int SCAN_FAILED_FEATURE_UNSUPPORTED = 4;
-    public static final int SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES = 5;
-    public static final int SCAN_FAILED_SCANNING_TOO_FREQUENTLY = 6;
-
     private YoBleGattStatus() {
     }
 
@@ -80,37 +72,27 @@ public final class YoBleGattStatus {
             case GATT_INSUFFICIENT_AUTHORIZATION:
                 return BleErrorCode.AUTHORIZATION_FAILED;
             case GATT_INSUFFICIENT_ENCRYPTION:
+            case GATT_INSUFFICIENT_KEY_SIZE:
             case GATT_ENCRYPTED_NO_MITM:
             case GATT_NOT_ENCRYPTED:
                 return BleErrorCode.ENCRYPTION_FAILED;
             case GATT_REQUEST_NOT_SUPPORTED:
+            case GATT_READ_NOT_PERMITTED:
+            case GATT_WRITE_NOT_PERMITTED:
                 return BleErrorCode.REQUEST_NOT_SUPPORTED;
             case GATT_INVALID_OFFSET:
             case GATT_INVALID_ATTRIBUTE_LENGTH:
+            case GATT_ATTRIBUTE_NOT_LONG:
                 return BleErrorCode.INVALID_OFFSET_OR_LENGTH;
             case GATT_BUSY:
             case GATT_PROCEDURE_IN_PROGRESS:
+            case GATT_CONNECTION_CONGESTED:
+            case GATT_PREPARE_Q_FULL:
                 return BleErrorCode.GATT_BUSY;
             case GATT_ERROR:
                 return BleErrorCode.GATT_ERROR_133;
             default:
                 return fallback;
-        }
-    }
-
-    @NonNull
-    public static BleErrorCode toScanErrorCode(int errorCode) {
-        switch (errorCode) {
-            case SCAN_FAILED_FEATURE_UNSUPPORTED:
-                return BleErrorCode.SCAN_FEATURE_UNSUPPORTED;
-            case SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES:
-                return BleErrorCode.SCAN_OUT_OF_RESOURCES;
-            case SCAN_FAILED_SCANNING_TOO_FREQUENTLY:
-                return BleErrorCode.SCAN_THROTTLED;
-            case SCAN_FAILED_INTERNAL_ERROR:
-                return BleErrorCode.SCAN_INTERNAL_ERROR;
-            default:
-                return BleErrorCode.SCAN_START_FAILED;
         }
     }
 

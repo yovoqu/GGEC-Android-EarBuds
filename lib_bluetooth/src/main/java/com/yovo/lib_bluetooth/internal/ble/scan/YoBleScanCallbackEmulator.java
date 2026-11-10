@@ -32,6 +32,8 @@ public final class YoBleScanCallbackEmulator {
         }
     }
 
+    private static final int MAX_SEEN = 256;
+
     private final Map<BleDeviceId, SeenEntry> seen = new LinkedHashMap<>();
 
     public synchronized void reset() {
@@ -52,6 +54,14 @@ public final class YoBleScanCallbackEmulator {
         SeenEntry entry = seen.get(id);
         boolean isNew = (entry == null);
         if (entry == null) {
+            while (seen.size() >= MAX_SEEN) {
+                Iterator<Map.Entry<BleDeviceId, SeenEntry>> oldest = seen.entrySet().iterator();
+                if (!oldest.hasNext()) {
+                    break;
+                }
+                oldest.next();
+                oldest.remove();
+            }
             entry = new SeenEntry(result, nowMillis);
             seen.put(id, entry);
         } else {

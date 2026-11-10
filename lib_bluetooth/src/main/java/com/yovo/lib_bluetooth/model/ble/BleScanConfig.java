@@ -114,6 +114,11 @@ public final class BleScanConfig {
     }
 
     @NonNull
+    public BleScanConfig withReportDelayMillis(long reportDelayMillis) {
+        return new Builder(this).reportDelayMillis(reportDelayMillis).build();
+    }
+
+    @NonNull
     public static Builder builder() {
         return new Builder();
     }
@@ -133,6 +138,26 @@ public final class BleScanConfig {
         private long matchLostTimeoutMillis = 10_000L;
         private BleScanThrottlePolicy throttlePolicy = BleScanThrottlePolicy.DELAY_UNTIL_WINDOW_FREE;
         private final List<BleScanFilter> filters = new ArrayList<>();
+
+        public Builder() {
+        }
+
+        private Builder(@NonNull BleScanConfig source) {
+            this.timeoutMillis = source.timeoutMillis;
+            this.requireConnectable = source.requireConnectable;
+            this.scanMode = source.scanMode;
+            this.callbackType = source.callbackType;
+            this.matchMode = source.matchMode;
+            this.numOfMatches = source.numOfMatches;
+            this.reportDelayMillis = source.reportDelayMillis;
+            this.legacyOnly = source.legacyOnly;
+            this.phy = source.phy;
+            this.locationExempt = source.locationExempt;
+            this.deduplicationWindowMillis = source.deduplicationWindowMillis;
+            this.matchLostTimeoutMillis = source.matchLostTimeoutMillis;
+            this.throttlePolicy = source.throttlePolicy;
+            this.filters.addAll(source.filters);
+        }
 
         @NonNull
         public Builder timeoutMillis(long timeoutMillis) {
