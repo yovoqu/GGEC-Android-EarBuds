@@ -7,6 +7,8 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.YoBleAndroidModuleGraph;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
+import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseData;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseObserver;
@@ -26,6 +28,7 @@ import com.yovo.lib_bluetooth.model.ble.BleGattServerConfig;
 import com.yovo.lib_bluetooth.model.ble.BleGattServerObserver;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleL2capChannelObserver;
+import com.yovo.lib_bluetooth.model.ble.BleL2capServerObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationSetupMode;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
@@ -68,6 +71,18 @@ public final class BleClientImpl implements YoBleClient {
     @Override
     public boolean isAdapterEnabled() {
         return core.isAdapterEnabled();
+    }
+
+    @NonNull
+    @Override
+    public BleAdapterState getAdapterState() {
+        return core.getAdapterState();
+    }
+
+    @NonNull
+    @Override
+    public BleOperationHandle observeAdapterState(@NonNull BleAdapterStateObserver observer) {
+        return core.observeAdapterState(observer);
     }
 
     @NonNull
@@ -219,8 +234,9 @@ public final class BleClientImpl implements YoBleClient {
 
     @NonNull
     @Override
-    public Result<Void> refreshDeviceCache(@NonNull BleDeviceId deviceId) {
-        return core.connectionManager.refreshDeviceCache(deviceId);
+    public BleOperationHandle refreshDeviceCache(@NonNull BleDeviceId deviceId,
+                                                @NonNull BleValueObserver<BleGattDatabaseSnapshot> observer) {
+        return core.connectionManager.refreshDeviceCache(deviceId, observer);
     }
 
     // ── 6. 串行 GATT 队列 ──────────────────────────────────────────
@@ -381,6 +397,12 @@ public final class BleClientImpl implements YoBleClient {
         return core.l2capManager.openChannel(deviceId, psm, secure, observer);
     }
 
+    @NonNull
+    @Override
+    public BleOperationHandle openL2capServer(boolean secure, @NonNull BleL2capServerObserver observer) {
+        return core.l2capManager.openServer(secure, observer);
+    }
+
     // ── 10. 外设广播与本地 GATT Server ────────────────────────────
 
     @NonNull
@@ -403,6 +425,12 @@ public final class BleClientImpl implements YoBleClient {
     public BleOperationHandle startGattServer(@NonNull BleGattServerConfig config,
                                               @NonNull BleGattServerObserver observer) {
         return core.peripheralManager.startGattServer(config, observer);
+    }
+
+    @NonNull
+    @Override
+    public Result<List<BleDeviceId>> getConnectedClients() {
+        return core.peripheralManager.getConnectedClients();
     }
 
     @NonNull
