@@ -5,6 +5,8 @@
     <!-- 语音通话：采集与扬声器路由。相机权限不申请：通话中插入照片这轮只有入口，没有实现。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Android 13+ 发送通知（下载/更新完成提示由 lib_common 的 DownloadNotificationController 触发）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- enableOnBackInvokedCallback 必须显式打开：YoUI 的对话框、面板和菜单靠它接管返回键，
          不写时返回键会越过它们直接关掉整个页面。 -->

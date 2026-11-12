@@ -27,14 +27,19 @@ public final class IdleDevicePortTest {
         assertEquals(1, snapshots.size());
         assertFalse(snapshots.get(0).isConnected());
 
-        port.connect("HS01", "v1", "AA:BB:CC:00:00:01");
+        port.connect("HS01", "v1", "AA:BB:CC:00:00:01", "HS01");
         assertEquals(ConnectionState.IDLE, port.snapshot().connection());
 
         List<ScanResult> results = new ArrayList<>();
         AtomicBoolean finished = new AtomicBoolean();
-        port.startScan(results::add, () -> finished.set(true));
+        port.startScanBatch(results::addAll, failure -> {
+        }, () -> finished.set(true), ignored -> {
+        });
         assertTrue(finished.get());
         assertTrue(results.isEmpty());
+        assertFalse(port.isScanning());
+
+        port.close();
         assertFalse(port.isScanning());
 
         sub.unsubscribe();

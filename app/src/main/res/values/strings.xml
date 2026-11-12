@@ -123,10 +123,8 @@
     <string name="device_battery_right">右耳</string>
     <string name="device_battery_case">充电盒</string>
     <string name="device_charging_on">充电中</string>
+    <string name="device_wear_unknown">未知</string>
     <string name="device_wear_none">未佩戴</string>
-    <string name="device_wear_left">左耳佩戴中</string>
-    <string name="device_wear_right">右耳佩戴中</string>
-    <string name="device_wear_both">双耳佩戴中</string>
     <string name="device_state_idle">未连接</string>
     <string name="device_state_scanning">搜索中</string>
     <string name="device_state_connecting">连接中</string>

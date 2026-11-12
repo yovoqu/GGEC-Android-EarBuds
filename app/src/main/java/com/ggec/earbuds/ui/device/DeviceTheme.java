@@ -37,6 +37,11 @@ public final class DeviceTheme {
     public static final float SPACE_L = 16f;
     public static final float SPACE_XL = 24f;
 
+    /** 多行说明文字的额外行距（dp）。 */
+    public static final float LINE_SPACING_EXTRA = 5f;
+    /** 状态圆点直径（dp）。 */
+    public static final float STATUS_DOT = 8f;
+
     public static final float RADIUS_FIELD = 24f;
     public static final float RADIUS_SHEET = 16f;
     public static final float RADIUS_ROW = 12f;
@@ -54,6 +59,13 @@ public final class DeviceTheme {
     public static final float ROW_HEIGHT = 56f;
     public static final float TOUCH_TARGET = 40f;
     public static final float EMPTY_TOP = 88f;
+
+    public static final float SCAN_CARD_MIN_HEIGHT = 76f;
+    public static final float SCAN_ICON_BOX = 40f;
+    public static final float SCAN_ICON = 20f;
+    public static final float SCAN_CHEVRON = 16f;
+    public static final float SCAN_SUBTITLE_GAP = 2f;
+    public static final float PRIMARY_ACTION_HEIGHT = 48f;
 
     public final Context context;
     public final float density;

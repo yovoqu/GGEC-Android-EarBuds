@@ -20,27 +20,27 @@ public final class LoadDeviceProfilesTest {
     public void idleOrDisconnectedReturnsEmptyWithoutHs01Fallback() {
         assertTrue(useCase.profileFor(DeviceSnapshot.idle()).isEmpty());
         DeviceSnapshot disconnected = new DeviceSnapshot(ConnectionState.DISCONNECTED, "HS01", "v1",
-                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", "");
+                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", DeviceSnapshot.UNKNOWN_EAR_COLOR);
         assertTrue(useCase.profileFor(disconnected).isEmpty());
     }
 
     @Test
     public void connectedUnknownModelReturnsEmpty() {
         DeviceSnapshot unknown = new DeviceSnapshot(ConnectionState.READY, "UNKNOWN", "v1",
-                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "UNKNOWN", "", "");
+                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "UNKNOWN", "", DeviceSnapshot.UNKNOWN_EAR_COLOR);
         assertTrue(useCase.profileFor(unknown).isEmpty());
     }
 
     @Test
     public void connectedKnownModelResolvesExactOrDefaultVariant() {
         DeviceSnapshot exact = new DeviceSnapshot(ConnectionState.READY, "HS01", "v2",
-                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", "");
+                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", DeviceSnapshot.UNKNOWN_EAR_COLOR);
         DeviceProfile p1 = useCase.profileFor(exact).orElseThrow();
         assertEquals("HS01", p1.model().id());
         assertEquals("v2", p1.variant().id());
 
         DeviceSnapshot unknownVariant = new DeviceSnapshot(ConnectionState.CONNECTED_NOT_READY,
-                "HS01", "v99", BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", "");
+                "HS01", "v99", BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "", DeviceSnapshot.UNKNOWN_EAR_COLOR);
         DeviceProfile p2 = useCase.profileFor(unknownVariant).orElseThrow();
         assertEquals("HS01", p2.model().id());
         assertEquals("v1", p2.variant().id());

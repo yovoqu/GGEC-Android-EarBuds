@@ -139,12 +139,12 @@ public final class DeviceSettingsScreen {
 
         TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
         heading.setText(R.string.device_empty_title);
-        heading.setLineSpacing(theme.dpf(5), 1f);
+        heading.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         column.addView(heading, matchWrap());
 
         TextView body = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text2);
         body.setText(R.string.device_settings_empty_body);
-        body.setLineSpacing(theme.dpf(5), 1f);
+        body.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         LinearLayout.LayoutParams bodyParams = matchWrap();
         bodyParams.topMargin = theme.dp(DeviceTheme.SPACE_S);
         column.addView(body, bodyParams);

@@ -37,4 +37,14 @@ public final class EarbudsApplication extends Application implements AppContaine
     public AppContainer container() {
         return container;
     }
+
+    @Override
+    public void onTerminate() {
+        // best-effort：Android 生产环境不保证对 Application.onTerminate 回调（仅测试/模拟器语义），
+        // 因此这里只尝试释放一次底层资源；进程被杀时由系统回收，不视为缺陷。
+        if (container != null) {
+            container.release();
+        }
+        super.onTerminate();
+    }
 }

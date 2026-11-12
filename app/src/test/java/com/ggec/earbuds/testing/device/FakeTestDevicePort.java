@@ -15,13 +15,15 @@ public final class FakeTestDevicePort implements DevicePort {
     private final CopyOnWriteArrayList<Consumer<DeviceSnapshot>> listeners = new CopyOnWriteArrayList<>();
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private boolean scanning;
-    private Consumer<ScanResult> activeResultConsumer;
     private Consumer<List<ScanResult>> activeBatchConsumer;
     private Consumer<ScanFailure> activeFailureConsumer;
     private Runnable activeFinishedCallback;
+    private Consumer<ScanResult> activeRemovedConsumer;
+    public int startScanCalls;
     public String lastConnectedModel;
     public String lastConnectedVariant;
     public String lastConnectedMac;
+    public String lastConnectedBleName;
 
     @Override
     public DeviceSnapshot snapshot() {
@@ -43,10 +45,11 @@ public final class FakeTestDevicePort implements DevicePort {
     }
 
     @Override
-    public void connect(String modelId, String variantId, String mac) {
+    public void connect(String modelId, String variantId, String bleMac, String bleName) {
         lastConnectedModel = modelId;
         lastConnectedVariant = variantId;
-        lastConnectedMac = mac;
+        lastConnectedMac = bleMac;
+        lastConnectedBleName = bleName;
     }
 
     @Override
@@ -55,30 +58,22 @@ public final class FakeTestDevicePort implements DevicePort {
     }
 
     @Override
-    public void startScan(Consumer<ScanResult> onResult, Runnable onFinished) {
-        startScan(onResult, null, onFinished);
-    }
-
-    @Override
-    public void startScan(Consumer<ScanResult> onResult,
-                          Consumer<ScanFailure> onFailed,
-                          Runnable onFinished) {
-        scanning = true;
-        activeResultConsumer = onResult;
-        activeBatchConsumer = null;
-        activeFailureConsumer = onFailed;
-        activeFinishedCallback = onFinished;
-    }
-
-    @Override
     public void startScanBatch(Consumer<List<ScanResult>> onResults,
                                Consumer<ScanFailure> onFailed,
-                               Runnable onFinished) {
+                               Runnable onFinished,
+                               Consumer<ScanResult> onRemoved) {
+        startScanCalls++;
         scanning = true;
-        activeResultConsumer = null;
         activeBatchConsumer = onResults;
         activeFailureConsumer = onFailed;
         activeFinishedCallback = onFinished;
+        activeRemovedConsumer = onRemoved;
+    }
+
+    public void emitScanRemoved(ScanResult removed) {
+        if (activeRemovedConsumer != null) {
+            activeRemovedConsumer.accept(removed);
+        }
     }
 
     public void emitScanResults(List<ScanResult> results) {
@@ -87,12 +82,6 @@ public final class FakeTestDevicePort implements DevicePort {
         }
         if (activeBatchConsumer != null) {
             activeBatchConsumer.accept(results);
-            return;
-        }
-        if (activeResultConsumer != null) {
-            for (ScanResult result : results) {
-                activeResultConsumer.accept(result);
-            }
         }
     }
 
@@ -119,14 +108,19 @@ public final class FakeTestDevicePort implements DevicePort {
     @Override
     public void stopScan() {
         scanning = false;
-        activeResultConsumer = null;
         activeBatchConsumer = null;
         activeFailureConsumer = null;
         activeFinishedCallback = null;
+        activeRemovedConsumer = null;
     }
 
     @Override
     public boolean isScanning() {
         return scanning;
+    }
+
+    @Override
+    public void close() {
+        stopScan();
     }
 }

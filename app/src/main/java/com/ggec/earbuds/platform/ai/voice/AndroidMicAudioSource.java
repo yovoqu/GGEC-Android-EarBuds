@@ -1,6 +1,8 @@
 package com.ggec.earbuds.platform.ai.voice;
 
 import android.content.Context;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -10,6 +12,7 @@ import android.media.audiofx.AcousticEchoCanceler;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
@@ -249,6 +252,11 @@ public final class AndroidMicAudioSource implements AiAudioSource {
 
     @Nullable
     private AudioRecord tryOpenRecord(int sampleRateHz) {
+        // 显式权限守卫：未授予 RECORD_AUDIO 时不创建 AudioRecord（避免 SecurityException 与 lint MissingPermission）。
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
         int minBytes = AudioRecord.getMinBufferSize(
                 sampleRateHz, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         if (minBytes <= 0) {

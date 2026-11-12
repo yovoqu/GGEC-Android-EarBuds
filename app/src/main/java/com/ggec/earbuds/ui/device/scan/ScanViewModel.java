@@ -6,10 +6,11 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceModel;
 import com.ggec.earbuds.domain.device.model.ScanResult;
 import com.ggec.earbuds.domain.device.port.DevicePort;
+import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
+import com.ggec.earbuds.domain.device.scan.DiscoveredDevices;
 import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
 import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
@@ -18,71 +19,37 @@ import com.yovo.lib_common.event.OneShotLiveData;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
- * 扫描页状态机：领域结果只在本类内部保存，按所选设备类型投影后对外发布 ScanItem。
- *
- * <p>批量接收底层 BLE 扫描帧，过滤小于 3 dBm 的信号抖动，并对纯信号强度变化做 300ms 节流合并发布；
- * 新设备发现、设备名补全、筛选切换与停扫终态则立即发布，兼顾流畅度与交互即时性。</p>
+ * 扫描页状态机。设备事实在 {@link DiscoveredDevices}：每一帧 BLE 广播都写入该表。
+ * 本类持有扫描生命周期的全部决策（是否开扫、开扫前的权限门、停止、连接前停扫），
+ * 视图只转发用户动作与权限结果。
  */
 public final class ScanViewModel extends ViewModel {
-
-    static final long PUBLISH_INTERVAL_MILLIS = 300L;
-    static final int RSSI_CHANGE_THRESHOLD_DBM = 3;
-
-    interface PublishScheduler {
-        interface Cancellable {
-            void cancel();
-        }
-
-        @NonNull
-        Cancellable schedule(@NonNull Runnable task, long delayMillis);
-
-        default void shutdown() {
-        }
-    }
 
     private final ScanDevices scanDevices;
     private final ConnectDevice connectDevice;
     private final List<ScanFilterOption> filterOptions;
-    private final PublishScheduler publishScheduler;
+    private final ScanPermissionPort scanPermission;
 
     private final Object lock = new Object();
     private final MutableLiveData<ScanUiState> uiState;
-    private final OneShotLiveData<Integer> events = new OneShotLiveData<>();
-    private final List<ScanResult> results = new ArrayList<>();
+    private final OneShotLiveData<ScanEvent> events = new OneShotLiveData<>();
+    private final DiscoveredDevices devices = new DiscoveredDevices();
 
     private boolean scanning;
     private boolean hasScanned;
     private long scanToken;
     private String selectedFilterModelId = ScanFilterOption.ALL_MODELS;
-    private boolean pendingPublish;
-    @Nullable
-    private PublishScheduler.Cancellable pendingPublishHandle;
-
-    public ScanViewModel(@NonNull ScanDevices scanDevices, @NonNull ConnectDevice connectDevice) {
-        this(scanDevices, connectDevice, null);
-    }
 
     public ScanViewModel(@NonNull ScanDevices scanDevices,
                          @NonNull ConnectDevice connectDevice,
-                         @Nullable LoadDeviceProfiles loadProfiles) {
-        this(scanDevices, connectDevice, loadProfiles, new DefaultPublishScheduler());
-    }
-
-    ScanViewModel(@NonNull ScanDevices scanDevices,
-                  @NonNull ConnectDevice connectDevice,
-                  @Nullable LoadDeviceProfiles loadProfiles,
-                  @NonNull PublishScheduler publishScheduler) {
+                         @Nullable LoadDeviceProfiles loadProfiles,
+                         @NonNull ScanPermissionPort scanPermission) {
         this.scanDevices = Objects.requireNonNull(scanDevices, "scanDevices");
         this.connectDevice = Objects.requireNonNull(connectDevice, "connectDevice");
+        this.scanPermission = Objects.requireNonNull(scanPermission, "scanPermission");
         this.filterOptions = buildFilterOptions(loadProfiles);
-        this.publishScheduler = Objects.requireNonNull(publishScheduler, "publishScheduler");
         this.uiState = new MutableLiveData<>(new ScanUiState(
                 false,
                 false,
@@ -98,8 +65,57 @@ public final class ScanViewModel extends ViewModel {
     }
 
     @NonNull
-    public LiveData<Integer> events() {
+    public LiveData<ScanEvent> events() {
         return events;
+    }
+
+    /**
+     * 切换扫描：扫描中则停止；未扫描且权限已授予则开扫；
+     * 未扫描且权限未授予则发 {@link ScanEvent#PERMISSION_REQUIRED}，由宿主申请权限，
+     * 结果经 {@link #onPermissionAnswer(boolean)} 回到本层。
+     */
+    public void toggleScan() {
+        boolean currentlyScanning;
+        synchronized (lock) {
+            currentlyScanning = scanning;
+        }
+        if (currentlyScanning) {
+            stopScan();
+            return;
+        }
+        if (!scanPermission.isGranted()) {
+            events.postValue(ScanEvent.PERMISSION_REQUIRED);
+            return;
+        }
+        startScan();
+    }
+
+    /**
+     * 进页语义：本次页面实例还没有走过扫描流程时才开扫；已走过则原样返回。
+     *
+     * <p>不能复用 {@link #toggleScan()} 的翻转语义：配置变更重建 Activity 时 ViewModel 存活、
+     * 扫描仍在进行，翻转会把正在跑的扫描<b>停掉</b>。这里只做幂等开扫，按钮的停止语义仍归
+     * {@link #toggleScan()}。权限缺失时只请求权限，不开扫。</p>
+     */
+    public void enterScan() {
+        synchronized (lock) {
+            if (hasScanned) {
+                return;
+            }
+        }
+        if (!scanPermission.isGranted()) {
+            events.postValue(ScanEvent.PERMISSION_REQUIRED);
+            return;
+        }
+        startScan();
+    }
+
+    /** 权限请求结果：授予才开扫；拒绝保持未扫描，等下一次 {@link #toggleScan()}。 */
+    public void onPermissionAnswer(boolean granted) {
+        if (!granted) {
+            return;
+        }
+        startScan();
     }
 
     public void selectFilter(@Nullable String modelId) {
@@ -110,21 +126,19 @@ public final class ScanViewModel extends ViewModel {
                 return;
             }
             selectedFilterModelId = normalized;
-            cancelPendingPublishLocked();
             snapshot = buildStateLocked();
         }
         uiState.postValue(snapshot);
     }
 
-    public void startScan() {
+    private void startScan() {
         final long token;
         ScanUiState startingState;
         synchronized (lock) {
             if (scanning || scanDevices.isScanning()) {
                 return;
             }
-            results.clear();
-            cancelPendingPublishLocked();
+            devices.clear();
             hasScanned = true;
             scanning = true;
             scanToken++;
@@ -136,15 +150,15 @@ public final class ScanViewModel extends ViewModel {
         scanDevices.startBatch(
                 batch -> onScanBatch(token, batch),
                 failure -> onScanFailure(token, failure),
-                () -> onScanFinished(token));
+                () -> onScanFinished(token),
+                removed -> onScanRemoved(token, removed));
     }
 
-    public void stopScan() {
+    private void stopScan() {
         ScanUiState stoppedState;
         synchronized (lock) {
             scanToken++;
             scanning = false;
-            cancelPendingPublishLocked();
             stoppedState = buildStateLocked();
         }
         scanDevices.stop();
@@ -152,24 +166,18 @@ public final class ScanViewModel extends ViewModel {
     }
 
     public void connect(@NonNull ScanItem item) {
-        ScanResult matched = null;
+        ScanResult matched;
         synchronized (lock) {
             scanToken++;
             scanning = false;
-            cancelPendingPublishLocked();
-            for (ScanResult result : results) {
-                if (result.mac().equalsIgnoreCase(item.mac())
-                        && result.modelId().equals(item.modelId())) {
-                    matched = result;
-                    break;
-                }
-            }
+            matched = devices.find(item.modelId(), item.bleMac());
         }
         scanDevices.stop();
         if (matched != null) {
-            connectDevice.execute(matched.modelId(), matched.variantId(), matched.mac());
+            connectDevice.execute(matched.modelId(), matched.variantId(),
+                    matched.bleMac(), matched.bleName());
         } else {
-            connectDevice.execute(item.modelId(), item.variantId(), item.mac());
+            connectDevice.execute(item.modelId(), item.variantId(), item.bleMac(), item.bleName());
         }
     }
 
@@ -178,10 +186,8 @@ public final class ScanViewModel extends ViewModel {
         synchronized (lock) {
             scanToken++;
             scanning = false;
-            cancelPendingPublishLocked();
         }
         scanDevices.stop();
-        publishScheduler.shutdown();
         super.onCleared();
     }
 
@@ -189,63 +195,22 @@ public final class ScanViewModel extends ViewModel {
         if (batch == null || batch.isEmpty()) {
             return;
         }
-        ScanUiState immediateSnapshot = null;
+        ScanUiState snapshot = null;
         synchronized (lock) {
             if (token != scanToken || !scanning) {
                 return;
             }
-            boolean structuralChanged = false;
-            boolean significantRssiChanged = false;
+            boolean changed = false;
             for (ScanResult result : batch) {
-                if (result == null) {
-                    continue;
-                }
-                int existingIndex = findDeviceIndexLocked(result);
-                if (existingIndex < 0) {
-                    results.add(result);
-                    structuralChanged = true;
-                } else {
-                    ScanResult existing = results.get(existingIndex);
-                    ScanResult merged = merge(existing, result);
-                    boolean nonRssiChanged = isNonRssiChanged(existing, merged);
-                    if (nonRssiChanged || structuralChanged) {
-                        results.set(existingIndex, merged);
-                        structuralChanged = true;
-                    } else if (Math.abs(merged.rssi() - existing.rssi()) >= RSSI_CHANGE_THRESHOLD_DBM) {
-                        results.set(existingIndex, merged);
-                        significantRssiChanged = true;
-                    }
-                }
+                changed |= devices.accept(result);
             }
-            if (structuralChanged) {
-                cancelPendingPublishLocked();
-                immediateSnapshot = buildStateLocked();
-            } else if (significantRssiChanged) {
-                pendingPublish = true;
-                if (pendingPublishHandle == null) {
-                    pendingPublishHandle = publishScheduler.schedule(
-                            () -> flushPendingPublish(token),
-                            PUBLISH_INTERVAL_MILLIS);
-                }
+            if (changed) {
+                snapshot = buildStateLocked();
             }
         }
-        if (immediateSnapshot != null) {
-            uiState.postValue(immediateSnapshot);
+        if (snapshot != null) {
+            uiState.postValue(snapshot);
         }
-    }
-
-    private void flushPendingPublish(long token) {
-        ScanUiState snapshot;
-        synchronized (lock) {
-            pendingPublishHandle = null;
-            if (!pendingPublish || token != scanToken || !scanning) {
-                pendingPublish = false;
-                return;
-            }
-            pendingPublish = false;
-            snapshot = buildStateLocked();
-        }
-        uiState.postValue(snapshot);
     }
 
     private void onScanFailure(long token, @Nullable DevicePort.ScanFailure failure) {
@@ -258,11 +223,22 @@ public final class ScanViewModel extends ViewModel {
                 return;
             }
             scanning = false;
-            cancelPendingPublishLocked();
             nextState = buildStateLocked();
         }
         uiState.postValue(nextState);
-        events.postValue(mapFailureMessage(failure));
+        events.postValue(toScanEvent(failure));
+    }
+
+    @NonNull
+    private static ScanEvent toScanEvent(@NonNull DevicePort.ScanFailure failure) {
+        return switch (failure) {
+            case BLUETOOTH_DISABLED -> ScanEvent.BLUETOOTH_DISABLED;
+            case PERMISSION_DENIED -> ScanEvent.PERMISSION_DENIED;
+            case LOCATION_DISABLED -> ScanEvent.LOCATION_DISABLED;
+            case BLE_UNSUPPORTED -> ScanEvent.BLE_UNSUPPORTED;
+            case SCAN_THROTTLED -> ScanEvent.SCAN_THROTTLED;
+            case FAILED -> ScanEvent.FAILED;
+        };
     }
 
     private void onScanFinished(long token) {
@@ -272,35 +248,24 @@ public final class ScanViewModel extends ViewModel {
                 return;
             }
             scanning = false;
-            cancelPendingPublishLocked();
             nextState = buildStateLocked();
         }
         uiState.postValue(nextState);
     }
 
-    private void cancelPendingPublishLocked() {
-        pendingPublish = false;
-        PublishScheduler.Cancellable handle = pendingPublishHandle;
-        pendingPublishHandle = null;
-        if (handle != null) {
-            handle.cancel();
-        }
-    }
-
-    private static boolean isNonRssiChanged(@NonNull ScanResult existing, @NonNull ScanResult merged) {
-        return !existing.name().equals(merged.name())
-                || !existing.variantId().equals(merged.variantId())
-                || !existing.mac().equals(merged.mac())
-                || existing.paired() != merged.paired();
-    }
-
-    private int findDeviceIndexLocked(@NonNull ScanResult candidate) {
-        for (int i = 0; i < results.size(); i++) {
-            if (results.get(i).sameDevice(candidate)) {
-                return i;
+    private void onScanRemoved(long token, @Nullable ScanResult removed) {
+        ScanUiState snapshot = null;
+        synchronized (lock) {
+            if (token != scanToken) {
+                return;
+            }
+            if (devices.remove(removed)) {
+                snapshot = buildStateLocked();
             }
         }
-        return -1;
+        if (snapshot != null) {
+            uiState.postValue(snapshot);
+        }
     }
 
     @NonNull
@@ -310,39 +275,14 @@ public final class ScanViewModel extends ViewModel {
                 hasScanned,
                 selectedFilterModelId,
                 filterOptions,
-                ScanUiMapper.map(results, selectedFilterModelId),
-                results.size());
+                ScanUiMapper.map(devices.snapshot(), selectedFilterModelId),
+                devices.size());
     }
 
     @NonNull
-    private String normalizeFilter(@Nullable String candidate) {
-        if (candidate == null || candidate.isEmpty()) {
-            return ScanFilterOption.ALL_MODELS;
-        }
-        for (ScanFilterOption option : filterOptions) {
-            if (option.modelId().equals(candidate)) {
-                return candidate;
-            }
-        }
-        return ScanFilterOption.ALL_MODELS;
-    }
-
-    @NonNull
-    private static ScanResult merge(@NonNull ScanResult existing, @NonNull ScanResult incoming) {
-        String name = !incoming.name().isEmpty()
-                && (!incoming.name().equalsIgnoreCase(incoming.modelId()) || existing.name().isEmpty())
-                ? incoming.name()
-                : existing.name();
-        String variantId = !incoming.variantId().isEmpty()
-                ? incoming.variantId() : existing.variantId();
-        String mac = !incoming.mac().isEmpty() ? incoming.mac() : existing.mac();
-        return new ScanResult(
-                incoming.modelId(),
-                variantId,
-                name,
-                mac,
-                incoming.rssi(),
-                existing.paired() || incoming.paired());
+    private static String normalizeFilter(@Nullable String candidate) {
+        return candidate == null || candidate.isEmpty()
+                ? ScanFilterOption.ALL_MODELS : candidate;
     }
 
     @NonNull
@@ -356,42 +296,5 @@ public final class ScanViewModel extends ViewModel {
             options.add(new ScanFilterOption(model.id(), model.id()));
         }
         return List.copyOf(options);
-    }
-
-    private static int mapFailureMessage(@NonNull DevicePort.ScanFailure failure) {
-        return switch (failure) {
-            case BLUETOOTH_DISABLED -> R.string.device_scan_error_bluetooth_disabled;
-            case PERMISSION_DENIED -> R.string.device_scan_error_permission;
-            case LOCATION_DISABLED -> R.string.device_scan_error_location_disabled;
-            case BLE_UNSUPPORTED -> R.string.device_scan_error_ble_unsupported;
-            case SCAN_THROTTLED -> R.string.device_scan_error_throttled;
-            case FAILED -> R.string.device_scan_error_failed;
-        };
-    }
-
-    private static final class DefaultPublishScheduler implements PublishScheduler {
-
-        private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "scan-vm-coalescer");
-            thread.setDaemon(true);
-            return thread;
-        });
-
-        @NonNull
-        @Override
-        public Cancellable schedule(@NonNull Runnable task, long delayMillis) {
-            try {
-                ScheduledFuture<?> future = executor.schedule(task, Math.max(1L, delayMillis), TimeUnit.MILLISECONDS);
-                return () -> future.cancel(false);
-            } catch (RejectedExecutionException closed) {
-                return () -> {
-                };
-            }
-        }
-
-        @Override
-        public void shutdown() {
-            executor.shutdownNow();
-        }
     }
 }

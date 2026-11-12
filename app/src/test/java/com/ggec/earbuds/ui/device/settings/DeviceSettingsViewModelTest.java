@@ -111,7 +111,7 @@ public final class DeviceSettingsViewModelTest {
 
     private static DeviceSnapshot readySnapshot(String modelId, String variantId) {
         return new DeviceSnapshot(ConnectionState.READY, modelId, variantId,
-                new BatterySnapshot(85, 85, 60, false), WearState.BOTH,
-                "1.0.0", modelId, "AA:BB:CC:00:00:01", "");
+                new BatterySnapshot(85, 85, 60, false), WearState.NOT_WORN,
+                "1.0.0", modelId, "AA:BB:CC:00:00:01", DeviceSnapshot.UNKNOWN_EAR_COLOR);
     }
 }

@@ -40,6 +40,16 @@ public final class AppContainer {
         return device;
     }
 
+    /**
+     * 进程级释放：只释放设备子图（停止 BLE 扫描、关闭协议会话、释放 BLE 侧线程池）。
+     * AI 与 shell 子图没有进程级资源需要关闭；{@link AppExecutors} 的线程池为 daemon 且开启
+     * core thread 超时，随进程退出回收。Android 生产环境不保证回调 {@code onTerminate}，
+     * 因此这里是 best-effort。
+     */
+    public void release() {
+        device.release();
+    }
+
     @Nullable
     public static AppContainer from(@NonNull Context context) {
         Context application = context.getApplicationContext();

@@ -122,9 +122,6 @@ public final class DeviceHomePage {
     }
 
     public void render(@NonNull DeviceHomeUiState state) {
-        if (!state.loaded()) {
-            return;
-        }
         boolean hasDevice = state.connected();
         content.setVisibility(hasDevice ? View.VISIBLE : View.GONE);
         empty.setVisibility(hasDevice ? View.GONE : View.VISIBLE);

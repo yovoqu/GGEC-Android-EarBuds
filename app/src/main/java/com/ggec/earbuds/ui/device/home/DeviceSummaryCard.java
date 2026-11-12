@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 
 /** 设备摘要卡：机型名、连接状态、三路电量、佩戴与充电。 */
@@ -53,7 +54,7 @@ public final class DeviceSummaryCard {
         stateRow.setGravity(Gravity.CENTER_VERTICAL);
         statusDot = new View(activity);
         statusDot.setBackground(theme.circle(theme.confirm));
-        stateRow.addView(statusDot, new LinearLayout.LayoutParams(theme.dp(8), theme.dp(8)));
+        stateRow.addView(statusDot, new LinearLayout.LayoutParams(theme.dp(DeviceTheme.STATUS_DOT), theme.dp(DeviceTheme.STATUS_DOT)));
         status = theme.text(DeviceTheme.TEXT_CAPTION, theme.text2);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -122,7 +123,7 @@ public final class DeviceSummaryCard {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setGravity(Gravity.CENTER);
         TextView value = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.BOLD);
-        value.setText("--");
+        value.setText(DeviceFormats.UNKNOWN);
         TextView label = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
         label.setText(labelRes);
         column.addView(value, wrap());

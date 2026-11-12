@@ -14,12 +14,8 @@ public final class ScanUiMapper {
     }
 
     public static ScanItem map(ScanResult result) {
-        return new ScanItem(result.modelId(), result.variantId(), result.name(),
-                result.mac(), result.rssi(), result.paired());
-    }
-
-    public static List<ScanItem> map(List<ScanResult> results) {
-        return map(results, ScanFilterOption.ALL_MODELS);
+        return new ScanItem(result.modelId(), result.variantId(), result.bleName(),
+                result.bleMac(), result.rssi());
     }
 
     public static List<ScanItem> map(List<ScanResult> results, @Nullable String filterModelId) {
@@ -30,6 +26,7 @@ public final class ScanUiMapper {
                 items.add(map(result));
             }
         }
-        return List.copyOf(items);
+        // 直接返回新构建的局部列表；不可变拷贝统一由 ScanUiState 构造器完成，避免每帧两次 List.copyOf。
+        return items;
     }
 }

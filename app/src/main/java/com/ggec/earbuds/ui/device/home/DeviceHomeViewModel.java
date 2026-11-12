@@ -95,6 +95,11 @@ public final class DeviceHomeViewModel extends ViewModel {
             current = controlState;
         }
         DeviceProfile profile = loadProfiles.profileFor(shot).orElse(null);
+        if (profile == null) {
+            // CONNECTING 时 snapshot 尚未 isConnected，profileFor(snapshot) 为空；用 modelId/variantId 兜底解析，
+            // 让首页在“连接中”就能显示设备卡片与“连接中”文案（而不是回到空态）。
+            profile = loadProfiles.profileFor(shot.modelId(), shot.variantId()).orElse(null);
+        }
         uiState.postValue(mapper.map(profile, shot, current, controls.isAvailable()));
     }
 
