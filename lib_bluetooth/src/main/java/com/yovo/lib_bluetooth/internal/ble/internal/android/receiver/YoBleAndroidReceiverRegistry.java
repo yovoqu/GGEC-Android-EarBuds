@@ -7,7 +7,7 @@ import android.content.IntentFilter;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.concurrent.CopyOnWriteArrayList;
 

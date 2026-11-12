@@ -14,8 +14,8 @@ import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattTransport;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.compat.YoBleGattCompat;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.hiddenapi.YoBleHiddenApiPolicy;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 

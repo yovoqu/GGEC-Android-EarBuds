@@ -7,7 +7,6 @@ import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
 import com.yovo.lib_bluetooth.model.ble.BleScanFilter;
 import com.yovo.lib_bluetooth.model.ble.BleScanMatchMode;
 import com.yovo.lib_bluetooth.model.ble.BleScanMode;
-import com.yovo.lib_bluetooth.model.ble.BleScanThrottlePolicy;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,8 +42,6 @@ public final class BleScanConfig {
     private final long deduplicationWindowMillis;
     private final long matchLostTimeoutMillis;
     @NonNull
-    private final BleScanThrottlePolicy throttlePolicy;
-    @NonNull
     private final List<BleScanFilter> filters;
 
     private BleScanConfig(Builder builder) {
@@ -60,7 +57,6 @@ public final class BleScanConfig {
         this.locationExempt = builder.locationExempt;
         this.deduplicationWindowMillis = builder.deduplicationWindowMillis;
         this.matchLostTimeoutMillis = builder.matchLostTimeoutMillis;
-        this.throttlePolicy = builder.throttlePolicy;
         this.filters = Collections.unmodifiableList(new ArrayList<>(builder.filters));
     }
 
@@ -118,11 +114,6 @@ public final class BleScanConfig {
     }
 
     @NonNull
-    public BleScanThrottlePolicy throttlePolicy() {
-        return throttlePolicy;
-    }
-
-    @NonNull
     public List<BleScanFilter> filters() {
         return filters;
     }
@@ -165,7 +156,6 @@ public final class BleScanConfig {
         private long deduplicationWindowMillis = 0L;
         /** 0 表示不启用软件 lost；具体阈值由 {@link YoBleScanDefaults} 单点给出。 */
         private long matchLostTimeoutMillis = 0L;
-        private BleScanThrottlePolicy throttlePolicy = BleScanThrottlePolicy.DELAY_UNTIL_WINDOW_FREE;
         private final List<BleScanFilter> filters = new ArrayList<>();
 
         public Builder() {
@@ -184,7 +174,6 @@ public final class BleScanConfig {
             this.locationExempt = source.locationExempt;
             this.deduplicationWindowMillis = source.deduplicationWindowMillis;
             this.matchLostTimeoutMillis = source.matchLostTimeoutMillis;
-            this.throttlePolicy = source.throttlePolicy;
             this.filters.addAll(source.filters);
         }
 
@@ -315,12 +304,6 @@ public final class BleScanConfig {
                                 + matchLostTimeoutMillis);
             }
             this.matchLostTimeoutMillis = matchLostTimeoutMillis;
-            return this;
-        }
-
-        @NonNull
-        public Builder throttlePolicy(@NonNull BleScanThrottlePolicy throttlePolicy) {
-            this.throttlePolicy = Objects.requireNonNull(throttlePolicy, "throttlePolicy");
             return this;
         }
 

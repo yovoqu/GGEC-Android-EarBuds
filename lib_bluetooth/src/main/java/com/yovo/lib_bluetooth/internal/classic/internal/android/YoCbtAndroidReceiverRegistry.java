@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
 import androidx.core.content.ContextCompat;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 import androidx.annotation.NonNull;
 
 import java.util.concurrent.CopyOnWriteArrayList;

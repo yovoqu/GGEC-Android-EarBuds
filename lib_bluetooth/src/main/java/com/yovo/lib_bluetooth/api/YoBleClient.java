@@ -71,14 +71,37 @@ public interface YoBleClient {
     @NonNull
     Result<List<BleConnectionSnapshot>> getConnectedDevices();
 
-    // ── 2. BLE 扫描：进程内一个扫描器，调用方只订阅或取消 ────
+    // ── 2. BLE 扫描：机制层（一个进程内扫描器，订阅 + 热替换谓词 + 显式重扫） ────
 
     /**
      * 订阅原始 BLE 广播。第一个订阅者启动扫描，最后一个取消后停止。
-     * 策略由库决定，调用方不能传扫描配置。
+     *
+     * <p>返回的订阅句柄支持 {@link BleScanSubscription#setFrameFilter} 热替换帧级过滤器：
+     * 替换谓词只影响后续帧，不重启扫描。平台参数由库的默认计划决定，变更走
+     * {@link #reconfigureScan(BleScanPlan)}。</p>
+     *
+     * <p>启动被限流守卫拒绝时，不会发起任何平台扫描，失败经 {@link BleScanObserver#onScanFailed}
+     * 以 {@code SCAN_THROTTLED} 上报；句柄仍需取消。</p>
      */
     @NonNull
-    BleOperationHandle subscribeScan(@NonNull BleScanObserver observer);
+    BleScanSubscription subscribeScan(@NonNull BleScanObserver observer);
+
+    /**
+     * 显式重扫：平台扫描参数（模式/批处理/legacy/硬件过滤）变更的<b>唯一</b>合法入口。
+     *
+     * <p>与当前计划一致时幂等返回成功，不触发任何重扫；无活动扫描会话时返回失败；
+     * 限流窗口内启动次数已达上限时返回 {@code SCAN_THROTTLED}，且不调用平台扫描。</p>
+     */
+    @NonNull
+    Result<Void> reconfigureScan(@NonNull BleScanPlan plan);
+
+    /** 平台扫描能力快照（硬件卸载过滤 / 批量 / 扩展广播）。 */
+    @NonNull
+    BleScanCapabilities scanCapabilities();
+
+    /** 扫描健康度快照（会话启动时刻 / 窗口内启动次数 / 最近帧时刻 / 适配器状态）。 */
+    @NonNull
+    BleScanHealth scanHealth();
 
     @NonNull
     Result<Void> flushBatchScanResults();

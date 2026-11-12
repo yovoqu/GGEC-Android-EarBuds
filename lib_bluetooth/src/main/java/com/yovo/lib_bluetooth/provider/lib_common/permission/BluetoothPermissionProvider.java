@@ -1,4 +1,4 @@
-package com.yovo.lib_bluetooth.provider.lib_common;
+package com.yovo.lib_bluetooth.provider.lib_common.permission;
 
 import android.content.Context;
 
@@ -11,13 +11,14 @@ import com.yovo.lib_common.system.permission.model.Permission;
 import com.yovo.lib_common.system.permission.model.PermissionPolicy;
 
 /**
- * lib_common YoPermission 的蓝牙模块 Provider：全模块唯一允许 import YoPermission 的类。
+ * lib_common YoPermission 的蓝牙权限适配：本模块唯一允许 import {@code YoPermission} 的类。
+ *
+ * <p>由装配根 {@code BluetoothSdkCore} 构造，注入 {@code YoBluetoothPermissionChecker}
+ * 后沿客户端实现向下传；本类不持有静态实例，也不提供任何安装入口。</p>
  */
-public final class PermissionProvider implements BluetoothPermissionPort {
+public final class BluetoothPermissionProvider implements BluetoothPermissionPort {
 
-    public static final PermissionProvider INSTANCE = new PermissionProvider();
-
-    private PermissionProvider() {
+    public BluetoothPermissionProvider() {
     }
 
     @Override

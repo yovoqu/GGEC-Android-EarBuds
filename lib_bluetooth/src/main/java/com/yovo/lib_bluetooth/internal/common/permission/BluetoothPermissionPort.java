@@ -5,15 +5,12 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 
 /**
- * 蓝牙权限端口：由 provider/lib_common 实现并委托 YoPermission，
+ * 蓝牙权限端口：由 {@code provider/lib_common/permission} 实现并委托 YoPermission，
  * 业务层不直接依赖 lib_common。
+ *
+ * <p>实现由装配根构造后注入 {@link YoBluetoothPermissionChecker}，端口本身不含默认实现。</p>
  */
 public interface BluetoothPermissionPort {
-
-    BluetoothPermissionPort UNINSTALLED = (context, permission) -> {
-        throw new IllegalStateException(
-                "BluetoothPermissionPort 未安装。必须通过 YoBluetoothSDK 创建客户端。");
-    };
 
     /**
      * 检查指定蓝牙权限当前是否已授予。

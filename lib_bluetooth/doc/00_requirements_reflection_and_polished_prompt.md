@@ -1,3 +1,5 @@
+> 历史快照（2026-11 重构前）：本文所述 Provider 安装机制（BluetoothProviderInstaller / setPort）已删除，当前架构见 docs/architecture/2026-11-refactor/design.md。
+
 # lib_bluetooth 架构梳理：需求说明书 + 反思报告 + 润色提示词（v1）
 
 > 适用范围：`lib_bluetooth`（含 `common` / `yoble` / `yocbt` 三域）

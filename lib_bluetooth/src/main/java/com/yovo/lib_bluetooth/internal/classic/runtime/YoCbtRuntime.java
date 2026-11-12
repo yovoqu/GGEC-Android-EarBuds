@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic.runtime;
 import android.os.Looper;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
@@ -11,6 +10,7 @@ import com.yovo.lib_bluetooth.internal.common.concurrency.YoDispatcher;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoExecutors;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoCloseGuard;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;

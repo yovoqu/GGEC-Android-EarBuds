@@ -52,6 +52,7 @@ import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppSecurityMode
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoEventTimeline;
+import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.model.classic.CbtDiagnosticReport;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkSnapshot;
@@ -106,13 +107,15 @@ public final class ClassicClientImpl implements YoCbtClient {
     @NonNull
     private final CbtInternalClient delegate;
 
-    public ClassicClientImpl(@NonNull Context context, @NonNull CbtConfig config) {
+    public ClassicClientImpl(@NonNull Context context,
+                             @NonNull CbtConfig config,
+                             @NonNull YoBluetoothPermissionChecker permissionChecker) {
         CbtInternalClientConfig oldConfig = CbtInternalClientConfig.builder()
                 .allowHiddenApiBondManagement(config.allowHiddenApiBondManagement())
                 .allowHiddenApiSppChannel(config.allowHiddenApiSppChannel())
                 .sppWriteQueueCapacity(config.sppWriteQueueCapacity())
                 .build();
-        this.delegate = new YoCbtAndroidClient(context, oldConfig);
+        this.delegate = new YoCbtAndroidClient(context, oldConfig, permissionChecker);
     }
 
     @NonNull

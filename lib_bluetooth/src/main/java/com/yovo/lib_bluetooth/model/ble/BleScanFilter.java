@@ -135,6 +135,48 @@ public final class BleScanFilter {
         return requireConnectable;
     }
 
+    /**
+     * 值相等：扫描过滤器是纯值对象，硬件参数（含 filters 列表）的相等性决定"是否需要用新参数重扫"，
+     * 因此必须按字段比较，不能靠对象同一性。
+     */
+    @Override
+    public boolean equals(@Nullable Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof BleScanFilter)) {
+            return false;
+        }
+        BleScanFilter that = (BleScanFilter) other;
+        return Objects.equals(deviceAddress, that.deviceAddress)
+                && Objects.equals(deviceName, that.deviceName)
+                && Objects.equals(deviceNameContains, that.deviceNameContains)
+                && Objects.equals(serviceUuid, that.serviceUuid)
+                && Objects.equals(serviceUuidMask, that.serviceUuidMask)
+                && Objects.equals(solicitationUuid, that.solicitationUuid)
+                && Objects.equals(solicitationUuidMask, that.solicitationUuidMask)
+                && Objects.equals(serviceDataUuid, that.serviceDataUuid)
+                && Arrays.equals(serviceData, that.serviceData)
+                && Arrays.equals(serviceDataMask, that.serviceDataMask)
+                && Objects.equals(manufacturerId, that.manufacturerId)
+                && Arrays.equals(manufacturerData, that.manufacturerData)
+                && Arrays.equals(manufacturerDataMask, that.manufacturerDataMask)
+                && Objects.equals(minRssi, that.minRssi)
+                && requireConnectable == that.requireConnectable;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(deviceAddress, deviceName, deviceNameContains, serviceUuid,
+                serviceUuidMask, solicitationUuid, solicitationUuidMask, serviceDataUuid,
+                manufacturerId, minRssi, requireConnectable);
+        result = 31 * result + Arrays.hashCode(serviceData);
+        result = 31 * result + Arrays.hashCode(serviceDataMask);
+        result = 31 * result + Arrays.hashCode(manufacturerData);
+        result = 31 * result + Arrays.hashCode(manufacturerDataMask);
+        return result;
+    }
+
     public boolean isEmpty() {
         return deviceAddress == null
                 && deviceName == null

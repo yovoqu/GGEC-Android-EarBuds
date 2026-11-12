@@ -7,17 +7,10 @@ import static org.junit.Assert.assertTrue;
 
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
-import org.junit.Before;
 import org.junit.Test;
 
 public class YoCbtSppConnectionLifecycleTest {
-
-    @Before
-    public void disableLogger() {
-        YoBtLogger.setEnabled(false);
-    }
 
     @Test
     public void enterPreparing_isQueryableAsPreparing() {

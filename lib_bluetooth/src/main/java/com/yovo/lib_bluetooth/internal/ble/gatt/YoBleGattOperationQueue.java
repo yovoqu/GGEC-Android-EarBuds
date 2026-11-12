@@ -6,12 +6,12 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleOperationPriority;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.Comparator;
 import java.util.Iterator;

@@ -15,7 +15,6 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
@@ -29,6 +28,7 @@ import com.yovo.lib_bluetooth.internal.classic.service.model.YoCbtSdpResult;
 import com.yovo.lib_bluetooth.internal.classic.service.model.YoCbtSdpSource;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtLiveSdpPort;
 import com.yovo.lib_bluetooth.internal.classic.service.resolve.YoCbtServiceRecordFactory;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
 import java.util.List;

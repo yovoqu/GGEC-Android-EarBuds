@@ -1,4 +1,4 @@
-package com.yovo.lib_bluetooth.internal.common.diagnostics;
+package com.yovo.lib_bluetooth.provider.lib_common.log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -9,27 +9,16 @@ import com.yovo.lib_common.log.YoLog;
 import com.yovo.lib_common.log.YoLogBootstrap;
 
 /**
- * 蓝牙模块唯一日志门面。
+ * 蓝牙模块唯一日志门面，同时是 {@code lib_common.log} 的 Provider 接入点。
  *
  * <p>模块内所有日志点统一调用本类；本类直接委托 {@code lib_common} 的 {@link YoLog}
- * （Logcat + 文件落盘：异步、滚动、保留、降级），不再经过端口/适配器等中间层。
- * 本类是蓝牙模块中唯一允许直接依赖 {@code com.yovo.lib_common.log} 的类，
- * 作为 lib_bluetooth 与 lib_common 之间的日志对接缝（Provider seam）。</p>
+ * （Logcat + 文件落盘：异步、滚动、保留、降级），不经端口/适配器等中间层。
+ * 本模块只有 {@code provider/lib_common/log} 允许依赖 {@code com.yovo.lib_common.log}，
+ * 其余包只使用本门面，日志级别与落盘策略由 {@code lib_common.log} 统一控制。</p>
  */
 public final class YoBtLogger {
 
-    /** 模块级降噪开关：false 时本模块全部日志静默（仍需全局 YoLog 级别过滤）。 */
-    private static volatile boolean enabled = true;
-
     private YoBtLogger() {
-    }
-
-    public static void setEnabled(boolean value) {
-        enabled = value;
-    }
-
-    public static boolean isEnabled() {
-        return enabled;
     }
 
     /**
@@ -43,61 +32,43 @@ public final class YoBtLogger {
     // ── 基础日志 ────────────────────────────────────────────────
 
     public static void v(@NonNull String tag, @NonNull String message) {
-        if (enabled) {
-            YoLog.v(tag, message);
-        }
+        YoLog.v(tag, message);
     }
 
     public static void d(@NonNull String tag, @NonNull String message) {
-        if (enabled) {
-            YoLog.d(tag, message);
-        }
+        YoLog.d(tag, message);
     }
 
     public static void d(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        if (enabled) {
-            YoLog.d(tag, message, throwable);
-        }
+        YoLog.d(tag, message, throwable);
     }
 
     public static void i(@NonNull String tag, @NonNull String message) {
-        if (enabled) {
-            YoLog.i(tag, message);
-        }
+        YoLog.i(tag, message);
     }
 
     public static void i(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        if (enabled) {
-            YoLog.i(tag, message, throwable);
-        }
+        YoLog.i(tag, message, throwable);
     }
 
     public static void w(@NonNull String tag, @NonNull String message) {
-        if (enabled) {
-            YoLog.w(tag, message);
-        }
+        YoLog.w(tag, message);
     }
 
     public static void w(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        if (enabled) {
-            YoLog.w(tag, message, throwable);
-        }
+        YoLog.w(tag, message, throwable);
     }
 
     public static void e(@NonNull String tag, @NonNull String message) {
-        if (enabled) {
-            YoLog.e(tag, message);
-        }
+        YoLog.e(tag, message);
     }
 
     public static void e(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        if (enabled) {
-            YoLog.e(tag, message, throwable);
-        }
+        YoLog.e(tag, message, throwable);
     }
 
     // ── 上下文（类 MDC）────────────────────────────────────────

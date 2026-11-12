@@ -60,4 +60,10 @@ public interface YoBleScanPlatform {
 
     /** 控制器能否把 {@code reportDelay} 下推到硬件批量扫描。 */
     boolean supportsHardwareBatching();
+
+    /** 平台是否支持硬件卸载过滤（不支持时只能无过滤扫描 + 客户端按帧过滤）。 */
+    boolean supportsOffloadedFiltering();
+
+    /** 平台是否支持 LE 扩展广播。 */
+    boolean supportsExtendedAdvertising();
 }

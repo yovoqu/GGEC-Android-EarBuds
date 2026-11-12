@@ -3,6 +3,9 @@ package com.yovo.lib_bluetooth.internal.ble.scan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.api.BleScanCapabilities;
+import com.yovo.lib_bluetooth.api.BleScanHealth;
+import com.yovo.lib_bluetooth.api.BleScanPlan;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
@@ -17,7 +20,6 @@ import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
-import com.yovo.lib_bluetooth.model.ble.BleScanThrottlePolicy;
 import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.ArrayList;
@@ -44,13 +46,13 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         STARTING,
         SCANNING,
         STOPPING,
-        FAILED,
-        THROTTLED_WAIT
+        FAILED
     }
 
     private static final String MODULE = "ble-scan";
 
     private final YoBleRuntime runtime;
+    private final YoBleCapabilityInspector capabilityInspector;
     private final YoBleScanPlatform scanPlatform;
     private final YoBleDeviceSnapshotStore snapshotStore;
     private final YoBleTimelineRecorder timeline;
@@ -70,15 +72,19 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
 
     private long activeGeneration = 0L;
     private volatile boolean scanning = false;
-    private volatile boolean pendingStart = false;
+    /** 当前（或最近一次）平台扫描会话的启动时刻；无会话时为 0。 */
+    private volatile long startedAtMillis = 0L;
+    /** 最近一次收到平台帧的时刻；会话内尚未收到帧时为 0。 */
+    private volatile long lastFrameAtMillis = 0L;
     @Nullable
-    private BleScanConfig activeConfig;
+    private volatile BleScanConfig activeConfig;
+    /** 当前生效的平台扫描计划；软件降级后置空（实际参数已偏离计划，任何重配都必须重扫）。 */
     @Nullable
-    private BleScanObserver activeObserver;
+    private volatile BleScanPlan activePlan;
+    @Nullable
+    private volatile BleScanObserver activeObserver;
     @Nullable
     private YoTimeoutHandle timeoutHandle;
-    @Nullable
-    private YoTimeoutHandle delayedStartHandle;
     private volatile boolean released = false;
     /** scan() 已受理但对应 state 任务尚未执行完；用于消除“刚发起就停”竞态（BLE-01）。 */
     private volatile boolean startInFlight = false;
@@ -101,6 +107,7 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
                                @NonNull YoBleTimelineRecorder timeline,
                                @NonNull LongSupplier clockMillis) {
         this.runtime = runtime;
+        this.capabilityInspector = capabilityInspector;
         this.scanPlatform = scanPlatform;
         this.snapshotStore = snapshotStore;
         this.timeline = timeline;
@@ -147,11 +154,84 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         startInFlight = true;
         // 所有状态/会话字段的写入都收敛到 state 线程，消除调用线程与 state 线程的竞态（BLE-状态机）。
         runtime.state(() -> {
-            enterState(ScanState.STARTING);
             adapterRecovery.clear();
-            startScanInternal(gen, config, observer);
+            startScanInternal(gen, config, YoBleScanDefaults.plan(), observer);
         });
         return new BleOperationHandle(opId, () -> runtime.state(() -> stopGeneration(gen, true)));
+    }
+
+    /**
+     * 显式重扫：平台扫描参数变更的唯一合法入口。
+     *
+     * <p>调用线程上完成三件同步判定（无副作用），随后把停扫→重启交给 state 线程：</p>
+     * <ol>
+     *   <li>无活动会话 → 失败（没有可重配的扫描）；</li>
+     *   <li>计划与当前生效计划一致 → 幂等成功，<b>不重扫</b>；</li>
+     *   <li>限流窗口内启动次数已达上限 → {@code SCAN_THROTTLED} 失败，<b>不发起平台扫描</b>。</li>
+     * </ol>
+     */
+    @NonNull
+    public Result<Void> reconfigure(@NonNull BleScanPlan plan) {
+        if (released || runtime.isReleased()) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.RELEASED, MODULE, "YoBleClient has been released"));
+        }
+        BleScanObserver observer = activeObserver;
+        if (!scanning || observer == null) {
+            return Result.failure(YoBleErrorMapper.failure(
+                    BleErrorCode.ILLEGAL_STATE, MODULE, "No BLE scan is active"));
+        }
+        if (plan.equals(activePlan)) {
+            // 平台参数没变：幂等成功，绝不重扫（重扫会浪费一次平台限流额度）。
+            return Result.success(null);
+        }
+        if (throttleGuard.wouldExceed()) {
+            timeline.record(MODULE, "reconfigure rejected by throttle guard");
+            return Result.failure(throttledFailure());
+        }
+        runtime.state(() -> applyReconfigure(plan));
+        return Result.success(null);
+    }
+
+    /**
+     * 应用新计划（state 线程）：替换生效计划与平台配置，然后走唯一的「停扫 → 按新参数启动」路径。
+     * 不重放 onScanStarted / onScanStopped：对外仍是一次连续会话。
+     */
+    private void applyReconfigure(@NonNull BleScanPlan plan) {
+        runtime.checkStateThread();
+        if (released || !scanning || activeObserver == null || activeConfig == null) {
+            return;
+        }
+        if (plan.equals(activePlan)) {
+            return;
+        }
+        activePlan = plan;
+        activeConfig = YoBleScanDefaults.config(plan);
+        timeline.record(MODULE, "reconfigure scan plan: mode=" + plan.mode()
+                + ", reportDelayMs=" + plan.reportDelayMs()
+                + ", legacy=" + plan.legacy()
+                + ", filters=" + plan.hardwareFilters().size());
+        restartPlatformScan(activeGeneration);
+    }
+
+    /** 扫描能力快照：全部来自平台真实查询。 */
+    @NonNull
+    public BleScanCapabilities capabilities() {
+        return new BleScanCapabilities(
+                scanPlatform.supportsOffloadedFiltering(),
+                scanPlatform.supportsHardwareBatching(),
+                scanPlatform.supportsExtendedAdvertising());
+    }
+
+    /** 扫描健康度快照：会话状态 + 窗口内启动次数 + 最近帧时刻 + 适配器状态。 */
+    @NonNull
+    public BleScanHealth health() {
+        return new BleScanHealth(
+                scanning,
+                startedAtMillis,
+                throttleGuard.startsInWindow(),
+                lastFrameAtMillis,
+                capabilityInspector.adapterState());
     }
 
     @NonNull
@@ -160,7 +240,7 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
             return Result.failure(YoBleErrorMapper.failure(
                     BleErrorCode.RELEASED, MODULE, "BLE client already released"));
         }
-        if (!scanning && !pendingStart && !startInFlight) {
+        if (!scanning && !startInFlight) {
             // 已无活动会话，但外部停止仍要放弃适配器恢复现场：适配器中断时暂存的观察者
             // 可能已被订阅者取消（如业务侧失败后立即退订），恢复它就会启动一次无人接收的扫描。
             runtime.state(adapterRecovery::clear);
@@ -234,13 +314,13 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
     public void onAdapterTurnedOff() {
         runtime.state(() -> {
             runtime.checkStateThread();
-            if (!scanning && !pendingStart && !startInFlight && activeObserver == null) {
+            if (!scanning && !startInFlight && activeObserver == null) {
                 return;
             }
             BleScanObserver observer = activeObserver;
             // 暂存以便适配器重新开启后自动恢复（G8）。
             if (activeConfig != null && observer != null) {
-                adapterRecovery.recordInterrupted(activeConfig, observer);
+                adapterRecovery.recordInterrupted(activeConfig, activePlan, observer);
             }
             stopActiveInternal(false);
             enterState(ScanState.FAILED);
@@ -260,20 +340,20 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
                 return;
             }
             YoBleScanAdapterRecovery.Pending pending = adapterRecovery.takeResumable(
-                    scanning || startInFlight || pendingStart);
+                    scanning || startInFlight);
             if (pending == null) {
                 return;
             }
             long generation = scanSeq.incrementAndGet();
-            enterState(ScanState.STARTING);
             startInFlight = true;
             timeline.record(MODULE, "adapter back on, resume scan");
-            startScanInternal(generation, pending.config(), pending.observer());
+            startScanInternal(generation, pending.config(), pending.plan(), pending.observer());
         });
     }
 
     private void startScanInternal(long generation,
                                    @NonNull BleScanConfig config,
+                                   @Nullable BleScanPlan plan,
                                    @NonNull BleScanObserver observer) {
         runtime.checkStateThread();
         if (released || runtime.isReleased()) {
@@ -294,48 +374,30 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
             return;
         }
 
-        long delayMs = config.throttlePolicy() == BleScanThrottlePolicy.UNRESTRICTED
-                ? 0L : throttleGuard.requiredDelayMillis();
-        if (delayMs > 0L && config.throttlePolicy() == BleScanThrottlePolicy.FAIL_FAST) {
-            BleFailure throttled = YoBleErrorMapper.failure(
-                    BleErrorCode.SCAN_THROTTLED, MODULE,
-                    "BLE scan throttled (max starts within 30s reached), retry after "
-                            + delayMs + "ms",
-                    null, YoBleScanAdvertiseStatus.SCAN_FAILED_SCANNING_TOO_FREQUENTLY,
-                    null, null, "Wait " + delayMs + "ms before calling scan()");
-            timeline.record(MODULE, "scan throttled (FAIL_FAST), waitMs=" + delayMs);
+        // 硬限流守卫：窗口内启动次数已达上限时直接失败，绝不调用平台 startScan。
+        // 平台在执行超限启动后仍会回 RUNNING，却再也不给帧（静默黑洞），所以拒绝必须发生在平台之前。
+        // 拒绝不改动正在运行的会话：扫描状态只在"没有活动会话"时才落到 FAILED。
+        if (throttleGuard.wouldExceed()) {
+            timeline.record(MODULE, "scan rejected by throttle guard, startsInWindow="
+                    + throttleGuard.startsInWindow());
             startInFlight = false;
-            enterState(ScanState.FAILED);
+            if (!scanning) {
+                enterState(ScanState.FAILED);
+            }
             stats.recordFail();
-            emitFailure(observer, throttled);
+            emitFailure(observer, throttledFailure());
             return;
         }
 
+        enterState(ScanState.STARTING);
         // 重启前收拾上一代会话：这是内部清理，不是外部停止，不动适配器恢复现场。
         stopActiveInternal(false);
 
         activeGeneration = generation;
         activeConfig = config;
+        activePlan = plan;
         activeObserver = observer;
         callbackEmulator.reset();
-
-        if (delayMs > 0L) {
-            pendingStart = true;
-            enterState(ScanState.THROTTLED_WAIT);
-            timeline.record(MODULE, "scan delayed by throttle guard: waitMs=" + delayMs);
-            delayedStartHandle = runtime.scheduler().schedule(
-                    () -> runtime.state(() -> {
-                        if (!pendingStart || released || activeGeneration != generation) {
-                            return;
-                        }
-                        delayedStartHandle = null;
-                        pendingStart = false;
-                        launchPlatformScan(generation, config, observer);
-                    }),
-                    delayMs);
-            startInFlight = false;
-            return;
-        }
 
         launchPlatformScan(generation, config, observer);
     }
@@ -418,8 +480,10 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
             cancelTimerHandles();
             softwareBatch.stop();
             scanning = false;
-            pendingStart = false;
+            startedAtMillis = 0L;
+            lastFrameAtMillis = 0L;
             activeConfig = null;
+            activePlan = null;
             activeObserver = null;
             BleErrorCode code = platformResult.rawCode == 0
                     ? BleErrorCode.SCAN_START_FAILED
@@ -438,12 +502,15 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         } else {
             softwareBatch.stop();
         }
-        if (firstStart) {
-            throttleGuard.recordScanStarted();
-        }
+        // 每一次真正被平台接受的启动都计入限流窗口：健康度暴露的是"平台接受了多少次启动"，
+        // 重配与内部重启同样消耗平台的限流额度，因此不能只记首次启动。
+        throttleGuard.recordScanStarted();
         enterState(ScanState.SCANNING);
+        if (!scanning) {
+            startedAtMillis = clockMillis.getAsLong();
+            lastFrameAtMillis = 0L;
+        }
         scanning = true;
-        pendingStart = false;
         stats.recordStart();
         timeline.record(MODULE, "scan started gen=" + generation
                 + ", filters=" + config.filters().size()
@@ -492,6 +559,8 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         if (!scanning || released || activeGeneration != generation || activeConfig == null) {
             return;
         }
+        // 健康度按"收到平台帧"计，不看该帧是否命中配置过滤：静默限流的判定依据是平台是否还在回调。
+        lastFrameAtMillis = clockMillis.getAsLong();
         if (!YoBleScanFilterMatcher.matchesConfig(activeConfig, result)) {
             return;
         }
@@ -519,6 +588,9 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         }
         List<BleScanResult> filtered = new ArrayList<>();
         long now = clockMillis.getAsLong();
+        if (!results.isEmpty()) {
+            lastFrameAtMillis = now;
+        }
         for (BleScanResult r : results) {
             if (!YoBleScanFilterMatcher.matchesConfig(activeConfig, r)) {
                 continue;
@@ -551,6 +623,8 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
                 && degradeRetry.tryDegrade(generation, rawErrorCode)) {
             timeline.record(MODULE, "platform scan failed raw=" + rawErrorCode
                     + ", degrade to software (no hw filters/batch) & retry once");
+            // 降级后实际平台参数已偏离计划：计划置空，使任何重配都必须真正重扫。
+            activePlan = null;
             platformExecutor.submit(scanPlatform::stopPlatformScan);
             launchPlatformScan(generation, currentConfig.softwareFallback(), currentObserver, false);
             return;
@@ -582,10 +656,6 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
             timeoutHandle.cancel();
             timeoutHandle = null;
         }
-        if (delayedStartHandle != null) {
-            delayedStartHandle.cancel();
-            delayedStartHandle = null;
-        }
         lostSweeper.disarm();
         batchFlusher.stop();
         longScanRestarter.disarm();
@@ -599,8 +669,8 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
             adapterRecovery.clear();
         }
         boolean wasScanning = scanning;
-        // 是否存在需要收尾的“实际扫描会话”：STARTING / THROTTLED_WAIT / SCANNING 三种情况。
-        boolean hadSession = wasScanning || pendingStart || activeObserver != null;
+        // 是否存在需要收尾的“实际扫描会话”：STARTING / SCANNING 两种情况。
+        boolean hadSession = wasScanning || activeObserver != null;
         if (!hadSession) {
             // 无实际扫描可停（如启动前的内部复位）：不改变状态，避免 STARTING↔IDLE 抖动。
             return;
@@ -610,9 +680,10 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         }
         cancelTimerHandles();
         long stoppedGeneration = activeGeneration;
-        pendingStart = false;
         scanning = false;
         startInFlight = false;
+        startedAtMillis = 0L;
+        lastFrameAtMillis = 0L;
         // 使任何已入队/在途的平台启动结果失效（onPlatformStartResult 见 generation 不匹配会自行停平台）。
         activeGeneration = -1L;
         BleScanObserver observer = activeObserver;
@@ -622,13 +693,14 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
         }
         softwareBatch.stop();
         activeConfig = null;
+        activePlan = null;
         activeObserver = null;
         callbackEmulator.reset();
         // BLE-03：平台停扫放到串行平台线程；与已排队的启动任务保持 FIFO，避免“先停后启”乱序。
         platformExecutor.submit(scanPlatform::stopPlatformScan);
         timeline.record(MODULE, "scan stopped gen=" + stoppedGeneration);
-        // 无论停止发生在 STARTING / THROTTLED_WAIT / SCANNING，都必须回到 IDLE 并按需回调 onScanStopped；
-        // 否则状态会永久卡在 STARTING/THROTTLED_WAIT，调用方也永远等不到终态。
+        // 无论停止发生在 STARTING / SCANNING，都必须回到 IDLE 并按需回调 onScanStopped；
+        // 否则状态会永久卡在 STARTING，调用方也永远等不到终态。
         enterState(ScanState.IDLE);
         if (notifyStopped && observer != null) {
             runtime.callback(observer::onScanStopped);
@@ -637,6 +709,17 @@ public final class YoBleScanController implements YoReleasable, YoBleScanHub.Eng
 
     private void emitFailure(@NonNull BleScanObserver observer, @NonNull BleFailure failure) {
         runtime.callback(() -> observer.onScanFailed(failure));
+    }
+
+    /** 限流守卫拒绝时的统一失败值：调用方据此识别"搜索受限"，不发起任何平台扫描。 */
+    @NonNull
+    private BleFailure throttledFailure() {
+        return YoBleErrorMapper.failure(
+                BleErrorCode.SCAN_THROTTLED, MODULE,
+                "BLE scan throttled: " + throttleGuard.startsInWindow()
+                        + " starts already issued in the throttle window",
+                null, YoBleScanAdvertiseStatus.SCAN_FAILED_SCANNING_TOO_FREQUENTLY,
+                null, null, "Wait for the platform scan throttle window to expire");
     }
 
     /** 该代扫描是否仍在进行：定时器据此丢弃已失效代际的回调。 */

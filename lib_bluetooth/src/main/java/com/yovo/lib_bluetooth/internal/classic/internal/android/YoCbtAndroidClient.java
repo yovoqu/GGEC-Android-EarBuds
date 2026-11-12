@@ -10,8 +10,8 @@ import android.content.Intent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
+import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClient;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClientConfig;
@@ -48,6 +48,7 @@ import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnection
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionState;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpoint;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppStateObserver;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -89,8 +90,11 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     private boolean released;
 
-    public YoCbtAndroidClient(@NonNull Context context, @NonNull CbtInternalClientConfig clientConfig) {
-        this.modules = YoCbtAndroidModuleGraph.create(context, clientConfig, this::collectProfileObservers);
+    public YoCbtAndroidClient(@NonNull Context context,
+                              @NonNull CbtInternalClientConfig clientConfig,
+                              @NonNull YoBluetoothPermissionChecker permissionChecker) {
+        this.modules = YoCbtAndroidModuleGraph.create(
+                context, clientConfig, this::collectProfileObservers, permissionChecker);
         YoBtLogger.i(TAG, "YoCbtAndroidClient 已创建，SDK=" + AndroidPlatform.level());
 
         modules.bondStateReceiver.addObserver(snapshot -> {

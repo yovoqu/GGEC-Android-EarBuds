@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.proxy;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
@@ -12,6 +11,7 @@ import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.internal.android.YoCbtAndroidProfileProxyAdapter;
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 

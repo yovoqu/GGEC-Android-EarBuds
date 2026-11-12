@@ -11,7 +11,7 @@ import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtConfig;
 
 /**
- * lib_bluetooth 唯一对外静态门面。创建客户端时自动安装日志/权限 Provider。
+ * lib_bluetooth 唯一对外静态门面。创建客户端时由装配根构造并注入日志/权限 Provider。
  */
 public final class YoBluetoothSDK {
 

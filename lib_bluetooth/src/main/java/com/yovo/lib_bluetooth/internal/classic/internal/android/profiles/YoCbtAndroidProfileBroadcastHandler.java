@@ -9,7 +9,6 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtAddressType;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceType;
@@ -20,6 +19,7 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.headset.YoCbtHeadsetAudi
 import com.yovo.lib_bluetooth.internal.classic.profiles.state.YoCbtProfileBroadcastApplier;
 import com.yovo.lib_bluetooth.internal.classic.profiles.state.YoCbtProfileConnectionState;
 import com.yovo.lib_bluetooth.internal.classic.profiles.state.YoCbtProfileStateObserver;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.List;
 

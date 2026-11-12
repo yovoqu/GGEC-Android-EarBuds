@@ -9,9 +9,9 @@ import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothEventBus;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoCloseGuard;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

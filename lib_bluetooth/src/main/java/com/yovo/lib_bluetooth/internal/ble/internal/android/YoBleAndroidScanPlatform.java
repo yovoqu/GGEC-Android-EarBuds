@@ -7,6 +7,7 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
+import android.os.Build;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -16,8 +17,8 @@ import com.yovo.lib_bluetooth.internal.ble.scan.BleScanConfig;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform.StartResult;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +64,22 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     public boolean supportsHardwareBatching() {
         BluetoothAdapter adapter = adapterProvider.adapter();
         return adapter != null && adapter.isOffloadedScanBatchingSupported();
+    }
+
+    @Override
+    public boolean supportsOffloadedFiltering() {
+        BluetoothAdapter adapter = adapterProvider.adapter();
+        return adapter != null && adapter.isOffloadedFilteringSupported();
+    }
+
+    @Override
+    public boolean supportsExtendedAdvertising() {
+        // 扩展广播查询是 API 26 起才有的平台能力：低版本直接报"不支持"，不做版本分支猜测。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return false;
+        }
+        BluetoothAdapter adapter = adapterProvider.adapter();
+        return adapter != null && adapter.isLeExtendedAdvertisingSupported();
     }
 
     @NonNull

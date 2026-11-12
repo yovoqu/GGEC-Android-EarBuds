@@ -3,8 +3,8 @@ package com.yovo.lib_bluetooth.internal.ble.diagnostics;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoEventTimeline;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
 import java.util.Collections;
