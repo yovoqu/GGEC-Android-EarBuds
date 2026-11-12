@@ -1,5 +1,7 @@
 package com.yovo.biz_ggec_hs.model;
 
+import androidx.annotation.NonNull;
+
 import java.util.List;
 import java.util.Map;
 
@@ -35,5 +37,11 @@ public interface HsDeviceObserver {
     }
 
     default void onPairedDevices(List<Map<String, String>> devices) {
+    }
+
+    /**
+     * 固件版本、耳机颜色或在仓状态有新的已知值时投递；三项都未知时不投递。
+     */
+    default void onDeviceInfo(@NonNull HsDeviceInfo info) {
     }
 }

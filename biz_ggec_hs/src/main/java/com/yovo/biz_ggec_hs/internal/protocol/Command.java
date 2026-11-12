@@ -37,14 +37,6 @@ public abstract class Command {
         FAILED
     }
 
-    public interface CommandCallback {
-        void onCommandCompleted(Command command, int code, String result);
-
-        void onCommandCompleted(Command command, int code, Object yobackdata, String result);
-
-        void onCommandCompleted(Command command, int code, int resultValue, String result);
-    }
-
     public interface CompletionListener {
         void onCommandCompleted(Command command, CommandCompletion completion);
     }
@@ -98,10 +90,6 @@ public abstract class Command {
     public void setState(State state) {
         this.state = state;
         HsLog.d(TAG, commandId + " 状态变更为 " + state);
-    }
-
-    public String getCommandPrefix() {
-        return commandPrefix;
     }
 
     protected void setCommandPrefix(String prefix) {
@@ -192,13 +180,6 @@ public abstract class Command {
         }
     }
 
-    public final void addCommandCallback(CommandCallback callback) {
-        if (callback == null) {
-            return;
-        }
-        addCompletionListener((command, result) -> dispatchCallback(callback, result));
-    }
-
     protected final Response completed(int code, String result) {
         return Response.completed(CommandCompletion.stringResult(code, result));
     }
@@ -227,23 +208,6 @@ public abstract class Command {
             if (completionListeners.remove(listener)) {
                 notifyListener(listener, result);
             }
-        }
-    }
-
-    private void dispatchCallback(CommandCallback callback, CommandCompletion result) {
-        switch (result.getShape()) {
-            case OBJECT:
-                callback.onCommandCompleted(
-                        this, result.getCode(), result.getData(), result.getMessage());
-                break;
-            case INTEGER:
-                callback.onCommandCompleted(
-                        this, result.getCode(), result.getResultValue(), result.getMessage());
-                break;
-            case STRING:
-            default:
-                callback.onCommandCompleted(this, result.getCode(), result.getMessage());
-                break;
         }
     }
 

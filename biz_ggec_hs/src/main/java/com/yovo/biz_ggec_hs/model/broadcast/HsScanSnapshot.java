@@ -33,13 +33,13 @@ public final class HsScanSnapshot {
 
     @NonNull
     public static HsScanSnapshot of(@Nullable String bleAddress,
-                                    @Nullable List<UUID> serviceUuids,
-                                    @Nullable byte[] rawAdvertising,
+                                    @NonNull List<UUID> serviceUuids,
+                                    @NonNull byte[] rawAdvertising,
                                     @Nullable String deviceName) {
         return new HsScanSnapshot(
                 bleAddress,
-                serviceUuids == null ? Collections.emptyList() : serviceUuids,
-                rawAdvertising == null ? new byte[0] : rawAdvertising,
+                serviceUuids,
+                rawAdvertising,
                 deviceName);
     }
 
@@ -53,9 +53,13 @@ public final class HsScanSnapshot {
         return serviceUuids;
     }
 
+    /**
+     * 原始广播字节的唯一取值入口：返回构造时已克隆的内部数组，本方法不再复制。
+     * 调用方只读，不得就地写入；广播解码等逐包必走的热路径用它避免逐包 clone。
+     */
     @NonNull
-    public byte[] rawAdvertising() {
-        return rawAdvertising.clone();
+    public byte[] rawAdvertisingView() {
+        return rawAdvertising;
     }
 
     @Nullable

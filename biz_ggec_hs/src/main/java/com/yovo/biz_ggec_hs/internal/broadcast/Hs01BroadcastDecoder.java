@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_hs.model.broadcast.Hs01Identity;
 import com.yovo.biz_ggec_hs.model.broadcast.HsGeneration;
+import com.yovo.biz_ggec_hs.model.broadcast.HsProductCatalog;
 import com.yovo.biz_ggec_hs.model.broadcast.HsScanSnapshot;
 
 import java.nio.ByteBuffer;
@@ -46,8 +47,8 @@ final class Hs01BroadcastDecoder implements HsBroadcastDecoder {
         for (int index = 0; index < prefix.length; index++) {
             prefix[index] = uuidBytes[15 - index];
         }
-        HsFeatureCatalog.Entry entry = HsFeatureCatalog.match(prefix);
-        if (entry == null) {
+        HsProductCatalog.Product product = HsProductCatalog.byHs01FeatureCode(toHex(prefix));
+        if (product == null) {
             return null;
         }
         StringBuilder mac = new StringBuilder();
@@ -62,8 +63,17 @@ final class Hs01BroadcastDecoder implements HsBroadcastDecoder {
                 bleAddress,
                 mac.toString(),
                 color,
-                entry.featureCode,
+                product.hs01FeatureCode(),
                 uuid,
-                entry.marketId);
+                product.marketId());
+    }
+
+    @NonNull
+    private static String toHex(@NonNull byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(String.format(Locale.US, "%02x", value & 0xFF));
+        }
+        return builder.toString();
     }
 }

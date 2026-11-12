@@ -32,9 +32,14 @@ final class Hs02BroadcastAssembler {
         if (snapshot == null || snapshot.bleAddress() == null) {
             return snapshot;
         }
+        Entry entry = entries.get(snapshot.bleAddress());
+        // 零分配快速拒绝：既无历史建档、又无 HS02 厂商段的环境广播直接透传，避免整包 AD 解析。
+        if (entry == null && !Hs02BroadcastDecoder.containsHs02Segment(snapshot.rawAdvertisingView())) {
+            return snapshot;
+        }
         List<byte[]> segments = new ArrayList<>();
         String name = null;
-        for (HsAdFields.Field field : HsAdFields.decode(snapshot.rawAdvertising())) {
+        for (HsAdFields.Field field : HsAdFields.decode(snapshot.rawAdvertisingView())) {
             if (field.type == HsAdFields.COMPLETE_NAME) {
                 name = HsAdFields.decodeUtf8(field.data);
             } else if (field.type == HsAdFields.MANUFACTURER
@@ -49,7 +54,6 @@ final class Hs02BroadcastAssembler {
             }
         }
 
-        Entry entry = entries.get(snapshot.bleAddress());
         if (entry == null && segments.isEmpty()) {
             return snapshot;
         }

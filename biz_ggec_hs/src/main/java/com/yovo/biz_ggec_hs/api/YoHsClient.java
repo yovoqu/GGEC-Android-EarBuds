@@ -27,6 +27,11 @@ public interface YoHsClient {
     void setDeviceObserver(@Nullable HsDeviceObserver observer);
 
     /**
+     * 设置连接生命周期回调（主线程派发）。用于替代对 {@link #isReady()} 的轮询。
+     */
+    void setConnectionObserver(@Nullable HsConnectionObserver observer);
+
+    /**
      * 设备主动结束录音、随录随传或 AI 翻译时回调。协议层不持有音频实现。
      */
     void setRemoteStreamStop(@Nullable Runnable trigger);
@@ -47,7 +52,11 @@ public interface YoHsClient {
 
     void stopFindAlert(@Nullable HsResultCallback callback);
 
-    void readFirmwareVersion(@Nullable HsResultCallback callback);
+    /**
+     * 查询耳机颜色。回包值原样给出（十进制数字字符串），同时以
+     * {@link HsDeviceObserver#onDeviceInfo} 推给设备观察者。
+     */
+    void readEarColor(@Nullable HsResultCallback callback);
 
     void reboot(@Nullable HsResultCallback callback);
 }

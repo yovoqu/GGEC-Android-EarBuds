@@ -46,14 +46,15 @@ tasks.register('checkBizGgecHsBoundary') {
     description = 'Keep HS protocol off lib_bluetooth internals and keep BLE calls inside the provider.'
     doLast {
         def offenders = []
-        def rel = { File file -> project.rootDir.relativePath(file).replace('\\', '/') }
+        // 统一成带前导 '/' 的仓库相对路径，保证 contains 与正则对相对路径同样生效。
+        def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
 
         fileTree(bizGgecHsRoot) {
             include 'src/main/java/**/*.java'
             include 'src/test/java/**/*.java'
         }.each { file ->
             def path = rel(file)
-            def inProvider = path.contains('biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/provider/lib_bluetooth/')
+            def inProvider = path.contains('/provider/lib_bluetooth/')
             def inProtocol = path.contains('/internal/protocol/')
             def inBroadcast = path.contains('/internal/broadcast/')
             file.eachLine { line, index ->
@@ -78,17 +79,19 @@ tasks.register('checkBizGgecHsBoundary') {
                 if (inBroadcast && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.protocol\./) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
-                def rootFacade = path ==~ /.*\/biz_ggec_hs\/src\/main\/java\/com\/yovo\/biz_ggec_hs\/YoHs[^\/]*\.java/
-                def publicSurface = path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
+                def rootFacade = path ==~ /(?:^|\/)biz_ggec_hs\/src\/main\/java\/com\/yovo\/biz_ggec_hs\/YoHs[^\/]*\.java/
+                def apiOrModel = path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
                         || path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/model/')
-                        || rootFacade
+                def publicSurface = apiOrModel || rootFacade
                 if (publicSurface && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
                         || line =~ /import\s+android\.bluetooth\./)) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
-                if ((path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
-                        || path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/model/'))
+                if ((apiOrModel || rootFacade)
                         && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (rootFacade && line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
             }
@@ -102,7 +105,8 @@ tasks.register('checkBizGgecHsBoundary') {
         }.each { file ->
             def path = rel(file)
             file.eachLine { line, index ->
-                if (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./) {
+                if (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
             }

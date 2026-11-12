@@ -2,6 +2,7 @@ package com.yovo.biz_ggec_hs.internal.protocol.inbound;
 
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.protocol.Command;
+import com.yovo.biz_ggec_hs.model.HsDeviceInfo;
 import com.yovo.biz_ggec_hs.model.HsDeviceObserver;
 
 import java.util.LinkedHashMap;
@@ -43,11 +44,6 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
 
     public DeviceDomainStore.BatterySnapshot batterySnapshot() {
         return domain.battery();
-    }
-
-    /** 同包测试 / 会话门禁清理用。 */
-    DeviceDomainStore domain() {
-        return domain;
     }
 
     public boolean onEvent(long sessionId, String frame) {
@@ -106,10 +102,35 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
             }
         }
 
+        // 首页聚合是固件的唯一来源；解析层已把 0x94 解成 UTF-8 文本，这里不再丢弃。
+        String firmware = status.get("94");
+        if (firmware != null && !firmware.isEmpty()) {
+            domain.setFirmware(firmware);
+        }
+
         Map<String, String> serviceStatus = serviceStatusFromHome(status);
         if (serviceStatus != null) {
             domain.setServiceStatus(serviceStatus);
         }
+    }
+
+    /**
+     * 耳机颜色是独立命令（{@code 99EC91}）的结果，不进首页聚合。
+     */
+    public void applyEarColor(int earColor) {
+        domain.setEarColor(earColor);
+    }
+
+    /**
+     * 会话边界清空本会话域状态：连接发起处建立新会话，断连 / 链路失效处结束旧会话。
+     *
+     * <p>域状态只属于一次设备会话。上一台设备的固件 / 颜色 / 在仓状态 / 电量若留到下一次
+     * {@link #setObserver}，新会话会把别人的值当成当前设备回放。两个调用点语义不同——
+     * 起点保证新连接从「未知」开始，终点保证断连后读到未知而不是上一台设备的值——
+     * 但清理动作只有这一份。不投递回调：屏蔽在建链 / 拆链瞬间用空快照冲一次监听。</p>
+     */
+    public void clearSessionState() {
+        domain.reset();
     }
 
     public void setObserver(HsDeviceObserver observer) {
@@ -149,6 +170,10 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
         if (devices != null) {
             dispatch(() -> observer.onPairedDevices(devices));
         }
+        HsDeviceInfo deviceInfo = domain.getDeviceInfo();
+        if (deviceInfo != null) {
+            dispatch(() -> observer.onDeviceInfo(deviceInfo));
+        }
         dispatchBattery(
                 DeviceDomainStore.BATTERY_LEFT
                         | DeviceDomainStore.BATTERY_RIGHT
@@ -165,26 +190,15 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
         router.notifyFileExportFailed();
     }
 
-    public void clearListeners() {
-        observer = null;
-    }
-
-    public void resetState() {
-        domain.reset();
-    }
-
-    public void resetStateKeepingBattery() {
-        domain.resetKeepingBattery();
-    }
-
-    public void clearBattery() {
-        domain.clearBattery();
-    }
-
     @Override
     public void onBatteryChanged(DeviceDomainStore.BatterySnapshot snapshot,
                                  int fields,
                                  int code) {
+        // 在仓状态同时是设备信息的一项：落到域里随 onDeviceInfo 出 biz，
+        // 上层才能在不读电量快照的前提下拿到它。
+        if ((fields & DeviceDomainStore.BATTERY_IN_CASE) != 0) {
+            domain.setEarInCaseStatus(snapshot.getEarInCaseStatus());
+        }
         dispatchBattery(fields);
     }
 
@@ -249,6 +263,14 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
         HsDeviceObserver current = observer;
         if (current != null) {
             dispatch(() -> current.onPairedDevices(devices));
+        }
+    }
+
+    @Override
+    public void onDeviceInfoChanged(HsDeviceInfo info) {
+        HsDeviceObserver current = observer;
+        if (current != null) {
+            dispatch(() -> current.onDeviceInfo(info));
         }
     }
 
