@@ -29,7 +29,7 @@ public final class AboutPageRows {
         rows.add(new DeviceSettingRow.Info(R.string.device_row_mac,
                 DeviceFormats.textOrUnknown(snapshot.mac())));
         rows.add(new DeviceSettingRow.Info(R.string.device_row_color,
-                DeviceFormats.textOrUnknown(snapshot.colorLabel())));
+                DeviceFormats.earColor(snapshot.earColor())));
         rows.add(new DeviceSettingRow.Info(R.string.device_row_rename,
                 DeviceFormats.textOrUnknown(snapshot.deviceName())));
 

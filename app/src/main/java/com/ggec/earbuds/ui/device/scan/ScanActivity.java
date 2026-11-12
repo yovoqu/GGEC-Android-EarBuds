@@ -2,7 +2,6 @@ package com.ggec.earbuds.ui.device.scan;
 
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
@@ -16,9 +15,10 @@ import com.ggec.earbuds.wiring.AppContainer;
 import com.yohu.youi.api.feedback.YoToast;
 import com.ggec.earbuds.provider.lib_common.PermissionProvider;
 
-import java.util.List;
-
-/** 扫描连接页宿主：负责蓝牙扫描权限申请、扫描结果渲染与连接跳转。 */
+/**
+ * 扫描连接页宿主。扫描的启停决策全在 {@link ScanViewModel}：
+ * 本页只把用户动作转发给 VM、按 VM 事件申请权限并回传结果、渲染状态与提示文案。
+ */
 public final class ScanActivity extends AppCompatActivity {
 
     private ScanViewModel viewModel;
@@ -43,12 +43,7 @@ public final class ScanActivity extends AppCompatActivity {
 
             @Override
             public void onScan() {
-                ScanUiState state = viewModel.uiState().getValue();
-                if (state != null && state.scanning()) {
-                    viewModel.stopScan();
-                } else {
-                    startScanWithPermission();
-                }
+                viewModel.toggleScan();
             }
 
             @Override
@@ -68,12 +63,19 @@ public final class ScanActivity extends AppCompatActivity {
                 screen.render(state);
             }
         });
-        viewModel.events().observe(this, messageRes -> {
-            if (messageRes != null && messageRes != 0) {
-                YoToast.showWarning(this, getString(messageRes));
+        viewModel.events().observe(this, event -> {
+            if (event == null) {
+                return;
             }
+            if (event.requiresPermissionRequest()) {
+                requestScanPermissions();
+                return;
+            }
+            YoToast.showWarning(this, getString(event.messageRes()));
         });
-        startScanWithPermission();
+        // 进页即请求一次扫描：是否可扫由 VM 判定，权限缺失时它会发 PERMISSION_REQUIRED。
+        // 走 enterScan() 而不是 toggleScan()——后者是翻转语义，配置变更重建会把正在跑的扫描翻停。
+        viewModel.enterScan();
     }
 
     @Override
@@ -86,13 +88,13 @@ public final class ScanActivity extends AppCompatActivity {
         if (!result.handled()) {
             return;
         }
+        viewModel.onPermissionAnswer(result.allGranted());
         if (result.allGranted()) {
-            viewModel.startScan();
-        } else if (result.permanentlyDenied()) {
-            YoToast.showWarning(this, getString(R.string.device_scan_error_permission_settings));
-        } else {
-            YoToast.showWarning(this, getString(R.string.device_scan_error_permission));
+            return;
         }
+        YoToast.showWarning(this, getString(result.permanentlyDenied()
+                ? R.string.device_scan_error_permission_settings
+                : R.string.device_scan_error_permission));
     }
 
     @Override
@@ -101,9 +103,13 @@ public final class ScanActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
-    private void startScanWithPermission() {
+    /**
+     * 发起系统权限请求并把「已授权」这一确定结果回传 VM。
+     * 这里不做扫描决策：请求返回 true 只说明权限已具备，仍由 VM 决定是否开扫。
+     */
+    private void requestScanPermissions() {
         if (PermissionProvider.requestBluetoothIfNeeded(this)) {
-            viewModel.startScan();
+            viewModel.onPermissionAnswer(true);
         }
     }
 

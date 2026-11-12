@@ -1,6 +1,7 @@
 package com.ggec.earbuds.provider.lib_common;
 
 import android.app.Activity;
+import android.content.Context;
 import android.os.Build;
 
 import androidx.annotation.NonNull;
@@ -45,6 +46,11 @@ public final class PermissionProvider {
         public boolean permanentlyDenied() {
             return permanentlyDenied;
         }
+    }
+
+    /** 蓝牙扫描权限当前是否已全部授予（只查询，不弹窗）。 */
+    public static boolean isBluetoothGranted(@NonNull Context context) {
+        return YoPermission.isGranted(context, PermissionPolicy.BLUETOOTH_FULL);
     }
 
     /** 处理 onRequestPermissionsResult：归一为 {@link Result}。 */

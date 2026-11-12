@@ -30,7 +30,6 @@ public final class DeviceHomeUiMapperTest {
         DeviceProfile profile = catalog.defaultProfile("HS02");
         DeviceSnapshot snapshot = connectedSnapshot("HS02", "v1");
         DeviceHomeUiState state = mapper.map(profile, snapshot, DeviceControls.empty(), true);
-        assertTrue(state.loaded());
         assertTrue(state.connected());
         assertTrue(state.controlsAvailable());
         assertEquals("HS02", state.modelId());
@@ -38,15 +37,25 @@ public final class DeviceHomeUiMapperTest {
         assertEquals("70%", state.rightText());
         assertEquals(DeviceFormats.UNKNOWN, state.caseText());
         assertEquals(R.string.device_state_ready, state.connectionTextRes());
-        assertEquals(R.string.device_wear_both, state.wearTextRes());
+        assertEquals(R.string.device_wear_none, state.wearTextRes());
         assertEquals(R.string.device_charging_on, state.chargingTextRes());
     }
 
     @Test
-    public void disconnectedSnapshotMapsToLoadedEmptyState() {
+    public void connectingSnapshotShowsConnectingCard() {
+        DeviceProfile profile = catalog.defaultProfile("HS01");
+        DeviceSnapshot snapshot = new DeviceSnapshot(ConnectionState.CONNECTING, "HS01", "v1",
+                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "", "AA:BB:CC:00:00:09", DeviceSnapshot.UNKNOWN_EAR_COLOR);
+        DeviceHomeUiState state = mapper.map(profile, snapshot, DeviceControls.empty(), false);
+        assertTrue(state.connected());
+        assertEquals("HS01", state.modelId());
+        assertEquals(R.string.device_state_connecting, state.connectionTextRes());
+    }
+
+    @Test
+    public void disconnectedSnapshotMapsToEmptyState() {
         DeviceProfile profile = catalog.defaultProfile("HS01");
         DeviceHomeUiState state = mapper.map(profile, DeviceSnapshot.idle(), DeviceControls.empty(), false);
-        assertTrue(state.loaded());
         assertFalse(state.connected());
         assertFalse(state.controlsAvailable());
         assertEquals("", state.modelId());
@@ -54,10 +63,9 @@ public final class DeviceHomeUiMapperTest {
     }
 
     @Test
-    public void missingProfileMapsToLoadedEmptyState() {
+    public void missingProfileMapsToEmptyState() {
         DeviceSnapshot snapshot = connectedSnapshot("HS01", "v1");
         DeviceHomeUiState state = mapper.map(null, snapshot, DeviceControls.empty(), true);
-        assertTrue(state.loaded());
         assertFalse(state.connected());
         assertTrue(state.entries().isEmpty());
     }
@@ -90,10 +98,33 @@ public final class DeviceHomeUiMapperTest {
         assertFalse(state.wearDetect());
     }
 
+    @Test
+    public void unknownWearStateIsNotReportedAsNotWorn() {
+        DeviceProfile profile = catalog.defaultProfile("HS01");
+        DeviceSnapshot unknownWear = new DeviceSnapshot(ConnectionState.READY, "HS01", "v1",
+                BatterySnapshot.unknown(), WearState.UNKNOWN, "", "HS01", "AA:BB:CC:00:00:10",
+                DeviceSnapshot.UNKNOWN_EAR_COLOR);
+        DeviceSnapshot knownNotWorn = new DeviceSnapshot(ConnectionState.READY, "HS01", "v1",
+                BatterySnapshot.unknown(), WearState.NOT_WORN, "", "HS01", "AA:BB:CC:00:00:11",
+                DeviceSnapshot.UNKNOWN_EAR_COLOR);
+
+        // 两个分支各自一句文案：没有数据不能显示成确定的「未佩戴」。
+        assertEquals(R.string.device_wear_unknown,
+                mapper.map(profile, unknownWear, DeviceControls.empty(), false).wearTextRes());
+        assertEquals(R.string.device_wear_none,
+                mapper.map(profile, knownNotWorn, DeviceControls.empty(), false).wearTextRes());
+    }
+
+    @Test
+    public void idleSnapshotCarriesUnknownWearInsteadOfNotWorn() {
+        // 空态没有佩戴数据，默认值必须是未知：NOT_WORN 只能表示确知未佩戴。
+        assertEquals(WearState.UNKNOWN, DeviceSnapshot.idle().wear());
+    }
+
     private static DeviceSnapshot connectedSnapshot(String modelId, String variantId) {
         return new DeviceSnapshot(ConnectionState.READY, modelId, variantId,
-                new BatterySnapshot(80, 70, -1, true), WearState.BOTH,
-                "1.2.0.5", modelId, "AA:BB:CC:00:00:04", "");
+                new BatterySnapshot(80, 70, -1, true), WearState.NOT_WORN,
+                "1.2.0.5", modelId, "AA:BB:CC:00:00:04", 3);
     }
 
     private static List<DevicePage> pages(List<DeviceHomeUiState.Entry> entries) {

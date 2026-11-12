@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.device.model;
 
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.Set;
 
 /** 不可变能力集合。 */
@@ -14,10 +15,9 @@ public final class CapabilitySet {
     }
 
     public static CapabilitySet of(Capability... items) {
+        Objects.requireNonNull(items, "items");
         EnumSet<Capability> set = EnumSet.noneOf(Capability.class);
-        if (items != null) {
-            Collections.addAll(set, items);
-        }
+        Collections.addAll(set, items);
         return new CapabilitySet(set);
     }
 

@@ -5,6 +5,7 @@ import com.ggec.earbuds.domain.device.model.ScanResult;
 import com.ggec.earbuds.domain.device.port.DevicePort;
 import com.ggec.earbuds.domain.device.port.Subscription;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -29,7 +30,7 @@ public final class IdleDevicePort implements DevicePort {
     }
 
     @Override
-    public void connect(String modelId, String variantId, String mac) {
+    public void connect(String modelId, String variantId, String bleMac, String bleName) {
         // 未接入真实蓝牙 SDK 前保持未连接空态，不伪造连接成功。
     }
 
@@ -39,7 +40,10 @@ public final class IdleDevicePort implements DevicePort {
     }
 
     @Override
-    public void startScan(Consumer<ScanResult> onResult, Runnable onFinished) {
+    public void startScanBatch(Consumer<List<ScanResult>> onResults,
+                               Consumer<ScanFailure> onFailed,
+                               Runnable onFinished,
+                               Consumer<ScanResult> onRemoved) {
         if (onFinished != null) {
             onFinished.run();
         }
@@ -53,5 +57,10 @@ public final class IdleDevicePort implements DevicePort {
     @Override
     public boolean isScanning() {
         return false;
+    }
+
+    @Override
+    public void close() {
+        // 闲置实现不持有任何底层资源。
     }
 }

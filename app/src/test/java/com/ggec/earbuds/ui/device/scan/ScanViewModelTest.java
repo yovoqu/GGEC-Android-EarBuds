@@ -6,21 +6,19 @@ import static org.junit.Assert.assertTrue;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
-import com.ggec.earbuds.R;
 import com.ggec.earbuds.data.device.DeviceProfileCatalogImpl;
 import com.ggec.earbuds.data.device.IdleDevicePort;
 import com.ggec.earbuds.domain.device.model.ScanResult;
 import com.ggec.earbuds.domain.device.port.DevicePort;
+import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
 import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
 import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
 import com.ggec.earbuds.testing.device.FakeTestDevicePort;
-import com.ggec.earbuds.testing.device.MemoryTestDevicePreferences;
 
 import org.junit.Rule;
 import org.junit.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -29,22 +27,28 @@ public final class ScanViewModelTest {
     @Rule
     public final InstantTaskExecutorRule tasks = new InstantTaskExecutorRule();
 
+    private static final ScanPermissionPort GRANTED = () -> true;
+    private static final ScanPermissionPort NOT_GRANTED = () -> false;
+
     @Test
     public void startsIdleAndIdlePortFinishesWithoutFakeResults() {
         IdleDevicePort port = new IdleDevicePort();
         ScanViewModel viewModel = new ScanViewModel(
                 new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()));
+                new ConnectDevice(port),
+                null,
+                GRANTED);
 
         ScanUiState initial = viewModel.uiState().getValue();
         assertFalse(initial.scanning());
         assertFalse(initial.hasScanned());
         assertEquals(ScanFilterOption.ALL_MODELS, initial.selectedFilterModelId());
-        assertEquals(3, initial.filterOptions().size());
+        assertEquals(1, initial.filterOptions().size());
+        assertEquals(ScanFilterOption.ALL_MODELS, initial.filterOptions().get(0).modelId());
         assertTrue(initial.results().isEmpty());
         assertEquals(0, initial.totalDiscoveredCount());
 
-        viewModel.startScan();
+        viewModel.toggleScan();
         ScanUiState after = viewModel.uiState().getValue();
         assertFalse(after.scanning());
         assertTrue(after.hasScanned());
@@ -54,16 +58,14 @@ public final class ScanViewModelTest {
     @Test
     public void scriptedPortTracksScanningResultsDeduplicationAndCompletion() {
         FakeTestDevicePort port = new FakeTestDevicePort();
-        ScanViewModel viewModel = new ScanViewModel(
-                new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()));
+        ScanViewModel viewModel = scanningViewModel(port);
 
-        viewModel.startScan();
+        viewModel.toggleScan();
         assertTrue(viewModel.uiState().getValue().scanning());
         assertTrue(viewModel.uiState().getValue().hasScanned());
 
-        ScanResult first = new ScanResult("HS01", "v1", "HS01", "AA:BB:CC:00:00:01", -50, true);
-        ScanResult duplicate = new ScanResult("HS01", "v1", "HS01", "aa:bb:cc:00:00:01", -49, true);
+        ScanResult first = new ScanResult("HS01", "v1", "HS01", "AA:BB:CC:00:00:01", -50);
+        ScanResult duplicate = new ScanResult("HS01", "v1", "HS01", "aa:bb:cc:00:00:01", -49);
         port.emitScanResults(List.of(first, duplicate));
         assertEquals(1, viewModel.uiState().getValue().results().size());
         assertEquals(-49, viewModel.uiState().getValue().results().get(0).rssi());
@@ -80,8 +82,9 @@ public final class ScanViewModelTest {
         LoadDeviceProfiles loadProfiles = new LoadDeviceProfiles(new DeviceProfileCatalogImpl());
         ScanViewModel viewModel = new ScanViewModel(
                 new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()),
-                loadProfiles);
+                new ConnectDevice(port),
+                loadProfiles,
+                GRANTED);
 
         ScanUiState initial = viewModel.uiState().getValue();
         assertEquals(List.of(
@@ -89,9 +92,9 @@ public final class ScanViewModelTest {
                 new ScanFilterOption("HS01", "HS01"),
                 new ScanFilterOption("HS02", "HS02")), initial.filterOptions());
 
-        viewModel.startScan();
-        ScanResult hs01 = new ScanResult("HS01", "v1", "HS01-Demo", "AA:BB:CC:00:00:01", -62, false);
-        ScanResult hs02 = new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:02", -51, true);
+        viewModel.toggleScan();
+        ScanResult hs01 = new ScanResult("HS01", "v1", "HS01-Demo", "AA:BB:CC:00:00:01", -62);
+        ScanResult hs02 = new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:02", -51);
         port.emitScanResults(List.of(hs01, hs02));
 
         ScanUiState allVisible = viewModel.uiState().getValue();
@@ -117,141 +120,222 @@ public final class ScanViewModelTest {
     }
 
     @Test
+    public void removesExpiredDeviceFromResults() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = scanningViewModel(port);
+
+        viewModel.toggleScan();
+        ScanResult a = new ScanResult("HS01", "v1", "A", "AA:BB:CC:00:00:01", -50);
+        ScanResult b = new ScanResult("HS02", "v1", "B", "AA:BB:CC:00:00:02", -45);
+        port.emitScanResults(List.of(a, b));
+        assertEquals(2, viewModel.uiState().getValue().results().size());
+
+        port.emitScanRemoved(a);
+        assertEquals(1, viewModel.uiState().getValue().results().size());
+        assertEquals("HS02", viewModel.uiState().getValue().results().get(0).modelId());
+    }
+
+    @Test
+    public void filtersByModelIdEvenWhenCatalogOptionsAbsent() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = scanningViewModel(port);
+
+        viewModel.toggleScan();
+        port.emitScanResults(List.of(
+                new ScanResult("HS01", "v1", "A", "AA:BB:CC:00:00:01", -50),
+                new ScanResult("HS02", "v1", "B", "AA:BB:CC:00:00:02", -45)));
+
+        viewModel.selectFilter("HS02");
+        ScanUiState state = viewModel.uiState().getValue();
+        assertEquals("HS02", state.selectedFilterModelId());
+        assertEquals(1, state.results().size());
+        assertEquals("HS02", state.results().get(0).modelId());
+    }
+
+    @Test
     public void keepsOldAndNewGenerationResultsWithSameMacAndUpgradesAdvertisedName() {
         FakeTestDevicePort port = new FakeTestDevicePort();
         ScanViewModel viewModel = new ScanViewModel(
                 new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()),
-                new LoadDeviceProfiles(new DeviceProfileCatalogImpl()));
+                new ConnectDevice(port),
+                new LoadDeviceProfiles(new DeviceProfileCatalogImpl()),
+                GRANTED);
 
-        viewModel.startScan();
-        ScanResult hs01Fallback = new ScanResult("HS01", "v1", "HS01", "11:22:33:44:55:66", -70, false);
-        ScanResult hs01Named = new ScanResult("HS01", "v1", "GGEC-HS01", "11:22:33:44:55:66", -60, false);
-        ScanResult hs02SameMac = new ScanResult("HS02", "v1", "Vidda V11", "11:22:33:44:55:66", -48, true);
+        viewModel.toggleScan();
+        ScanResult hs01Fallback = new ScanResult("HS01", "v1", "HS01", "11:22:33:44:55:66", -70);
+        ScanResult hs01Named = new ScanResult("HS01", "v1", "GGEC-HS01", "11:22:33:44:55:66", -60);
+        ScanResult hs02SameMac = new ScanResult("HS02", "v1", "Vidda V11", "11:22:33:44:55:66", -48);
         port.emitScanResults(List.of(hs01Fallback, hs01Named, hs02SameMac));
 
         List<ScanItem> items = viewModel.uiState().getValue().results();
         assertEquals(2, items.size());
         assertEquals("HS01", items.get(0).modelId());
-        assertEquals("GGEC-HS01", items.get(0).name());
+        assertEquals("GGEC-HS01", items.get(0).bleName());
         assertEquals(-60, items.get(0).rssi());
         assertEquals("HS02", items.get(1).modelId());
-        assertEquals("Vidda V11", items.get(1).name());
+        assertEquals("Vidda V11", items.get(1).bleName());
         assertEquals(-48, items.get(1).rssi());
-        assertTrue(items.get(1).paired());
     }
 
     @Test
-    public void scanFailureStopsScanningAndEmitsErrorMessageRes() {
+    public void scanFailureStopsScanningAndEmitsEvent() {
         FakeTestDevicePort port = new FakeTestDevicePort();
-        ScanViewModel viewModel = new ScanViewModel(
-                new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()));
+        ScanViewModel viewModel = scanningViewModel(port);
 
-        viewModel.startScan();
+        viewModel.toggleScan();
         assertTrue(viewModel.uiState().getValue().scanning());
 
         port.emitScanFailure(DevicePort.ScanFailure.BLUETOOTH_DISABLED);
         assertFalse(viewModel.uiState().getValue().scanning());
-        assertEquals(Integer.valueOf(R.string.device_scan_error_bluetooth_disabled),
-                viewModel.events().getValue());
+        assertEquals(ScanEvent.BLUETOOTH_DISABLED, viewModel.events().getValue());
     }
 
     @Test
-    public void suppressesSubThresholdRssiJitterAndCoalescesSignificantRssiUpdates() {
+    public void eachAdvertisementUpdatesTheVisibleRssiImmediately() {
         FakeTestDevicePort port = new FakeTestDevicePort();
-        ManualPublishScheduler scheduler = new ManualPublishScheduler();
-        ScanViewModel viewModel = new ScanViewModel(
-                new ScanDevices(port),
-                new ConnectDevice(port, new MemoryTestDevicePreferences()),
-                null,
-                scheduler);
+        ScanViewModel viewModel = scanningViewModel(port);
 
         AtomicInteger emissions = new AtomicInteger();
         viewModel.uiState().observeForever(state -> emissions.incrementAndGet());
         assertEquals(1, emissions.get());
 
-        viewModel.startScan();
+        viewModel.toggleScan();
         assertEquals(2, emissions.get());
 
-        // 新设备出现立即发布一次。
         port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -60, false)));
+                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -60)));
         assertEquals(3, emissions.get());
         assertEquals(-60, viewModel.uiState().getValue().results().get(0).rssi());
-        assertEquals(0, scheduler.pendingCount());
 
-        // 小于 3 dBm 的信号抖动直接抑制，不触发任何 UI 重绘或定时器。
         port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -58, false)));
+                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -58)));
         port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -62, false)));
-        assertEquals(3, emissions.get());
-        assertEquals(0, scheduler.pendingCount());
+                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -62)));
+        assertEquals(5, emissions.get());
+        assertEquals(-62, viewModel.uiState().getValue().results().get(0).rssi());
 
-        // 连续两次 >= 3 dBm 的信号变化合并为单次 300ms 延迟刷新。
         port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -54, false)));
-        port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -49, false)));
-        assertEquals(3, emissions.get());
-        assertEquals(1, scheduler.pendingCount());
-
-        scheduler.runNext();
-        assertEquals(4, emissions.get());
+                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -49)));
+        assertEquals(6, emissions.get());
         assertEquals(-49, viewModel.uiState().getValue().results().get(0).rssi());
 
-        // 切换筛选或停扫时立即取消挂起定时器并同步刷新最新快照。
-        port.emitScanResults(List.of(
-                new ScanResult("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:09", -42, false)));
-        assertEquals(1, scheduler.pendingCount());
         viewModel.selectFilter("HS02");
-        assertEquals(0, scheduler.pendingCount());
-        assertEquals(5, emissions.get());
-        assertEquals(-42, viewModel.uiState().getValue().results().get(0).rssi());
+        assertEquals(-49, viewModel.uiState().getValue().results().get(0).rssi());
     }
 
-    private static final class ManualPublishScheduler implements ScanViewModel.PublishScheduler {
+    @Test
+    public void selectingFilterDoesNotRestartOrRescan() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = scanningViewModel(port);
 
-        private static final class Task {
-            private final Runnable runnable;
-            private boolean cancelled;
+        viewModel.toggleScan();
+        port.emitScanResults(List.of(
+                new ScanResult("HS01", "v1", "A", "AA:BB:CC:00:00:01", -50),
+                new ScanResult("HS02", "v1", "B", "AA:BB:CC:00:00:02", -45)));
+        assertEquals(1, port.startScanCalls);
 
-            private Task(Runnable runnable) {
-                this.runnable = runnable;
-            }
-        }
+        viewModel.selectFilter("HS01");
 
-        private final List<Task> tasks = new ArrayList<>();
+        ScanUiState filtered = viewModel.uiState().getValue();
+        assertEquals(1, port.startScanCalls);
+        assertTrue(port.isScanning());
+        assertTrue(filtered.scanning());
+        assertEquals(1, filtered.results().size());
+        assertEquals("HS01", filtered.results().get(0).modelId());
+        assertEquals(2, filtered.totalDiscoveredCount());
+    }
 
-        @Override
-        public Cancellable schedule(Runnable task, long delayMillis) {
-            Task scheduled = new Task(task);
-            tasks.add(scheduled);
-            return () -> {
-                scheduled.cancelled = true;
-                tasks.remove(scheduled);
-            };
-        }
+    @Test
+    public void toggleWithoutPermissionAsksHostAndKeepsScanningOff() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = new ScanViewModel(
+                new ScanDevices(port),
+                new ConnectDevice(port),
+                null,
+                NOT_GRANTED);
 
-        int pendingCount() {
-            int count = 0;
-            for (Task task : tasks) {
-                if (!task.cancelled) {
-                    count++;
-                }
-            }
-            return count;
-        }
+        viewModel.toggleScan();
 
-        void runNext() {
-            while (!tasks.isEmpty()) {
-                Task next = tasks.remove(0);
-                if (!next.cancelled) {
-                    next.runnable.run();
-                    return;
-                }
-            }
-        }
+        assertEquals(ScanEvent.PERMISSION_REQUIRED, viewModel.events().getValue());
+        assertEquals(0, port.startScanCalls);
+        assertFalse(viewModel.uiState().getValue().scanning());
+        assertFalse(viewModel.uiState().getValue().hasScanned());
+    }
+
+    @Test
+    public void permissionAnswerStartsTheScanOnlyWhenGranted() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = new ScanViewModel(
+                new ScanDevices(port),
+                new ConnectDevice(port),
+                null,
+                NOT_GRANTED);
+
+        viewModel.toggleScan();
+        viewModel.onPermissionAnswer(false);
+        assertFalse(viewModel.uiState().getValue().scanning());
+        assertFalse(viewModel.uiState().getValue().hasScanned());
+        assertEquals(0, port.startScanCalls);
+
+        viewModel.onPermissionAnswer(true);
+        ScanUiState started = viewModel.uiState().getValue();
+        assertTrue(started.scanning());
+        assertTrue(started.hasScanned());
+        assertEquals(1, port.startScanCalls);
+        assertTrue(port.isScanning());
+    }
+
+    @Test
+    public void toggleScanStopsWhenScanningWithoutRestarting() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = scanningViewModel(port);
+
+        viewModel.toggleScan();
+        assertTrue(viewModel.uiState().getValue().scanning());
+        assertEquals(1, port.startScanCalls);
+
+        viewModel.toggleScan();
+        assertFalse(viewModel.uiState().getValue().scanning());
+        assertFalse(port.isScanning());
+        assertEquals(1, port.startScanCalls);
+    }
+
+    @Test
+    public void enterScanStartsAtMostOneScanPerPageInstance() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = scanningViewModel(port);
+
+        // 进页即扫走幂等入口：配置变更重建会再调一次，正在进行的扫描不能被翻停。
+        viewModel.enterScan();
+        viewModel.enterScan();
+
+        assertEquals(1, port.startScanCalls);
+        assertTrue(viewModel.uiState().getValue().scanning());
+        assertTrue(viewModel.uiState().getValue().hasScanned());
+        assertTrue(port.isScanning());
+    }
+
+    @Test
+    public void enterScanWithoutPermissionOnlyAsksTheHost() {
+        FakeTestDevicePort port = new FakeTestDevicePort();
+        ScanViewModel viewModel = new ScanViewModel(
+                new ScanDevices(port),
+                new ConnectDevice(port),
+                null,
+                NOT_GRANTED);
+
+        viewModel.enterScan();
+
+        assertEquals(ScanEvent.PERMISSION_REQUIRED, viewModel.events().getValue());
+        assertEquals(0, port.startScanCalls);
+        assertFalse(viewModel.uiState().getValue().scanning());
+    }
+
+    private static ScanViewModel scanningViewModel(FakeTestDevicePort port) {
+        return new ScanViewModel(
+                new ScanDevices(port),
+                new ConnectDevice(port),
+                null,
+                GRANTED);
     }
 }

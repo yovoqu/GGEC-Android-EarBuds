@@ -3,9 +3,16 @@ package com.ggec.earbuds.domain.device.model;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 设备控件的不可变快照。未接入协议控件或未上报状态时由 {@link #empty()} 表达。
+ *
+ * <p><b>契约：</b>{@code customEqName}、{@code customEqGains}、{@code gestures} 非空；
+ * 「没有名字」写成空串，「没有自定义曲线」写成 {@link #CUSTOM_EQ_BANDS} 个 0，
+ * 「没有手势绑定」写成空表，都由调用方显式给出，本记录不把 null 折叠成默认值。
+ * {@code eqPreset}/{@code soundQuality} 为 null 表示该控件尚未接入协议通道，
+ * 是有语义的缺失，不是兜底。</p>
  */
 public record DeviceControls(
         EqPreset eqPreset,
@@ -25,22 +32,31 @@ public record DeviceControls(
         boolean dualConnection,
         Map<GestureSlot, GestureAction> gestures) {
 
+    /** 自定义 EQ 的频段数：协议与界面共用同一条曲线，长度不符即调用方装配错误。 */
+    public static final int CUSTOM_EQ_BANDS = 10;
+
     public DeviceControls {
-        customEqName = customEqName == null ? "" : customEqName.strip();
-        float[] gains = new float[10];
-        if (customEqGains != null) {
-            System.arraycopy(customEqGains, 0, gains, 0, Math.min(customEqGains.length, gains.length));
-        }
-        customEqGains = gains;
+        customEqName = Objects.requireNonNull(customEqName, "customEqName").strip();
+        customEqGains = copyGains(customEqGains);
         EnumMap<GestureSlot, GestureAction> copy = new EnumMap<>(GestureSlot.class);
-        if (gestures != null) {
-            for (Map.Entry<GestureSlot, GestureAction> entry : gestures.entrySet()) {
-                if (entry.getKey() != null && entry.getValue() != null) {
-                    copy.put(entry.getKey(), entry.getValue());
-                }
-            }
+        for (Map.Entry<GestureSlot, GestureAction> entry
+                : Objects.requireNonNull(gestures, "gestures").entrySet()) {
+            GestureSlot slot = Objects.requireNonNull(entry.getKey(), "gestures key");
+            copy.put(slot, Objects.requireNonNull(entry.getValue(), "gestures[" + slot + "]"));
         }
         gestures = Collections.unmodifiableMap(copy);
+    }
+
+    /** 复制并校验曲线：长度必须等于 {@link #CUSTOM_EQ_BANDS}，不做截断也不补 0。 */
+    private static float[] copyGains(float[] gains) {
+        Objects.requireNonNull(gains, "customEqGains");
+        if (gains.length != CUSTOM_EQ_BANDS) {
+            throw new IllegalArgumentException(
+                    "customEqGains must have " + CUSTOM_EQ_BANDS + " bands but has " + gains.length);
+        }
+        float[] copy = new float[CUSTOM_EQ_BANDS];
+        System.arraycopy(gains, 0, copy, 0, CUSTOM_EQ_BANDS);
+        return copy;
     }
 
     public static DeviceControls empty() {
@@ -48,7 +64,7 @@ public record DeviceControls(
                 null,
                 false,
                 "",
-                new float[10],
+                new float[CUSTOM_EQ_BANDS],
                 null,
                 false,
                 false,
@@ -63,8 +79,9 @@ public record DeviceControls(
                 Collections.emptyMap());
     }
 
+    /** {@code slot} 非空：手势槽位是封闭枚举，null 没有业务含义。 */
     public GestureAction gesture(GestureSlot slot) {
-        return slot == null ? null : gestures.get(slot);
+        return gestures.get(Objects.requireNonNull(slot, "slot"));
     }
 
     public boolean enabled(DeviceSwitch key) {
@@ -88,6 +105,7 @@ public record DeviceControls(
                 beginnerMode, interpret, dualConnection, gestures);
     }
 
+    /** {@code name} 非空；{@code gains} 必须正好 {@link #CUSTOM_EQ_BANDS} 个频段。 */
     public DeviceControls withCustomEq(String name, float[] gains) {
         return copy(EqPreset.CUSTOM, true, name, gains, soundQuality, ldac, volumeAdaptive,
                 wearDetect, voiceWakeup, gameMode, fallAlert, volumeRemind, beginnerMode, interpret,
@@ -120,10 +138,12 @@ public record DeviceControls(
                 gestures);
     }
 
+    /**
+     * 绑定或解绑一个手势。{@code slot} 非空；{@code action} 为 null 表示解绑（协议里该槽位没有动作），
+     * 是有语义的删除，不是缺失值。
+     */
     public DeviceControls withGesture(GestureSlot slot, GestureAction action) {
-        if (slot == null) {
-            return this;
-        }
+        Objects.requireNonNull(slot, "slot");
         EnumMap<GestureSlot, GestureAction> next = new EnumMap<>(GestureSlot.class);
         next.putAll(gestures);
         if (action == null) {

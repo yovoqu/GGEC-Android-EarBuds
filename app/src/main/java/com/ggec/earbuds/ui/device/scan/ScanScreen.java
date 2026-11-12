@@ -43,16 +43,32 @@ public final class ScanScreen {
         void onConnect(@NonNull ScanItem item);
     }
 
+    /** RSSI-only 局部刷新载荷：仅信号强度变化时走轻量 bindRssi，避免整卡重绑。 */
+    private static final Object PAYLOAD_RSSI = new Object();
+
     private static final DiffUtil.ItemCallback<ScanItem> ITEM_DIFF = new DiffUtil.ItemCallback<>() {
         @Override
         public boolean areItemsTheSame(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
             return oldItem.modelId().equals(newItem.modelId())
-                    && oldItem.mac().equalsIgnoreCase(newItem.mac());
+                    && oldItem.bleMac().equalsIgnoreCase(newItem.bleMac());
         }
 
         @Override
         public boolean areContentsTheSame(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
             return oldItem.equals(newItem);
+        }
+
+        @Nullable
+        @Override
+        public Object getChangePayload(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
+            // 名称 / 型号 / MAC 变化需要完整重绑；只有 RSSI 变化时返回局部载荷，
+            // 让 RecyclerView 只跑 light bind，不重新设置名称、不整卡重排。
+            if (!oldItem.bleName().equals(newItem.bleName())
+                    || !oldItem.modelId().equals(newItem.modelId())
+                    || !oldItem.bleMac().equalsIgnoreCase(newItem.bleMac())) {
+                return null;
+            }
+            return PAYLOAD_RSSI;
         }
     };
 
@@ -104,6 +120,8 @@ public final class ScanScreen {
         recyclerView = new RecyclerView(activity);
         recyclerView.setLayoutManager(new LinearLayoutManager(activity));
         recyclerView.setClipToPadding(false);
+        // RV 尺寸固定为 MATCH_PARENT，内容变化不改变自身大小：开启后避免每次 submitList 触发 requestLayout。
+        recyclerView.setHasFixedSize(true);
         recyclerView.setPadding(0, 0, 0, theme.dp(DeviceTheme.SPACE_S));
         if (recyclerView.getItemAnimator() instanceof SimpleItemAnimator animator) {
             animator.setSupportsChangeAnimations(false);
@@ -119,10 +137,10 @@ public final class ScanScreen {
         emptyState.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.EMPTY_TOP),
                 theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XL));
         emptyHeading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        emptyHeading.setLineSpacing(theme.dpf(5), 1f);
+        emptyHeading.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         emptyState.addView(emptyHeading, matchWrap());
         emptyBody = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text2);
-        emptyBody.setLineSpacing(theme.dpf(5), 1f);
+        emptyBody.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         LinearLayout.LayoutParams bodyParams = matchWrap();
         bodyParams.topMargin = theme.dp(DeviceTheme.SPACE_S);
         emptyState.addView(emptyBody, bodyParams);
@@ -137,7 +155,7 @@ public final class ScanScreen {
         action.setText(activity.getString(R.string.device_scan_start));
         action.setOnClickListener(v -> listener.onScan());
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(48));
+                ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(DeviceTheme.PRIMARY_ACTION_HEIGHT));
         actionParams.setMargins(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_M),
                 theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_M));
         root.addView(action.getView(), actionParams);
@@ -216,12 +234,13 @@ public final class ScanScreen {
                 .setMenuAlign(YoSelect.MenuAlignType.END)
                 .setOptionWidth(YoSelect.OptionWidthMode.FIT_CONTENT)
                 .setShowDefaultSelectedIcon(true)
-                .setOnSelectListener((id, label, position) -> {
+                .setOnSelectListener((index, text, itemId) -> {
                     if (updatingFilter) {
                         return;
                     }
-                    if (id >= 0 && id < renderedOptions.size()) {
-                        listener.onSelectFilter(renderedOptions.get(id).modelId());
+                    // YoSelect.onSelect 的第一个参数是列表序号，addOption 传入的 id 在第三个参数。
+                    if (itemId >= 0 && itemId < renderedOptions.size()) {
+                        listener.onSelectFilter(renderedOptions.get(itemId).modelId());
                     }
                 })
                 .build();
@@ -384,6 +403,16 @@ public final class ScanScreen {
         @Override
         public void onBindViewHolder(@NonNull ScanDeviceViewHolder holder, int position) {
             holder.card.bind(getItem(position));
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull ScanDeviceViewHolder holder, int position,
+                                     @NonNull List<Object> payloads) {
+            if (!payloads.isEmpty() && payloads.contains(PAYLOAD_RSSI)) {
+                holder.card.bindRssi(getItem(position));
+                return;
+            }
+            super.onBindViewHolder(holder, position, payloads);
         }
     }
 

@@ -171,13 +171,13 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         synchronized (lock) {
             if (persistedRevision >= revision) {
                 if (lastFailure != null && lastFailureRevision >= revision) {
-                    return CompletableFuture.failedFuture(lastFailure);
+                    return failedFuture(lastFailure);
                 }
                 return CompletableFuture.completedFuture(null);
             }
             if (pendingWrite == null && !draining && lastFailure != null
                     && lastFailureRevision >= revision) {
-                return CompletableFuture.failedFuture(lastFailure);
+                return failedFuture(lastFailure);
             }
             CompletableFuture<Void> waiter = new CompletableFuture<>();
             flushWaiters.put(revision, waiter);
@@ -185,8 +185,14 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         }
     }
 
-    private AiSettings loaded() {
-        if (current == null) {
+    /** API 21+ 兼容的“已失败 future”构造（CompletableFuture.failedFuture 需 API 31）。 */
+    private static <T> CompletableFuture<T> failedFuture(Throwable error) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        future.completeExceptionally(error);
+        return future;
+    }
+
+    private AiSettings loaded() {        if (current == null) {
             current = read();
             persisted = current;
         }

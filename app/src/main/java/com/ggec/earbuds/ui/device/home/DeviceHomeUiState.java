@@ -8,7 +8,6 @@ import java.util.List;
 
 /** 设备页签的界面状态（不可变）。 */
 public record DeviceHomeUiState(
-        boolean loaded,
         String modelId,
         int connectionTextRes,
         boolean connected,
@@ -32,14 +31,8 @@ public record DeviceHomeUiState(
     public record Entry(DevicePage page, int titleRes, int iconRes) {
     }
 
-    public static DeviceHomeUiState empty() {
-        return new DeviceHomeUiState(false, "", 0, false,
-                DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN,
-                0, false, 0, "", false, false, false, false, false, false, false, List.of());
-    }
-
     public static DeviceHomeUiState disconnected() {
-        return new DeviceHomeUiState(true, "", R.string.device_state_idle, false,
+        return new DeviceHomeUiState("", R.string.device_state_idle, false,
                 DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN,
                 0, false, 0, "", false, false, false, false, false, false, false, List.of());
     }

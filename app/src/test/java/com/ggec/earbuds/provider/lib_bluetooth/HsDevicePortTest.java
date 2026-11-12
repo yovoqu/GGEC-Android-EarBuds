@@ -2,269 +2,448 @@ package com.ggec.earbuds.provider.lib_bluetooth;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.device.model.BatterySnapshot;
+import com.ggec.earbuds.domain.device.model.ConnectionState;
+import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.ScanResult;
+import com.ggec.earbuds.domain.device.model.WearState;
 import com.ggec.earbuds.domain.device.port.DevicePort;
-import com.yovo.lib_bluetooth.api.YoBleClient;
-import com.yovo.lib_bluetooth.api.YoCbtClient;
-import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
-import com.yovo.lib_bluetooth.model.ble.BleDeviceIdentity;
-import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
-import com.yovo.lib_bluetooth.model.ble.BleFailure;
-import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
-import com.yovo.lib_bluetooth.model.ble.BlePhy;
-import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
-import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
-import com.yovo.lib_bluetooth.model.ble.BleScanRecord;
-import com.yovo.lib_bluetooth.model.ble.BleScanResult;
-import com.yovo.lib_bluetooth.model.classic.CbtAclLinkState;
-import com.yovo.lib_bluetooth.model.classic.CbtBondState;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceIdentity;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileType;
-import com.yovo.lib_bluetooth.model.common.Result;
+import com.yovo.biz_ggec_hs.api.HsConnectionObserver;
+import com.yovo.biz_ggec_hs.api.HsNearbyObserver;
+import com.yovo.biz_ggec_hs.api.YoHsClient;
+import com.yovo.biz_ggec_hs.api.YoHsNearby;
+import com.yovo.biz_ggec_hs.model.HsBattery;
+import com.yovo.biz_ggec_hs.model.HsDeviceInfo;
+import com.yovo.biz_ggec_hs.model.HsDeviceObserver;
+import com.yovo.biz_ggec_hs.model.HsNearbyDevice;
+import com.yovo.biz_ggec_hs.model.HsResultCallback;
+import com.yovo.biz_ggec_hs.model.HsScanFailure;
 
 import org.junit.Test;
 
-import java.lang.reflect.Proxy;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 public final class HsDevicePortTest {
 
-    private static final String FEATURE_CN = "86103800900000100000fffe";
-
     @Test
-    public void reportsAdapterDisabledBeforeStartingScan() {
-        AtomicBoolean scanInvoked = new AtomicBoolean(false);
-        YoBleClient bleClient = bleProxy(true, false, Collections.emptyList(), (config, observer) -> {
-            scanInvoked.set(true);
-            return BleOperationHandle.completed("unused");
-        });
-        HsDevicePort port = new HsDevicePort(bleClient, null, new HsBroadcastScanMapper());
-
-        List<DevicePort.ScanFailure> failures = new ArrayList<>();
-        AtomicBoolean finished = new AtomicBoolean(false);
-        port.startScan(result -> {
-        }, failures::add, () -> finished.set(true));
-
-        assertFalse(scanInvoked.get());
-        assertFalse(port.isScanning());
-        assertEquals(List.of(DevicePort.ScanFailure.BLUETOOTH_DISABLED), failures);
-        assertTrue(finished.get());
-    }
-
-    @Test
-    public void configuresBackgroundBleCallbacksAndBatchReportDelay() {
-        assertFalse(HsDevicePort.defaultBleConfig().callbackOnMainThread());
-        assertEquals(200L, HsDevicePort.SCAN_REPORT_DELAY_MILLIS);
-    }
-
-    @Test
-    public void scansExtendedAndLegacyBroadcastsWithClassicBondedDetection() {
-        AtomicReference<BleScanConfig> capturedConfig = new AtomicReference<>();
-        AtomicReference<BleScanObserver> capturedObserver = new AtomicReference<>();
-        AtomicBoolean handleCancelled = new AtomicBoolean(false);
-
-        YoBleClient bleClient = bleProxy(true, true, Collections.emptyList(), (config, observer) -> {
-            capturedConfig.set(config);
-            capturedObserver.set(observer);
-            return new BleOperationHandle("test-scan", () -> handleCancelled.set(true));
-        });
-        YoCbtClient classicClient = classicProxy(List.of(classicBondedSnapshot("AA:BB:CC:DD:EE:FF")));
-        HsDevicePort port = new HsDevicePort(bleClient, classicClient, new HsBroadcastScanMapper());
-
+    public void projectsNearbyDevicesAndScanFailures() {
+        ScriptedNearby nearby = new ScriptedNearby();
+        HsDevicePort port = new HsDevicePort(nearby, new FakeYoHsClient());
         List<List<ScanResult>> batches = new ArrayList<>();
         List<DevicePort.ScanFailure> failures = new ArrayList<>();
-        AtomicInteger finishedCount = new AtomicInteger();
+        AtomicBoolean finished = new AtomicBoolean(false);
 
-        port.startScanBatch(batches::add, failures::add, finishedCount::incrementAndGet);
+        port.startScanBatch(batches::add, failures::add, () -> finished.set(true), ignored -> {
+        });
         assertTrue(port.isScanning());
-        assertFalse(capturedConfig.get().legacyOnly());
-        assertEquals(HsDevicePort.SCAN_REPORT_DELAY_MILLIS, capturedConfig.get().reportDelayMillis());
-        assertEquals(0L, capturedConfig.get().deduplicationWindowMillis());
-        assertTrue(capturedConfig.get().filters().isEmpty());
+        nearby.observer.onUpdated(List.of(
+                new HsNearbyDevice("HS01", "v2", "HS01-Demo", "AA:BB:CC:00:00:01", -40)));
+        nearby.observer.onFailed(HsScanFailure.BLUETOOTH_DISABLED);
+        nearby.observer.onFinished();
+        nearby.scanning = false;
 
-        BleScanResult nonHs = bleResult("99:88:77:66:55:44", -75, Collections.emptyList(), new byte[0], "Other BLE");
-        BleScanResult hs01 = bleResult("11:22:33:44:55:01", -60, List.of(hs01Uuid(FEATURE_CN)), new byte[0], "HS01-Old");
-        BleScanResult hs02 = bleResult("11:22:33:44:55:02", -48, Collections.emptyList(), hs02Packet("Vidda New"), "Vidda New");
-
-        // 非 HS 广播批次不会产生空回调。
-        capturedObserver.get().onBatchScanResults(List.of(nonHs));
-        assertTrue(batches.isEmpty());
-
-        // 混合批次过滤非 HS 帧后以单个不可变批次送达。
-        capturedObserver.get().onBatchScanResults(List.of(hs01, nonHs, hs02));
         assertEquals(1, batches.size());
-        List<ScanResult> firstBatch = batches.get(0);
-        assertEquals(2, firstBatch.size());
-        assertEquals("HS01", firstBatch.get(0).modelId());
-        assertTrue(firstBatch.get(0).paired());
-        assertEquals("HS02", firstBatch.get(1).modelId());
-        assertTrue(firstBatch.get(1).paired());
-        assertTrue(failures.isEmpty());
-
-        port.stopScan();
+        ScanResult projected = batches.get(0).get(0);
+        assertEquals("HS01", projected.modelId());
+        assertEquals("v2", projected.variantId());
+        assertEquals("HS01-Demo", projected.bleName());
+        assertEquals("AA:BB:CC:00:00:01", projected.bleMac());
+        assertEquals(-40, projected.rssi());
+        assertEquals(List.of(DevicePort.ScanFailure.BLUETOOTH_DISABLED), failures);
+        assertTrue(finished.get());
         assertFalse(port.isScanning());
-        assertTrue(handleCancelled.get());
-
-        // 停扫之后即使底层还有残留回调，也不再向外分发。
-        capturedObserver.get().onDeviceFound(hs01);
-        capturedObserver.get().onBatchScanResults(List.of(hs02));
-        assertEquals(1, batches.size());
-
-        capturedObserver.get().onScanFailed(new BleFailure(
-                BleErrorCode.SCAN_THROTTLED, "throttled", null, true, true, "test", null, null, null));
-        assertTrue(failures.isEmpty());
-        assertEquals(1, finishedCount.get());
     }
 
-    private interface ScanStarter {
-        BleOperationHandle start(BleScanConfig config, BleScanObserver observer);
+    @Test
+    public void projectsExpiredDeviceToRemovalCallback() {
+        ScriptedNearby nearby = new ScriptedNearby();
+        HsDevicePort port = new HsDevicePort(nearby, new FakeYoHsClient());
+        List<ScanResult> removed = new ArrayList<>();
+
+        port.startScanBatch(batch -> {
+        }, failure -> {
+        }, () -> {
+        }, removed::add);
+        nearby.observer.onLost(
+                new HsNearbyDevice("HS02", "v1", "Vidda V11", "AA:BB:CC:00:00:02", -55));
+
+        assertEquals(1, removed.size());
+        assertEquals("HS02", removed.get(0).modelId());
+        assertEquals("AA:BB:CC:00:00:02", removed.get(0).bleMac());
     }
 
-    private static YoBleClient bleProxy(boolean supported,
-                                        boolean enabled,
-                                        List<?> bondedDevices,
-                                        ScanStarter starter) {
-        return (YoBleClient) Proxy.newProxyInstance(
-                YoBleClient.class.getClassLoader(),
-                new Class<?>[]{YoBleClient.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "isBleSupported" -> supported;
-                    case "isAdapterEnabled" -> enabled;
-                    case "getBondedDevices" -> Result.success(bondedDevices);
-                    case "scan" -> starter.start((BleScanConfig) args[0], (BleScanObserver) args[1]);
-                    case "stopScan" -> Result.success(null);
-                    case "isScanning" -> false;
-                    default -> throw new UnsupportedOperationException("Unexpected call: " + method.getName());
-                });
+    @Test
+    public void projectsBizReadyTimeoutWithoutOwningItsOwnTimeoutTimer() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:07", "HS01-Demo");
+        assertEquals(ConnectionState.CONNECTING, port.snapshot().connection());
+
+        // 连接就绪超时由 biz 会话层表达：biz 以 onConnectFailed("ready-timeout", false) 上报，
+        // 端口只把它投影成 DISCONNECTED，不再自建 12s 计时器/Handler。
+        session.connectionObserver.onConnectFailed("ready-timeout", false);
+        assertEquals(ConnectionState.DISCONNECTED, port.snapshot().connection());
     }
 
-    private static YoCbtClient classicProxy(List<CbtDeviceSnapshot> bondedDevices) {
-        return (YoCbtClient) Proxy.newProxyInstance(
-                YoCbtClient.class.getClassLoader(),
-                new Class<?>[]{YoCbtClient.class},
-                (proxy, method, args) -> {
-                    if ("getBondedDevices".equals(method.getName())) {
-                        return Result.success(bondedDevices);
-                    }
-                    throw new UnsupportedOperationException("Unexpected call: " + method.getName());
-                });
+    @Test
+    public void connectRejectsEmptyMacExplicitly() {
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), new FakeYoHsClient());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> port.connect("HS01", "v1", "", "HS01-Demo"));
+        assertThrows(IllegalArgumentException.class,
+                () -> port.connect("HS01", "v1", null, "HS01-Demo"));
     }
 
-    private static CbtDeviceSnapshot classicBondedSnapshot(String mac) {
-        CbtDeviceIdentity identity = new CbtDeviceIdentity(
-                new CbtDeviceId(mac),
-                mac,
-                "Bonded Headset");
-        return new CbtDeviceSnapshot(
-                identity,
-                CbtBondState.BONDED,
-                CbtAclLinkState.DISCONNECTED,
-                CbtDeviceSnapshot.RSSI_UNAVAILABLE,
-                0L,
-                0L,
-                Collections.emptyList(),
-                new EnumMap<>(CbtProfileType.class),
-                Collections.emptyList(),
-                Collections.emptyList());
+    @Test
+    public void connectDrivesSnapshotFromProtocolSession() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        assertFalse(port.snapshot().isConnected());
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:01", "HS01-Demo");
+        assertEquals(ConnectionState.CONNECTING, port.snapshot().connection());
+        assertEquals("HS01", port.snapshot().modelId());
+        assertEquals("HS01-Demo", port.snapshot().deviceName());
+        assertEquals("AA:BB:CC:DD:EE:01", port.snapshot().mac());
+        // 协议没有佩戴态来源：端口投未知，不是确定的「未佩戴」。
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+
+        session.battery = new HsBattery(90, 80, 70, false, 0);
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:01");
+        assertEquals(ConnectionState.READY, port.snapshot().connection());
+        assertEquals(90, port.snapshot().battery().left());
+        assertEquals(70, port.snapshot().battery().caseLevel());
+
+        session.battery = new HsBattery(89, 79, 69, true, 3);
+        session.deviceObserver.onBatteryStateChanged(true, true, true);
+        assertEquals(89, port.snapshot().battery().left());
+        assertTrue(port.snapshot().battery().caseCharging());
+
+        session.connectionObserver.onDisconnected("bye");
+        assertEquals(ConnectionState.DISCONNECTED, port.snapshot().connection());
+        assertFalse(port.snapshot().isConnected());
     }
 
-    private static BleScanResult bleResult(String mac,
-                                           int rssi,
-                                           List<UUID> uuids,
-                                           byte[] rawBytes,
-                                           String deviceName) {
-        BleDeviceIdentity identity = new BleDeviceIdentity(
-                new BleDeviceId(mac),
-                deviceName == null ? "" : deviceName,
-                1000L);
-        BleScanRecord record = new BleScanRecord(
-                -1,
-                uuids,
-                Collections.emptyList(),
-                Collections.emptyMap(),
-                Collections.emptyMap(),
-                Integer.MIN_VALUE,
-                deviceName,
-                rawBytes);
-        return new BleScanResult(
-                identity,
-                rssi,
-                record,
-                1000L,
-                true,
-                true,
-                BlePhy.LE_1M,
-                BlePhy.UNKNOWN,
-                BleScanResult.SID_NOT_PRESENT,
-                BleScanResult.TX_POWER_NOT_PRESENT,
-                BleScanResult.PERIODIC_INTERVAL_NOT_PRESENT,
-                BleScanCallbackType.ALL_MATCHES);
+    @Test
+    public void projectionsKeepStructuredLevelAndUnknownApart() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:15", "HS01-Demo");
+
+        // biz 侧已是 int：80 是数值，UNKNOWN_LEVEL 是未知。端口只投影，不再解析文本。
+        session.battery = new HsBattery(80, HsBattery.UNKNOWN_LEVEL, HsBattery.UNKNOWN_LEVEL, false, 0);
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:15");
+
+        BatterySnapshot mixed = port.snapshot().battery();
+        assertEquals(80, mixed.left());
+        assertEquals(BatterySnapshot.UNKNOWN, mixed.right());
+        assertEquals(BatterySnapshot.UNKNOWN, mixed.caseLevel());
+        assertTrue(mixed.hasLeft());
+        assertFalse(mixed.hasRight());
+        assertFalse(mixed.hasCase());
+
+        // 三项都未知：快照就是「未回报」，hasXxx 全部 false。
+        session.battery = new HsBattery(HsBattery.UNKNOWN_LEVEL,
+                HsBattery.UNKNOWN_LEVEL, HsBattery.UNKNOWN_LEVEL, false, 0);
+        session.deviceObserver.onBatteryStateChanged(true, true, true);
+
+        BatterySnapshot unknown = port.snapshot().battery();
+        assertEquals(BatterySnapshot.UNKNOWN, unknown.left());
+        assertEquals(BatterySnapshot.UNKNOWN, unknown.right());
+        assertEquals(BatterySnapshot.UNKNOWN, unknown.caseLevel());
+        assertFalse(unknown.hasLeft());
+        assertFalse(unknown.hasRight());
+        assertFalse(unknown.hasCase());
     }
 
-    private static UUID hs01Uuid(String featureCode) {
-        byte[] prefix = hexToBytes(featureCode.substring(0, 18));
-        byte[] uuidBytes = new byte[16];
-        uuidBytes[0] = (byte) 0xFF;
-        uuidBytes[1] = (byte) 0xEE;
-        uuidBytes[2] = (byte) 0xDD;
-        uuidBytes[3] = (byte) 0xCC;
-        uuidBytes[4] = (byte) 0xBB;
-        uuidBytes[5] = (byte) 0xAA;
-        uuidBytes[6] = 0x02;
-        for (int index = 0; index < prefix.length; index++) {
-            uuidBytes[15 - index] = prefix[index];
+    @Test
+    public void projectsDeviceInfoIntoFirmwareAndEarColor() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+        List<DeviceSnapshot> emitted = new ArrayList<>();
+        port.observe(emitted::add);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:03", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:03");
+
+        // 设备未回报前是领域默认值，不是空文案。
+        assertEquals("", port.snapshot().firmware());
+        assertEquals(DeviceSnapshot.UNKNOWN_EAR_COLOR, port.snapshot().earColor());
+
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("2.0.7", 3, HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+
+        assertEquals("2.0.7", port.snapshot().firmware());
+        assertEquals(3, port.snapshot().earColor());
+        DeviceSnapshot last = emitted.get(emitted.size() - 1);
+        assertEquals("2.0.7", last.firmware());
+        assertEquals(3, last.earColor());
+
+        // 只回报颜色时固件回到未知，两项互不代替。
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("", 5, HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+        assertEquals("", port.snapshot().firmware());
+        assertEquals(5, port.snapshot().earColor());
+    }
+
+    @Test
+    public void keepsDeviceInfoThatArrivesBeforeReadyForTheReadySnapshot() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:04", "HS01-Demo");
+        // 设备信息在 READY 之前到达：端口先缓存字段，不推新快照。
+        session.reportFromDevice(
+                new HsDeviceInfo("1.4.2", DeviceSnapshot.UNKNOWN_EAR_COLOR, HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+        assertEquals(ConnectionState.CONNECTING, port.snapshot().connection());
+        assertEquals("", port.snapshot().firmware());
+
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:04");
+        assertEquals("1.4.2", port.snapshot().firmware());
+        assertEquals(DeviceSnapshot.UNKNOWN_EAR_COLOR, port.snapshot().earColor());
+    }
+
+    @Test
+    public void attachesDeviceObserverAfterTheNewSessionStarts() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:07", "HS01-Demo");
+
+        // 顺序契约：先开始新会话（biz 在 connect 入口清域），再挂会回放域值的设备信息观察者。
+        assertEquals(List.of("setConnectionObserver", "connect", "setDeviceObserver"), session.calls);
+    }
+
+    @Test
+    public void switchingDeviceWithoutDisconnectDoesNotCarryPreviousDeviceInfo() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:08", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:08");
+        session.reportFromDevice(
+                new HsDeviceInfo("2.0.7", 3, HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+        assertEquals("2.0.7", port.snapshot().firmware());
+        assertEquals(3, port.snapshot().earColor());
+
+        // 用户改连另一台、不先 disconnect：A 会话仍 ready，A 的固件 / 颜色还留在 biz 的会话域里。
+        port.connect("HS02", "v1", "AA:BB:CC:DD:EE:09", "Vidda V11");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:09");
+
+        assertEquals(ConnectionState.READY, port.snapshot().connection());
+        assertEquals("HS02", port.snapshot().modelId());
+        assertEquals("", port.snapshot().firmware());
+        assertEquals(DeviceSnapshot.UNKNOWN_EAR_COLOR, port.snapshot().earColor());
+    }
+
+    @Test
+    public void reconnectDropsPreviousDeviceInfo() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:05", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:05");
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("2.0.7", 3, HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+        assertEquals("2.0.7", port.snapshot().firmware());
+
+        port.disconnect();
+        port.connect("HS02", "v1", "AA:BB:CC:DD:EE:06", "Vidda V11");
+
+        assertEquals("", port.snapshot().firmware());
+        assertEquals(DeviceSnapshot.UNKNOWN_EAR_COLOR, port.snapshot().earColor());
+    }
+
+    @Test
+    public void twoEarsInCaseMapsToNotWorn() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:11", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:11");
+
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("2.0.7", 3, HsDeviceInfo.EAR_IN_CASE_BOTH));
+
+        // 两耳都在仓：耳机在充电盒里，确知未佩戴。
+        assertEquals(WearState.NOT_WORN, port.snapshot().wear());
+    }
+
+    @Test
+    public void earOutOfCaseOrUnreportedStaysUnknown() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:12", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:12");
+
+        // 仅左耳在仓：右耳出去了，但出仓不等于戴上，协议不能证明佩戴。
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("", DeviceSnapshot.UNKNOWN_EAR_COLOR, 1));
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+
+        // 两耳都不在仓：同样只能证明「不在盒内」，不能证明「在耳朵上」。
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("", DeviceSnapshot.UNKNOWN_EAR_COLOR, 0));
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+
+        // 从未上报：没有数据就是未知，不能写成确定的未佩戴。
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("", DeviceSnapshot.UNKNOWN_EAR_COLOR,
+                        HsDeviceInfo.UNKNOWN_EAR_IN_CASE));
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+    }
+
+    @Test
+    public void switchingDeviceDoesNotKeepPreviousNotWorn() {
+        FakeYoHsClient session = new FakeYoHsClient();
+        HsDevicePort port = new HsDevicePort(new ScriptedNearby(), session);
+
+        port.connect("HS01", "v1", "AA:BB:CC:DD:EE:13", "HS01-Demo");
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:13");
+        session.deviceObserver.onDeviceInfo(
+                new HsDeviceInfo("2.0.7", 3, HsDeviceInfo.EAR_IN_CASE_BOTH));
+        assertEquals(WearState.NOT_WORN, port.snapshot().wear());
+
+        // 换一台设备：新会话未上报前不得沿用上一台的「确知未佩戴」。
+        port.connect("HS02", "v1", "AA:BB:CC:DD:EE:14", "Vidda V11");
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+        session.connectionObserver.onConnected("AA:BB:CC:DD:EE:14");
+        assertEquals(WearState.UNKNOWN, port.snapshot().wear());
+    }
+
+    private static final class ScriptedNearby implements YoHsNearby {
+        private HsNearbyObserver observer;
+        private boolean scanning;
+
+        @Override
+        public void start(HsNearbyObserver observer) {
+            this.observer = observer;
+            scanning = true;
         }
-        ByteBuffer buffer = ByteBuffer.wrap(uuidBytes);
-        return new UUID(buffer.getLong(), buffer.getLong());
-    }
 
-    private static byte[] hs02Packet(String name) {
-        byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
-        byte[] nameField = new byte[nameBytes.length + 2];
-        nameField[0] = (byte) (nameBytes.length + 1);
-        nameField[1] = 0x09;
-        System.arraycopy(nameBytes, 0, nameField, 2, nameBytes.length);
-
-        byte[] manufacturer = new byte[]{
-                (byte) 0xFF, (byte) 0xFF,
-                0x48, 0x43,
-                0x01, 0x02, 0x12,
-                0x01, 0x00, 0x00, 0x00,
-                0x0A, 0x06,
-                (byte) 0xAA, (byte) 0xBB, (byte) 0xCC,
-                (byte) 0xDD, (byte) 0xEE, (byte) 0xFF,
-                0x0B, 0x01, 0x00
-        };
-        byte[] mfgField = new byte[manufacturer.length + 2];
-        mfgField[0] = (byte) (manufacturer.length + 1);
-        mfgField[1] = (byte) 0xFF;
-        System.arraycopy(manufacturer, 0, mfgField, 2, manufacturer.length);
-
-        byte[] out = new byte[nameField.length + mfgField.length];
-        System.arraycopy(nameField, 0, out, 0, nameField.length);
-        System.arraycopy(mfgField, 0, out, nameField.length, mfgField.length);
-        return out;
-    }
-
-    private static byte[] hexToBytes(String hex) {
-        byte[] result = new byte[hex.length() / 2];
-        for (int index = 0; index < result.length; index++) {
-            result[index] = (byte) Integer.parseInt(hex.substring(index * 2, index * 2 + 2), 16);
+        @Override
+        public void stop() {
+            scanning = false;
         }
-        return result;
+
+        @Override
+        public boolean isScanning() {
+            return scanning;
+        }
+    }
+
+    private static final class FakeYoHsClient implements YoHsClient {
+        /** 调用顺序，用来锁住「先开始新会话、后挂设备信息观察者」这条顺序契约。 */
+        private final List<String> calls = new ArrayList<>();
+        private HsConnectionObserver connectionObserver;
+        private HsDeviceObserver deviceObserver;
+        private HsBattery battery = new HsBattery(
+                HsBattery.UNKNOWN_LEVEL,
+                HsBattery.UNKNOWN_LEVEL,
+                HsBattery.UNKNOWN_LEVEL,
+                false,
+                0);
+        /** 模拟 biz 的会话域：设备回报后落在这里，connect 入口清空（clearSessionState）。 */
+        private HsDeviceInfo domainInfo;
+
+        /** 设备主动回报（协议帧到达）：先落域，再投给当前观察者。 */
+        void reportFromDevice(HsDeviceInfo info) {
+            domainInfo = info;
+            if (deviceObserver != null) {
+                deviceObserver.onDeviceInfo(info);
+            }
+        }
+
+        @Override
+        public void connect(String macAddress) {
+            calls.add("connect");
+            domainInfo = null;
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public void close() {
+        }
+
+        @Override
+        public boolean isReady() {
+            return true;
+        }
+
+        @Override
+        public HsBattery battery() {
+            return battery;
+        }
+
+        @Override
+        public void setDeviceObserver(HsDeviceObserver observer) {
+            calls.add("setDeviceObserver");
+            this.deviceObserver = observer;
+            // biz 的 DeviceEventPipeline.setObserver 会同步回放域里已有的设备信息。
+            if (observer != null && domainInfo != null) {
+                observer.onDeviceInfo(domainInfo);
+            }
+        }
+
+        @Override
+        public void setConnectionObserver(HsConnectionObserver observer) {
+            calls.add("setConnectionObserver");
+            this.connectionObserver = observer;
+        }
+
+        @Override
+        public void setRemoteStreamStop(Runnable trigger) {
+        }
+
+        @Override
+        public void setEqMode(int mode, HsResultCallback callback) {
+        }
+
+        @Override
+        public void setHighSoundQuality(boolean highQuality, HsResultCallback callback) {
+        }
+
+        @Override
+        public void setLdacEnabled(boolean enabled, HsResultCallback callback) {
+        }
+
+        @Override
+        public void setVolumeAdaptive(boolean enabled, HsResultCallback callback) {
+        }
+
+        @Override
+        public void setGameMode(boolean enabled, HsResultCallback callback) {
+        }
+
+        @Override
+        public void setWearDetection(boolean enabled, HsResultCallback callback) {
+        }
+
+        @Override
+        public void startFindAlert(boolean leftEar, HsResultCallback callback) {
+        }
+
+        @Override
+        public void stopFindAlert(HsResultCallback callback) {
+        }
+
+        @Override
+        public void readEarColor(HsResultCallback callback) {
+        }
+
+        @Override
+        public void reboot(HsResultCallback callback) {
+        }
     }
 }

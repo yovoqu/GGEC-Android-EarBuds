@@ -41,7 +41,6 @@ android {
 
 dependencies {
     implementation project(':lib_common')
-    implementation project(':lib_bluetooth')
     implementation project(':lib_ai')
     implementation project(':biz_appupdate')
     implementation project(':biz_ggec_hs')
@@ -230,12 +229,16 @@ tasks.register('checkDeviceLayerImports') {
     description = 'Fail if the device feature crosses its layer boundaries.'
     doLast {
         def offenders = []
-        def scanTree = { String dir, String pattern, List<String> forbidden ->
+        // allowed：行级白名单，命中这些字面量的行不做禁止项匹配（用于唯一被批准的适配器）。
+        def scanTree = { String dir, String pattern, List<String> forbidden, List<String> allowed ->
             fileTree(project.file(dir)) {
                 include pattern
             }.each { File file ->
                 def rel = rootProject.relativePath(file).replace('\\', '/')
                 file.eachLine { line, index ->
+                    if (allowed.any { String token -> line.contains(token) }) {
+                        return
+                    }
                     forbidden.each { token ->
                         if (line.contains(token)) {
                             offenders << "${rel}:${index}: ${line.trim()}"
@@ -246,14 +249,18 @@ tasks.register('checkDeviceLayerImports') {
         }
         def base = 'src/main/java/com/ggec/earbuds'
         scanTree("${base}/domain/device", '**/*.java',
-                ['com.ggec.earbuds.data', 'com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+                ['com.ggec.earbuds.data', 'com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'], [])
         scanTree("${base}/data/device", '**/*.java',
-                ['com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'])
+                ['com.ggec.earbuds.ui', 'android.', 'com.yohu.youi'], [])
+        // 界面层只认领域模型与端口：数据层、以及 app 自己的 provider 适配包（蓝牙 / AI SDK 的落地处）
+        // 都不许进来。唯一显式白名单是 PermissionProvider——它是唯一允许的权限适配器：
+        // Android 运行时权限没有领域端口，申请与结果回传只由 ScanActivity 转发，决策仍在 VM。
         scanTree("${base}/ui/device", '**/*.java',
-                ['com.ggec.earbuds.data'])
+                ['com.ggec.earbuds.data', 'com.ggec.earbuds.provider.'],
+                ['com.ggec.earbuds.provider.lib_common.PermissionProvider'])
         scanTree("${base}/ui/device", '**/*ViewModel.java',
                 ['android.view', 'android.widget', 'android.content', 'android.app',
-                 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
+                 'com.yohu.youi', 'com.ggec.earbuds.wiring'], [])
         if (!offenders.isEmpty()) {
             throw new GradleException('Device layer boundary violated:\n' + offenders.join('\n'))
         }
@@ -377,9 +384,20 @@ tasks.register('checkAppSdkProviderBoundary') {
                 }
             }
         }
+        fileTree(project.file('src')) {
+            include 'main/java/**/*.java'
+            include 'test/java/**/*.java'
+        }.each { file ->
+            def rel = project.rootDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+            file.eachLine { line, index ->
+                if (line =~ /^\s*import\s+com\.yovo\.lib_bluetooth\./) {
+                    offenders << "${rel}:${index + 1}: ${line.trim()}"
+                }
+            }
+        }
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                    'App 非 provider 代码禁止 import 蓝牙/biz SDK（须经 provider/lib_bluetooth）:\n'
+                    'App 不直接依赖 lib_bluetooth。非 provider 只通过本模块端口，provider 只调用 biz_ggec_hs 公开接口:\n'
                             + offenders.join('\n'))
         }
     }

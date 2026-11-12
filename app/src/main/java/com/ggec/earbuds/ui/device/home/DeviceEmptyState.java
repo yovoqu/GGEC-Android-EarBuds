@@ -44,13 +44,13 @@ public final class DeviceEmptyState {
 
         TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
         heading.setText(R.string.device_empty_title);
-        heading.setLineSpacing(theme.dpf(5), 1f);
+        heading.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         block.addView(heading, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView message = theme.text(DeviceTheme.TEXT_CALLOUT, theme.text2);
         message.setText(R.string.device_empty_body);
-        message.setLineSpacing(theme.dpf(5), 1f);
+        message.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         messageParams.topMargin = theme.dp(DeviceTheme.SPACE_S);

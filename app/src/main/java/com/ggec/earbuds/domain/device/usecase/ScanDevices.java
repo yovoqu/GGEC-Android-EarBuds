@@ -15,20 +15,11 @@ public final class ScanDevices {
         this.port = port;
     }
 
-    public void start(Consumer<ScanResult> onResult, Runnable onFinished) {
-        port.startScan(onResult, onFinished);
-    }
-
-    public void start(Consumer<ScanResult> onResult,
-                      Consumer<DevicePort.ScanFailure> onFailed,
-                      Runnable onFinished) {
-        port.startScan(onResult, onFailed, onFinished);
-    }
-
     public void startBatch(Consumer<List<ScanResult>> onResults,
                            Consumer<DevicePort.ScanFailure> onFailed,
-                           Runnable onFinished) {
-        port.startScanBatch(onResults, onFailed, onFinished);
+                           Runnable onFinished,
+                           Consumer<ScanResult> onRemoved) {
+        port.startScanBatch(onResults, onFailed, onFinished, onRemoved);
     }
 
     public void stop() {

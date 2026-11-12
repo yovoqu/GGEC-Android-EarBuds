@@ -16,13 +16,18 @@ public final class DeviceHomeUiMapper {
 
     public DeviceHomeUiState map(DeviceProfile profile, DeviceSnapshot snapshot,
                                  DeviceControls controls, boolean controlsAvailable) {
-        if (profile == null || snapshot == null || !snapshot.isConnected()) {
+        if (profile == null || snapshot == null) {
+            return DeviceHomeUiState.disconnected();
+        }
+        // 连接中也要给出反馈（否则“点连接→首页仍显示未连接”）；未连接/断开才回落空态。
+        boolean showCard = snapshot.isConnected()
+                || snapshot.connection() == ConnectionState.CONNECTING;
+        if (!showCard) {
             return DeviceHomeUiState.disconnected();
         }
         DeviceControls safeControls = controls == null ? DeviceControls.empty() : controls;
         BatterySnapshot battery = snapshot.battery();
         return new DeviceHomeUiState(
-                true,
                 profile.model().id(),
                 connectionTextRes(snapshot.connection()),
                 true,
@@ -54,12 +59,11 @@ public final class DeviceHomeUiMapper {
         };
     }
 
+    /** 佩戴文案单点：没有数据（{@link WearState#UNKNOWN}）与确知未佩戴给不同文案，不共用一句。 */
     private static int wearTextRes(WearState wear) {
         return switch (wear) {
+            case UNKNOWN -> R.string.device_wear_unknown;
             case NOT_WORN -> R.string.device_wear_none;
-            case LEFT -> R.string.device_wear_left;
-            case RIGHT -> R.string.device_wear_right;
-            case BOTH -> R.string.device_wear_both;
         };
     }
 }
