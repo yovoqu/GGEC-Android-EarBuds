@@ -13,15 +13,18 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.wiring.AppContainer;
 import com.yohu.youi.api.feedback.YoToast;
-import com.ggec.earbuds.provider.lib_common.PermissionProvider;
 
 /**
  * 扫描连接页宿主。扫描的启停决策全在 {@link ScanViewModel}：
  * 本页只把用户动作转发给 VM、按 VM 事件申请权限并回传结果、渲染状态与提示文案。
+ *
+ * <p>权限请求走宿主能力接口 {@link ScanPermissionRequest}（由装配根注入），界面层不接触
+ * 任何权限 SDK。</p>
  */
 public final class ScanActivity extends AppCompatActivity {
 
     private ScanViewModel viewModel;
+    private ScanPermissionRequest permissionRequest;
     private ScanScreen screen;
 
     @NonNull
@@ -33,8 +36,10 @@ public final class ScanActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         YoUi.edgeToEdge(this);
-        viewModel = new ViewModelProvider(this, container().device().scanFactory())
+        AppContainer container = container();
+        viewModel = new ViewModelProvider(this, container.device().scanFactory())
                 .get(ScanViewModel.class);
+        permissionRequest = container.device().scanPermissionRequest(this);
         screen = new ScanScreen(this, new ScanScreen.Listener() {
             @Override
             public void onBack() {
@@ -83,13 +88,13 @@ public final class ScanActivity extends AppCompatActivity {
                                            @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        PermissionProvider.Result result = PermissionProvider.onRequestResult(
-                this, requestCode, permissions, grantResults);
+        ScanPermissionResult result = permissionRequest.onResult(requestCode, permissions,
+                grantResults);
         if (!result.handled()) {
             return;
         }
-        viewModel.onPermissionAnswer(result.allGranted());
-        if (result.allGranted()) {
+        viewModel.onPermissionAnswer(result.granted());
+        if (result.granted()) {
             return;
         }
         YoToast.showWarning(this, getString(result.permanentlyDenied()
@@ -108,7 +113,7 @@ public final class ScanActivity extends AppCompatActivity {
      * 这里不做扫描决策：请求返回 true 只说明权限已具备，仍由 VM 决定是否开扫。
      */
     private void requestScanPermissions() {
-        if (PermissionProvider.requestBluetoothIfNeeded(this)) {
+        if (permissionRequest.ensureGranted()) {
             viewModel.onPermissionAnswer(true);
         }
     }

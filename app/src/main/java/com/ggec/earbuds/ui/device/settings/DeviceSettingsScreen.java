@@ -16,17 +16,14 @@ import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
+import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
-import com.ggec.earbuds.ui.device.settings.section.ControlSectionView;
-import com.ggec.earbuds.ui.device.settings.section.FunctionSectionView;
-import com.ggec.earbuds.ui.device.settings.section.ListSectionView;
-import com.ggec.earbuds.ui.device.settings.section.MusicSectionView;
-import com.ggec.earbuds.ui.device.settings.section.SettingsSectionView;
+import com.ggec.earbuds.ui.device.settings.section.SettingsRowsView;
 import com.yohu.youi.api.platform.YoSystemBar;
 
 /**
- * 二级设置页视图：只做页头、滚动容器、未连接空态与区块切换。
- * 每个功能的布局与交互在自己的 section view 内，本类不含任何具体控件排布。
+ * 二级设置页视图骨架：页头、滚动容器、未连接空态与行渲染宿主。
+ * 行由 {@link SettingsRowsView} 按能力描述渲染，本类不含任何具体控件排布。
  */
 public final class DeviceSettingsScreen {
 
@@ -43,7 +40,7 @@ public final class DeviceSettingsScreen {
     private final NestedScrollView scroll;
     private final ScrollView empty;
     private final LinearLayout content;
-    private final SettingsSectionView section;
+    private final SettingsRowsView rows;
 
     public DeviceSettingsScreen(@NonNull AppCompatActivity activity,
                                 @NonNull DeviceSettingsViewModel viewModel,
@@ -57,7 +54,7 @@ public final class DeviceSettingsScreen {
         root.setBackgroundColor(theme.page);
 
         title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        title.setText(viewModel.page().titleRes);
+        title.setText(viewModel.group().name());
         root.addView(buildHeader(listener), matchWrap());
 
         FrameLayout host = new FrameLayout(activity);
@@ -88,8 +85,8 @@ public final class DeviceSettingsScreen {
         });
         ViewCompat.requestApplyInsets(root);
 
-        section = createSection();
-        content.addView(section.view(), matchWrap());
+        rows = new SettingsRowsView(activity, theme, viewModel);
+        content.addView(rows.view(), matchWrap());
     }
 
     @NonNull
@@ -99,28 +96,21 @@ public final class DeviceSettingsScreen {
 
     public void render(@NonNull DeviceSettingsUiState state) {
         title.setText(state.titleRes());
-        if (!state.loaded()) {
-            return;
-        }
         boolean connected = state.connected();
         scroll.setVisibility(connected ? View.VISIBLE : View.GONE);
         empty.setVisibility(connected ? View.GONE : View.VISIBLE);
         if (connected) {
-            section.render(state);
+            rows.render(state);
         }
     }
 
     public void destroy() {
-        section.destroy();
+        rows.destroy();
     }
 
-    private SettingsSectionView createSection() {
-        return switch (viewModel.page()) {
-            case MUSIC -> new MusicSectionView(activity, theme, viewModel);
-            case CONTROL -> new ControlSectionView(activity, theme, viewModel);
-            case FUNCTION -> new FunctionSectionView(activity, theme, viewModel);
-            case DUAL, RECORD, ABOUT -> new ListSectionView(activity, theme, viewModel);
-        };
+    /** 写入落地结果：失败时让开关回到「未上报」呈现，不假装成功。 */
+    public void onControlOutcome(@NonNull DeviceControlOutcome outcome) {
+        rows.onControlOutcome(outcome);
     }
 
     private ScrollView buildEmptyState() {
@@ -137,7 +127,8 @@ public final class DeviceSettingsScreen {
         scrollEmpty.addView(column, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
+        TextView heading = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1,
+                DeviceTheme.Weight.MEDIUM);
         heading.setText(R.string.device_empty_title);
         heading.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         column.addView(heading, matchWrap());

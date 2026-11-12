@@ -29,7 +29,7 @@ import com.ggec.earbuds.domain.ai.usecase.RunSpeedTest;
 import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
-import com.yovo.lib_common.event.OneShotLiveData;
+import com.ggec.earbuds.ui.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;

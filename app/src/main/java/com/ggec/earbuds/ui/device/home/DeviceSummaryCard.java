@@ -13,11 +13,12 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 
-/** 设备摘要卡：机型名、连接状态、三路电量、佩戴与充电。 */
+/** 设备摘要卡：设备名、连接状态、三路电量、佩戴与充电。 */
 public final class DeviceSummaryCard {
 
     private final DeviceTheme theme;
     private final LinearLayout view;
+    private final TextView name;
     private final TextView subtitle;
     private final TextView status;
     private final View statusDot;
@@ -42,8 +43,7 @@ public final class DeviceSummaryCard {
 
         LinearLayout names = new LinearLayout(activity);
         names.setOrientation(LinearLayout.VERTICAL);
-        TextView name = theme.text(DeviceTheme.TEXT_TITLE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        name.setText(R.string.device_connected_title);
+        name = theme.text(DeviceTheme.TEXT_TITLE, theme.text1, DeviceTheme.Weight.MEDIUM);
         subtitle = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
         names.addView(name, wrap());
         names.addView(subtitle, wrap());
@@ -54,7 +54,8 @@ public final class DeviceSummaryCard {
         stateRow.setGravity(Gravity.CENTER_VERTICAL);
         statusDot = new View(activity);
         statusDot.setBackground(theme.circle(theme.confirm));
-        stateRow.addView(statusDot, new LinearLayout.LayoutParams(theme.dp(DeviceTheme.STATUS_DOT), theme.dp(DeviceTheme.STATUS_DOT)));
+        stateRow.addView(statusDot, new LinearLayout.LayoutParams(
+                theme.dp(DeviceTheme.STATUS_DOT), theme.dp(DeviceTheme.STATUS_DOT)));
         status = theme.text(DeviceTheme.TEXT_CAPTION, theme.text2);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -95,27 +96,20 @@ public final class DeviceSummaryCard {
     }
 
     public void render(@NonNull DeviceHomeUiState state) {
-        subtitle.setText(state.modelId());
-        if (state.connectionTextRes() != 0) {
-            status.setText(state.connectionTextRes());
-        } else {
-            status.setText("");
-        }
+        name.setText(state.title());
+        subtitle.setText(state.subtitle());
+        status.setText(state.connectionTextRes() == 0 ? "" : activityText(state.connectionTextRes()));
         status.setTextColor(state.connected() ? theme.confirm : theme.text2);
         statusDot.setBackground(theme.circle(state.connected() ? theme.confirm : theme.text3));
         leftValue.setText(state.leftText());
         rightValue.setText(state.rightText());
         caseValue.setText(state.caseText());
-        if (state.wearTextRes() != 0) {
-            wear.setText(state.wearTextRes());
-        } else {
-            wear.setText("");
-        }
-        if (state.chargingTextRes() != 0) {
-            charging.setText(state.chargingTextRes());
-        } else {
-            charging.setText("");
-        }
+        wear.setText(state.wearTextRes() == 0 ? "" : activityText(state.wearTextRes()));
+        charging.setText(state.chargingTextRes() == 0 ? "" : activityText(state.chargingTextRes()));
+    }
+
+    private CharSequence activityText(int titleRes) {
+        return theme.context.getString(titleRes);
     }
 
     private TextView batteryColumn(LinearLayout parent, int labelRes) {

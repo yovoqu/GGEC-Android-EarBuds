@@ -11,8 +11,9 @@ public final class ConnectDevice {
         this.port = port;
     }
 
-    public void execute(String modelId, String variantId, String bleMac, String bleName) {
-        port.connect(modelId, variantId, bleMac, bleName);
+    public void execute(String modelId, String bleAddress, String bleName,
+                        String classicAddress, String classicName) {
+        port.connect(modelId, bleAddress, bleName, classicAddress, classicName);
     }
 
     public void disconnect() {

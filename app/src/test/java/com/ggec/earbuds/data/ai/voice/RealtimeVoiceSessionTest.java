@@ -1,6 +1,5 @@
 package com.ggec.earbuds.data.ai.voice;
 
-import com.ggec.earbuds.provider.lib_ai.RealtimeLinkAdapter;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -20,7 +19,6 @@ import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.FakeRealtimeLink;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
-import com.yovo.lib_ai.error.YoAiErrorKind;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -454,14 +452,6 @@ public class RealtimeVoiceSessionTest {
         assertEquals(AiVoiceModel.CHATGPT.baseUrl(), other.lastConfig.baseUrl());
         assertEquals("sk-gpt", other.lastConfig.apiKey());
         assertEquals(AiVoiceModel.CHATGPT.realtimeModel(), other.lastConfig.model());
-    }
-
-    @Test
-    public void adapterTranslatesLibAiErrorKinds() {
-        assertEquals(AiFailureKind.AUTHENTICATION, RealtimeLinkAdapter.kindOf(YoAiErrorKind.AUTHENTICATION));
-        assertEquals(AiFailureKind.PROTOCOL, RealtimeLinkAdapter.kindOf(YoAiErrorKind.PROTOCOL));
-        assertEquals(AiFailureKind.NETWORK, RealtimeLinkAdapter.kindOf(YoAiErrorKind.NETWORK));
-        assertEquals(AiFailureKind.UNKNOWN, RealtimeLinkAdapter.kindOf(null));
     }
 
     @Test

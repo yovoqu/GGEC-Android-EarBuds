@@ -96,7 +96,7 @@ public final class AiGraph {
 
     public AiGraph(@NonNull Context context, @NonNull AppExecutors executors) {
         this.context = context;
-        LibAiProvider.install(context);
+        LibAiProvider.bootstrap(context);
         AiClock clock = System::currentTimeMillis;
         this.clock = clock;
         this.voiceState = executors.voiceState();

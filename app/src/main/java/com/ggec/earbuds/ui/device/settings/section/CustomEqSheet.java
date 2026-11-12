@@ -12,27 +12,23 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.device.DeviceTheme;
-import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.YoSheet;
-import com.yohu.youi.api.containers.list.ListPrefixSpec;
-import com.yohu.youi.api.containers.list.ListSuffixSpec;
-import com.yohu.youi.api.containers.list.ListTextSpec;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.controls.YoSlider;
-import com.yohu.youi.api.controls.YoTextInput;
-import com.yohu.youi.api.feedback.YoDialog;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 自定义音效模态面板（参考 HarmonyOS 智慧生活）。
- * 结构自底而上重排：音效名称（YoList + YoDialog 改名）、对齐的 10 段 EQ 画布、提示、底部保存。
+ * 自定义音效（{@code CURVE}）模态面板：N 段可调曲线，数值即 {@code ControlValue.Curve} 的 points。
+ *
+ * <p>段数来自设备已上报的曲线（points 的长度），界面不假设固定段数；只有段数与频率标签表
+ * 一致时才画 60Hz…16kHz 标签。整条曲线只在保存时写一次。</p>
  */
 public final class CustomEqSheet {
 
     public interface Listener {
-        void onSaved(@NonNull String name, @NonNull float[] gains);
+        void onSaved(@NonNull List<Integer> points);
 
         void onDismissed();
     }
@@ -40,6 +36,11 @@ public final class CustomEqSheet {
     private static final String[] FREQUENCIES = {
             "60", "125", "250", "500", "1k", "2k", "4k", "8k", "12k", "16k"
     };
+
+    /** 曲线取值边界与步长：协议给到的是整数增益。 */
+    private static final int MIN_GAIN = -6;
+    private static final int MAX_GAIN = 6;
+    private static final int STEP = 1;
 
     /** 画布高度：卡片的调节区总高。 */
     private static final float CANVAS_HEIGHT_DP = 270f;
@@ -51,8 +52,7 @@ public final class CustomEqSheet {
     private final List<Runnable> releases = new ArrayList<>();
     private final List<YoSlider> sliders = new ArrayList<>();
 
-    private String name;
-    private FrameLayout nameHost;
+    private int[] gains;
     private YoSheet sheet;
 
     private CustomEqSheet(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme) {
@@ -61,20 +61,20 @@ public final class CustomEqSheet {
     }
 
     public static CustomEqSheet show(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                                     @NonNull String initialName, @NonNull float[] initialGains,
-                                     @NonNull Listener listener) {
+                                     @NonNull List<Integer> points, @NonNull Listener listener) {
         CustomEqSheet panel = new CustomEqSheet(activity, theme);
-        panel.name = initialName;
-        panel.present(initialGains, listener);
+        panel.present(points, listener);
         return panel;
     }
 
-    private void present(float[] initialGains, Listener listener) {
-        float[] gains = initialGains.clone();
+    private void present(List<Integer> points, Listener listener) {
+        gains = new int[points.size()];
+        for (int index = 0; index < gains.length; index++) {
+            gains[index] = points.get(index);
+        }
+
         LinearLayout content = SettingsChrome.vertical(activity);
         content.setPadding(0, theme.dp(DeviceTheme.SPACE_S), 0, theme.dp(DeviceTheme.SPACE_L));
-
-        addNameList(content);
         content.addView(bandCard(gains), cardParams());
 
         TextView hint = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
@@ -95,7 +95,7 @@ public final class CustomEqSheet {
         YoButton save = YoButton.create(activity).build();
         save.setText(activity.getString(R.string.device_eq_save));
         save.setOnClickListener(v -> {
-            listener.onSaved(name, gains.clone());
+            listener.onSaved(points());
             dismiss();
         });
         releases.add(save::destroy);
@@ -123,54 +123,15 @@ public final class CustomEqSheet {
         sheet.show();
     }
 
-    private void addNameList(LinearLayout content) {
-        nameHost = new FrameLayout(activity);
-        nameHost.setOnClickListener(v -> openRenameDialog());
-        // 不额外加左右边距：YoList 默认自带 16dp 外边距，与屏幕/卡片边界一致。
-        content.addView(nameHost, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        rebuildNameList();
+    private List<Integer> points() {
+        List<Integer> points = new ArrayList<>(gains.length);
+        for (int gain : gains) {
+            points.add(gain);
+        }
+        return List.copyOf(points);
     }
 
-    private void rebuildNameList() {
-        nameHost.removeAllViews();
-        YoList.Builder builder = YoList.create(activity);
-        builder.addItem(ListPrefixSpec.none(),
-                ListTextSpec.of(activity.getString(R.string.device_eq_name_label)),
-                ListSuffixSpec.textAndArrow(name));
-        YoList list = builder.build();
-        releases.add(list::destroy);
-        list.setOnItemClickListener(index -> openRenameDialog());
-        nameHost.addView(list.getView(), new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-    }
-
-    private void openRenameDialog() {
-        YoTextInput field = YoTextInput.create(activity)
-                .setText(name)
-                .setPlaceholder(activity.getString(R.string.device_eq_name_label))
-                .setMaxLength(20)
-                .setShowCounter(true)
-                .setShowErrorEnabled(true)
-                .build();
-        YoDialog.create(activity)
-                .kind(YoDialog.Kind.INPUT)
-                .hosted(field)
-                .setTitle(activity.getString(R.string.device_eq_name_label))
-                .setActions(
-                        YoDialog.Action.negative(activity.getString(R.string.device_eq_cancel), null),
-                        YoDialog.Action.positive(activity.getString(R.string.device_eq_save),
-                                () -> {
-                                    String next = String.valueOf(field.getText()).trim();
-                                    if (!next.isEmpty()) {
-                                        name = next;
-                                        rebuildNameList();
-                                    }
-                                }))
-                .show();
-    }
-
-    private View bandCard(float[] gains) {
+    private View bandCard(int[] gains) {
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackground(theme.roundedStroke(theme.card, DeviceTheme.RADIUS_SHEET,
@@ -200,7 +161,7 @@ public final class CustomEqSheet {
 
         LinearLayout bands = new LinearLayout(activity);
         bands.setOrientation(LinearLayout.HORIZONTAL);
-        for (int index = 0; index < FREQUENCIES.length; index++) {
+        for (int index = 0; index < gains.length; index++) {
             bands.addView(sliderColumn(index, gains), new LinearLayout.LayoutParams(
                     0, theme.dp(CANVAS_HEIGHT_DP), 1f));
         }
@@ -208,17 +169,20 @@ public final class CustomEqSheet {
                 0, theme.dp(CANVAS_HEIGHT_DP), 1f));
         card.addView(body, matchWrap());
 
-        LinearLayout frequencies = new LinearLayout(activity);
-        frequencies.setOrientation(LinearLayout.HORIZONTAL);
-        frequencies.addView(new View(activity), new LinearLayout.LayoutParams(theme.dp(24), 0));
-        for (String frequency : FREQUENCIES) {
-            TextView label = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-            label.setText(frequency);
-            label.setGravity(Gravity.CENTER);
-            frequencies.addView(label, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (gains.length == FREQUENCIES.length) {
+            LinearLayout frequencies = new LinearLayout(activity);
+            frequencies.setOrientation(LinearLayout.HORIZONTAL);
+            frequencies.addView(new View(activity), new LinearLayout.LayoutParams(
+                    theme.dp(24), 0));
+            for (String frequency : FREQUENCIES) {
+                TextView label = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
+                label.setText(frequency);
+                label.setGravity(Gravity.CENTER);
+                frequencies.addView(label, new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            }
+            card.addView(frequencies, matchWrap());
         }
-        card.addView(frequencies, matchWrap());
         return card;
     }
 
@@ -233,36 +197,33 @@ public final class CustomEqSheet {
         frame.addView(ticks, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         TextView top = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        top.setText("+6");
-        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(
+        top.setText(String.valueOf(MAX_GAIN));
+        frame.addView(top, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.START);
-        frame.addView(top, topParams);
+                Gravity.TOP | Gravity.START));
 
         TextView middle = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
         middle.setText("0");
-        FrameLayout.LayoutParams middleParams = new FrameLayout.LayoutParams(
+        frame.addView(middle, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER_VERTICAL | Gravity.START);
-        frame.addView(middle, middleParams);
+                Gravity.CENTER_VERTICAL | Gravity.START));
 
         TextView bottom = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        bottom.setText("-6");
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+        bottom.setText(String.valueOf(MIN_GAIN));
+        frame.addView(bottom, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.START);
-        frame.addView(bottom, bottomParams);
+                Gravity.BOTTOM | Gravity.START));
         return outer;
     }
 
-    private View sliderColumn(int index, float[] gains) {
+    private View sliderColumn(int index, int[] gains) {
         LinearLayout column = SettingsChrome.vertical(activity);
         column.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
         YoSlider slider = YoSlider.createOutSet(activity)
                 .setOrientation(YoSlider.Orientation.VERTICAL)
-                .setMin(-6f)
-                .setMax(6f)
-                .setStep(0.5f)
+                .setMin(MIN_GAIN)
+                .setMax(MAX_GAIN)
+                .setStep(STEP)
                 .setValue(gains[index])
                 // YoUI OutSet 滑杆默认 block 为 18vp、两侧预留 9–10vp；
                 // thumb 放大到 >18vp 会被组件自身边界裁剪，因此保持官方尺寸。
@@ -271,7 +232,7 @@ public final class CustomEqSheet {
                 .setShowShadow(true)
                 .setActiveTrackColor(theme.brand)
                 .setInactiveTrackColor(theme.fill)
-                .setOnProgressChangeListener((value, fromUser) -> gains[index] = value)
+                .setOnProgressChangeListener((value, fromUser) -> gains[index] = Math.round(value))
                 .build();
         // YoSlider 的动效在视图脱离窗口后再 destroy 会抛 "motion is closed"，
         // 因此这里只保留引用用于重置，不在面板关闭时主动 destroy 滑杆。
@@ -281,9 +242,9 @@ public final class CustomEqSheet {
         return column;
     }
 
-    private void resetGains(float[] gains) {
+    private void resetGains(int[] gains) {
         for (int index = 0; index < gains.length; index++) {
-            gains[index] = 0f;
+            gains[index] = 0;
         }
         for (YoSlider slider : sliders) {
             slider.setValue(0f, false);

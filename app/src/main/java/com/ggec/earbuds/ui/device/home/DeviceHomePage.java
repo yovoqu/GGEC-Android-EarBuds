@@ -14,24 +14,27 @@ import androidx.core.view.ViewCompat;
 import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.common.YoComponents;
-import com.ggec.earbuds.ui.device.DevicePage;
+import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.platform.YoSystemBar;
 
 /**
- * 设备页签视图：只负责组合卡片与转交事件。
- * 摘要卡、快捷开关、功能入口、空态各自独立成组件。
+ * 设备页签视图骨架：页头、滚动容器、摘要卡、能力分区列表、空态。
+ * 分区与行由 {@link DeviceCapabilityListView} 渲染，本类只负责组合与转交事件。
  */
 public final class DeviceHomePage {
 
     public interface Listener {
         void onOpenScan();
 
-        void onOpenEntry(@NonNull DevicePage page);
+        void onOpenGroup(@NonNull DeviceCapabilityGroup group);
 
-        void onToggle(@NonNull HomeToggle key, boolean checked);
+        void onToggle(@NonNull String capabilityId, boolean checked);
+
+        void onSelectOption(@NonNull String capabilityId, @NonNull String optionId);
     }
 
     private final AppCompatActivity activity;
@@ -44,8 +47,7 @@ public final class DeviceHomePage {
     private final View content;
     private final View empty;
     private final DeviceSummaryCard summary;
-    private final QuickToggleCard quick;
-    private final DeviceEntryListView entries;
+    private final DeviceCapabilityListView capabilities;
     private final DeviceEmptyState emptyState;
     private final TextView footer;
 
@@ -78,11 +80,24 @@ public final class DeviceHomePage {
         summary = new DeviceSummaryCard(activity, theme);
         column.addView(summary.view(), cardParams());
 
-        quick = new QuickToggleCard(activity, theme, components, listener::onToggle);
-        column.addView(quick.view(), topOnlyParams());
+        capabilities = new DeviceCapabilityListView(activity, theme, components,
+                new DeviceCapabilityListView.Listener() {
+                    @Override
+                    public void onToggle(@NonNull String capabilityId, boolean checked) {
+                        listener.onToggle(capabilityId, checked);
+                    }
 
-        entries = new DeviceEntryListView(activity, theme, components, listener::onOpenEntry);
-        column.addView(entries.view(), topOnlyParams());
+                    @Override
+                    public void onSelectOption(@NonNull String capabilityId, @NonNull String optionId) {
+                        listener.onSelectOption(capabilityId, optionId);
+                    }
+
+                    @Override
+                    public void onOpenGroup(@NonNull DeviceCapabilityGroup group) {
+                        listener.onOpenGroup(group);
+                    }
+                });
+        column.addView(capabilities.view(), matchWrap());
 
         footer = theme.text(DeviceTheme.TEXT_CAPTION, theme.hint);
         footer.setGravity(Gravity.CENTER);
@@ -129,10 +144,14 @@ public final class DeviceHomePage {
             return;
         }
         summary.render(state);
-        quick.render(state);
-        entries.render(state.entries());
+        capabilities.render(state.sections(), state.interactive());
         footer.setText(state.firmware().isEmpty() ? "" : activity.getString(
                 R.string.device_firmware_footer, state.firmware()));
+    }
+
+    /** 写入落地结果：失败时让开关回到「未上报」呈现，不假装成功。 */
+    public void onControlOutcome(@NonNull DeviceControlOutcome outcome) {
+        capabilities.onControlOutcome(outcome);
     }
 
     public void destroy() {
@@ -165,13 +184,6 @@ public final class DeviceHomePage {
                 .onClick(v -> listener.onOpenScan());
         row.addView(add, add.createLinearLayoutParams());
         return row;
-    }
-
-    private LinearLayout.LayoutParams topOnlyParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = theme.dp(DeviceTheme.SPACE_M);
-        return params;
     }
 
     private LinearLayout.LayoutParams cardParams() {

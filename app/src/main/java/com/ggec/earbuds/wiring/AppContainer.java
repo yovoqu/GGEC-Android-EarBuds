@@ -1,11 +1,20 @@
 package com.ggec.earbuds.wiring;
 
+import android.app.Application;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-/** 进程装配根：只创建应用级图，不让各页面自行 new 一套依赖。 */
+import com.ggec.earbuds.provider.lib_common.log.YoLogProvider;
+import com.ggec.earbuds.provider.lib_common.refresh_rate.WindowProvider;
+
+/**
+ * 进程装配根：唯一创建应用级图、唯一触碰 provider 的地方。
+ *
+ * <p>日志与刷新率这两个进程级能力也在这里安装：装配根是 provider 的唯一引用者，
+ * 进程入口只依赖装配根。</p>
+ */
 public final class AppContainer {
 
     private final AiGraph ai;
@@ -13,11 +22,16 @@ public final class AppContainer {
     private final DeviceGraph device;
     private final AppExecutors executors;
 
-    public AppContainer(@NonNull Context context) {
+    public AppContainer(@NonNull Application application) {
+        Context appContext = application.getApplicationContext();
+        // 日志必须最先初始化：全进程唯一 owner，重复调用为幂等 no-op。
+        YoLogProvider.bootstrap(appContext);
+        // 必须在任何 Activity 创建之前注册，否则首个 Activity 的 onResume 收不到。
+        WindowProvider.installHighRefresh(application);
         executors = new AppExecutors();
-        ai = new AiGraph(context.getApplicationContext(), executors);
+        ai = new AiGraph(appContext, executors);
         shell = new ShellGraph();
-        device = new DeviceGraph(context.getApplicationContext());
+        device = new DeviceGraph(appContext);
     }
 
     @NonNull

@@ -7,15 +7,16 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.domain.shell.ShellDestination;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.ai.chat.AiChatPage;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
 import com.ggec.earbuds.ui.common.YoComponents;
-import com.ggec.earbuds.ui.device.DevicePage;
+import com.ggec.earbuds.ui.device.DeviceFailureText;
 import com.ggec.earbuds.ui.device.home.DeviceHomePage;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
-import com.ggec.earbuds.ui.device.home.HomeToggle;
 import com.ggec.earbuds.ui.device.scan.ScanActivity;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsActivity;
+import com.yohu.youi.api.feedback.YoToast;
 import com.yohu.youi.api.navigation.YoTabs;
 
 /** 应用外壳视图：三个页签、设备页、AI 页和占位页。只装配与展示，不持有业务状态。 */
@@ -109,10 +110,20 @@ final class ShellScreen {
         if (ShellDestination.DEVICE.key().equals(tab.key())) {
             DeviceHomeViewModel home = new ViewModelProvider(activity, deviceHomeFactory)
                     .get(DeviceHomeViewModel.class);
-            devicePage = new DeviceHomePage(activity, new DevicePageListener(home));
+            devicePage = new DeviceHomePage(activity, new DeviceTabListener(home));
             home.uiState().observe(activity, state -> {
                 if (state != null && devicePage != null) {
                     devicePage.render(state);
+                }
+            });
+            home.failures().observe(activity, failure -> {
+                if (failure != null) {
+                    YoToast.showWarning(activity, activity.getString(DeviceFailureText.message(failure)));
+                }
+            });
+            home.controls().observe(activity, outcome -> {
+                if (outcome != null && devicePage != null) {
+                    devicePage.onControlOutcome(outcome);
                 }
             });
             home.start();
@@ -121,11 +132,11 @@ final class ShellScreen {
         return ShellPageView.create(activity, title);
     }
 
-    private final class DevicePageListener implements DeviceHomePage.Listener {
+    private final class DeviceTabListener implements DeviceHomePage.Listener {
 
         private final DeviceHomeViewModel home;
 
-        private DevicePageListener(DeviceHomeViewModel home) {
+        private DeviceTabListener(DeviceHomeViewModel home) {
             this.home = home;
         }
 
@@ -135,13 +146,18 @@ final class ShellScreen {
         }
 
         @Override
-        public void onOpenEntry(@NonNull DevicePage page) {
-            activity.startActivity(DeviceSettingsActivity.intent(activity, page));
+        public void onOpenGroup(@NonNull DeviceCapabilityGroup group) {
+            activity.startActivity(DeviceSettingsActivity.intent(activity, group));
         }
 
         @Override
-        public void onToggle(@NonNull HomeToggle key, boolean checked) {
-            home.setToggle(key, checked);
+        public void onToggle(@NonNull String capabilityId, boolean checked) {
+            home.setToggle(capabilityId, checked);
+        }
+
+        @Override
+        public void onSelectOption(@NonNull String capabilityId, @NonNull String optionId) {
+            home.selectOption(capabilityId, optionId);
         }
     }
 }

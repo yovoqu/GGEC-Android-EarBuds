@@ -1,32 +1,26 @@
 package com.ggec.earbuds.ui.device.scan;
 
-import androidx.annotation.Nullable;
-
 import com.ggec.earbuds.domain.device.model.ScanResult;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** 领域扫描结果 → 界面扫描项。 */
+/** 扫描协议结果到列表项。四项无线身份原样带上。 */
 public final class ScanUiMapper {
 
     private ScanUiMapper() {
     }
 
     public static ScanItem map(ScanResult result) {
-        return new ScanItem(result.modelId(), result.variantId(), result.bleName(),
-                result.bleMac(), result.rssi());
+        return new ScanItem(result.modelId(), result.bleAddress(), result.bleName(),
+                result.classicAddress(), result.classicName(), result.rssi());
     }
 
-    public static List<ScanItem> map(List<ScanResult> results, @Nullable String filterModelId) {
-        String normalizedFilter = filterModelId == null ? ScanFilterOption.ALL_MODELS : filterModelId;
+    public static List<ScanItem> map(List<ScanResult> results) {
         List<ScanItem> items = new ArrayList<>(results.size());
         for (ScanResult result : results) {
-            if (normalizedFilter.isEmpty() || normalizedFilter.equals(result.modelId())) {
-                items.add(map(result));
-            }
+            items.add(map(result));
         }
-        // 直接返回新构建的局部列表；不可变拷贝统一由 ScanUiState 构造器完成，避免每帧两次 List.copyOf。
         return items;
     }
 }
