@@ -32,7 +32,6 @@ import com.yovo.lib_bluetooth.model.ble.BlePhyConfig;
 import com.yovo.lib_bluetooth.model.ble.BlePhyOptions;
 import com.yovo.lib_bluetooth.model.ble.BlePhy;
 import com.yovo.lib_bluetooth.model.ble.BleRequestResponseConfig;
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
 import com.yovo.lib_bluetooth.model.ble.BleTransferProgressObserver;
 import com.yovo.lib_bluetooth.model.ble.BleValueObserver;
@@ -72,13 +71,14 @@ public interface YoBleClient {
     @NonNull
     Result<List<BleConnectionSnapshot>> getConnectedDevices();
 
-    // ── 2. BLE 扫描（防 5-in-30s 限流、软硬 Filter、批处理与仿真） ────
+    // ── 2. BLE 扫描：进程内一个扫描器，调用方只订阅或取消 ────
 
+    /**
+     * 订阅原始 BLE 广播。第一个订阅者启动扫描，最后一个取消后停止。
+     * 策略由库决定，调用方不能传扫描配置。
+     */
     @NonNull
-    BleOperationHandle scan(@NonNull BleScanConfig config, @NonNull BleScanObserver observer);
-
-    @NonNull
-    Result<Void> stopScan();
+    BleOperationHandle subscribeScan(@NonNull BleScanObserver observer);
 
     @NonNull
     Result<Void> flushBatchScanResults();

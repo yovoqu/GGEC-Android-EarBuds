@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -96,7 +98,7 @@ public final class YoBleAndroidPeripheralPlatform implements YoBlePeripheralPlat
 
         try {
             activeAdvertiser = advertiser;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !config.legacyMode()) {
+            if (AndroidPlatform.supportsExtendedAdvertising() && !config.legacyMode()) {
                 AdvertisingSetParameters params = YoBleAdvertiseCompat.toExtendedParameters(config);
                 AdvertisingSetCallback setCb = new AdvertisingSetCallback() {
                     @Override
@@ -190,7 +192,7 @@ public final class YoBleAndroidPeripheralPlatform implements YoBlePeripheralPlat
         } catch (Throwable ignored) {
         }
         try {
-            if (ext != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (ext != null && AndroidPlatform.supportsExtendedAdvertising()) {
                 advertiser.stopAdvertisingSet((AdvertisingSetCallback) ext);
             }
         } catch (Throwable ignored) {
@@ -445,7 +447,7 @@ public final class YoBleAndroidPeripheralPlatform implements YoBlePeripheralPlat
         if (server == null || dev == null || ch == null) {
             return false;
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedPeripheralNotify()) {
             return server.notifyCharacteristicChanged(dev, ch, confirm, value)
                     == BluetoothStatusCodes.SUCCESS;
         }

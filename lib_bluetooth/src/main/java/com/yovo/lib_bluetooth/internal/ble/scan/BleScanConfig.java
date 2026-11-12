@@ -1,6 +1,13 @@
-package com.yovo.lib_bluetooth.model.ble;
+package com.yovo.lib_bluetooth.internal.ble.scan;
 
 import androidx.annotation.NonNull;
+
+import com.yovo.lib_bluetooth.model.ble.BlePhy;
+import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
+import com.yovo.lib_bluetooth.model.ble.BleScanFilter;
+import com.yovo.lib_bluetooth.model.ble.BleScanMatchMode;
+import com.yovo.lib_bluetooth.model.ble.BleScanMode;
+import com.yovo.lib_bluetooth.model.ble.BleScanThrottlePolicy;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,7 +15,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * BLE 扫描配置（支持 ScanMode / CallbackType / Batching / MatchMode / PHY / Filters / 限流策略）。
+ * BLE 扫描配置（ScanMode / CallbackType / Batching / MatchMode / PHY / Filters / 限流策略）。
+ *
+ * <p>库内部扫描策略的唯一载体：不对外暴露，调用方只能通过 {@code YoBleClient.subscribeScan}
+ * 订阅，无法构造或注入本配置。</p>
+ *
+ * <p>配置值全部是代码常量，非法即编程错误：{@link Builder} 在每个字段上按声明的合法域校验并抛
+ * {@link IllegalArgumentException}（消息含字段名与非法值），不做任何钳位——钳位会把非法输入变成
+ * 「看起来生效」的值，掩盖调用点的错误。</p>
  */
 public final class BleScanConfig {
 
@@ -118,12 +132,26 @@ public final class BleScanConfig {
         return new Builder(this).reportDelayMillis(reportDelayMillis).build();
     }
 
+    /**
+     * 软件降级配置：清空全部原生 ScanFilter 并将 reportDelay 置 0，用于底层 onScanFailed 的
+     * {@code SCAN_FAILED_FEATURE_UNSUPPORTED} / {@code SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES}
+     * 场景下重试一次（对齐 Nordic Android-Scanner-Compat-Library 的降级重试思路）。
+     */
+    @NonNull
+    public BleScanConfig softwareFallback() {
+        Builder builder = new Builder(this);
+        builder.filters(Collections.emptyList());
+        builder.reportDelayMillis(0L);
+        return builder.build();
+    }
+
     @NonNull
     public static Builder builder() {
         return new Builder();
     }
 
     public static final class Builder {
+        /** 扫描超时默认值唯一来源；产品扫描无超时，由 {@link YoBleScanDefaults} 显式置 0。 */
         private long timeoutMillis = 12_000L;
         private boolean requireConnectable;
         private BleScanMode scanMode = BleScanMode.LOW_LATENCY;
@@ -135,7 +163,8 @@ public final class BleScanConfig {
         private BlePhy phy = BlePhy.ALL_SUPPORTED;
         private boolean locationExempt = true;
         private long deduplicationWindowMillis = 0L;
-        private long matchLostTimeoutMillis = 10_000L;
+        /** 0 表示不启用软件 lost；具体阈值由 {@link YoBleScanDefaults} 单点给出。 */
+        private long matchLostTimeoutMillis = 0L;
         private BleScanThrottlePolicy throttlePolicy = BleScanThrottlePolicy.DELAY_UNTIL_WINDOW_FREE;
         private final List<BleScanFilter> filters = new ArrayList<>();
 
@@ -159,9 +188,21 @@ public final class BleScanConfig {
             this.filters.addAll(source.filters);
         }
 
+        /**
+         * 扫描超时。
+         *
+         * <p>合法域：{@code timeoutMillis >= 0}，其中 {@code 0} 表示无超时（产品语义，由
+         * {@link YoBleScanDefaults} 显式给出）。</p>
+         *
+         * @throws IllegalArgumentException 传入负值
+         */
         @NonNull
         public Builder timeoutMillis(long timeoutMillis) {
-            this.timeoutMillis = timeoutMillis <= 0L ? 0L : Math.max(200L, timeoutMillis);
+            if (timeoutMillis < 0L) {
+                throw new IllegalArgumentException(
+                        "timeoutMillis must be >= 0 (0 = no timeout), but was " + timeoutMillis);
+            }
+            this.timeoutMillis = timeoutMillis;
             return this;
         }
 
@@ -189,15 +230,38 @@ public final class BleScanConfig {
             return this;
         }
 
+        /**
+         * 同一过滤条件连续命中多少次才上报（Android {@code setNumOfMatches}）。
+         *
+         * <p>合法域：{@code 1..3}（平台只接受 1 / 2 / 3）。</p>
+         *
+         * @throws IllegalArgumentException 传入 {@code < 1} 或 {@code > 3}
+         */
         @NonNull
         public Builder numOfMatches(int numOfMatches) {
-            this.numOfMatches = Math.max(1, Math.min(3, numOfMatches));
+            if (numOfMatches < 1 || numOfMatches > 3) {
+                throw new IllegalArgumentException(
+                        "numOfMatches must be in 1..3, but was " + numOfMatches);
+            }
+            this.numOfMatches = numOfMatches;
             return this;
         }
 
+        /**
+         * 批处理上报延迟（Android {@code setReportDelay}）。
+         *
+         * <p>合法域：{@code reportDelayMillis >= 0}，其中 {@code 0} 表示不批处理。
+         * 正值为软件批处理的启用条件，因此启用方的间隔必然为正。</p>
+         *
+         * @throws IllegalArgumentException 传入负值
+         */
         @NonNull
         public Builder reportDelayMillis(long reportDelayMillis) {
-            this.reportDelayMillis = Math.max(0L, reportDelayMillis);
+            if (reportDelayMillis < 0L) {
+                throw new IllegalArgumentException(
+                        "reportDelayMillis must be >= 0, but was " + reportDelayMillis);
+            }
+            this.reportDelayMillis = reportDelayMillis;
             return this;
         }
 
@@ -219,15 +283,38 @@ public final class BleScanConfig {
             return this;
         }
 
+        /**
+         * 软件去重时间窗：同一设备在该窗口内重复广播只上报一次。
+         *
+         * <p>合法域：{@code deduplicationWindowMillis >= 0}，其中 {@code 0} 表示不去重。</p>
+         *
+         * @throws IllegalArgumentException 传入负值
+         */
         @NonNull
         public Builder deduplicationWindowMillis(long deduplicationWindowMillis) {
-            this.deduplicationWindowMillis = Math.max(0L, deduplicationWindowMillis);
+            if (deduplicationWindowMillis < 0L) {
+                throw new IllegalArgumentException(
+                        "deduplicationWindowMillis must be >= 0, but was " + deduplicationWindowMillis);
+            }
+            this.deduplicationWindowMillis = deduplicationWindowMillis;
             return this;
         }
 
+        /**
+         * 单台设备末次广播后判 lost 的软件阈值。
+         *
+         * <p>合法域：{@code matchLostTimeoutMillis >= 0}，其中 {@code 0} 表示关闭软件 lost 判定。</p>
+         *
+         * @throws IllegalArgumentException 传入负值
+         */
         @NonNull
         public Builder matchLostTimeoutMillis(long matchLostTimeoutMillis) {
-            this.matchLostTimeoutMillis = Math.max(1_000L, matchLostTimeoutMillis);
+            if (matchLostTimeoutMillis < 0L) {
+                throw new IllegalArgumentException(
+                        "matchLostTimeoutMillis must be >= 0 (0 = disabled), but was "
+                                + matchLostTimeoutMillis);
+            }
+            this.matchLostTimeoutMillis = matchLostTimeoutMillis;
             return this;
         }
 

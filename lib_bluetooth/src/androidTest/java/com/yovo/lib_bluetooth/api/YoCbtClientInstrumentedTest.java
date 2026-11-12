@@ -103,7 +103,7 @@ public class YoCbtClientInstrumentedTest {
         assertTrue("getBondedDevices should succeed with permissions granted", result.isSuccess());
         assertNotNull(result.getValue());
         for (CbtDeviceSnapshot snapshot : result.getValue()) {
-            YoLog.i(TAG, "已配对设备=" + snapshot.identity().displayName()
+            YoLog.i(TAG, "已配对设备=" + snapshot.identity().classicName()
                     + " [" + snapshot.deviceId() + "] 配对状态=" + snapshot.bondState());
         }
     }
@@ -144,7 +144,7 @@ public class YoCbtClientInstrumentedTest {
             @Override
             public void onDeviceFound(CbtDiscoveryResult result) {
                 foundCount.incrementAndGet();
-                YoLog.i(TAG, "发现设备: " + result.snapshot().identity().displayName());
+                YoLog.i(TAG, "发现设备: " + result.snapshot().identity().classicName());
             }
 
             @Override

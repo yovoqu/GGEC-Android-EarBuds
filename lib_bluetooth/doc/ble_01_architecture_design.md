@@ -162,24 +162,32 @@ flowchart TD
 ## 3. 核心能力域设计要点
 
 ### 3.1 扫描域 (`scan/`) 与 AD 解析
-1. **Preflight 检查（对标 RxAndroidBle & Android-Scanner-Compat）**：
+1. **订阅式扫描与进程内单扫描器 (`YoBleScanHub`)**：
+   - 门面只暴露 `subscribeScan(observer)`，返回 `BleOperationHandle`；调用方 `cancel()` 该句柄即退订。扫描策略由库单点决定（`YoBleScanDefaults`），调用方不传扫描配置，也没有独立的停止入口：停止由订阅句柄的取消驱动。
+   - `YoBleScanHub` 是进程内唯一的扫描会话所有者：**首个订阅者启动引擎、最后一个取消后停止**；订阅者之间共享同一个引擎与同一份 `onScanStarted`/`onDeviceFound`/`onBatchScanResults`/`onScanResultLost`/`onScanFailed` 投递。
+   - **无产品扫描超时**：`timeoutMillis = 0`，扫描只在订阅者全部离开时停；只有平台内部 25 分钟长扫重启这一条时间约束。
+   - **设备级 lost**：单台设备末次广播后超过 `MATCH_LOST_TIMEOUT_MILLIS`（约 10s）即回调 `onScanResultLost` 并从聚合结果中移除，这是设备级过期语义，不是产品扫描超时。
+   - 引擎失败**不销毁会话**：只把会话置为 `STOPPED` 并保留订阅者，引擎自行恢复后继续向同一批订阅者投递；下一次订阅重启引擎。
+   - **停扫终态按发起代次归属**：每次启动都把回调入口绑定到该代次，作废代次的 `onScanStopped` 被吸收——不改变当前会话状态、不分发给订阅者；`onScanFailed` 的丢弃同样按代次判定（不是按「会话是否已 `STOPPED`」），停扫窗口内新代次的真实失败仍送达订阅者。
+   - 锁归属：Hub 的锁只保护会话状态与订阅者集合，持有期间不调用引擎、不投递订阅者回调；启动在锁外进行，再按「代次 + 归属」二次确认后才进入 `RUNNING`，作废的启动由同一个线程补偿停扫；停扫与补偿启动由 Hub 的会话迁移单线程在锁外推进，订阅句柄的取消调用栈上既不调用引擎、也不分发业务回调。
+2. **Preflight 检查（对标 RxAndroidBle & Android-Scanner-Compat）**：
    - 校验硬件支持 `FEATURE_BLUETOOTH_LE`（非“关闭 BT 返回 null”）；
    - 校验适配器状态 `STATE_ON`（返回 `BLUETOOTH_DISABLED`）；
    - API < 31 校验 `BLUETOOTH_SCAN`（兼容旧蓝牙权限）+ `LOCATION` 权限 + 系统位置开关（若未设豁免且 Location 开关关闭，精准返回 `LOCATION_SERVICES_DISABLED`，而非泛化 `SCAN_START_FAILED`）；
    - API >= 31 校验 `BLUETOOTH_SCAN`（Manifest 已声明 `neverForLocation`）。
-2. **Android 7+ 5-in-30s 防限流保护 (`YoBleScanThrottleGuard`)**：
+3. **Android 7+ 5-in-30s 防限流保护 (`YoBleScanThrottleGuard`)**：
    - 使用滑窗记录最近 5 次底层 `startScan` 时间戳；若 30 秒内即将触达第 5 次，提供配置化策略：
      - `FAIL_FAST`：提前拦截并返回可恢复错误 `SCAN_THROTTLED`（附建议等待毫秒）；
      - `DELAY_UNTIL_WINDOW_FREE`（默认）：自动通过 `scheduler` 延迟至滑窗释放窗口后再调用底层 `startScan`；
-     - 同一时间重复发起 Scan 先原子取消旧扫描（含超时任务 `YoTimeoutHandle`）并释放句柄。
-3. **AD TLV 完整解析 (`YoBleScanRecordParser`)**：
+     - 同一引擎上重新启动扫描（失败恢复或订阅重建）时先原子取消旧扫描（含超时任务 `YoTimeoutHandle`）并释放句柄。
+4. **AD TLV 完整解析 (`YoBleScanRecordParser`)**：
    - 完整解码 AD Type：`0x01` Flags、`0x02/0x03` 16-bit UUIDs、`0x04/0x05` 32-bit UUIDs、`0x06/0x07` 128-bit UUIDs、`0x08/0x09` Short/Complete Local Name、`0x0A` TxPower、`0x14` 16-bit Service Solicitation UUIDs、`0x15` 128-bit Service Solicitation UUIDs、`0x1F` 32-bit Service Solicitation UUIDs、`0x16/0x20/0x21` 16/32/128-bit Service Data、`0xFF` Manufacturer Specific Data。
    - 对异常截断长度安全防御，绝不抛 `ArrayIndexOutOfBoundsException`。
-4. **软硬协同过滤 + 回调模式仿真 (`YoBleScanFilterMatcher` & `YoBleScanCallbackEmulator`)**：
+5. **软硬协同过滤 + 回调模式仿真 (`YoBleScanFilterMatcher` & `YoBleScanCallbackEmulator`)**：
    - 支持硬件下推 `ScanFilter`，同时在软件侧精准补齐：Device Name 正则/子串、Service UUID + Mask、Service Solicitation UUID + Mask、Service Data + Mask、Manufacturer Data + Mask、Min RSSI、RequireConnectable；
    - 支持 `CALLBACK_TYPE_ALL_MATCHES`、`CALLBACK_TYPE_FIRST_MATCH`、`CALLBACK_TYPE_MATCH_LOST` 跨版本仿真与周期清理定时器、重复结果节流去重（`deduplicationWindowMillis`）以及批处理 `flushBatchScanResults()`。
-5. **软件批处理与长扫描重启**：`reportDelayMillis > 0` 且硬件不支持 offload batching，或平台返回 `SCAN_FAILED_FEATURE_UNSUPPORTED` 时，以 delay 0 启动扫描，结果在 state 线程按该间隔聚合成 `onBatchScanResults`。`MATCH_LOST` 清扫仍立即回调。超时为 0 或大于 25 分钟时，每 25 分钟停掉平台扫描再拉起，不计入 5-in-30s 限流，也不再次回调 `onScanStarted`。
-6. **适配器状态**：`YoBleModuleCore` 发布 `BleAdapterState`。`OFF` 与 `TURNING_OFF` 仍清理扫描、连接、配对、L2CAP 和外设。`observeAdapterState` 订阅时先回放当前状态。
+6. **软件批处理与长扫描重启**：`reportDelayMillis > 0` 且硬件不支持 offload batching，或平台返回 `SCAN_FAILED_FEATURE_UNSUPPORTED` 时，以 delay 0 启动扫描，结果在 state 线程按该间隔聚合成 `onBatchScanResults`。`MATCH_LOST` 清扫仍立即回调。超时为 0 或大于 25 分钟时，每 25 分钟停掉平台扫描再拉起，不计入 5-in-30s 限流，也不再次回调 `onScanStarted`。
+7. **适配器状态**：`YoBleModuleCore` 发布 `BleAdapterState`。`OFF` 与 `TURNING_OFF` 仍清理扫描、连接、配对、L2CAP 和外设。`observeAdapterState` 订阅时先回放当前状态。
 
 ### 3.2 连接与会话状态机 (`connection/`)
 1. **严谨的状态机 (`YoBleConnectionStateMachine` 封装 `YoStateMachine<BleConnectionState>`)**：
@@ -251,7 +259,7 @@ flowchart TD
 
 `api/YoBleClient.java` 仅依赖 `model/ble/**` 与 `model/common/Result`，覆盖七大能力组：
 1. **能力与环境查询**：`isBleSupported()`、`isAdapterEnabled()`、`getAdapterState()`、`observeAdapterState(observer)`、`getDeviceSnapshot(deviceId)`、`getDeviceSnapshots()`、`getConnectedDevices()`、`getBondedDevices()`
-2. **扫描控制**：`scan(config, observer)`、`stopScan()`、`flushBatchScanResults()`、`isScanning()`
+2. **扫描订阅**：`subscribeScan(observer)`（首个订阅者启动扫描、最后一个取消后停止；停止由返回的 `BleOperationHandle` 的 `cancel()` 驱动，调用方不传扫描配置，见 §3.1）、`flushBatchScanResults()`、`isScanning()`
 3. **连接与链路控制**：`connect(deviceId, config, observer)`、`reconnect(deviceId)`、`disconnect(deviceId)`、`disconnectAll()`、`getConnectionSnapshot(deviceId)`、`observeConnectionState(observer)`、`requestMtu(deviceId, mtu, observer)`、`overrideMtu(deviceId, mtu)`、`requestConnectionPriority(deviceId, priority, observer)`、`setPreferredPhy(deviceId, tx, rx, options, observer)`、`readPhy(deviceId, observer)`、`readRemoteRssi(deviceId, observer)`
 4. **服务发现与缓存**：`discoverServices(deviceId, forceRefresh, observer)` 的 `forceRefresh` 只要求平台重新发现服务，不调用隐藏的缓存刷新。`refreshDeviceCache(deviceId, observer)` 在允许隐藏 API 时排队刷新缓存、等待稳定后再发现，并把新的 GATT 数据库交给观察者。`getServices(deviceId)` 读已发布快照。
 5. **GATT 读写与长包/事务**：`read(deviceId, target, observer)`、`write(deviceId, target, value, writeType, observer)`、`writeSplit(deviceId, target, value, writeType, splitter, progressObserver)`、`readDescriptor/writeDescriptor`（通过 `target.descriptor(...)` 统一支持并生效）、`beginReliableWrite(deviceId)`、`executeReliableWrite(deviceId, observer)`、`abortReliableWrite(deviceId, observer)`、`getPendingOperationCount(deviceId)`、`clearPendingOperations(deviceId)`

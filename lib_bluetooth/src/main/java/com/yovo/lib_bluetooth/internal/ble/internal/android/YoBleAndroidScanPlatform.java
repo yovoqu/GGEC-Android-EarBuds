@@ -12,15 +12,17 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.ble.internal.android.compat.YoBleScanCompat;
+import com.yovo.lib_bluetooth.internal.ble.scan.BleScanConfig;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform.StartResult;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -40,6 +42,18 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     private volatile ScanCallback activeCallback;
     @Nullable
     private volatile BluetoothLeScanner activeScanner;
+
+    /**
+     * 扫描结果转换专用线程（主线程保护）：Android 的 {@link ScanCallback} 默认在主线程/Looper 回调，
+     * 而 {@link YoBleScanCompat#toBleScanResult} 会做 AD TLV 解析与多个同步 Binder IPC
+     * （getName/getAlias/getType/getAddressType）。把转换移出主线程，回调本身只做一次轻量入队，
+     * 彻底消除真机 >100 包/秒时主线程被 Binder 阻塞导致的掉帧/卡死（实测单帧 14.4s、Skipped 1433 frames）。
+     */
+    private final ExecutorService parseExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "yo-ble-scan-parse");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     public YoBleAndroidScanPlatform(@NonNull YoBluetoothAdapterProvider adapterProvider) {
         this.adapterProvider = adapterProvider;
@@ -74,36 +88,68 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
             ScanCallback androidCallback = new ScanCallback() {
                 @Override
                 public void onScanResult(int callbackType, ScanResult result) {
-                    if (gen != activeGeneration || activeCallback != this || result == null) {
+                    final ScanCallback self = this;
+                    if (gen != activeGeneration || activeCallback != self || result == null) {
                         return;
                     }
-                    BleScanResult mapped = YoBleScanCompat.toBleScanResult(
-                            result, callbackType, System.currentTimeMillis());
-                    callback.onScanResult(mapped);
+                    // 轻量入队：真正的 AD 解析 + Binder IPC 放在 yo-ble-scan-parse 线程，不在主线程做。
+                    final ScanResult captured = result;
+                    final int cbType = callbackType;
+                    final long now = System.currentTimeMillis();
+                    parseExecutor.execute(() -> {
+                        if (gen != activeGeneration || activeCallback != self) {
+                            return;
+                        }
+                        BleScanResult mapped;
+                        try {
+                            mapped = YoBleScanCompat.toBleScanResult(captured, cbType, now);
+                        } catch (Throwable t) {
+                            YoBtLogger.w(TAG, "convert scan result failed", t);
+                            return;
+                        }
+                        if (gen != activeGeneration || activeCallback != self) {
+                            return;
+                        }
+                        callback.onScanResult(mapped);
+                    });
                 }
 
                 @Override
                 public void onBatchScanResults(List<ScanResult> results) {
-                    if (gen != activeGeneration || activeCallback != this
+                    final ScanCallback self = this;
+                    if (gen != activeGeneration || activeCallback != self
                             || results == null || results.isEmpty()) {
                         return;
                     }
-                    long now = System.currentTimeMillis();
-                    List<BleScanResult> mapped = new ArrayList<>(results.size());
-                    for (ScanResult r : results) {
-                        if (r != null) {
-                            mapped.add(YoBleScanCompat.toBleScanResult(
-                                    r, ScanSettings.CALLBACK_TYPE_ALL_MATCHES, now));
+                    final List<ScanResult> captured = new ArrayList<>(results);
+                    final long now = System.currentTimeMillis();
+                    parseExecutor.execute(() -> {
+                        if (gen != activeGeneration || activeCallback != self) {
+                            return;
                         }
-                    }
-                    if (!mapped.isEmpty()) {
-                        callback.onBatchScanResults(mapped);
-                    }
+                        List<BleScanResult> mapped = new ArrayList<>(captured.size());
+                        for (ScanResult r : captured) {
+                            if (r == null) {
+                                continue;
+                            }
+                            try {
+                                mapped.add(YoBleScanCompat.toBleScanResult(
+                                        r, ScanSettings.CALLBACK_TYPE_ALL_MATCHES, now));
+                            } catch (Throwable t) {
+                                YoBtLogger.w(TAG, "convert batch scan result failed", t);
+                            }
+                        }
+                        if (!mapped.isEmpty()
+                                && gen == activeGeneration && activeCallback == self) {
+                            callback.onBatchScanResults(mapped);
+                        }
+                    });
                 }
 
                 @Override
                 public void onScanFailed(int errorCode) {
-                    if (gen != activeGeneration || activeCallback != this) {
+                    final ScanCallback self = this;
+                    if (gen != activeGeneration || activeCallback != self) {
                         return;
                     }
                     callback.onPlatformScanFailed(errorCode, "ScanCallback.onScanFailed(" + errorCode + ")");
@@ -149,7 +195,8 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
                 try {
                     scanner.flushPendingScanResults(callback);
                     return true;
-                } catch (Throwable ignored) {
+                } catch (Throwable t) {
+                    YoBtLogger.w(TAG, "flushPendingScanResults failed", t);
                     return false;
                 }
             }
@@ -174,7 +221,8 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
         if (scanner != null && cb != null) {
             try {
                 scanner.stopScan(cb);
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                YoBtLogger.w(TAG, "stopScan failed", t);
             }
         }
     }

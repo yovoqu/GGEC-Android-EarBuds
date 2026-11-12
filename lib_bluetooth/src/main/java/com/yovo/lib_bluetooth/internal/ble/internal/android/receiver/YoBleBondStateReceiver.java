@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android.receiver;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -60,7 +62,7 @@ public final class YoBleBondStateReceiver extends BroadcastReceiver {
     @Nullable
     @SuppressWarnings("deprecation")
     private static BluetoothDevice getDeviceExtra(@NonNull Intent intent) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedParcelableExtras()) {
             return intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice.class);
         }
         return intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);

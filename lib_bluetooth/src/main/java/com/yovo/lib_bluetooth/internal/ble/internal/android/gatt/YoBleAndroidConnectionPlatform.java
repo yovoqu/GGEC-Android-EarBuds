@@ -82,7 +82,8 @@ public final class YoBleAndroidConnectionPlatform implements YoBleConnectionPlat
                 if (!closed.get()) {
                     try {
                         gatt.disconnect();
-                    } catch (Throwable ignored) {
+                    } catch (Throwable t) {
+                        YoBtLogger.w(TAG, "gatt.disconnect failed", t);
                     }
                 }
             }
@@ -92,7 +93,8 @@ public final class YoBleAndroidConnectionPlatform implements YoBleConnectionPlat
                 if (closed.compareAndSet(false, true)) {
                     try {
                         gatt.close();
-                    } catch (Throwable ignored) {
+                    } catch (Throwable t) {
+                        YoBtLogger.w(TAG, "gatt.close failed", t);
                     }
                 }
             }

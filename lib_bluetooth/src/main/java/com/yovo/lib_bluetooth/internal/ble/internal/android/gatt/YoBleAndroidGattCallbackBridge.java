@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android.gatt;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
@@ -50,7 +52,7 @@ public final class YoBleAndroidGattCallbackBridge extends BluetoothGattCallback 
     public void onCharacteristicRead(BluetoothGatt gatt,
                                      BluetoothGattCharacteristic characteristic,
                                      int status) {
-        if (characteristic == null || Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (characteristic == null || AndroidPlatform.usesTypedGattValueCallbacks()) {
             return;
         }
         byte[] val = characteristic.getValue();
@@ -80,7 +82,7 @@ public final class YoBleAndroidGattCallbackBridge extends BluetoothGattCallback 
             return;
         }
         byte[] echoed;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedGattValueCallbacks()) {
             echoed = null;
         } else {
             byte[] legacyVal = characteristic.getValue();
@@ -96,7 +98,7 @@ public final class YoBleAndroidGattCallbackBridge extends BluetoothGattCallback 
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt,
                                         BluetoothGattCharacteristic characteristic) {
-        if (characteristic == null || Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (characteristic == null || AndroidPlatform.usesTypedGattValueCallbacks()) {
             return;
         }
         byte[] val = characteristic.getValue();
@@ -121,7 +123,7 @@ public final class YoBleAndroidGattCallbackBridge extends BluetoothGattCallback 
     public void onDescriptorRead(BluetoothGatt gatt,
                                  BluetoothGattDescriptor descriptor,
                                  int status) {
-        if (descriptor == null || Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (descriptor == null || AndroidPlatform.usesTypedGattValueCallbacks()) {
             return;
         }
         byte[] val = descriptor.getValue();

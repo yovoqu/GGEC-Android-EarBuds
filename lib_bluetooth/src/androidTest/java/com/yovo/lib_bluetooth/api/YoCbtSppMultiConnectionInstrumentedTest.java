@@ -399,7 +399,7 @@ public class YoCbtSppMultiConnectionInstrumentedTest {
 
         @Override
         public void onSppDeviceResolved(@NonNull CbtDeviceIdentity identity) {
-            YoLog.i(TAG, "[" + label + "] 设备已解析: " + identity.displayName());
+            YoLog.i(TAG, "[" + label + "] 设备已解析: " + identity.classicName());
         }
 
         @Override

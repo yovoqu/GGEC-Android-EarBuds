@@ -135,8 +135,8 @@ public final class YoBleDeviceSnapshotStore {
 
     private static BleDeviceIdentity mergeIdentity(@NonNull BleDeviceIdentity existing,
                                                    @NonNull BleDeviceIdentity incoming) {
-        String name = !incoming.displayName().isEmpty()
-                ? incoming.displayName() : existing.displayName();
+        String name = !incoming.advertisingName().isEmpty()
+                ? incoming.advertisingName() : existing.advertisingName();
         String alias = incoming.alias() != null ? incoming.alias() : existing.alias();
         BleAddressType addrType = incoming.addressType() != BleAddressType.UNKNOWN
                 ? incoming.addressType() : existing.addressType();

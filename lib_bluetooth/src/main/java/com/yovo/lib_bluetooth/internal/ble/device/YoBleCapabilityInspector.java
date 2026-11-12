@@ -1,92 +1,30 @@
 package com.yovo.lib_bluetooth.internal.ble.device;
 
-import android.bluetooth.BluetoothAdapter;
-import android.content.Context;
-import android.location.LocationManager;
-import android.os.Build;
-
-import androidx.annotation.NonNull;
-
-import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
-import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothCapabilityChecker;
-import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
-import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 
 /**
- * BLE 硬件能力、蓝牙开关、位置开关与运行时权限环境检查器。
+ * BLE 硬件能力、蓝牙开关、位置开关与运行时权限的环境检查器（依赖倒置接口）。
+ *
+ * <p>由 Android 实现 {@link YoBleAndroidCapabilityInspector} 提供；领域组件仅依赖本接口，
+ * 便于单元测试注入可控能力环境（如 sdkInt/权限/开关）。</p>
  */
-public final class YoBleCapabilityInspector {
+public interface YoBleCapabilityInspector {
 
-    private final Context appContext;
-    private final YoBluetoothCapabilityChecker capabilityChecker;
-    private final YoBluetoothAdapterProvider adapterProvider;
-    private final YoBluetoothPermissionChecker permissionChecker;
+    boolean isBleSupported();
 
-    public YoBleCapabilityInspector(@NonNull Context context) {
-        this.appContext = context.getApplicationContext();
-        this.capabilityChecker = new YoBluetoothCapabilityChecker(this.appContext);
-        this.adapterProvider = new YoBluetoothAdapterProvider(this.appContext);
-        this.permissionChecker = new YoBluetoothPermissionChecker();
-    }
+    boolean isAdapterEnabled();
 
-    public boolean isBleSupported() {
-        return capabilityChecker.supportsBle();
-    }
+    BleAdapterState adapterState();
 
-    public boolean isAdapterEnabled() {
-        return adapterState() == BleAdapterState.ON;
-    }
+    boolean hasScanPermission();
 
-    @NonNull
-    public BleAdapterState adapterState() {
-        BluetoothAdapter adapter = adapterProvider.adapter();
-        if (adapter == null) {
-            return BleAdapterState.UNKNOWN;
-        }
-        switch (adapter.getState()) {
-            case BluetoothAdapter.STATE_OFF:
-                return BleAdapterState.OFF;
-            case BluetoothAdapter.STATE_TURNING_ON:
-                return BleAdapterState.TURNING_ON;
-            case BluetoothAdapter.STATE_ON:
-                return BleAdapterState.ON;
-            case BluetoothAdapter.STATE_TURNING_OFF:
-                return BleAdapterState.TURNING_OFF;
-            default:
-                return BleAdapterState.UNKNOWN;
-        }
-    }
+    boolean hasConnectPermission();
 
-    public boolean hasScanPermission() {
-        return permissionChecker.has(appContext, YoBluetoothPermission.SCAN);
-    }
+    boolean hasAdvertisePermission();
 
-    public boolean hasConnectPermission() {
-        return permissionChecker.has(appContext, YoBluetoothPermission.CONNECT);
-    }
+    boolean hasLocationPermission();
 
-    public boolean hasAdvertisePermission() {
-        return permissionChecker.has(appContext, YoBluetoothPermission.ADVERTISE);
-    }
+    boolean isLocationServicesEnabled();
 
-    public boolean hasLocationPermission() {
-        return permissionChecker.has(appContext, YoBluetoothPermission.LOCATION);
-    }
-
-    public boolean isLocationServicesEnabled() {
-        LocationManager lm = (LocationManager) appContext.getSystemService(Context.LOCATION_SERVICE);
-        if (lm == null) {
-            return false;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return lm.isLocationEnabled();
-        }
-        return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
-    }
-
-    public int sdkInt() {
-        return Build.VERSION.SDK_INT;
-    }
+    int sdkInt();
 }

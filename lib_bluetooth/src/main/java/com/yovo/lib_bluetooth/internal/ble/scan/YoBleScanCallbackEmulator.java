@@ -4,7 +4,6 @@ import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 
 import java.util.ArrayList;
@@ -22,13 +21,17 @@ public final class YoBleScanCallbackEmulator {
 
     private static final class SeenEntry {
         BleScanResult lastResult;
+        long firstSeenMillis;
         long lastSeenMillis;
         long lastDispatchedMillis;
+        int seenCount;
         boolean notifiedFirstMatch;
 
         SeenEntry(@NonNull BleScanResult result, long seenMillis) {
             this.lastResult = result;
+            this.firstSeenMillis = seenMillis;
             this.lastSeenMillis = seenMillis;
+            this.seenCount = 1;
         }
     }
 
@@ -36,8 +39,33 @@ public final class YoBleScanCallbackEmulator {
 
     private final Map<BleDeviceId, SeenEntry> seen = new LinkedHashMap<>();
 
+    /** 当前聚合中的设备数（供诊断/统计）。 */
+    public synchronized int activeDeviceCount() {
+        return seen.size();
+    }
+
+    /** 是否仍在聚合中（测试/诊断用）。 */
+    public synchronized boolean contains(@NonNull BleDeviceId id) {
+        return seen.containsKey(id);
+    }
+
     public synchronized void reset() {
         seen.clear();
+    }
+
+    /** 驱逐“最久未见”的设备（LRU by lastSeen），避免活跃设备因插入序被误逐。 */
+    private void evictLeastRecentlySeen() {
+        BleDeviceId oldestId = null;
+        long oldestSeen = Long.MAX_VALUE;
+        for (Map.Entry<BleDeviceId, SeenEntry> e : seen.entrySet()) {
+            if (e.getValue().lastSeenMillis < oldestSeen) {
+                oldestSeen = e.getValue().lastSeenMillis;
+                oldestId = e.getKey();
+            }
+        }
+        if (oldestId != null) {
+            seen.remove(oldestId);
+        }
     }
 
     /**
@@ -55,18 +83,14 @@ public final class YoBleScanCallbackEmulator {
         boolean isNew = (entry == null);
         if (entry == null) {
             while (seen.size() >= MAX_SEEN) {
-                Iterator<Map.Entry<BleDeviceId, SeenEntry>> oldest = seen.entrySet().iterator();
-                if (!oldest.hasNext()) {
-                    break;
-                }
-                oldest.next();
-                oldest.remove();
+                evictLeastRecentlySeen();
             }
             entry = new SeenEntry(result, nowMillis);
             seen.put(id, entry);
         } else {
             entry.lastResult = result;
             entry.lastSeenMillis = nowMillis;
+            entry.seenCount++;
         }
 
         BleScanCallbackType mode = config.callbackType();
@@ -80,7 +104,8 @@ public final class YoBleScanCallbackEmulator {
             if (isNew || !entry.notifiedFirstMatch) {
                 entry.notifiedFirstMatch = true;
                 entry.lastDispatchedMillis = nowMillis;
-                out.add(result.withCallbackType(BleScanCallbackType.FIRST_MATCH));
+                out.add(result.callbackType() == BleScanCallbackType.FIRST_MATCH
+                        ? result : result.withCallbackType(BleScanCallbackType.FIRST_MATCH));
             }
             return out;
         }
@@ -91,7 +116,9 @@ public final class YoBleScanCallbackEmulator {
                 || entry.lastDispatchedMillis == 0L
                 || nowMillis - entry.lastDispatchedMillis >= dedupMs) {
             entry.lastDispatchedMillis = nowMillis;
-            out.add(result.withCallbackType(BleScanCallbackType.ALL_MATCHES));
+            // Android 侧恒按 ALL_MATCHES 回调：已是 ALL_MATCHES 时直接复用，避免每包一次全字段复制。
+            out.add(result.callbackType() == BleScanCallbackType.ALL_MATCHES
+                    ? result : result.withCallbackType(BleScanCallbackType.ALL_MATCHES));
         }
         return out;
     }
@@ -102,12 +129,11 @@ public final class YoBleScanCallbackEmulator {
     @NonNull
     public synchronized List<BleScanResult> sweepLost(@NonNull BleScanConfig config,
                                                       long nowMillis) {
-        BleScanCallbackType mode = config.callbackType();
-        if (mode != BleScanCallbackType.MATCH_LOST
-                && mode != BleScanCallbackType.FIRST_MATCH_AND_LOST) {
+        long lostTimeout = config.matchLostTimeoutMillis();
+        if (lostTimeout <= 0L) {
+            // 未配置过期阈值：不产生 lost（避免 ALL_MATCHES 误删所有设备）。
             return new ArrayList<>(0);
         }
-        long lostTimeout = config.matchLostTimeoutMillis();
         List<BleScanResult> lostList = new ArrayList<>();
         Iterator<Map.Entry<BleDeviceId, SeenEntry>> it = seen.entrySet().iterator();
         while (it.hasNext()) {

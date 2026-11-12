@@ -5,6 +5,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.ble.YoBleModuleCore;
+import com.yovo.lib_bluetooth.internal.ble.device.YoBleAndroidCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.gatt.YoBleAndroidConnectionPlatform;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.hiddenapi.YoBleHiddenApiPolicy;
@@ -34,7 +35,7 @@ public final class YoBleAndroidModuleGraph {
                                                  @NonNull BleConfig config) {
         Context appContext = context.getApplicationContext();
         YoBluetoothAdapterProvider adapterProvider = new YoBluetoothAdapterProvider(appContext);
-        YoBleCapabilityInspector capabilityInspector = new YoBleCapabilityInspector(appContext);
+        YoBleCapabilityInspector capabilityInspector = new YoBleAndroidCapabilityInspector(appContext);
         YoBleHiddenApiPolicy cachePolicy = config.allowHiddenApiCacheRefresh()
                 ? YoBleHiddenApiPolicy.EXPLICITLY_ENABLED
                 : YoBleHiddenApiPolicy.DISABLED;

@@ -7,6 +7,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.YoBleAndroidModuleGraph;
+import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanHub;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
@@ -37,7 +38,6 @@ import com.yovo.lib_bluetooth.model.ble.BlePhy;
 import com.yovo.lib_bluetooth.model.ble.BlePhyConfig;
 import com.yovo.lib_bluetooth.model.ble.BlePhyOptions;
 import com.yovo.lib_bluetooth.model.ble.BleRequestResponseConfig;
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
 import com.yovo.lib_bluetooth.model.ble.BleTransferProgressObserver;
 import com.yovo.lib_bluetooth.model.ble.BleValueObserver;
@@ -107,14 +107,8 @@ public final class BleClientImpl implements YoBleClient {
 
     @NonNull
     @Override
-    public BleOperationHandle scan(@NonNull BleScanConfig config, @NonNull BleScanObserver observer) {
-        return core.scanController.scan(config, observer);
-    }
-
-    @NonNull
-    @Override
-    public Result<Void> stopScan() {
-        return core.scanController.stopScan();
+    public BleOperationHandle subscribeScan(@NonNull BleScanObserver observer) {
+        return YoBleScanHub.subscribe(core.scanController, observer);
     }
 
     @NonNull

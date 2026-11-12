@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.extensions.hearingaid;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
 import android.os.Build;
@@ -35,7 +37,7 @@ public final class YoCbtAndroidHearingAidExtension extends YoCbtAndroidTransient
     @Override
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.P)
     public boolean isSupported() {
-        return adapter != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P;
+        return adapter != null && AndroidPlatform.supportsHearingAidProfile();
     }
 
     @Override

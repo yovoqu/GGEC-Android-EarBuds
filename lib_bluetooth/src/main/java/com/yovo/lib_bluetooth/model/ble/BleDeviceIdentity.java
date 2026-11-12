@@ -6,7 +6,10 @@ import androidx.annotation.Nullable;
 import java.util.Objects;
 
 /**
- * BLE 设备身份信息，区分地址类型与双模射频类型。
+ * 一次 BLE 观察的身份。只描述 LE 地址、LE 广播本地名和协议栈报告的射频模式。
+ *
+ * <p>经典蓝牙 BD_ADDR 与经典名称不在这里。{@link #advertisingName()} 只来自广播 AD Local Name，
+ * {@link #alias()} 只来自系统别名。二者都不读取 {@code BluetoothDevice.getName()}。</p>
  */
 public final class BleDeviceIdentity {
 
@@ -47,8 +50,11 @@ public final class BleDeviceIdentity {
         return deviceId;
     }
 
+    /**
+     * LE 广播本地名（AD 0x08/0x09）。没有广播名时为空串。
+     */
     @NonNull
-    public String displayName() {
+    public String advertisingName() {
         return displayName;
     }
 

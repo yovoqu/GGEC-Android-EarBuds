@@ -3,11 +3,12 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothClass;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Parcelable;
 import android.os.ParcelUuid;
 
 import androidx.annotation.Nullable;
+
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,7 +26,7 @@ public final class YoCbtIntentCompat {
 
     public static BluetoothDevice device(Intent intent, String key) {
         if (intent == null) return null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedParcelableExtras()) {
             return intent.getParcelableExtra(key, BluetoothDevice.class);
         }
         return intent.getParcelableExtra(key);
@@ -34,7 +35,7 @@ public final class YoCbtIntentCompat {
     @Nullable
     public static BluetoothClass bluetoothClass(Intent intent, String key) {
         if (intent == null) return null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedParcelableExtras()) {
             return intent.getParcelableExtra(key, BluetoothClass.class);
         }
         return intent.getParcelableExtra(key);
@@ -44,7 +45,7 @@ public final class YoCbtIntentCompat {
         List<UUID> result = new ArrayList<>();
         if (intent == null) return result;
         ParcelUuid[] values;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedParcelableExtras()) {
             values = intent.getParcelableArrayExtra(key, ParcelUuid.class);
         } else {
             // Android 8.0+ (API 26) 起 getParcelableArrayExtra 实际返回 Parcelable[]，
