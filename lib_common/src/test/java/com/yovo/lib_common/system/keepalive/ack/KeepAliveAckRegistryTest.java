@@ -9,7 +9,7 @@ import com.yovo.lib_common.system.keepalive.internal.ack.KeepAliveAckRegistry;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.Shadows;
+import org.robolectric.shadow.api.Shadow;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.shadows.ShadowLooper;
 
@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 public class KeepAliveAckRegistryTest {
 
     private static void idle(long millis) {
-        ShadowLooper shadowLooper = Shadows.shadowOf(Looper.getMainLooper());
+        ShadowLooper shadowLooper = Shadow.<ShadowLooper>extract(Looper.getMainLooper());
         shadowLooper.idleFor(millis, TimeUnit.MILLISECONDS);
     }
 
