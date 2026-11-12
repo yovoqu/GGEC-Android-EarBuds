@@ -212,7 +212,8 @@ public final class ResponsesTest {
 
     @Test
     public void webSocketDemuxesStreamIds() throws Exception {
-        try (MockWebServer server = new MockWebServer()) {
+        MockWebServer server = new MockWebServer();
+        try {
             server.start();
             server.enqueue(new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
                 @Override
@@ -225,6 +226,16 @@ public final class ResponsesTest {
                     } catch (org.json.JSONException exception) {
                         throw new RuntimeException(exception);
                     }
+                }
+
+                /**
+                 * 客户端关闭时必须应答关闭帧：否则服务端 WebSocket 流不结束，
+                 * MockWebServer.shutdown() 会一直等到队列超时（Gave up waiting for queue to shut down），
+                 * 把清理失败伪装成用例失败。
+                 */
+                @Override
+                public void onClosing(WebSocket webSocket, int code, String reason) {
+                    webSocket.close(1000, null);
                 }
             }));
             YoAiClient client = client(server);
@@ -246,6 +257,9 @@ public final class ResponsesTest {
             } finally {
                 client.close();
             }
+        } finally {
+            // 收尾失败必须可见：服务端已在 onClosing 应答关闭帧，shutdown 应当干净结束。
+            server.shutdown();
         }
     }
 
@@ -283,6 +297,12 @@ public final class ResponsesTest {
                         throw new RuntimeException(exception);
                     }
                 }
+
+                /** 同 {@link #webSocketDemuxesStreamIds()}：必须应答关闭帧，否则 shutdown 会等到队列超时。 */
+                @Override
+                public void onClosing(WebSocket webSocket, int code, String reason) {
+                    webSocket.close(1000, null);
+                }
             }));
             YoAiClient client = client(server);
             try {
@@ -317,17 +337,12 @@ public final class ResponsesTest {
                 assertEquals("planner", planner.get());
                 assertEquals("research", research.get());
                 connection.close();
-                // MockWebServer 的 WebSocket 关闭是异步的；给它一点时间收尾，避免 shutdown 偶发超时。
-                Thread.sleep(500);
             } finally {
                 client.close();
             }
         } finally {
-            try {
-                server.shutdown();
-            } catch (java.io.IOException ignored) {
-                // 测试断言已经完成；MockWebServer 的 WebSocket 队列偶尔收尾超时，不让清理掩盖结果。
-            }
+            // 服务端在 onClosing 应答关闭帧后 shutdown 可干净结束；不再用 sleep + 吞异常掩盖收尾问题。
+            server.shutdown();
         }
     }
 
