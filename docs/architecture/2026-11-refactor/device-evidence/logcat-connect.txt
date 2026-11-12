@@ -1,0 +1,902 @@
+--------- beginning of main
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=3.71 dur=1615.75 max=987.05 min=8.38
+I/adbd    ( 4850): adbd service requested 'shell,v2,raw:input tap 600 400'
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095693130099872 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 60 to 120 of group 0: [touch=1:0 touchBoost=0 scroll=0:0 idle=1:0 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=120.00 Hz, modePtr={id=0, vsyncRate=120.00 Hz, peakRefreshRate=120.00 Hz}}, emitEvent=true, force=false}
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 120
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=3.24 dur=1849.54 max=943.23 min=0.08
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:0  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095162846017968, diff 430384, estimated_applied_time 16666667 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 0(120.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 16->8(cnt1)
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 0/0, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed3110/0xb400007483ed3110, alloc_id:8925/8925, frame_number:18446744073709551615/3  
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:4.241128,dur:1178.93,max:755.38,min:8.18  
+--------- beginning of kernel
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 60 to 120
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =120
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][120 fps->34 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095162862684635, config:0]  
+I/PowerHalWrapper( 1263): updateFps(): 120
+D/VSyncReactor( 1263): 4627039422300187648: period 8 confirmed(cnt1)
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495843 357 1 1 0x0 0x0 0] T[3739372 3739372 3739372 / 3751996 3751996 3751996 3751996] R[26379439 / 11619012] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4146/0/0/0/0/4150] txreg[2731510] rxreg[23648658]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1017ms> Tput: 91872(0.089mbps) [0:0:11680:21][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835323:1760606:48536] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495843,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586184,0,26282833,26282833,0,0,0,5254272,17179869076,5235203,4823,3842,96582,9,0,84904,0,571,0,313,0,9841,0,0,942,96565,0,0,5,5,12,0,0,0,0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924569): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924570): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835323, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760606, dup:570, error:4670869), PER(0), Congestion(idle slot:3671242144, diff:3039, AwakeDur:272157413)
+W/audit   ( 1487): audit_lost=1571782 audit_rate_limit=5 audit_backlog_limit=64
+E/audit   ( 1487): rate limit exceeded
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 0000000062cd374c, 00000000feb73b50, cmd=0x85, seq=124
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000003aaa2042, 00000000f56be3f6, cmd=0x82, seq=125
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095162.990435/0xf04a1b78;1095162.990452/0xf038df2a;1095162.990462/0xf038d6f4;1095162.990471/0xf0387084;1095162.990480/0xf038da2c;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095162.990435/0xf047c340;1095162.990452/0xf038df7c;1095162.990462/0xf0386f52;1095162.990471/0xf038dfae;1095162.990480/0xf038dcbe;
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=124
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 0000000062cd374c, 00000000feb73b50, cmd=0x85, seq=124
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000003aaa2042, 00000000f56be3f6, cmd=0x82, seq=125
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095693380099598 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/sd 0    (16649): 0:0:2: [sdc] Starting disk
+I/sd 0    (16649): 0:0:2: [sdc] Starting disk
+I/        (28761): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> hop-by-hop packet, SSN:4024
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095693630098963 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:120
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+W/droid.bluetooth( 2536): Reducing the number of considered missed Gc histogram windows from 384 to 100
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095693880130045 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (29097): timesync boot 1095693954091985 sched 1095163622983930 android 11-12 04:34:32.250697
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=7.96 dur=1005.32 max=274.68 min=8.44
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> hop-by-hop packet, SSN:4046
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095694130129463 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/AppScanStats( 2536): BLE_SCAN_RESULT_RECEIVED[4]reportBleScanResults=2700
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495869 357 1 1 0x0 0x0 0] T[3739375 3739375 3739375 / 3751996 3751996 3751996 3751996] R[26379478 / 11619023] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4147/0/1/0/0/4150] txreg[2731510] rxreg[23648683]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1030ms> Tput: 160888(0.157mbps) [0:0:20715:40][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835323:1760631:3039] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495869,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586234,0,26282876,26282876,0,0,0,5254272,17179869076,5235203,4823,3842,96582,9,0,84904,0,571,0,313,0,9841,0,0,942,96565,0,0,5,5,12,0,0,0,0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924572): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924573): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924574): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[nfg1000] fg_read_volt(  320): volt = 4425
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835323, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760631, dup:570, error:4670890), PER(0), Congestion(idle slot:3671245067, diff:2923, AwakeDur:272157503)
+I/[wlan][2472]asicConnac2xWfdmaDummyCrRead( 2472): (HAL INFO) CpuIdx == 0, DummyCr[0xffff0003]
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000002589899f, 00000000feb73b50, cmd=0x85, seq=127
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000003ec681f0, 00000000f56be3f6, cmd=0x82, seq=128
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095164.016413/0xf0390060;1095164.016431/0xf0390060;1095164.016442/0xf0390060;1095164.016454/0xf0390060;1095164.016465/0xf0390060;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095164.016413/0xf047b730;1095164.016431/0xf047b730;1095164.016442/0xf047b730;1095164.016454/0xf047b730;1095164.016465/0xf047b730;
+I/[nfg1000] fg_read_current(  320): curr = 87
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[nfg1000] fg_read_avg_current(  320): avg curr = 91
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=127
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000002589899f, 00000000feb73b50, cmd=0x85, seq=127
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000003ec681f0, 00000000f56be3f6, cmd=0x82, seq=128
+I/        (  320): Vbat=4425 vbats=4435 vbus:4931 ibus:420 I=87 T=36 uisoc:99 type:usb>usb pd:6 swchg_ibat:40 cv:4530000 cmd_pp:-1
+I/mmi_check_typec_conn_temp Error(  320): typec-otp not support
+I/mtk_charger_start_timer(  320): alarm timer start:0, 1095704 357359370
+I/        (  320): [PE50]pe50_is_algo_ready soc(99) not in range(0~90)
+I/_wlc_is_algo_ready state(  320): WLC_HW_READY
+I/wlc_hal_get_charger_type type(  320): 4
+I/_wlc_is_algo_ready ret_value(  320): 2
+I/[nfg1000] fg_read_volt(  320): volt = 4425
+I/[nfg1000] fg_read_volt(  320): volt = 4425
+I/[nfg1000] fg_read_current(  320): curr = 87
+I/[nfg1000] fg_read_avg_current(  320): avg curr = 91
+I/        (  320): [mmi_charger_check_status]batt=4425 mV, 87 mA, 36 C, USB= 4931 mV
+I/        (  320): zone 5, fv 4530 mV, chg iterm 584 mA
+E/        (  320): [mmi_basic_charge_sm] max_fv_mv = 4530,batt_cv_delata = 0
+I/        (  320): [mmi_basic_charge_sm]FV 4530 mV, FCC 8000 mA
+I/        (  320): [mmi_basic_charge_sm]Step State = NORMAL
+I/[mmi_basic_charge_sm]EFFECTIVE(  320): FV = 4530000, CDIS = 0, FCC = 8000000, USBICL = 500000, DEMO_DISCHARG = 0
+I/[mmi_basic_charge_sm]adaptive charging(  320): disable_ibat = 0, disable_ichg = 0, enable HZ = 0, charging disable = 0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/sc858x 10-006e(  320): sc858x_get_adc_data 8 39
+I/sc858x 11-006e(  320): sc858x_get_adc_data 8 38
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095694380099247 
+I/tmp     (  320): 36 (jeita:0 sm:0 cv:0 en:0) (sm:1) en:1 c:0 s:0 ov:0 0 sc:0 1 1 saf_cmd:-1 bat_mon:0 0 fcnt_dis_chg:0
+I/        (  320): [charger_check_status] force disable power path false
+E/        (  320): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/        (  320): mmi_charger_get_batt_status,bat_status=1
+I/        (  320): chg_alg_set_current_limit
+I/        (  320): [PE50]pe50_is_algo_ready soc(99) not in range(0~90)
+I/        (  320): chg_alg_set_current_limit
+I/        (  320): chg_alg_set_current_limit
+I/_wlc_set_setting cv(  320): 4530000 icl:-1,-1 cc:3000000,-1, mmi_fcc:8000000, 6pin_en:0
+I/_wlc_is_algo_ready state(  320): WLC_HW_READY
+I/wlc_hal_get_charger_type type(  320): 4
+I/_wlc_is_algo_ready ret_value(  320): 2
+I/pdtest  (  320): 1, pd: -1, usb: -1, ret: 500000
+I/        (  320): m:4 chg1:-1,3000,500,3000 chg2:-1,-1,0,0 dvchg1:-1 sc:8000000 -1 0 type:4:6 usb_unlimited:0 usbif:0 usbsm:0 ii:-1,-1 aicl:-1 atm:0 bm:0 b:1
+I/do_algorithm is_basic(  320): 1, active fast:0
+I/do_algorithm(  320): open power path
+I/        (  320): [PE50]pe50_is_algo_ready soc(99) not in range(0~90)
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/mt6375-chg 11f01000.i2c(  320): mt6375@34:chg: mt6375_dump_registers CC = 3000mA, AICR = 500mA, MIVR = 4600mV, IEOC = 150mA, CV = 4530mV
+I/        (  320): VBUS = 4931mV, IBUS = 420mA, VBAT = 4435mV, IBAT = 135mA, VSYS = 4437mV
+I/        (  320): CHG_STAT = 0x04, CHG_STAT0 = 0xC1, CHG_STAT1 = 0x40, CHG_TOP1 = 0xB3, CHG_TOP2 = 0x43, CHG_EOC = 0x22
+I/[nfg1000] fg_read_current(  320): curr = 87
+I/[nfg1000] fg_read_avg_current(  320): avg curr = 91
+I/[sc]disable_charger(  320): 0
+I/[sc1]en (  320): 0 t:0,80000,16472,63528 t:3600,59928,-1,-1 c:87,2000 ibus:420 uisoc: 99,80 s:3000 ans:ignore
+E/        (  320): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/mmi_charge_rate_check ICL(  320): 500, Rp:500, PD:6, chg_type: 0, Charger Detected: Normal
+E/        (  320): [cps_wls_chrg_get_property] psp = 4 val = 0.
+E/        (  320): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/        (  320): [mmi_check_power_info] power_watt = 2W, real_charger_type = 1
+I/[nfg1000] fg_read_volt(  320): volt = 4425
+I/[nfg1000] fg_read_volt(  320): volt = 4425
+I/[nfg1000] fg_read_current(  320): curr = 87
+W/batt_health( 3277): type=1400 audit(0.0:4924575): avc:  denied  { search } for  name="power_supply_logger" dev="dm-54" ino=398 scontext=u:r:batt_health:s0 tcontext=u:object_r:aplog_data_file:s0 tclass=dir permissive=0
+E/NEW_BHD ( 3277): fopen failure for /data/vendor/power_supply_logger/power_supply_info.csv,errno = 13 (Permission denied)
+--------- beginning of system
+D/BatteryService( 1840): uevent={POWER_SUPPLY_VOLTAGE_NOW=4425000, POWER_SUPPLY_VBUS_PRESENT=true, POWER_SUPPLY_TYPE=Battery, POWER_SUPPLY_HEALTH=Good, POWER_SUPPLY_TECHNOLOGY=Li-poly, POWER_SUPPLY_SCOPE=100, POWER_SUPPLY_CHARGE_FULL_DESIGN=6000000, SEQNUM=80996, POWER_SUPPLY_STATUS=Charging, POWER_SUPPLY_CYCLE_COUNT=32, POWER_SUPPLY_CAPACITY=99, DEVPATH=/devices/platform/smart_battery/power_supply/battery, POWER_SUPPLY_ENERGY_EMPTY=0, POWER_SUPPLY_CHARGE_RATE=Normal, POWER_SUPPLY_CAPACITY_LEVEL=High, POWER_SUPPLY_CURRENT_NOW=87000, POWER_SUPPLY_PRESENT=1, POWER_SUPPLY_POWER_WATT=2, POWER_SUPPLY_CHARGE_FULL=5944000, SUBSYSTEM=power_supply, POWER_SUPPLY_VOLTAGE_OCV=4425000, POWER_SUPPLY_TEMP=369, ACTION=change, POWER_SUPPLY_AGE=100, POWER_SUPPLY_CHARGE_REAL_TYPE=1, POWER_SUPPLY_NAME=battery, POWER_SUPPLY_LPD_PRESENT=false, POWER_SUPPLY_CHARGE_COUNTER=5649000, POWER_SUPPLY_POWER_WATT_DESIGN=90}
+E/NEW_BHD ( 3277): fopen failure for /data/vendor/power_supply_logger/power_supply_info.csv errno = 13 (Permission denied)
+I/[nfg1000] fg_read_avg_current(  320): avg curr = 91
+W/audit   ( 3277): audit_lost=1571783 audit_rate_limit=5 audit_backlog_limit=64
+E/audit   ( 3277): rate limit exceeded
+W/batt_health( 3277): type=1400 audit(0.0:4924576): avc:  denied  { search } for  name="power_supply_logger" dev="dm-54" ino=398 scontext=u:r:batt_health:s0 tcontext=u:object_r:aplog_data_file:s0 tclass=dir permissive=0
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:8.650961,dur:1271.54,max:458.83,min:7.89  
+I/[nfg1000] fg_read_current( 3277): curr = 87
+I/[nfg1000] fg_read_avg_current( 3277): avg curr = 91
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+E/        ( 3277): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/mmi_charge_rate_check ICL( 3277): 500, Rp:500, PD:6, chg_type: 0, Charger Detected: Normal
+I/[nfg1000] fg_read_volt( 1137): volt = 4425
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+I/[nfg1000] fg_read_current( 1137): curr = 87
+I/[nfg1000] fg_read_avg_current( 1137): avg curr = 91
+I/[nfg1000] fg_read_current( 3277): curr = 87
+E/        ( 1137): [cps_wls_chrg_get_property] psp = 4 val = 0.
+W/libc    ( 1840): Access denied finding property "persist.mot.dogfooding"
+I/[nfg1000] fg_read_avg_current( 3277): avg curr = 91
+I/is_pd_rdy pd_type( 1137): 6
+I/is_pd_rdy pd_type( 1137): 6
+W/healthd ( 1137): battery l=99 v=4425 t=36.9 h=2 st=2 c=87000 fc=5944000 cc=32 chg=u
+I/[nfg1000] fg_read_current( 3277): curr = 87
+E/        ( 1167): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/[nfg1000] fg_read_avg_current( 3277): avg curr = 91
+I/[nfg1000] fg_read_volt( 1137): volt = 4425
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+I/[nfg1000] fg_read_current( 1137): curr = 87
+W/libc    ( 1840): Access denied finding property "persist.mot.dogfooding"
+I/[nfg1000] fg_read_avg_current( 1137): avg curr = 91
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+E/        ( 1137): [cps_wls_chrg_get_property] psp = 4 val = 0.
+E/        ( 3277): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/mmi_charge_rate_check ICL( 3277): 500, Rp:500, PD:6, chg_type: 0, Charger Detected: Normal
+I/is_pd_rdy pd_type( 1137): 6
+E/        ( 3277): [cps_wls_chrg_get_property] psp = 4 val = 0.
+I/is_pd_rdy pd_type( 1137): 6
+I/mmi_charge_rate_check ICL( 3277): 500, Rp:500, PD:6, chg_type: 0, Charger Detected: Normal
+E/        ( 1167): [cps_wls_chrg_get_property] psp = 4 val = 0.
+D/PowerUI ( 2391): can't show warning due to - plugged: true status unknown: false
+V/UiModeManager( 1840): updateLocked: null action, mDockState=0, category=null
+D/UiModeManager( 1840): updateConfigurationLocked: mDockState=0; mCarMode=false; mNightMode=1; mNightModeCustomType=-1; uiMode=17
+E/NEW_BHD ( 3277): writePsyEventsToFile: open fail for /data/vendor/power_supply_logger/power_supply_info.csv
+E/NEW_BHD ( 3277): writing psy events to logger file failed !!!
+E/NEW_BHD ( 3277): fopen failure for /data/vendor/power_supply_logger/power_supply_info.csv,errno = 13 (Permission denied)
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 120 to 60 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=1:1 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=60.00 Hz, modePtr={id=2, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=false, force=false}
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 60
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/[nfg1000] fg_read_volt( 3277): volt = 4425
+I/[wlan][2471]statsParseUDPInfo( 2471): (RX INFO) <RX> DHCP: Recv REQUEST IPID 0x1c5f, MsgType 0x3, TransID 0xe7966495 SSN:4055
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.141 SSN:4060
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=1.52 dur=1320.03 max=1295.00 min=25.03
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:2  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095164165602891, diff 408000, estimated_applied_time 8333333 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 2(60.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 1/1, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed2cf0/0xb400007483ed2cf0, alloc_id:8922/8922, frame_number:18446744073709551615/3  
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 8->16(cnt1)
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 0 to 2
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 120 to 60
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =60
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][60 fps->50 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095164173936224, config:2]  
+D/VSyncReactor( 1263): 4627039422300187648: period 16 confirmed(cnt1)
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (   73): [wdtk] kick watchdog
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095694630099617 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/        (  150): [wdk-c] cpu=3 o_k=3 lbit=0x8 cbit=0xff,f7,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164384158624,15000000] 30 ffffffff s_cpu 3 - 0 0 0 0 0 0 0 0
+I/        (  148): [wdk-c] cpu=1 o_k=1 lbit=0xa cbit=0xff,f5,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164384210932,14999899] 30 ffffffff
+I/wdt_dump_cntcv CPU(  150): 3 CNTCV_CTL:1 CNTCV_TVAL:647d CNTVCT:cf47b934b18 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b934b07
+I/        (  149): [wdk-c] cpu=2 o_k=2 lbit=0xe cbit=0xff,f1,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164384252240,14999850] 30 ffffffff
+I/wdt_dump_cntcv CPU(  148): 1 CNTCV_CTL:1 CNTCV_TVAL:6444 CNTVCT:cf47b934b53 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b934b47
+I/wdt_dump_cntcv CPU(  149): 2 CNTCV_CTL:1 CNTCV_TVAL:2234b7 CNTVCT:cf47b934ba0 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b934b93
+I/        (  154): [wdk-c] cpu=7 o_k=7 lbit=0x8e cbit=0xff,71,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164385114624,14998993] 30 ffffffff
+I/wdt_dump_cntcv CPU(  154): 7 CNTCV_CTL:0 CNTCV_TVAL:ffffcfb8 CNTVCT:cf47b9372bf SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b9372cc
+I/        (  151): [wdk-c] cpu=4 o_k=4 lbit=0x9e cbit=0xff,61,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164385233393,14998872] 30 ffffffff
+I/wdt_dump_cntcv CPU(  151): 4 CNTCV_CTL:0 CNTCV_TVAL:ffffc9ac CNTVCT:cf47b937954 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b93795f
+I/        (  152): [wdk-c] cpu=5 o_k=5 lbit=0xbe cbit=0xff,41,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164385288547,14998817] 30 ffffffff
+I/wdt_dump_cntcv CPU(  152): 5 CNTCV_CTL:1 CNTCV_TVAL:44ae2f CNTVCT:cf47b938104 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b938114
+I/        (  153): [wdk-c] cpu=6 o_k=6 lbit=0xfe cbit=0xff,1,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164385327855,14998778] 30 ffffffff
+I/wdt_dump_cntcv CPU(  153): 6 CNTCV_CTL:1 CNTCV_TVAL:a1d61 CNTVCT:cf47b938334 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b93833f
+I/        (  147): [thread:147] 2026-11-12 04:34:33.16938 UTC;android time 2026-11-12 04:34:33.16938
+I/        (  147): [wdk-k] cpu=0 o_k=0 lbit=0xff cbit=0xff,0,7,1,236218462,ff,845279282,10995614,845279542,10995681,[1095164389198932,14994918] 30 ffffffff
+I/wdt_dump_cntcv CPU(  147): 0 CNTCV_CTL:1 CNTCV_TVAL:43a8 CNTVCT:cf47b934b53 SYST_CNTCR:4490d SYST_DISTL:0 SYST_CNTCV:cf47b934b47
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/NearbyMediums(16742): Found Fast Ble Advertisements :
+I/NearbyMediums(16742): BleAdvertisement { version=2, socketVersion=2, isFast=true, serviceIdHash=null, data=[ 0x23 0x35 0x44 0x31 0x4e 0x11 0x32 0x28 0x45 0x37 0x55 0x12 0x2c 0x50 0x64 0xde 0x18 0xf9 0x75 0xdd 0xd5 0xd2 0xf4 ], deviceToken=[ 0x94 0xe4 ], rxAdvertisement=null } : 3 times.
+I/NearbyMediums(16742): Total 3 fast advertisements from 1 unique advertisers.
+I/NearbyMediums(16742): Current Tracked Scanning Clients are : {NearbyConnections.EnvironmentMonitor, NearbySharing, NearbyConnections.TxAdvertisement}
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095694880099617 
+I/sd 0    (18585): 0:0:2: [sdc] Starting disk
+I/sd 0    (18585): 0:0:2: [sdc] Starting disk
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> hop-by-hop packet, SSN:4073
+I/        ( 2471): [wlan]Drop Gratuitous ARP from [f2:67:**:**:**:db] [10:1:8:215]
+I/[wlan][2471]qmHandleRxPackets( 2471): (QM WARN) Mark NULL the Packet for Dropped Packet 0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+D/WidgetApplication(13662): updateExistWidget: android.intent.action.BATTERY_CHANGED
+D/CmdCenter(13662): - SquareBase: sPrevBatStatus: 2, status: 2
+D/CmdCenter(13662): - SquareBase: sPrevBatteryPercent: 99 newPercent: 99
+D/CmdCenter(13662): - SquareBase: sPrevPlugType: 2 plugType: 2
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.215 SSN:4076
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095695130099372 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> hop-by-hop packet, SSN:4078
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+D/WifiHAL ( 2369): WifiRequest::create vendor command to iface 36, vendor_id=0x1a11, subcmd=0x1200, res=0
+I/[wlan][2471]mddpGetMdLlsStats( 2471): (INIT ERROR) mddp is not supported.
+W/asicConnac2xFillCmdTxdInfo( 2471): 7 callbacks suppressed
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x84] SEQ[129] SET[0] LEN[72]
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/WifiHAL ( 2369): LLS RSP: data=0xb4000074ddd577d0, len=4788
+I/WifiHAL ( 2369): LLS check_data_sanity: 1816: current_radio_stat->num_channels=54
+I/WifiHAL ( 2369): LLS check_data_sanity: 1816: current_radio_stat->num_channels=16
+I/WifiHAL ( 2369): LLS check_data_sanity: confirmed_size=4788, len=4788
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 00000000d7029a25, 0000000061d9540c, cmd=0x84, seq=129
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 00000000d7029a25, 0000000061d9540c, cmd=0x84, seq=129
+I/[wlan][2376]mtk_cfg80211_vendor_llstats_get_info( 2376): (REQ INFO) llstats_get_info(bss=0)
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x81] SEQ[130] SET[0] LEN[64]
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000004e9d1edd, 00000000641902af, cmd=0x81, seq=130
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000004e9d1edd, 00000000641902af, cmd=0x81, seq=130
+I/[wlan][18873]mtk_cfg80211_get_station(18873): (REQ INFO) link speed=780/520, bw=0/0, rssi=-33, BSSID:[40:77:**:**:**:83], idx=0,TxFail=0, TxTimeOut=0, TxOK=577069, RxOK=1875366, FcsErr=0
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495890 357 1 1 0x0 0x0 0] T[3739380 3739380 3739380 / 3751996 3751996 3751996 3751996] R[26379500 / 11619036] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4149/1/0/0/0/4150] txreg[2731510] rxreg[23648701]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1005ms> Tput: 83864(0.081mbps) [0:0:10536:24][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835331:1760670:2923] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495890,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586269,0,26282897,26282897,0,0,0,5254272,17179869076,5235203,4823,3842,96583,9,0,84905,0,571,0,313,0,9841,0,0,942,96566,0,0,5,5,12,0,0,0,0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924582): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924583): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924584): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x7E] SEQ[131] SET[1] LEN[376]
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x85] SEQ[132] SET[0] LEN[92]
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x82] SEQ[133] SET[0] LEN[76]
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835331, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760670, dup:570, error:4670914), PER(0), Congestion(idle slot:3671249686, diff:4619, AwakeDur:272157641)
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000006f1d2c5e, 00000000feb73b50, cmd=0x85, seq=132
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000008126be5e, 00000000f56be3f6, cmd=0x82, seq=133
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095165.036980/0xf0441ebc;1095165.036989/0xf03906bc;1095165.036994/0xf03911dc;1095165.036998/0xf039123a;1095165.037001/0xf0390718;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095165.036980/0xf0441ebc;1095165.036989/0xf039118c;1095165.036994/0xf039118c;1095165.036998/0xf0391230;1095165.037001/0xf03912a8;
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=132
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000006f1d2c5e, 00000000feb73b50, cmd=0x85, seq=132
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095695380099368 
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000008126be5e, 00000000f56be3f6, cmd=0x82, seq=133
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/AppScanStats( 2536): BLE_SCAN_RESULT_RECEIVED[4]reportBleScanResults=2800
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=1.85 dur=1620.13 max=784.30 min=377.57
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:4.296604,dur:1163.71,max:786.80,min:3.90  
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095695630130243 
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095695880099061 
+I/[    C4] [ccci1/dpmf]dpmaif-txq(    0): 0-3(status=0xf)[2048]: 2048-0-0, 2048-0-0, 2048-0-0, 2048-0-0
+I/        (    0): [    C4] [ccci1/dpmf]dpmaif-txq pos: w/r/rel=(0,0,0)(0,0,0)(0,0,0)(0,0,0), tx_busy=0,0,0,0, last_isr=0,0,0,0
+I/[    C4] [ccci1/dpmf]dpmaif-rxq0(    0): received:0; q_state=1; budget:16383; w/r=(0,0)
+I/        (26085): [ccci1/cif]total cnt=74634;rxq0 isr_cnt=14456;rxq1 isr_cnt=3722;rxq2 isr_cnt=0;rxq3 isr_cnt=21;rxq4 isr_cnt=4426;rxq5 isr_cnt=52063;rxq6 isr_cnt=1;rxq7 isr_cnt=3;rxq8 isr_cnt=0;rxq9 isr_cnt=0;rxq10 isr_cnt=0;rxq11 isr_cnt=0;rxq12 isr_cnt=0;rxq13 isr_cnt=0;rxq14 isr_cnt=0;rxq15 isr_cnt=1;rxq16 isr_cnt=0;rxq17 isr_cnt=0;rxq18 isr_cnt=0;rxq19 isr_cnt=0;rxq20 isr_cnt=0;rxq21 isr_cnt=0;rxq22 isr_cnt=0;rxq23 isr_cnt=0;
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095696130100041 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> ICMPV6 Router Solicitation SSN:4085
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 60 to 120 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=0:0 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=120.00 Hz, modePtr={id=0, vsyncRate=120.00 Hz, peakRefreshRate=120.00 Hz}}, emitEvent=true, force=false}
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 120
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/sd 0    (16649): 0:0:2: [sdc] Starting disk
+I/sd 0    (16649): 0:0:2: [sdc] Starting disk
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=1.12 dur=1789.43 max=1763.89 min=25.54
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 16->8(cnt1)
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:0  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095165955493661, diff 268923, estimated_applied_time 16666667 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 0(120.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 0/0, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed3110/0xb400007483ed3110, alloc_id:8925/8925, frame_number:18446744073709551615/3  
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 60 to 120
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =120
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][120 fps->34 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095165972160328, config:0]  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 120
+D/VSyncReactor( 1263): 4627039422300187648: period 8 confirmed(cnt1)
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924585): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924586): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/audit   ( 1487): audit_lost=1571788 audit_rate_limit=5 audit_backlog_limit=64
+E/audit   ( 1487): rate limit exceeded
+I/        ( 2313): FRONT_TEMP=38786
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495898 357 1 1 0x0 0x0 0] T[3739383 3739383 3739383 / 3751996 3751996 3751996 3751996] R[26379505 / 11619041] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4149/0/0/0/0/4150] txreg[2731510] rxreg[23648708]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1041ms> Tput: 10432(0.010mbps) [0:0:1358:4][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835331:1760692:4619] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495898,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586279,0,26282901,26282901,0,0,0,5254272,17179869076,5235203,4823,3842,96583,9,0,84905,0,571,0,313,0,9841,0,0,942,96566,0,0,5,5,12,0,0,0,0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095696380098969 
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x7E] SEQ[134] SET[1] LEN[376]
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x85] SEQ[135] SET[0] LEN[92]
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x82] SEQ[136] SET[0] LEN[76]
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835331, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760692, dup:570, error:4670959), PER(0), Congestion(idle slot:3671255196, diff:5510, AwakeDur:272157772)
+I/[wlan][2472]asicConnac2xWfdmaDummyCrRead( 2472): (HAL INFO) CpuIdx == 0, DummyCr[0xffff0003]
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000000ab458bb, 00000000feb73b50, cmd=0x85, seq=135
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 0000000058b41cad, 00000000f56be3f6, cmd=0x82, seq=136
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095166.059676/0xf04457fe;1095166.059693/0xf04120a4;1095166.059702/0xf041204c;1095166.059711/0xf038b07e;1095166.059720/0xf04880de;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095166.059676/0xf04457fe;1095166.059693/0xf041204a;1095166.059702/0xf0481f46;1095166.059711/0xf04120a8;1095166.059720/0xf04880dc;
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=135
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000000ab458bb, 00000000feb73b50, cmd=0x85, seq=135
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 0000000058b41cad, 00000000f56be3f6, cmd=0x82, seq=136
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/mtk-board-ntc 1cc0355c.thermal-ntc3( 2029): v=0x1cf28, v/type/ntc/t=113787/1/48617/40958
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095696630099272 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 120 to 60 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=1:1 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=60.00 Hz, modePtr={id=2, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=false, force=false}
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 60
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 120 to 60
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =60
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][60 fps->50 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:2  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095166452304815, diff 617924, estimated_applied_time 8333333 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 2(60.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 8->16(cnt1)
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 1/1, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed2cf0/0xb400007483ed2cf0, alloc_id:8922/8922, frame_number:18446744073709551615/3  
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:4.265923,dur:1172.08,max:649.63,min:7.16  
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095166460638148, config:2]  
+I/        (25208): [name:spm&][SPM] system_bus wake up by  R12_CONN2AP_SPM_WAKEUP_B R12_SYSTIMER_EVENT_B, timer_out = 13, r13 = 0x8003fee0, debug_flag = 0x10000000 0x3, r12 = 0x40020, r12_ext = 0x0, raw_sta = 0x0 0x0 0x0, idle_sta = 0x0, req_sta =  0x0 0x0 0x0 0x0 | 0x7ef8fffc 0x1f 0x60000001 0x1f9f9f9c | 0xc0000000 0xfe01e3 0x1b40 0x0, cg_check_sta =0x0, isr = 0x0, rt_req_sta0 = 0x0 rt_req_sta1 = 0x10af79e rt_req_sta2 = 0x0 rt_req_sta3 = 0x69615955 dram_sw_con_3 = 0x0, raw_ext_sta = 0x858a955, wake_misc = 0x180030, pcm_flag = 0x20b0077 0x0 0x2030077 0x0, req = 0x18f60800, clk_settle = 0x60fe, debug_spare_5 = 0x0, debug_spare_6 = 0x10000000,
+I/        (25208): [name:spm&] Pending Wakeup Sources: WLAN timeout bt_drv_io 11201000.usb0 disp_crtc0_wakelock
+D/VSyncReactor( 1263): 4627039422300187648: period 16 confirmed(cnt1)
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095696880099243 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/AppScanStats( 2536): BLE_SCAN_RESULT_RECEIVED[4]reportBleScanResults=2900
+I/[wlan][2471]statsParseUDPInfo( 2471): (RX INFO) <RX> DHCP: Recv   IPID 0x00, MsgType 0xa, TransID 0xca347cf8 SSN:10
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=2.17 dur=1383.47 max=710.40 min=22.63
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (    0): [    C6] swpm_sp_routine regular update(1567), total_suspend(530301918)
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> hop-by-hop packet, SSN:11
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> ICMPV6 Router Solicitation SSN:13
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095697130099561 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> ICMPV6 Router Solicitation SSN:14
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.215 SSN:16
+I/        (  155): [Hang_Detect] hang_detect thread counts down 2147483647:2147483647, status 0.
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 60 to 120 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=0:0 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=120.00 Hz, modePtr={id=0, vsyncRate=120.00 Hz, peakRefreshRate=120.00 Hz}}, emitEvent=true, force=false}
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 120
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=3.94 dur=1016.11 max=505.94 min=14.01
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 16->8(cnt1)
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:0  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095166971601738, diff 233308, estimated_applied_time 16666667 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 0(120.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 0/0, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed3110/0xb400007483ed3110, alloc_id:8925/8925, frame_number:18446744073709551615/3  
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 60 to 120
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =120
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][120 fps->34 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924588): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924589): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924590): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+D/VSyncReactor( 1263): 4627039422300187648: period 8 confirmed(cnt1)
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095166988268405, config:0]  
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495922 357 1 1 0x0 0x0 0] T[3739386 3739386 3739386 / 3751996 3751996 3751996 3751996] R[26379531 / 11619054] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4149/0/0/0/0/4150] txreg[2731510] rxreg[23648731]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1021ms> Tput: 62960(0.061mbps) [0:0:8036:26][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835331:1760697:5510] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495922,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586318,0,26282928,26282927,0,0,0,5254272,17179869076,5235203,4823,3842,96583,9,0,84905,0,571,0,313,0,9841,0,0,942,96566,0,0,5,5,12,0,0,0,0
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095697380099454 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x7E] SEQ[137] SET[1] LEN[376]
+I/[wlan][2471]asicConnac2xFillCmdTxdInfo( 2471): (TX INFO) TX CMD: ID[0x85] SEQ[138] SET[0] LEN[92]
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835331, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760697, dup:570, error:4670983), PER(0), Congestion(idle slot:3671258118, diff:2922, AwakeDur:272157837)
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000000a7ba0c0, 00000000feb73b50, cmd=0x85, seq=138
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 0000000076471cec, 00000000f56be3f6, cmd=0x82, seq=139
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095167.085437/0xf03851a4;1095167.085450/0x00903716;1095167.085457/0xf0413276;1095167.085463/0xf0413276;1095167.085470/0xf038bec2;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095167.085437/0xf0424618;1095167.085450/0x009034b0;1095167.085457/0xf04232d2;1095167.085463/0xf04232d2;1095167.085470/0xf0480c14;
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=138
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000000a7ba0c0, 00000000feb73b50, cmd=0x85, seq=138
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 0000000076471cec, 00000000f56be3f6, cmd=0x82, seq=139
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095697630129612 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParsePktInfo( 2471): (RX INFO) <RX><IPv6> ICMPV6 Router Solicitation SSN:20
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:10.830307,dur:1015.67,max:249.63,min:3.61  
+I/        (24631): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095697880098844 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/AppScanStats( 2536): BLE_SCAN_RESULT_RECEIVED[4]reportBleScanResults=3000
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095698129685324 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=7.07 dur=1272.10 max=300.64 min=16.85
+D/WifiHAL ( 2369): WifiRequest::create vendor command to iface 36, vendor_id=0x1a11, subcmd=0x1200, res=0
+I/[wlan][2471]mddpGetMdLlsStats( 2471): (INIT ERROR) mddp is not supported.
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 0000000078a72525, 0000000061d9540c, cmd=0x84, seq=140
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 0000000078a72525, 0000000061d9540c, cmd=0x84, seq=140
+I/WifiHAL ( 2369): LLS RSP: data=0xb4000074ddd577d0, len=4788
+I/WifiHAL ( 2369): LLS check_data_sanity: 1816: current_radio_stat->num_channels=54
+I/WifiHAL ( 2369): LLS check_data_sanity: 1816: current_radio_stat->num_channels=16
+I/WifiHAL ( 2369): LLS check_data_sanity: confirmed_size=4788, len=4788
+I/[wlan][2376]mtk_cfg80211_vendor_llstats_get_info( 2376): (REQ INFO) llstats_get_info(bss=0)
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 00000000a062af67, 00000000641902af, cmd=0x81, seq=141
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 00000000a062af67, 00000000641902af, cmd=0x81, seq=141
+I/[wlan][18873]mtk_cfg80211_get_station(18873): (REQ INFO) link speed=780/520, bw=0/0, rssi=-33, BSSID:[40:77:**:**:**:83], idx=0,TxFail=0, TxTimeOut=0, TxOK=577069, RxOK=1875410, FcsErr=0
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924591): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924592): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/audit   ( 1487): audit_lost=1571789 audit_rate_limit=5 audit_backlog_limit=64
+E/audit   ( 1487): rate limit exceeded
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095698380099492 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1061ms> Tput: 29032(0.028mbps) [0:0:3851:14][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835331:1760722:2922] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495943,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586343,0,26282941,26282941,0,0,0,5254272,17179869076,5235203,4823,3842,96583,9,0,84905,0,571,0,313,0,9841,0,0,942,96566,0,0,5,5,12,0,0,0,0
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835331, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760722, dup:570, error:4671010), PER(0), Congestion(idle slot:3671263753, diff:5635, AwakeDur:272158014)
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 000000009e0c6459, 00000000feb73b50, cmd=0x85, seq=143
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 00000000b7236f3f, 00000000f56be3f6, cmd=0x82, seq=144
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095168.111519/0xf03851a8;1095168.111539/0xf0413276;1095168.111550/0xf0413276;1095168.111562/0xf038caae;1095168.111573/0xf03ac6b8;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095168.111519/0x00901058;1095168.111539/0xf04232d2;1095168.111550/0xf0479796;1095168.111562/0xf0386f60;1095168.111573/0xf04129be;
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495944 357 1 0 0x0 0x0 0] T[3739394 3739394 3739391 / 3751996 3751996 3751996 3751996] R[26379544 / 11619066] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:3 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4150/0/0/0/0/4150] txreg[2731510] rxreg[23648749]
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=143
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 000000009e0c6459, 00000000feb73b50, cmd=0x85, seq=143
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 00000000b7236f3f, 00000000f56be3f6, cmd=0x82, seq=144
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 120 to 60 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=1:1 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=60.00 Hz, modePtr={id=2, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=false, force=false}
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 60
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 120 to 60
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =60
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][60 fps->50 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=1.71 dur=1168.86 max=1143.59 min=25.27
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:2  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095168141317968, diff 416846, estimated_applied_time 8333333 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 2(60.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 1/1, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed2cf0/0xb400007483ed2cf0, alloc_id:8922/8922, frame_number:18446744073709551615/3  
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095168149651301, config:2]  
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[nfg1000] fg_read_volt(25208): volt = 4426
+I/[nfg1000] fg_read_current(25208): curr = 96
+I/[nfg1000] fg_read_avg_current(25208): avg curr = 94
+I/[nfg1000] adc_battemp(25208): [adc_battemp] 6948 5834 6464 35 40 37
+I/[nfg1000] fg_read_temperature(25208): read batt temperature from PMIC,temp = 370
+I/[nfg1000] fg_read_temperature(25208): read batt temperature from FG, temp= 386
+I/(null)  (25208): smart_batt_get_temperature: smart_batt_get_temperature: curr_bat_temp = 370, pre_bat_temp = 369, avg_bat_temp=369
+I/[nfg1000] fg_read_soh(25208): SOH = 100
+I/[nfg1000] fg_read_dc(25208): DesignCapacity = 6000
+I/[nfg1000] fg_read_fcc(25208): fcc = 5944
+I/[nfg1000] fg_read_cyclecount(25208): Cycle Count = 32
+I/[nfg1000] fg_read_rsoc(25208): RSOC = 96
+I/[nfg1000] fg_read_rm(25208): RemainingCapacity = 5650
+I/(null)  (25208): smart_batt_soc100_forward: original_soc=96, logic_soc=99
+I/(null)  (25208): smart_batt_monotonic_soc: rsoc = 99, chip->uisoc = 99
+I/(null)  (25208): smart_batt_update_thread: UISOC:99, Volt:4426000, Current:96000, Temperature:369, Cycle_count:32, Soh:100
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/        (27760): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095698630098906 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/        (28761): [btmtk_err] ***btmtk_rx_work skb_queue_len is zero***
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095698880130031 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:6.162868,dur:1135.83,max:450.40,min:4.67  
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 60 to 120 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=0:0 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=120.00 Hz, modePtr={id=0, vsyncRate=120.00 Hz, peakRefreshRate=120.00 Hz}}, emitEvent=true, force=false}
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 120
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 120
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 16->8(cnt1)
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:0  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095168664925353, diff 497461, estimated_applied_time 16666667 queued_size:0  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 0(120.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 0/0, forceSet:1
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed3110/0xb400007483ed3110, alloc_id:8925/8925, frame_number:18446744073709551615/3  
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 2 to 0
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 60 to 120
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =120
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][120 fps->34 ms]
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+I/PowerHalWrapper( 1263): updateFps(): 120
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095168681592020, config:0]  
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 0(120.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 120
+D/VSyncReactor( 1263): 4627039422300187648: period 8 confirmed(cnt1)
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095699130099608 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+W/lbs_dbg_ext( 1487): Waited for hwservicemanager.ready for a second, waiting another...
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924594): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/libc    ( 1487): Access denied finding property "hwservicemanager.disabled"
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924595): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/binder:1487_2( 1487): type=1400 audit(0.0:4924596): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=240 scontext=u:r:lbs_dbg_ext:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=0
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+W/libc    ( 1487): Access denied finding property "hwservicemanager.ready"
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/AppScanStats( 2536): BLE_SCAN_RESULT_RECEIVED[4]reportBleScanResults=3100
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/adbd    ( 4850): adbd service requested 'shell,v2,raw:dumpsys window | grep mCurrentFocus'
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095699380099272 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.190 SSN:42
+I/BufferQueueProducer( 1263): [com.ggec.earbuds/com.ggec.earbuds.ui.device.scan.ScanActivity#88280](this:0xb4000078f8434420,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=5.18 dur=1157.83 max=466.17 min=41.61
+I/[wlan][2472]halDumpMsduReportStats( 2472): (HAL INFO) TX_Delay D:[1:5:10:20]=[0:0:0:0:0#0] C:[10:20:50:80]=[0:0:0:0:0#0] M:[5:10:20:50]=[0:0:0:0:0#0] A:[5:10:20:50]=[0:0:0:0:0#0] F:[10:20:50:80]=[0:0:0:0:0#0] Txfail:0
+I/[wlan][2472]halDumpHifStats( 2472): (HAL INFO) I[0 / 23495959 357 1 1 0x0 0x0 0] T[3739394 3739394 3739394 / 3751996 3751996 3751996 3751996] R[26379552 / 11619075] T_Q:T_R[0:0 0:0 0:0 0:0 0:0 0:0 0:0 0:0]  R_R:R_N[0:0 0:0 0:0 0:0] Msdu:F[8191/8192]P[0]D[0] Tok[0/4096] Rfb[4149/1/0/0/0/4150] txreg[2731510] rxreg[23648764]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) <1015ms> Tput: 6216(0.006mbps) [0:0:789:8][0:0:0:0][0:0:0:0][0:0:0:0] Pending:0/4096 [0:0:0:0][0:0:0:0][0:0:0:0][0:0:0:0] LQ[3835331:1760735:5635] idle:0 lv:0 th:5 fg:0x9 TxCpu[415475,1004800,939491,837447,160134,150626,144733,99303] RxCpu[0,0,0,0,0,0,0,0] TxDp[ST:BS:FO:QM:DP]:0:0:0:0:3962 Tx[SQ:TI:TM:TDD:TDM:TIC:TFP]:0:3751965:3752009:0:0:497036:3752007 MgmtSub[40:0:38:0:0:0:0:0:0:0:0:104:3:0:0:0]
+I/[wlan][2471]kalPerMonUpdate( 2471): (SW4 INFO) ndevdrp:[0:0:0:0] NAPI[23495959,0,0,0,0,0,0,0,0,0,18446743798831644672] RxReorder[19:0:0:0] RxPending[4:0:0:0] RfbTrack[0:60:10:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0] drv[RM,IL,RI,PA,PF,DU,DA,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI,DR,TE,PE,CE,DN,FE,DE,IE,TME,CM,FB,ID,FD,NL]:35586360,0,26282949,26282949,0,0,0,5254272,17179869076,5235203,4823,3842,96583,9,0,84905,0,571,0,313,0,9841,0,0,942,96566,0,0,5,5,12,0,0,0,0
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/[wlan][2471]wlanLinkQualityMonitor( 2471): (SW4 INFO) Link Quality: Tx(rate:780, total:3835331, retry:13168, fail:12597, RTS fail:2235, ACK fail:10362), Rx(rate:520, total:1760735, dup:570, error:4671039), PER(0), Congestion(idle slot:3671267184, diff:3431, AwakeDur:272158124)
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 0000000084133d1e, 00000000feb73b50, cmd=0x85, seq=146
+I/[wlan][2472]wlanTxCmdDoneCb( 2472): (TX INFO) Add command: 00000000ef6f4402, 00000000f56be3f6, cmd=0x82, seq=147
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm pc=1095169.133707/0x00801d20;1095169.133725/0x00801d24;1095169.133735/0xf04a18ae;1095169.133744/0xf03906bc;1095169.133753/0xf039193a;
+I/[wlan][2472]soc7_0_DumpWfsyscpupcr( 2472): (HAL INFO) wm lp=1095169.133707/0xf0412cfe;1095169.133725/0xf04a185a;1095169.133735/0xf04a18f2;1095169.133744/0xf03918a6;1095169.133753/0xf0391932;
+I/[wlan][2471]nicRxProcessEventPacket( 2471): (RX INFO) Not static config event: id=0x21, seq=146
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 0000000084133d1e, 00000000feb73b50, cmd=0x85, seq=146
+I/[wlan][2471]nicGetPendingCmdInfo( 2471): (TX INFO) Get command: 00000000ef6f4402, 00000000f56be3f6, cmd=0x82, seq=147
+I/mtk-board-ntc 1cc03554.thermal-ntc1( 2029): v=0x1cf24, v/type/ntc/t=113764/1/48592/40970
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x08000000
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/adbd    ( 4850): adbd service requested 'exec:screencap '-p''
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095699630099022 
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+W/BpBinder(29178): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+W/ProcessState(29178): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+I/servicemanager(  730): Caller(pid=29178,uid=2000,sid=u:r:shell:s0) Found android.hardware.graphics.allocator.IAllocator/default in device VINTF manifest.
+I/servicemanager(  730): Caller(pid=29178,uid=2000,sid=u:r:shell:s0) Found android.hardware.graphics.allocator.IAllocator/default in device VINTF manifest.
+I/libPerfCtl( 1188): xgfGetFPS pid:2391 fps:-1
+I/libPerfCtl( 1188): xgfGetFPS pid:28790 fps:-1
+I/DMABUFHEAPS(29178): Using DMA-BUF heap named: mtk_mm
+I/DMABUFHEAPS(29178): Using DMA-BUF heap named: mtk_mm-uncached
+I/DMABUFHEAPS(29178): Using DMA-BUF heap named: mtk_svp_page-uncached
+I/DMABUFHEAPS(29178): Using DMA-BUF heap named: mtk_prot_region
+I/DMABUFHEAPS(29178): Using DMA-BUF heap named: mtk_wfd_page-uncached
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.80 SSN:58
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/HfLooper( 1141): moto_sensor LIGHT_SENSOR_LIGHT_1 lux = 0.000000, timestamp = 1095699880099628 
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/Scheduler( 1263): applyPolicy: UpdateRefreshRate 120 to 60 of group 0: [touch=0:0 touchBoost=0 scroll=0:0 idle=1:1 prr=0:0 brightnessDiming=0:0] for display 4627039422300187648
+D/DisplayModeController( 1263): setDesiredMode 4627039422300187648 {mode={fps=60.00 Hz, modePtr={id=2, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=false, force=false}
+I/[wlan][2471]statsParseARPInfo( 2471): (RX INFO) <RX> Arp Req From IP: 10.***.***.44 SSN:59
+D/Scheduler( 1263): MtkOverrideDuration: update vsync 60
+D/Scheduler( 1263): MtkOverrideDuration: reset override duration
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/        ( 1754): [DISP]mtk_drm_crtc_mode_check++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 0 to 2
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin++ from 120 to 60
+I/BufferQueueProducer( 1263): [RefreshRateOverlay#4867](this:0xb4000078f848e8c0,id:-1,api:0,p:-1,c:1263) queueBuffer: fps=2.74 dur=1461.48 max=913.54 min=17.44
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 0(120.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/hwcomposer( 1136): [HWCDisplay] (0) setActiveConfigWithConstraints config:2  
+I/hwcomposer( 1136): [HWCDisplay] setActiveConfigWithConstraints(), now 1095169602697430, diff 466769, estimated_applied_time 8333333 queued_size:0  
+I/[DISP][fps]( 1754): drm_invoke_fps_chg_callbacks,new_fps =60
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges active mode changed to 2(60.00 Hz) for display 4627039422300187648. mBrightnessDimingCnt=0
+D/HWC2    ( 1263): hwcLayer::setBuffer(), id:13327mBufferSlot/slot: 1/1, forceSet:1
+D/VSyncReactor( 1263): 4627039422300187648: confirming period 8->16(cnt1)
+I/        (  264): [DISP]mtk_drm_mode_switch_thread++
+I/hwcomposer( 1136): [HWCBuffer] setHandle: layer_id 13327, hnd:0xb400007483ed2cf0/0xb400007483ed2cf0, alloc_id:8922/8922, frame_number:18446744073709551615/3  
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/SurfaceFlinger( 1263): initiateDisplayModeChanges changing active mode from 2(60.00 Hz:0) to 2(60.00 Hz:0) for display 4627039422300187648
+I/PowerHalWrapper( 1263): updateFps(): 60
+I/hwcomposer( 1136): [HWCDisplay] [Display_0 (type:1, mode:2)] fps:10.968668,dur:1002.86,max:293.95,min:4.29  
+I/hwcomposer( 1136): [HWCDisplay] updateAppliedConfigState: applied config complete[idx:1095169611030763, config:2]  
+I/[DISP][fps]( 1754): mtk_crtc_get_idle_interval,[fps->idle interval][60 fps->50 ms]
+I/        ( 1754): [DISP]mtk_crtc_disp_mode_switch_begin--
+I/        (  264): [DISP]mtk_drm_mode_switch_thread--
+D/VSyncReactor( 1263): 4627039422300187648: period 16 confirmed(cnt1)
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/[wlan][2472]halSetFWOwn( 2472): (INIT INFO) FW OWN:1, IntSta:0x00000001
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/adbd    ( 4850): adbd service requested 'shell,v2:export ANDROID_LOG_TAGS=''; exec logcat '-d' '-v' 'brief''
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/bt_btif_dm( 2536): btif_dm.cc:537 get_cod: remote_cod=0x00001f00
+I/logd    (  739): logdr: UID=2000 GID=2000 PID=29181 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
