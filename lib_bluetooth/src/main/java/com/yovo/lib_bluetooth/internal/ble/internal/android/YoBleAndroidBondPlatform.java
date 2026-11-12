@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -63,15 +65,10 @@ public final class YoBleAndroidBondPlatform implements YoBleBondPlatform {
             if (type == BleDeviceType.CLASSIC) {
                 continue; // 仅筛选 BLE / Dual / Unknown
             }
+            // 配对列表没有广播包，不能把 getName()（经典/缓存名）写成 BLE 广播名。
             String name = "";
-            try {
-                if (d.getName() != null) {
-                    name = d.getName();
-                }
-            } catch (Throwable ignored) {
-            }
             String alias = null;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (AndroidPlatform.supportsDeviceAlias()) {
                 try {
                     alias = d.getAlias();
                 } catch (Throwable ignored) {

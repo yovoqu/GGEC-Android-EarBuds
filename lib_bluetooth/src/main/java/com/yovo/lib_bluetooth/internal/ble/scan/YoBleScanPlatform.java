@@ -3,13 +3,17 @@ package com.yovo.lib_bluetooth.internal.ble.scan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 
 import java.util.List;
 
 /**
  * BLE 扫描平台适配端口，封装 Android BluetoothLeScanner 底层交互。
+ *
+ * <p>异常契约：实现自行捕获并记录底层异常（经 {@code YoBtLogger}），<b>不得向调用方抛出</b>；
+ * 失败一律通过 {@link StartResult}、布尔返回值或 {@link PlatformCallback#onPlatformScanFailed}
+ * 分类返回。调用方（控制器）因此不做二次 try/catch——平台失败的原因只在本实现里记录，避免
+ * “吞异常”和“重复包裹”两种相反的错误。</p>
  */
 public interface YoBleScanPlatform {
 

@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.a2dp;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 
 import android.bluetooth.BluetoothA2dp;
@@ -113,12 +115,12 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
      * @return 若该设备为活跃 A2DP 设备则为 {@code true}；否则为 {@code false}
      */
     public boolean isActiveDevice(@NonNull YoCbtDeviceId deviceId) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (!AndroidPlatform.supportsA2dpOptionalCodecApi()) {
             return false;
         }
 
         BluetoothDevice activeDevice = null;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (AndroidPlatform.supportsA2dpOptionalCodecApi()) {
             try {
                 activeDevice = (BluetoothDevice) BluetoothA2dp.class
                         .getMethod("getActiveDevice").invoke(a2dpProxy);

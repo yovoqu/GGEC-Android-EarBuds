@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
@@ -89,7 +91,7 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
 
     public YoCbtAndroidClient(@NonNull Context context, @NonNull CbtInternalClientConfig clientConfig) {
         this.modules = YoCbtAndroidModuleGraph.create(context, clientConfig, this::collectProfileObservers);
-        YoBtLogger.i(TAG, "YoCbtAndroidClient 已创建，SDK=" + android.os.Build.VERSION.SDK_INT);
+        YoBtLogger.i(TAG, "YoCbtAndroidClient 已创建，SDK=" + AndroidPlatform.level());
 
         modules.bondStateReceiver.addObserver(snapshot -> {
             for (YoCbtBondStateObserver o : bondObservers) o.onBondStateChanged(snapshot);

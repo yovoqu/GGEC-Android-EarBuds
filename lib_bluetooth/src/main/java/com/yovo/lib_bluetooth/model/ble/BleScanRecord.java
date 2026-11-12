@@ -65,16 +65,19 @@ public final class BleScanRecord {
 
     @NonNull
     public static BleScanRecord empty() {
-        return new BleScanRecord(
-                -1,
-                Collections.emptyList(),
-                Collections.emptyList(),
-                Collections.emptyMap(),
-                Collections.emptyMap(),
-                Integer.MIN_VALUE,
-                null,
-                new byte[0]);
+        return EMPTY;
     }
+
+    /** 共享的“空广播记录”单例，避免每包解析空/无 AD 载荷时重复分配。 */
+    private static final BleScanRecord EMPTY = new BleScanRecord(
+            -1,
+            Collections.emptyList(),
+            Collections.emptyList(),
+            Collections.emptyMap(),
+            Collections.emptyMap(),
+            Integer.MIN_VALUE,
+            null,
+            new byte[0]);
 
     public int advertiseFlags() {
         return advertiseFlags;
@@ -133,5 +136,46 @@ public final class BleScanRecord {
     @NonNull
     public byte[] rawBytes() {
         return Arrays.copyOf(rawBytes, rawBytes.length);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // 只读视图（每包热路径）：直接返回底层数组而不逐次 clone，用于扫描过滤匹配、广播协议解码等
+    // “每帧必走且只读”的场景，避免逐包副本造成的分配风暴。
+    //
+    // 契约：返回数组由本对象持有，调用方只读，禁止写入/排序/截断；需要可变副本时改用
+    // rawBytes() / getServiceData() / getManufacturerSpecificData()。
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * 只读视图：返回底层原始广播字节数组。
+     *
+     * <p><b>调用方禁止修改返回数组</b>（写入会污染所有持有同一记录的调用方）；需要可变副本时用
+     * {@link #rawBytes()}。仅用于库内与协议层的逐帧只读路径，不是通用取值入口。</p>
+     */
+    @NonNull
+    public byte[] rawBytesView() {
+        return rawBytes;
+    }
+
+    /**
+     * 只读视图：返回指定 serviceData 的底层数组（无则 {@code null}）。
+     *
+     * <p><b>调用方禁止修改返回数组</b>；需要可变副本时用 {@link #getServiceData(UUID)}。
+     * 仅用于扫描过滤等库内热路径。</p>
+     */
+    @Nullable
+    public byte[] getServiceDataView(@NonNull UUID serviceDataUuid) {
+        return serviceData.get(serviceDataUuid);
+    }
+
+    /**
+     * 只读视图：返回指定 manufacturerId 的底层数组（无则 {@code null}）。
+     *
+     * <p><b>调用方禁止修改返回数组</b>；需要可变副本时用 {@link #getManufacturerSpecificData(int)}。
+     * 仅用于扫描过滤等库内热路径。</p>
+     */
+    @Nullable
+    public byte[] getManufacturerSpecificDataView(int manufacturerId) {
+        return manufacturerSpecificData.get(manufacturerId);
     }
 }

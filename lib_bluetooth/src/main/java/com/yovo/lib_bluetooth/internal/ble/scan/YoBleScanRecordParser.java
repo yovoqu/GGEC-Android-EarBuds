@@ -204,9 +204,22 @@ public final class YoBleScanRecordParser {
         return new UUID(msb, lsb);
     }
 
+    /**
+     * 复制一段 AD 结构负载。
+     *
+     * <p>{@code length} 是 AD TLV 里 {@code length - 1}（或再减去 UUID 长度）的结果，调用点已用
+     * {@code dataLength} 的守卫保证非负；负值只可能来自本解析器的编程错误，因此直接抛错，由既有
+     * 失败分类向上暴露，不静默产生空数组。</p>
+     *
+     * @throws IllegalArgumentException {@code length < 0}
+     */
     @NonNull
-    private static byte[] extract(@NonNull byte[] src, int offset, int length) {
-        byte[] out = new byte[Math.max(0, length)];
+    static byte[] extract(@NonNull byte[] src, int offset, int length) {
+        if (length < 0) {
+            throw new IllegalArgumentException(
+                    "AD structure payload length must be >= 0, but was " + length);
+        }
+        byte[] out = new byte[length];
         if (length > 0) {
             System.arraycopy(src, offset, out, 0, length);
         }

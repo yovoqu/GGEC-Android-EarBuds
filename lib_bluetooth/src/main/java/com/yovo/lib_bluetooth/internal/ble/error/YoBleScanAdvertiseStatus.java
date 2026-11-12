@@ -44,20 +44,6 @@ public final class YoBleScanAdvertiseStatus {
     }
 
     @NonNull
-    public static String describeScan(int errorCode) {
-        switch (errorCode) {
-            case SCAN_FAILED_ALREADY_STARTED: return "SCAN_FAILED_ALREADY_STARTED (1)";
-            case SCAN_FAILED_APPLICATION_REGISTRATION_FAILED:
-                return "SCAN_FAILED_APPLICATION_REGISTRATION_FAILED (2)";
-            case SCAN_FAILED_INTERNAL_ERROR: return "SCAN_FAILED_INTERNAL_ERROR (3)";
-            case SCAN_FAILED_FEATURE_UNSUPPORTED: return "SCAN_FAILED_FEATURE_UNSUPPORTED (4)";
-            case SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES: return "SCAN_FAILED_OUT_OF_HARDWARE_RESOURCES (5)";
-            case SCAN_FAILED_SCANNING_TOO_FREQUENTLY: return "SCAN_FAILED_SCANNING_TOO_FREQUENTLY (6)";
-            default: return "SCAN_FAILED_" + errorCode;
-        }
-    }
-
-    @NonNull
     public static BleErrorCode toAdvertiseErrorCode(int errorCode) {
         switch (errorCode) {
             case ADVERTISE_FAILED_DATA_TOO_LARGE:
@@ -66,18 +52,6 @@ public final class YoBleScanAdvertiseStatus {
                 return BleErrorCode.UNSUPPORTED_OPERATION;
             default:
                 return BleErrorCode.ADVERTISE_FAILED;
-        }
-    }
-
-    @NonNull
-    public static String describeAdvertise(int errorCode) {
-        switch (errorCode) {
-            case ADVERTISE_FAILED_DATA_TOO_LARGE: return "ADVERTISE_FAILED_DATA_TOO_LARGE (1)";
-            case ADVERTISE_FAILED_TOO_MANY_ADVERTISERS: return "ADVERTISE_FAILED_TOO_MANY_ADVERTISERS (2)";
-            case ADVERTISE_FAILED_ALREADY_STARTED: return "ADVERTISE_FAILED_ALREADY_STARTED (3)";
-            case ADVERTISE_FAILED_INTERNAL_ERROR: return "ADVERTISE_FAILED_INTERNAL_ERROR (4)";
-            case ADVERTISE_FAILED_FEATURE_UNSUPPORTED: return "ADVERTISE_FAILED_FEATURE_UNSUPPORTED (5)";
-            default: return "ADVERTISE_FAILED_" + errorCode;
         }
     }
 }

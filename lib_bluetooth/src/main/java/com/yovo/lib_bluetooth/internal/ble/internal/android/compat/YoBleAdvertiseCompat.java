@@ -10,6 +10,7 @@ import android.os.ParcelUuid;
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseData;
 import com.yovo.lib_bluetooth.model.ble.BlePhy;
@@ -43,7 +44,7 @@ public final class YoBleAdvertiseCompat {
         for (UUID svc : data.serviceUuids()) {
             b.addServiceUuid(new ParcelUuid(svc));
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (AndroidPlatform.supportsAdvertisingSolicitationUuid()) {
             for (UUID sol : data.serviceSolicitationUuids()) {
                 b.addServiceSolicitationUuid(new ParcelUuid(sol));
             }

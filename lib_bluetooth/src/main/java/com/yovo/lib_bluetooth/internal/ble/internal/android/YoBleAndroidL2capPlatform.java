@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -39,7 +41,7 @@ public final class YoBleAndroidL2capPlatform implements YoBleL2capPlatform {
                                               boolean secure,
                                               @Nullable Consumer<Closeable> cancelHookConsumer)
             throws IOException {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (!AndroidPlatform.supportsL2capCoc()) {
             throw new IOException("L2CAP CoC requires API 29+");
         }
         BluetoothAdapter adapter = adapterProvider.adapter();
@@ -102,7 +104,7 @@ public final class YoBleAndroidL2capPlatform implements YoBleL2capPlatform {
     @Override
     public ListeningSocket openServer(boolean secure, @Nullable Consumer<Closeable> cancelHookConsumer)
             throws IOException {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (!AndroidPlatform.supportsL2capCoc()) {
             throw new IOException("L2CAP CoC requires API 29+");
         }
         BluetoothAdapter adapter = adapterProvider.adapter();

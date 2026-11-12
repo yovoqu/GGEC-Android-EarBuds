@@ -8,7 +8,6 @@ import androidx.annotation.NonNull;
 public final class BleConfig {
 
     private final int defaultMtu;
-    private final long defaultScanTimeoutMillis;
     private final long defaultOperationTimeoutMillis;
     private final int gattOperationQueueCapacity;
     private final boolean callbackOnMainThread;
@@ -20,7 +19,6 @@ public final class BleConfig {
 
     private BleConfig(Builder builder) {
         this.defaultMtu = builder.defaultMtu;
-        this.defaultScanTimeoutMillis = builder.defaultScanTimeoutMillis;
         this.defaultOperationTimeoutMillis = builder.defaultOperationTimeoutMillis;
         this.gattOperationQueueCapacity = builder.gattOperationQueueCapacity;
         this.callbackOnMainThread = builder.callbackOnMainThread;
@@ -33,10 +31,6 @@ public final class BleConfig {
 
     public int defaultMtu() {
         return defaultMtu;
-    }
-
-    public long defaultScanTimeoutMillis() {
-        return defaultScanTimeoutMillis;
     }
 
     public long defaultOperationTimeoutMillis() {
@@ -78,7 +72,6 @@ public final class BleConfig {
 
     public static final class Builder {
         private int defaultMtu = 517;
-        private long defaultScanTimeoutMillis = 12_000L;
         private long defaultOperationTimeoutMillis = 10_000L;
         private int gattOperationQueueCapacity = 128;
         private boolean callbackOnMainThread = true;
@@ -90,25 +83,31 @@ public final class BleConfig {
 
         @NonNull
         public Builder defaultMtu(int defaultMtu) {
-            this.defaultMtu = Math.max(23, Math.min(517, defaultMtu));
-            return this;
-        }
-
-        @NonNull
-        public Builder defaultScanTimeoutMillis(long millis) {
-            this.defaultScanTimeoutMillis = Math.max(1_000L, millis);
+            if (defaultMtu < 23 || defaultMtu > 517) {
+                throw new IllegalArgumentException(
+                        "defaultMtu must be within [23, 517], but was " + defaultMtu);
+            }
+            this.defaultMtu = defaultMtu;
             return this;
         }
 
         @NonNull
         public Builder defaultOperationTimeoutMillis(long millis) {
-            this.defaultOperationTimeoutMillis = Math.max(500L, millis);
+            if (millis < 500L) {
+                throw new IllegalArgumentException(
+                        "defaultOperationTimeoutMillis must be >= 500, but was " + millis);
+            }
+            this.defaultOperationTimeoutMillis = millis;
             return this;
         }
 
         @NonNull
         public Builder gattOperationQueueCapacity(int capacity) {
-            this.gattOperationQueueCapacity = Math.max(8, capacity);
+            if (capacity < 8) {
+                throw new IllegalArgumentException(
+                        "gattOperationQueueCapacity must be >= 8, but was " + capacity);
+            }
+            this.gattOperationQueueCapacity = capacity;
             return this;
         }
 
@@ -132,19 +131,31 @@ public final class BleConfig {
 
         @NonNull
         public Builder diagnosticsTimelineCapacity(int capacity) {
-            this.diagnosticsTimelineCapacity = Math.max(32, capacity);
+            if (capacity < 32) {
+                throw new IllegalArgumentException(
+                        "diagnosticsTimelineCapacity must be >= 32, but was " + capacity);
+            }
+            this.diagnosticsTimelineCapacity = capacity;
             return this;
         }
 
         @NonNull
         public Builder scanThrottleWindowMillis(long windowMillis) {
-            this.scanThrottleWindowMillis = Math.max(1_000L, windowMillis);
+            if (windowMillis <= 0L) {
+                throw new IllegalArgumentException(
+                        "scanThrottleWindowMillis must be > 0, but was " + windowMillis);
+            }
+            this.scanThrottleWindowMillis = windowMillis;
             return this;
         }
 
         @NonNull
         public Builder scanThrottleMaxStarts(int maxStarts) {
-            this.scanThrottleMaxStarts = Math.max(1, maxStarts);
+            if (maxStarts <= 0) {
+                throw new IllegalArgumentException(
+                        "scanThrottleMaxStarts must be > 0, but was " + maxStarts);
+            }
+            this.scanThrottleMaxStarts = maxStarts;
             return this;
         }
 

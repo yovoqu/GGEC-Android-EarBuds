@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.discovery;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 
 import android.bluetooth.BluetoothAdapter;
@@ -67,7 +69,7 @@ public final class YoCbtAndroidDiscoveryPlatform implements YoCbtDiscoveryPlatfo
 
     @Override
     public boolean requiresLegacyLocationPermission() {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S;
+        return !AndroidPlatform.supportsModernDiscovery();
     }
 
     @Override

@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.ble.scan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.model.ble.BleScanConfig;
 import com.yovo.lib_bluetooth.model.ble.BleScanFilter;
 import com.yovo.lib_bluetooth.model.ble.BleScanRecord;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
@@ -72,13 +71,13 @@ public final class YoBleScanFilterMatcher {
             return false;
         }
         if (filter.serviceDataUuid() != null) {
-            byte[] actualData = record.getServiceData(filter.serviceDataUuid());
+            byte[] actualData = record.getServiceDataView(filter.serviceDataUuid());
             if (!matchesMaskedBytes(filter.serviceData(), filter.serviceDataMask(), actualData)) {
                 return false;
             }
         }
         if (filter.manufacturerId() != null) {
-            byte[] actualData = record.getManufacturerSpecificData(filter.manufacturerId());
+            byte[] actualData = record.getManufacturerSpecificDataView(filter.manufacturerId());
             if (!matchesMaskedBytes(
                     filter.manufacturerData(), filter.manufacturerDataMask(), actualData)) {
                 return false;
@@ -93,7 +92,7 @@ public final class YoBleScanFilterMatcher {
         if (recordName != null && !recordName.isEmpty()) {
             return recordName;
         }
-        String identityName = result.identity().displayName();
+        String identityName = result.identity().advertisingName();
         return identityName.isEmpty() ? null : identityName;
     }
 
@@ -143,6 +142,10 @@ public final class YoBleScanFilterMatcher {
                 }
             }
             return true;
+        }
+        if (mask.length < expected.length) {
+            // 掩码比期望数据短：无法完整比较，按不匹配处理（避免越界，且不误放行）。
+            return false;
         }
         for (int i = 0; i < expected.length; i++) {
             if ((expected[i] & mask[i]) != (actual[i] & mask[i])) {

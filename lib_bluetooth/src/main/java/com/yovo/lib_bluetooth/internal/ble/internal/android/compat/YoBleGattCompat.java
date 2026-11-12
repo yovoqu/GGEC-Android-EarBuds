@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionPriority;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleGattCharacteristicInfo;
@@ -59,7 +60,7 @@ public final class YoBleGattCompat {
                                               @NonNull byte[] value,
                                               @NonNull BleWriteType writeType) {
         int androidWriteType = toAndroidWriteType(writeType);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedGattValueCallbacks()) {
             return gatt.writeCharacteristic(characteristic, value, androidWriteType)
                     == BluetoothStatusCodes.SUCCESS;
         }
@@ -72,7 +73,7 @@ public final class YoBleGattCompat {
     public static boolean writeDescriptor(@NonNull BluetoothGatt gatt,
                                           @NonNull BluetoothGattDescriptor descriptor,
                                           @NonNull byte[] value) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (AndroidPlatform.usesTypedGattValueCallbacks()) {
             return gatt.writeDescriptor(descriptor, value) == BluetoothStatusCodes.SUCCESS;
         }
         descriptor.setValue(value);
@@ -98,7 +99,7 @@ public final class YoBleGattCompat {
             case LOW_POWER:
                 return BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER;
             case DCK:
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                if (AndroidPlatform.supportsDckConnectionPriority()) {
                     return BluetoothGatt.CONNECTION_PRIORITY_DCK;
                 }
                 return BluetoothGatt.CONNECTION_PRIORITY_HIGH;
@@ -123,7 +124,7 @@ public final class YoBleGattCompat {
 
     @NonNull
     public static BlePhy fromAndroidPhy(int phy) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (AndroidPlatform.supportsLePhy()) {
             if (phy == BluetoothDevice.PHY_LE_2M) {
                 return BlePhy.LE_2M;
             }

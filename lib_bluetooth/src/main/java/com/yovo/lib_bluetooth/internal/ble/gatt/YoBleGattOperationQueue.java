@@ -166,10 +166,6 @@ public final class YoBleGattOperationQueue {
         return publishedPendingCount;
     }
 
-    public boolean isBusy() {
-        return inFlight != null && !inFlight.zombie;
-    }
-
     public void enqueue(@NonNull String operationId,
                         @NonNull OpKind kind,
                         @Nullable BleGattTarget target,

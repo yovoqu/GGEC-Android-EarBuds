@@ -48,7 +48,8 @@ public final class YoBleAndroidReceiverRegistry {
         for (Entry e : entries) {
             try {
                 e.appContext.unregisterReceiver(e.receiver);
-            } catch (Throwable ignored) {
+            } catch (Throwable t) {
+                YoBtLogger.w(TAG, "unregisterReceiver failed: " + e.receiver.getClass().getSimpleName(), t);
             }
         }
         entries.clear();

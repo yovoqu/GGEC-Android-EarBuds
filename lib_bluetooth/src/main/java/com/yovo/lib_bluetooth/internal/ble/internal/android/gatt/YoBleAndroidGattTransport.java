@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.ble.internal.android.gatt;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
@@ -94,7 +96,7 @@ public final class YoBleAndroidGattTransport implements YoBleGattTransport {
     public boolean setPreferredPhy(@NonNull BlePhy txPhy,
                                    @NonNull BlePhy rxPhy,
                                    @NonNull BlePhyOptions options) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (!AndroidPlatform.supportsGattPhyControl()) {
             return false;
         }
         gatt.setPreferredPhy(
@@ -106,7 +108,7 @@ public final class YoBleAndroidGattTransport implements YoBleGattTransport {
 
     @Override
     public boolean readPhy() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (!AndroidPlatform.supportsGattPhyControl()) {
             return false;
         }
         gatt.readPhy();

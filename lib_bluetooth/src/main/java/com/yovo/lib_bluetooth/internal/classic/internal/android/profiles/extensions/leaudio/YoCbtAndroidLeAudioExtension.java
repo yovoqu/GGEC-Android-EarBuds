@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.extensions.leaudio;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothStatusCodes;
 import android.content.Context;
@@ -34,7 +36,7 @@ public final class YoCbtAndroidLeAudioExtension extends YoCbtAndroidTransientPro
 
     @Override
     public boolean isSupported() {
-        if (adapter == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false;
+        if (adapter == null || !AndroidPlatform.supportsLeAudioProfile()) return false;
         try {
             return adapter.isLeAudioSupported() == BluetoothStatusCodes.FEATURE_SUPPORTED;
         } catch (NoSuchMethodError e) {

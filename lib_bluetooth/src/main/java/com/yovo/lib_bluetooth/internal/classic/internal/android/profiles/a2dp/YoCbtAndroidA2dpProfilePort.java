@@ -1,5 +1,7 @@
 package com.yovo.lib_bluetooth.internal.classic.internal.android.profiles.a2dp;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
+
 import android.bluetooth.BluetoothA2dp;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
@@ -73,7 +75,7 @@ public final class YoCbtAndroidA2dpProfilePort implements YoCbtA2dpProfilePort {
                     "BluetoothA2dp proxy is not ready",
                     TAG));
         }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (!AndroidPlatform.supportsA2dpOptionalCodecApi()) {
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_PROFILE_UNSUPPORTED,
                     "Active device query requires Android 11 (API 30)",
@@ -81,7 +83,7 @@ public final class YoCbtAndroidA2dpProfilePort implements YoCbtA2dpProfilePort {
         }
         try {
             BluetoothDevice activeDevice = null;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (AndroidPlatform.supportsA2dpOptionalCodecApi()) {
                 try {
                     activeDevice = (BluetoothDevice) BluetoothA2dp.class
                             .getMethod("getActiveDevice").invoke(proxy);
@@ -113,7 +115,7 @@ public final class YoCbtAndroidA2dpProfilePort implements YoCbtA2dpProfilePort {
                     "BluetoothA2dp proxy is not ready",
                     TAG));
         }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (!AndroidPlatform.supportsA2dpOptionalCodecApi()) {
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_PROFILE_UNSUPPORTED,
                     "Codec status query requires Android 11 (API 30)",

@@ -20,7 +20,10 @@ import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleReleaseCoordinator;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntimeConfig;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanController;
+import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanHub;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
+import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanStats;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
@@ -156,6 +159,14 @@ public final class YoBleModuleCore {
             return Result.failure(YoBleErrorMapper.failure(
                     BleErrorCode.RELEASED, MODULE, "YoBleClient released"));
         }
+        YoBleScanStats.Stats scanStats = scanController.stats();
+        timeline.record(MODULE, "scan stats starts=" + scanStats.starts()
+                + " founds=" + scanStats.founds()
+                + " losts=" + scanStats.losts()
+                + " fails=" + scanStats.fails()
+                + " stops=" + scanStats.stops()
+                + " lastMs=" + scanStats.lastDurationMs()
+                + " devices=" + scanController.activeDeviceCount());
         YoBleDumpBuilder builder = new YoBleDumpBuilder(
                 capabilityInspector.isBleSupported(),
                 capabilityInspector.isAdapterEnabled(),
@@ -180,6 +191,9 @@ public final class YoBleModuleCore {
             bondController.onAdapterTurnedOff();
             l2capManager.onAdapterTurnedOff();
             peripheralManager.onAdapterTurnedOff();
+        } else if (current == BleAdapterState.ON && previous != BleAdapterState.ON) {
+            // 适配器重新开启：恢复此前被中断的扫描（G8）。
+            scanController.onAdapterTurnedOn();
         }
         for (BleAdapterStateObserver observer : adapterObservers) {
             runtime.callback(() -> observer.onAdapterStateChanged(previous, current));
@@ -206,9 +220,14 @@ public final class YoBleModuleCore {
         if (platformTeardownHook != null) {
             try {
                 platformTeardownHook.run();
-            } catch (Throwable ignored) {
+            } catch (Throwable teardownError) {
+                // 宿主注入的收尾钩子失败不得中断 lib 自身释放，但必须留下可观测记录。
+                YoBtLogger.w(MODULE, "platform teardown hook failed during release", teardownError);
             }
         }
+        // 进程内扫描器是静态单例：释放归属本控制的引擎后必须重置 hub，
+        // 否则新 client 复用已释放引擎导致永不扫描（L-P0-1）。
+        YoBleScanHub.release(scanController);
         releaseCoordinator.releaseAll();
         runtime.release();
     }
