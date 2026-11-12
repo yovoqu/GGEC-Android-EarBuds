@@ -3,7 +3,7 @@ package com.yovo.biz_ggec_hs;
 import androidx.annotation.NonNull;
 
 import com.yovo.biz_ggec_hs.api.YoHsBroadcastSession;
-import com.yovo.biz_ggec_hs.internal.broadcast.HsBroadcastRuntime;
+import com.yovo.biz_ggec_hs.assembly.HsBroadcastAssembly;
 import com.yovo.biz_ggec_hs.model.broadcast.HsBroadcastReport;
 import com.yovo.biz_ggec_hs.model.broadcast.HsScanSnapshot;
 
@@ -17,11 +17,11 @@ public final class YoHsBroadcast {
 
     @NonNull
     public static HsBroadcastReport classify(@NonNull HsScanSnapshot snapshot) {
-        return HsBroadcastRuntime.classify(snapshot);
+        return HsBroadcastAssembly.classify(snapshot);
     }
 
     @NonNull
     public static YoHsBroadcastSession openSession() {
-        return HsBroadcastRuntime.openSession();
+        return HsBroadcastAssembly.openSession();
     }
 }

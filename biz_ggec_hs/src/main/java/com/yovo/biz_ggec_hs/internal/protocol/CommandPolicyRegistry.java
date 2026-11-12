@@ -15,7 +15,6 @@ import com.yovo.biz_ggec_hs.internal.protocol.controlcmd.ResetControlCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.controlcmd.ShortPressQueryCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.controlcmd.ShortPressSetCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.A2dpCodeTypeCommand;
-import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.CaseFirmwareVersionCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.CaseSNCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.ClassicBtAddressCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.ClearPairingCommand;
@@ -25,7 +24,6 @@ import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.DeviceRenameCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.DeviceRebootCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.EarCheckCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.EarColorCommand;
-import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.FirmwareVersionCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.GetRecordCountCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.GetRecordIdListCommand;
 import com.yovo.biz_ggec_hs.internal.protocol.devicecmd.GetStorageCommand;
@@ -146,12 +144,10 @@ final class CommandPolicyRegistry implements CommandPolicyResolver {
 
         registerGet(SESSION_CACHE_MS,
                 A2dpCodeTypeCommand.class,
-                CaseFirmwareVersionCommand.class,
                 CaseSNCommand.class,
                 ClassicBtAddressCommand.class,
                 DeviceNameGetCommand.class,
                 EarColorCommand.class,
-                FirmwareVersionCommand.class,
                 GitCommitVersionCommand.class);
 
         registerSet(

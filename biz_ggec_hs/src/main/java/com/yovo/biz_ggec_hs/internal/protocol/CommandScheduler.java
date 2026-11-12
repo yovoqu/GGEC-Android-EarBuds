@@ -1,5 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.protocol;
 
+import com.yovo.biz_ggec_hs.internal.log.HsLog;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,6 +18,8 @@ import java.util.LinkedHashSet;
  * 所有方法必须由同一个 {@link Dispatcher} 串行调用。传输回调会自动切回该调度线程。
  */
 final class CommandScheduler {
+    private static final String TAG = "CommandScheduler";
+
     static final long SET_COALESCE_WINDOW_MS = 1000L;
     static final long COMMAND_INTERVAL_MS = 30L;
 
@@ -330,10 +334,6 @@ final class CommandScheduler {
                 && now - currentNode.updatedAtMs <= SET_COALESCE_WINDOW_MS;
     }
 
-    void setReady(boolean ready) {
-        setSession(sessionId, ready);
-    }
-
     void setSession(long newSessionId, boolean ready) {
         if (released) {
             return;
@@ -404,14 +404,6 @@ final class CommandScheduler {
         }
         processFrame(command, frame);
         return true;
-    }
-
-    void onResponseFrame(String frame) {
-        onResponseCandidate(sessionId, frame);
-    }
-
-    void onResponseFrame(long frameSessionId, String frame) {
-        onResponseCandidate(frameSessionId, frame);
     }
 
     void abortCurrent(String reason) {
@@ -806,7 +798,11 @@ final class CommandScheduler {
         long guardMs;
         try {
             guardMs = Math.max(0L, command.getLateResponseGuardMs());
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            // 保护窗口读不出来时该命令不登记迟到帧隔离：宁可让同族迟到帧继续走正常匹配，
+            // 也不把调度器留在半登记状态。
+            HsLog.w(TAG, "读取晚到响应保护窗口失败，本命令不隔离迟到帧: "
+                    + command.getClass().getSimpleName(), e);
             guardMs = 0L;
         }
         if (guardMs <= 0L) {
@@ -864,7 +860,10 @@ final class CommandScheduler {
             if (family != null && !family.isEmpty()) {
                 return family;
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            // 该命令放弃自报的响应族，改以命令类名作为隔离族键。
+            HsLog.w(TAG, "读取响应族失败，改用命令类名作为隔离族: "
+                    + command.getClass().getName(), e);
         }
         return command.getClass().getName();
     }
@@ -880,7 +879,10 @@ final class CommandScheduler {
                     }
                 }
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            // 该命令的迟到帧隔离退化为单族判定，由下方 responseFamily 补齐族键。
+            HsLog.w(TAG, "读取响应族集合失败，隔离退化为单族: "
+                    + command.getClass().getName(), e);
         }
         if (result.isEmpty()) {
             result.add(responseFamily(command).toUpperCase(java.util.Locale.US));
@@ -892,7 +894,11 @@ final class CommandScheduler {
         try {
             return command.isResponseFrameValid(frame)
                     && command.isResponseMatch(frame);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            // 匹配判定异常按不匹配处理：该帧不归当前命令消费，继续走上行主动上报路由，
+            // 不推进也不提前结束当前命令。
+            HsLog.w(TAG, "响应匹配判定异常，该帧不归当前命令消费: "
+                    + command.getClass().getSimpleName(), e);
             return false;
         }
     }

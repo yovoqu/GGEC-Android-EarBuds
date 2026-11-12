@@ -14,12 +14,24 @@ public final class HsScanSnapshots {
     private HsScanSnapshots() {
     }
 
+    /**
+     * 记录本身没有设备名时，允许用广播名兜底，与扫描记录合并为同一份快照。
+     */
     @NonNull
-    public static HsScanSnapshot from(@Nullable String bleAddress, @NonNull BleScanRecord record) {
+    public static HsScanSnapshot from(@Nullable String bleAddress,
+                                      @NonNull BleScanRecord record,
+                                      @Nullable String fallbackName) {
+        String name = record.deviceName();
+        if ((name == null || name.trim().isEmpty())
+                && fallbackName != null && !fallbackName.trim().isEmpty()) {
+            name = fallbackName.trim();
+        }
         return HsScanSnapshot.of(
                 bleAddress,
                 record.serviceUuids(),
+                // 跨模块取字节用复制版：rawBytesView() 是库内热路径的只读视图，
+                // 协议层持有它一旦写入就会污染库的共享扫描记录。
                 record.rawBytes(),
-                record.deviceName());
+                name);
     }
 }

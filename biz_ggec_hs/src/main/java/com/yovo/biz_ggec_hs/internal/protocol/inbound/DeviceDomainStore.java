@@ -2,12 +2,14 @@ package com.yovo.biz_ggec_hs.internal.protocol.inbound;
 
 import com.yovo.biz_ggec_hs.internal.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.model.HsDeviceInfo;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -41,6 +43,8 @@ public final class DeviceDomainStore {
         default void onServiceStatusChanged(Map<String, String> status) {}
 
         default void onPairedDevicesChanged(List<Map<String, String>> devices) {}
+
+        default void onDeviceInfoChanged(HsDeviceInfo info) {}
     }
 
     public static final class BatterySnapshot {
@@ -123,6 +127,15 @@ public final class DeviceDomainStore {
     private Integer leftAndRightEarExchange;
     private Map<String, String> serviceStatus;
     private List<Map<String, String>> pairedDevices;
+    private String firmware;
+    private Integer earColor;
+    /**
+     * 设备信息投影里的在仓状态。与 {@link BatterySnapshot#getEarInCaseStatus()} 不同源不同生存期：
+     * 电量快照的起点是「空电池」（状态 0，不是未知标记），而设备信息里的未知必须用
+     * {@link HsDeviceInfo#UNKNOWN_EAR_IN_CASE} 表达，故由 {@link DeviceEventPipeline} 按
+     * {@code BATTERY_IN_CASE} 事件单独写入。
+     */
+    private Integer earInCaseStatus;
 
     public void addObserver(Observer observer) {
         if (observer != null && !observers.contains(observer)) {
@@ -190,6 +203,15 @@ public final class DeviceDomainStore {
                 copy.add(new LinkedHashMap<>(item));
             }
             return copy;
+        }
+    }
+
+    /**
+     * 当前已知的设备信息；固件、颜色与在仓状态都未上报时返回 null（无信息，而不是「全未知」快照）。
+     */
+    public HsDeviceInfo getDeviceInfo() {
+        synchronized (this) {
+            return deviceInfoLocked();
         }
     }
 
@@ -346,6 +368,47 @@ public final class DeviceDomainStore {
         }
     }
 
+    void setFirmware(String value) {
+        String normalized = value == null || value.isEmpty() ? null : value;
+        HsDeviceInfo next;
+        synchronized (this) {
+            if (Objects.equals(firmware, normalized)) {
+                return;
+            }
+            firmware = normalized;
+            next = deviceInfoLocked();
+        }
+        notifyDeviceInfo(next);
+    }
+
+    void setEarColor(int value) {
+        if (value < 0) {
+            HsLog.w(TAG, "忽略无效的耳机颜色: " + value);
+            return;
+        }
+        HsDeviceInfo next;
+        synchronized (this) {
+            if (earColor != null && earColor == value) {
+                return;
+            }
+            earColor = value;
+            next = deviceInfoLocked();
+        }
+        notifyDeviceInfo(next);
+    }
+
+    void setEarInCaseStatus(int status) {
+        HsDeviceInfo next;
+        synchronized (this) {
+            if (earInCaseStatus != null && earInCaseStatus == status) {
+                return;
+            }
+            earInCaseStatus = status;
+            next = deviceInfoLocked();
+        }
+        notifyDeviceInfo(next);
+    }
+
     void setPairedDevices(List<Map<String, String>> devices) {
         List<Map<String, String>> copy;
         synchronized (this) {
@@ -373,33 +436,15 @@ public final class DeviceDomainStore {
     }
 
     /**
-     * 清会话态（含电量）。不回调，避免拆链瞬间用空快照冲一次监听。
-     * 下一会话只接受设备新上报 / 新查询。
+     * 清空整个会话态，含电量。不回调，避免拆链瞬间用空快照冲一次监听。
+     *
+     * <p>域状态只属于一次设备会话，因此由 {@link DeviceEventPipeline#clearSessionState()} 在
+     * 会话起点与终点各调用一次：起点保证新连接从「未知」开始，终点保证断连后读到未知而不是
+     * 上一台设备的值。下一会话只接受设备新上报 / 新查询。</p>
      */
     void reset() {
-        reset(false);
-    }
-
-    /**
-     * 清会话态，但留下电量快照。被动断开进入自动重连时使用。
-     * 保留不是冻结：随后的主动上报仍覆盖对应耳并回调，未出现在本包里的一侧才保持上次值。
-     */
-    void resetKeepingBattery() {
-        reset(true);
-    }
-
-    /** 只清电量，不回调。自动重连放弃时使用。 */
-    void clearBattery() {
         synchronized (this) {
             battery = emptyBattery();
-        }
-    }
-
-    private void reset(boolean keepBattery) {
-        synchronized (this) {
-            if (!keepBattery) {
-                battery = emptyBattery();
-            }
             eqMode = null;
             gameMode = null;
             findAlertStatus = null;
@@ -408,6 +453,9 @@ public final class DeviceDomainStore {
             leftAndRightEarExchange = null;
             serviceStatus = null;
             pairedDevices = null;
+            firmware = null;
+            earColor = null;
+            earInCaseStatus = null;
         }
     }
 
@@ -415,6 +463,23 @@ public final class DeviceDomainStore {
         for (Observer observer : observers) {
             safe(() -> observer.onBatteryChanged(snapshot, fields, code));
         }
+    }
+
+    private void notifyDeviceInfo(HsDeviceInfo info) {
+        for (Observer observer : observers) {
+            safe(() -> observer.onDeviceInfoChanged(info));
+        }
+    }
+
+    /** 调用方须持锁。三项都未知时返回 null。 */
+    private HsDeviceInfo deviceInfoLocked() {
+        if (firmware == null && earColor == null && earInCaseStatus == null) {
+            return null;
+        }
+        return new HsDeviceInfo(
+                firmware == null ? HsDeviceInfo.UNKNOWN_FIRMWARE : firmware,
+                earColor == null ? HsDeviceInfo.UNKNOWN_EAR_COLOR : earColor,
+                earInCaseStatus == null ? HsDeviceInfo.UNKNOWN_EAR_IN_CASE : earInCaseStatus);
     }
 
     private static void safe(Runnable action) {
@@ -429,14 +494,32 @@ public final class DeviceDomainStore {
         return new BatterySnapshot("--", "--", "--", 0, 0);
     }
 
+    /**
+     * 设备上报的电平文本归一。协议电平只有两种合法形态：{@code 1..100} 的十进制，或未知标记
+     * {@code --}（与 {@code HsBattery.UNKNOWN_LEVEL} 对应）。
+     *
+     * <p>入站帧是外部输入，设备可能发不规范文本，所以这里容错为「未知」；但容错必须可观测：
+     * 每一例非协议文本都记录警告，不静默丢弃。编程侧的非法值（构造 {@code HsBattery}）走严格校验
+     * 并抛错，两种处理不混。</p>
+     */
     private static String normalizeLevel(String level) {
-        if (level == null || "--".equals(level)) {
+        if (level == null) {
+            HsLog.w(TAG, "电量电平缺失，按未知处理");
+            return "--";
+        }
+        String trimmed = level.trim();
+        if ("--".equals(trimmed)) {
             return "--";
         }
         try {
-            int value = Integer.parseInt(level);
-            return value >= 1 && value <= 100 ? String.valueOf(value) : "--";
-        } catch (NumberFormatException ignored) {
+            int value = Integer.parseInt(trimmed);
+            if (value >= 1 && value <= 100) {
+                return String.valueOf(value);
+            }
+            HsLog.w(TAG, "电量电平超出 1..100，按未知处理: " + level);
+            return "--";
+        } catch (NumberFormatException notDecimal) {
+            HsLog.w(TAG, "电量电平不是十进制文本，按未知处理: " + level);
             return "--";
         }
     }

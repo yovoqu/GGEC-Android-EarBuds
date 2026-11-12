@@ -33,9 +33,13 @@ final class Hs02BroadcastDecoder implements HsBroadcastDecoder {
     @NonNull
     @Override
     public Claim claim(@NonNull HsScanSnapshot snapshot) {
+        // 零分配快速判定：没有 HS02 厂商段（0xFFFF + "HC"）时直接不认领，避免对海量环境广播做整包 AD 解析。
+        if (!containsHs02Segment(snapshot.rawAdvertisingView())) {
+            return Claim.unrecognized();
+        }
         List<byte[]> segments = new ArrayList<>();
         String completeName = null;
-        for (HsAdFields.Field field : HsAdFields.decode(snapshot.rawAdvertising())) {
+        for (HsAdFields.Field field : HsAdFields.decode(snapshot.rawAdvertisingView())) {
             if (field.type == HsAdFields.COMPLETE_NAME) {
                 completeName = HsAdFields.decodeUtf8(field.data);
             } else if (field.type == HsAdFields.MANUFACTURER && claimsSegment(field.data)) {
@@ -80,6 +84,35 @@ final class Hs02BroadcastDecoder implements HsBroadcastDecoder {
 
     static boolean claimsSegment(@Nullable byte[] data) {
         return hasMagic(data) && readCompanyId(data) == COMPANY_ID;
+    }
+
+    /**
+     * 零分配扫描原始 AD 结构，判断是否含 HS02 厂商段（companyId=0xFFFF 且 Magic "HC"）。
+     * 仅做偏移遍历、不复制字节、不建对象，用于环境广播的快速拒绝。
+     */
+    static boolean containsHs02Segment(@Nullable byte[] record) {
+        if (record == null) {
+            return false;
+        }
+        int offset = 0;
+        while (offset < record.length) {
+            int length = record[offset] & 0xFF;
+            if (length == 0 || offset + 1 + length > record.length) {
+                break;
+            }
+            int type = record[offset + 1] & 0xFF;
+            if (type == HsAdFields.MANUFACTURER && length - 1 >= 4) {
+                int data = offset + 2;
+                int companyId = (record[data] & 0xFF) | ((record[data + 1] & 0xFF) << 8);
+                if (companyId == COMPANY_ID
+                        && record[data + 2] == MAGIC_0
+                        && record[data + 3] == MAGIC_1) {
+                    return true;
+                }
+            }
+            offset += length + 1;
+        }
+        return false;
     }
 
     static boolean looksLikeBase(@Nullable byte[] data) {

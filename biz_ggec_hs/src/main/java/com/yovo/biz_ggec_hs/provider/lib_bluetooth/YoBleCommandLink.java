@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_ggec_hs.internal.contract.HsCommandLink;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.api.YoBleClient;
+import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
@@ -20,13 +21,14 @@ import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationSetupMode;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
+import com.yovo.lib_bluetooth.model.ble.BleTransferProgressObserver;
 import com.yovo.lib_bluetooth.model.ble.BleWriteType;
 
 import java.util.UUID;
 
 /**
  * 把 HS 命令链路落到 {@link YoBleClient}。
- * 这是 biz_ggec_hs 里唯一允许引用 lib_bluetooth 的类型。
+ * 蓝牙库只允许被 {@code provider/lib_bluetooth} 引用。
  */
 public final class YoBleCommandLink implements HsCommandLink {
 
@@ -57,7 +59,7 @@ public final class YoBleCommandLink implements HsCommandLink {
     private boolean ready;
     private boolean released;
     @Nullable
-    private Listener listener;
+    private volatile Listener listener;
 
     public YoBleCommandLink(@NonNull YoBleClient client) {
         this.client = client;
@@ -66,7 +68,15 @@ public final class YoBleCommandLink implements HsCommandLink {
     @NonNull
     public static YoBleCommandLink open(@NonNull Context context) {
         Context application = context.getApplicationContext();
-        return new YoBleCommandLink(YoBluetoothSDK.ble(application == null ? context : application));
+        Context target = application == null ? context : application;
+        BleConfig config = BleConfig.builder().callbackOnMainThread(false).build();
+        return new YoBleCommandLink(YoBluetoothSDK.ble(target, config));
+    }
+
+    /** 同一条 BLE 客户端供附近扫描复用，避免再创建一个运行时。 */
+    @NonNull
+    public YoBleClient bleClient() {
+        return client;
     }
 
     @Override
@@ -132,7 +142,14 @@ public final class YoBleCommandLink implements HsCommandLink {
             currentGeneration = generation;
         }
         byte[] copy = payload.clone();
-        try {
+        int maxPayload = maxWritePayloadBytes(target);
+        // 先回调 onStarted，再发起写：某些 BLE 栈会在 client.write() 内同步回调 onWrite/onFailed，
+        // 若 onStarted 放在写之后，onCompleted/onTimeout 会先于 onStarted 触发，违反回调顺序契约。
+        callback.onStarted();
+        // 写入受理是同步决策，结果只会经 BleGattObserver / BleTransferProgressObserver 异步回来：
+        // lib 把动作投进自己的状态线程（YoBleRuntime#state），线程内异常由 runStateTask 隔离记录，
+        // 受理路径不抛受检或运行时异常。因此这里没有任何可捕获的写失败——失败由回调类型化送达。
+        if (copy.length <= maxPayload) {
             client.write(target, WRITE_TARGET, copy, BleWriteType.WITHOUT_RESPONSE,
                     new BleGattObserver() {
                         @Override
@@ -144,22 +161,57 @@ public final class YoBleCommandLink implements HsCommandLink {
 
                         @Override
                         public void onFailed(@NonNull BleFailure failure) {
-                            if (!isCurrent(currentGeneration)) {
-                                return;
-                            }
-                            if (failure.errorCode() == BleErrorCode.GATT_OPERATION_TIMEOUT) {
-                                callback.onTimeout();
-                                return;
-                            }
-                            int status = failure.rawStatusCode();
-                            callback.onCompleted(status <= 0 ? 1 : status);
+                            handleWriteFailure(currentGeneration, failure, callback);
                         }
                     });
-        } catch (RuntimeException ignored) {
-            return false;
+        } else {
+            // H-04：超过当前 MTU 单包载荷上限的长帧走分片写（默认 splitter 依 MTU 切片）。
+            client.writeSplit(target, WRITE_TARGET, copy, BleWriteType.WITHOUT_RESPONSE, null,
+                    new BleTransferProgressObserver() {
+                        @Override
+                        public void onCompleted(@NonNull BleDeviceId deviceId,
+                                                @NonNull BleGattTarget gattTarget,
+                                                long totalBytes) {
+                            if (isCurrent(currentGeneration)) {
+                                callback.onCompleted(0);
+                            }
+                        }
+
+                        @Override
+                        public void onFailed(@NonNull BleFailure failure) {
+                            handleWriteFailure(currentGeneration, failure, callback);
+                        }
+                    });
         }
-        callback.onStarted();
         return true;
+    }
+
+    private void handleWriteFailure(int currentGeneration,
+                                    @NonNull BleFailure failure,
+                                    @NonNull WriteCallback callback) {
+        if (!isCurrent(currentGeneration)) {
+            return;
+        }
+        if (failure.errorCode() == BleErrorCode.GATT_OPERATION_TIMEOUT) {
+            callback.onTimeout();
+            return;
+        }
+        int status = failure.rawStatusCode();
+        callback.onCompleted(status <= 0 ? 1 : status);
+    }
+
+    /**
+     * 单包写入上限取自 lib 的连接快照。
+     *
+     * <p>快照读取是进程内的同步存储查询（{@code YoBleConnectionManager#getConnectionSnapshot}
+     * 只对非法 MAC 返回失败，而 {@link #open(String)} 已经拒绝非法地址并先行校验），
+     * 因此失败意味着 lib 的 {@code Result} 契约被破坏。这里让 {@code requireValue()}
+     * 直接抛出，不用默认 MTU 冒充一个"看起来可用"的上限。</p>
+     */
+    private int maxWritePayloadBytes(@NonNull BleDeviceId target) {
+        return client.getConnectionSnapshot(target)
+                .requireValue()
+                .maxWritePayloadBytes(BleWriteType.WITHOUT_RESPONSE);
     }
 
     private void ensureSubscribed(int currentGeneration) {
@@ -197,14 +249,19 @@ public final class YoBleCommandLink implements HsCommandLink {
         if (notifyHandle != null) {
             notifyHandle.cancel();
         }
-        if (changed) {
-            notifyReady(false);
-        }
+        // 顺序即契约：断开原因属于「断开事件」的一部分，必须在状态变化被消费方看到之前就位。
+        // 消费方（引擎）把两条通知各自投进自己的单线程队列，跨线程的到达先后由它决定不了——
+        // 状态变化先到时会读到尚未落值的断连原因。确定性只能落在本层的发送顺序上：先原因，后状态。
+        // 两个分支各管一个事件、各带一个门（error != null / ready 由 true 变 false 的快照），
+        // 因此顺序调整既不改变调用次数，也不会产生第二条事件。
         if (error != null) {
             Listener current = listener;
             if (current != null) {
                 current.onLinkError(error);
             }
+        }
+        if (changed) {
+            notifyReady(false);
         }
     }
 

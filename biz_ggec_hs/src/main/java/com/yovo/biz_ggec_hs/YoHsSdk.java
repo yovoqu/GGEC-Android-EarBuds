@@ -4,19 +4,18 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.biz_ggec_hs.api.YoHsClient;
-import com.yovo.biz_ggec_hs.internal.graph.HsGraph;
+import com.yovo.biz_ggec_hs.api.HsRuntime;
+import com.yovo.biz_ggec_hs.assembly.HsAssembly;
 
 /**
- * HS 会话入口。每次 {@link #create(Context)} 独占一条 BLE 客户端。
- * 广播识别走 {@link YoHsBroadcast}，不从这里进入。
+ * HS 运行时入口。一次 {@link #open(Context)} 只创建一条 BLE 客户端，附近扫描和协议会话共用它。
  */
 public final class YoHsSdk {
     private YoHsSdk() {
     }
 
     @NonNull
-    public static YoHsClient create(@NonNull Context context) {
-        return HsGraph.open(context);
+    public static HsRuntime open(@NonNull Context context) {
+        return HsAssembly.open(context);
     }
 }
