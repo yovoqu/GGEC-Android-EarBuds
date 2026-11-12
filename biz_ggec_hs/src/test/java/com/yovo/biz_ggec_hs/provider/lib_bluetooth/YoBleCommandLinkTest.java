@@ -5,7 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
-import com.yovo.biz_ggec_hs.internal.contract.HsCommandLink;
+import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.model.ble.BleBondState;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionObserver;

@@ -41,12 +41,24 @@ dependencies {
 
 def bizGgecHsRoot = project.projectDir
 
+/**
+ * 结构性边界门禁：只看目录与 import 归属，没有任何类名/包名白名单。
+ *
+ * 规则来源 docs/architecture/2026-11-refactor/design.md §1.2 / §8：
+ *  - api/ 只允许 java.*、androidx.annotation 与 api 自身（契约层零实现、零依赖）。
+ *  - api/、internal/ 禁止 lib_bluetooth 与 android.bluetooth（蓝牙栈只有 provider 能碰）。
+ *  - 非 provider 目录一律禁止 import lib_bluetooth。
+ *  - provider/lib_bluetooth 是栈适配层：禁止反向点名上层（internal/device）与装配（internal/graph）。
+ *  - 中层两块互不点名（protocol ⇄ broadcast），且都不许 import provider。
+ *  - 其他模块的**生产源集**（src/main/java）禁止 import 本模块 internal/ 与 provider/；
+ *    测试源集（src/test、src/androidTest）不在生产边界内，允许触达内部实现以对真实目录做投影校验。
+ */
 tasks.register('checkBizGgecHsBoundary') {
     group = 'verification'
-    description = 'Keep HS protocol off lib_bluetooth internals and keep BLE calls inside the provider.'
+    description = 'Structural layering gate for biz_ggec_hs (no allow lists); 生产边界只约束 src/main，测试源集允许触达内部实现。'
     doLast {
         def offenders = []
-        // 统一成带前导 '/' 的仓库相对路径，保证 contains 与正则对相对路径同样生效。
+        // 统一成带前导 '/' 的仓库相对路径，规则对相对路径同样生效。
         def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
 
         fileTree(bizGgecHsRoot) {
@@ -54,60 +66,91 @@ tasks.register('checkBizGgecHsBoundary') {
             include 'src/test/java/**/*.java'
         }.each { file ->
             def path = rel(file)
-            def inProvider = path.contains('/provider/lib_bluetooth/')
-            def inProtocol = path.contains('/internal/protocol/')
-            def inBroadcast = path.contains('/internal/broadcast/')
+            def relative = path.substring(path.indexOf('/src/'))
+            def inApi = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/api/')
+            def inInternal = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/')
+            def inProtocol = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/center/protocol/')
+            def inBroadcast = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/center/broadcast/')
+            def inUpper = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/scan/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/link/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/interact/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/center/catalog/')
+            def inProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/')
+            def inMain = relative.startsWith('/src/main/java/')
+
             file.eachLine { line, index ->
-                if (line =~ /import\s+com\.yovo\.lib_bluetooth\.internal\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                def location = "${path}:${index}"
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
                 }
-                if (!inProvider && line =~ /import\s+com\.yovo\.lib_bluetooth\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                def target = imported.group(1)
+
+                if (inApi) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.annotation.')
+                            || target.startsWith('com.yovo.biz_ggec_hs.api.')
+                    if (!allowed) {
+                        offenders << "${location}: api 只能依赖 java/androidx.annotation/api 自身 -> ${target}"
+                    }
                 }
-                if (inProvider && (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.protocol\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.broadcast\./)) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if ((inApi || inInternal) && (target.startsWith('com.yovo.lib_bluetooth.')
+                        || target.startsWith('android.bluetooth.'))) {
+                    offenders << "${location}: api/internal 不得触碰蓝牙栈 -> ${target}"
                 }
-                if ((inProtocol || inBroadcast) && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./
-                        || line =~ /import\s+android\.bluetooth\./)) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_bluetooth.')) {
+                    offenders << "${location}: 只有 provider 可以 import lib_bluetooth -> ${target}"
                 }
-                if (inProtocol && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.broadcast\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if (inProvider) {
+                    // 底层适配只允许：平台/Java、蓝牙栈、对外契约、链路端口。
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('android.')
+                            || target.startsWith('androidx.')
+                            || target.startsWith('com.yovo.lib_bluetooth.')
+                            || target.startsWith('com.yovo.biz_ggec_hs.api.')
+                            || target.startsWith('com.yovo.biz_ggec_hs.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider 不得依赖协议/上层/装配 -> ${target}"
+                    }
                 }
-                if (inBroadcast && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\.protocol\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if (inUpper && target.startsWith('com.yovo.biz_ggec_hs.provider.')) {
+                    offenders << "${location}: 扫描/连接/交互/目录不得直接 import provider -> ${target}"
                 }
-                def rootFacade = path ==~ /(?:^|\/)biz_ggec_hs\/src\/main\/java\/com\/yovo\/biz_ggec_hs\/YoHs[^\/]*\.java/
-                def apiOrModel = path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/api/')
-                        || path.contains('/biz_ggec_hs/src/main/java/com/yovo/biz_ggec_hs/model/')
-                def publicSurface = apiOrModel || rootFacade
-                if (publicSurface && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
-                        || line =~ /import\s+android\.bluetooth\./)) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if ((inProtocol || inBroadcast)
+                        && (target.startsWith('com.yovo.biz_ggec_hs.provider.')
+                        || target.startsWith('com.yovo.lib_bluetooth.')
+                        || target.startsWith('android.bluetooth.'))) {
+                    offenders << "${location}: 中层不得 import provider/蓝牙栈 -> ${target}"
                 }
-                if ((apiOrModel || rootFacade)
-                        && line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if (inProtocol && target.startsWith('com.yovo.biz_ggec_hs.internal.center.broadcast.')) {
+                    offenders << "${location}: protocol 不得点名 broadcast -> ${target}"
                 }
-                if (rootFacade && line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                if (inBroadcast && target.startsWith('com.yovo.biz_ggec_hs.internal.center.protocol.')) {
+                    offenders << "${location}: broadcast 不得点名 protocol -> ${target}"
                 }
             }
         }
 
+        // 跨模块规则只约束**生产源集**：src/main/java。
+        // 理由：生产边界只约束 src/main；测试源集允许触达内部实现以对真实目录做投影校验——
+        // 强行把生产边界套到测试上会逼出「为了过门禁而用 fake 形状」的假测试，而假形状正是漏缺陷的根源。
+        // （androidTest 同样属于测试源集，一并排除；build/.gradle 是产物与缓存。）
         fileTree(project.rootDir) {
-            include '**/*.java'
+            include '**/src/main/java/**/*.java'
             exclude '**/build/**'
             exclude '**/.gradle/**'
             exclude 'biz_ggec_hs/**'
         }.each { file ->
             def path = rel(file)
             file.eachLine { line, index ->
-                if (line =~ /import\s+com\.yovo\.biz_ggec_hs\.internal\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_hs\.provider\./) {
-                    offenders << "${path}:${index}: ${line.trim()}"
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
+                }
+                def target = imported.group(1)
+                if (target.startsWith('com.yovo.biz_ggec_hs.internal.')
+                        || target.startsWith('com.yovo.biz_ggec_hs.provider.')) {
+                    offenders << "${path}:${index}: 外部模块的 src/main 不得 import 本模块内部实现 -> ${target}"
                 }
             }
         }
