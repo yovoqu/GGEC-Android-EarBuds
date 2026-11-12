@@ -1,12 +1,13 @@
 package com.yovo.biz_ggec_hs.provider.lib_bluetooth;
 
+
+import com.yovo.biz_ggec_hs.api.HsControl;
 import androidx.annotation.NonNull;
 
-import com.yovo.biz_ggec_hs.model.HsScanFailure;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 
 /**
- * lib 的扫描错误码到协议扫描失败原因的映射。协议层只认 {@link HsScanFailure}。
+ * lib 的扫描错误码到协议扫描失败原因的映射。协议层只认 {@link HsControl.Failure}。
  *
  * <p>取值来源：扫描失败回调 {@code BleScanObserver#onScanFailed} 由 lib 的扫描控制器发射，
  * 发射点只有 preflight 检查、限流拒绝、平台启动失败、适配器关闭中断与客户端已释放
@@ -27,19 +28,19 @@ final class HsScanFailures {
      * @throws IllegalArgumentException 错误码不属于扫描失败回调的取值域
      */
     @NonNull
-    static HsScanFailure map(@NonNull BleErrorCode errorCode) {
+    static HsControl.Failure map(@NonNull BleErrorCode errorCode) {
         return switch (errorCode) {
-            case BLUETOOTH_DISABLED -> HsScanFailure.BLUETOOTH_DISABLED;
+            case BLUETOOTH_DISABLED -> HsControl.Failure.BLUETOOTH_DISABLED;
             case PERMISSION_SCAN_DENIED, PERMISSION_CONNECT_DENIED, PERMISSION_ADVERTISE_DENIED,
-                 PERMISSION_LOCATION_DENIED -> HsScanFailure.PERMISSION_DENIED;
-            case LOCATION_SERVICES_DISABLED -> HsScanFailure.LOCATION_DISABLED;
-            case BLE_NOT_SUPPORTED, BLUETOOTH_NOT_SUPPORTED -> HsScanFailure.BLE_UNSUPPORTED;
-            case SCAN_THROTTLED -> HsScanFailure.SCAN_THROTTLED;
-            case SCAN_START_FAILED -> HsScanFailure.SCAN_START_FAILED;
-            case SCAN_FEATURE_UNSUPPORTED -> HsScanFailure.SCAN_FEATURE_UNSUPPORTED;
-            case SCAN_OUT_OF_RESOURCES -> HsScanFailure.SCAN_OUT_OF_RESOURCES;
-            case SCAN_INTERNAL_ERROR -> HsScanFailure.SCAN_INTERNAL_ERROR;
-            case RELEASED -> HsScanFailure.RELEASED;
+                 PERMISSION_LOCATION_DENIED -> HsControl.Failure.PERMISSION_DENIED;
+            case LOCATION_SERVICES_DISABLED -> HsControl.Failure.LOCATION_DISABLED;
+            case BLE_NOT_SUPPORTED, BLUETOOTH_NOT_SUPPORTED -> HsControl.Failure.BLE_UNSUPPORTED;
+            case SCAN_THROTTLED -> HsControl.Failure.SCAN_THROTTLED;
+            case SCAN_START_FAILED -> HsControl.Failure.SCAN_START_FAILED;
+            case SCAN_FEATURE_UNSUPPORTED -> HsControl.Failure.SCAN_FEATURE_UNSUPPORTED;
+            case SCAN_OUT_OF_RESOURCES -> HsControl.Failure.SCAN_OUT_OF_RESOURCES;
+            case SCAN_INTERNAL_ERROR -> HsControl.Failure.SCAN_INTERNAL_ERROR;
+            case RELEASED -> HsControl.Failure.RELEASED;
             // 以下常量属于连接 / GATT / 传输 / 配对 / L2CAP / 外设 / 参数校验 / 生命周期通道，
             // 扫描失败回调不发射它们（证据见类注释）。为它们编造扫描原因会把契约错误伪装成业务结果。
             case UNSUPPORTED_OPERATION, SCAN_STOP_FAILED, DEVICE_INVALID, ILLEGAL_ARGUMENT,

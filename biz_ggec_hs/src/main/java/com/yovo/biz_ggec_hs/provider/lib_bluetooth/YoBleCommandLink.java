@@ -5,7 +5,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_ggec_hs.internal.contract.HsCommandLink;
+import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;

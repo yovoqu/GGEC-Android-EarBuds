@@ -1,6 +1,3 @@
 -keep class com.yovo.biz_ggec_hs.YoHsSdk { public *; }
--keep class com.yovo.biz_ggec_hs.YoHsBroadcast { public *; }
 -keep class com.yovo.biz_ggec_hs.api.** { public *; }
--keep class com.yovo.biz_ggec_hs.model.** { public *; }
 -keep interface com.yovo.biz_ggec_hs.api.** { *; }
--keep interface com.yovo.biz_ggec_hs.model.** { *; }
