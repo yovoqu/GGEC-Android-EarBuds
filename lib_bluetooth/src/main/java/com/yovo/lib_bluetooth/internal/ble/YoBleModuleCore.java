@@ -23,7 +23,6 @@ import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanController;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanHub;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanStats;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
@@ -33,6 +32,7 @@ import com.yovo.lib_bluetooth.model.ble.BleDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleDiagnosticReport;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
 import com.yovo.lib_bluetooth.model.common.Result;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

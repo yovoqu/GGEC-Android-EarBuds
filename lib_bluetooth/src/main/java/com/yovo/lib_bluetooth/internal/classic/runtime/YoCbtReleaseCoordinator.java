@@ -1,11 +1,11 @@
 package com.yovo.lib_bluetooth.internal.classic.runtime;
 
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoReleasable;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.LinkedHashMap;
 

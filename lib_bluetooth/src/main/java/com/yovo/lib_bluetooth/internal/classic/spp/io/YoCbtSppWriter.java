@@ -2,12 +2,12 @@ package com.yovo.lib_bluetooth.internal.classic.spp.io;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnectionId;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.io.IOException;
 import java.io.OutputStream;

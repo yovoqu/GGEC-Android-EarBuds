@@ -4,13 +4,15 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.api.BleScanSubscription;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 import com.yovo.lib_bluetooth.model.common.Result;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -48,7 +50,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * stopped 都在 {@link #GATE} 内先判定代次与状态，并在同一把锁内 {@code List.copyOf(subscribers)}
  * 取定本次分发的接收者，再在锁外投递。锁外读 {@code subscribers} 会把「判定之后、投递之前」才
  * 挂上的订阅者算进本次分发——判定把会话置 STOPPED 之后新订阅会开新代次，那个订阅者属于新会话，
- * 收到旧会话的终态会让业务把自己的会话收掉（见 {@code HsNearbyScanCallbacks}）。</p>
+ * 收到旧会话的终态会让业务侧扫描会话把刚开的新会话收掉。</p>
  *
  * <p><b>迁移归属：</b>停扫与补偿启动都不在 {@link BleOperationHandle} 的取消调用栈上执行：
  * {@code detach} 只在 GATE 内登记待办，由 {@link #TRANSITIONS} 单线程在锁外推进。句柄监视器上
@@ -107,7 +109,7 @@ public final class YoBleScanHub {
 
     @NonNull
     private final Engine engine;
-    private final CopyOnWriteArrayList<BleScanObserver> subscribers = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<YoBleScanSubscription> subscribers = new CopyOnWriteArrayList<>();
     private EngineState engineState = EngineState.IDLE;
     /** 已分配的启动代次。 */
     private long epochSeq;
@@ -123,12 +125,19 @@ public final class YoBleScanHub {
     /**
      * 订阅原始扫描帧。首个订阅者启动引擎；引擎启动在锁外进行，启动成功与否由
      * {@link #confirmStart(long)} 在锁内二次确认。
+     *
+     * <p>返回的句柄是订阅级句柄：取消即退订，{@link YoBleScanSubscription#setFrameFilter}
+     * 只替换帧级过滤器，不触达引擎。</p>
      */
     @NonNull
-    public static BleOperationHandle subscribe(@NonNull Engine engine,
+    public static BleScanSubscription subscribe(@NonNull Engine engine,
                                                @NonNull BleScanObserver observer) {
         Objects.requireNonNull(engine, "engine");
         Objects.requireNonNull(observer, "observer");
+        SubscriptionBinding binding = new SubscriptionBinding();
+        YoBleScanSubscription subscription = new YoBleScanSubscription(
+                "ble-scan-subscription-" + SUBSCRIPTION_SEQ.incrementAndGet(), observer, binding);
+        binding.subscription = subscription;
         YoBleScanHub hub;
         long epoch;
         Engine retiredEngine = null;
@@ -141,7 +150,8 @@ public final class YoBleScanHub {
                 current = new YoBleScanHub(engine);
             }
             hub = current;
-            epoch = hub.attach(observer);
+            binding.hub = hub;
+            epoch = hub.attach(subscription);
         }
         if (retiredEngine != null) {
             retiredEngine.stop();
@@ -149,9 +159,28 @@ public final class YoBleScanHub {
         if (epoch != 0L) {
             hub.startClaim(epoch);
         }
-        return new BleOperationHandle(
-                "ble-scan-subscription-" + SUBSCRIPTION_SEQ.incrementAndGet(),
-                () -> hub.detach(observer));
+        return subscription;
+    }
+
+    /**
+     * 订阅句柄与扫描器的绑定：句柄在知道归属 hub 之前就已创建（构造器里不能引用自身），
+     * 取消动作因此经本绑定在取消时才解析 hub 与订阅对象。
+     */
+    private static final class SubscriptionBinding implements Runnable {
+
+        @Nullable
+        private volatile YoBleScanHub hub;
+        @Nullable
+        private volatile YoBleScanSubscription subscription;
+
+        @Override
+        public void run() {
+            YoBleScanHub owner = hub;
+            YoBleScanSubscription target = subscription;
+            if (owner != null && target != null) {
+                owner.detach(target);
+            }
+        }
     }
 
     /**
@@ -209,8 +238,8 @@ public final class YoBleScanHub {
      *
      * @return 需要在锁外发起的启动代次；0 表示启动在途/运行中，本次挂载只共享既有会话
      */
-    private long attach(@NonNull BleScanObserver observer) {
-        subscribers.add(observer);
+    private long attach(@NonNull YoBleScanSubscription subscription) {
+        subscribers.add(subscription);
         if (engineState == EngineState.IDLE || engineState == EngineState.STOPPED) {
             engineState = EngineState.STARTING;
             startEpoch = ++epochSeq;
@@ -325,10 +354,10 @@ public final class YoBleScanHub {
      * 退订。只登记待办：本方法在订阅句柄的监视器里被调用，因此既不调引擎也不分发业务回调，
      * 停扫与可能的补偿启动交给 {@link #TRANSITIONS} 在锁外推进。
      */
-    private void detach(@NonNull BleScanObserver observer) {
+    private void detach(@NonNull YoBleScanSubscription subscription) {
         long registeredEpoch;
         synchronized (GATE) {
-            subscribers.remove(observer);
+            subscribers.remove(subscription);
             boolean stopNeeded = subscribers.isEmpty() && holdsOwnership()
                     && engineState != EngineState.STARTING
                     && engineState != EngineState.STOPPING;
@@ -373,7 +402,7 @@ public final class YoBleScanHub {
         return new BleScanObserver() {
             @Override
             public void onScanStarted() {
-                List<BleScanObserver> targets;
+                List<YoBleScanSubscription> targets;
                 long currentEpoch;
                 synchronized (GATE) {
                     // 判定与分发集合在同一临界区取定：锁内取快照，锁外只投递快照。
@@ -392,35 +421,49 @@ public final class YoBleScanHub {
                             + ", current epoch " + currentEpoch);
                     return;
                 }
-                for (BleScanObserver observer : targets) {
-                    observer.onScanStarted();
+                for (YoBleScanSubscription subscription : targets) {
+                    subscription.observer.onScanStarted();
                 }
             }
 
             @Override
             public void onDeviceFound(@NonNull BleScanResult result) {
-                for (BleScanObserver observer : subscribers) {
-                    observer.onDeviceFound(result);
+                // 帧级谓词在这里求值：只影响这一帧是否交付，与扫描生命周期无关。
+                for (YoBleScanSubscription subscription : subscribers) {
+                    if (subscription.accepts(result)) {
+                        subscription.observer.onDeviceFound(result);
+                    }
                 }
             }
 
             @Override
             public void onBatchScanResults(@NonNull List<BleScanResult> results) {
-                for (BleScanObserver observer : subscribers) {
-                    observer.onBatchScanResults(results);
+                for (YoBleScanSubscription subscription : subscribers) {
+                    List<BleScanResult> delivered = new ArrayList<>(results.size());
+                    for (BleScanResult result : results) {
+                        if (subscription.accepts(result)) {
+                            delivered.add(result);
+                        }
+                    }
+                    if (!delivered.isEmpty()) {
+                        subscription.observer.onBatchScanResults(delivered);
+                    }
                 }
             }
 
             @Override
             public void onScanResultLost(@NonNull BleScanResult result) {
-                for (BleScanObserver observer : subscribers) {
-                    observer.onScanResultLost(result);
+                // lost 与 found 用同一谓词：被过滤掉的帧，其消失事件同样不交付。
+                for (YoBleScanSubscription subscription : subscribers) {
+                    if (subscription.accepts(result)) {
+                        subscription.observer.onScanResultLost(result);
+                    }
                 }
             }
 
             @Override
             public void onScanFailed(@NonNull BleFailure failure) {
-                List<BleScanObserver> targets;
+                List<YoBleScanSubscription> targets;
                 long currentEpoch;
                 synchronized (GATE) {
                     currentEpoch = startEpoch;
@@ -440,14 +483,14 @@ public final class YoBleScanHub {
                             + ", current epoch " + currentEpoch);
                     return;
                 }
-                for (BleScanObserver observer : targets) {
-                    observer.onScanFailed(failure);
+                for (YoBleScanSubscription subscription : targets) {
+                    subscription.observer.onScanFailed(failure);
                 }
             }
 
             @Override
             public void onScanStopped() {
-                List<BleScanObserver> targets;
+                List<YoBleScanSubscription> targets;
                 long currentEpoch;
                 synchronized (GATE) {
                     currentEpoch = startEpoch;
@@ -470,8 +513,8 @@ public final class YoBleScanHub {
                             + ", current epoch " + currentEpoch);
                     return;
                 }
-                for (BleScanObserver observer : targets) {
-                    observer.onScanStopped();
+                for (YoBleScanSubscription subscription : targets) {
+                    subscription.observer.onScanStopped();
                 }
             }
         };

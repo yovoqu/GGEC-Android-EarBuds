@@ -1,3 +1,5 @@
+> 历史快照（2026-11 重构前）：本文所述 Provider 安装机制（BluetoothProviderInstaller / setPort）已删除，当前架构见 docs/architecture/2026-11-refactor/design.md。
+
 # BLE 模块全量架构设计文档 (`ble_01_architecture_design`)
 
 > 日期：2026-11-10  

@@ -5,9 +5,14 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.api.BleScanCapabilities;
+import com.yovo.lib_bluetooth.api.BleScanHealth;
+import com.yovo.lib_bluetooth.api.BleScanPlan;
+import com.yovo.lib_bluetooth.api.BleScanSubscription;
 import com.yovo.lib_bluetooth.api.YoBleClient;
 import com.yovo.lib_bluetooth.internal.ble.internal.android.YoBleAndroidModuleGraph;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanHub;
+import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
@@ -56,8 +61,10 @@ public final class BleClientImpl implements YoBleClient {
     @NonNull
     private final YoBleModuleCore core;
 
-    public BleClientImpl(@NonNull Context context, @NonNull BleConfig config) {
-        this.androidGraph = YoBleAndroidModuleGraph.create(context, config);
+    public BleClientImpl(@NonNull Context context,
+                         @NonNull BleConfig config,
+                         @NonNull YoBluetoothPermissionChecker permissionChecker) {
+        this.androidGraph = YoBleAndroidModuleGraph.create(context, config, permissionChecker);
         this.core = androidGraph.core;
     }
 
@@ -107,8 +114,26 @@ public final class BleClientImpl implements YoBleClient {
 
     @NonNull
     @Override
-    public BleOperationHandle subscribeScan(@NonNull BleScanObserver observer) {
+    public BleScanSubscription subscribeScan(@NonNull BleScanObserver observer) {
         return YoBleScanHub.subscribe(core.scanController, observer);
+    }
+
+    @NonNull
+    @Override
+    public Result<Void> reconfigureScan(@NonNull BleScanPlan plan) {
+        return core.scanController.reconfigure(plan);
+    }
+
+    @NonNull
+    @Override
+    public BleScanCapabilities scanCapabilities() {
+        return core.scanController.capabilities();
+    }
+
+    @NonNull
+    @Override
+    public BleScanHealth scanHealth() {
+        return core.scanController.health();
     }
 
     @NonNull

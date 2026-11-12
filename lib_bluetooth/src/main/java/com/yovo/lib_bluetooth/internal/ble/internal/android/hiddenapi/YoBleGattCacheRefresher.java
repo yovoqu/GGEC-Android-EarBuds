@@ -4,7 +4,7 @@ import android.bluetooth.BluetoothGatt;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.lang.reflect.Method;
 

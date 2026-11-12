@@ -73,6 +73,27 @@ public final class YoBleScanThrottleGuard {
         }
     }
 
+    /**
+     * 当前窗口内已发起的启动次数（窗口外的记录先被剔除）。
+     *
+     * <p>这是对外的可观测事实：健康度用它暴露"平台已经接受了多少次启动"，
+     * 调用方据此把静默限流变成可见状态。</p>
+     */
+    public synchronized int startsInWindow() {
+        pruneExpired(clockMillis.getAsLong());
+        return startTimestamps.size();
+    }
+
+    /**
+     * 现在再发起一次启动是否会超出窗口上限。
+     *
+     * <p>判定与 {@link #requiredDelayMillis()} 同源（都基于窗口内的记录数），但语义不同：
+     * 本方法供"直接拒绝、不发起平台扫描"的硬守卫使用。</p>
+     */
+    public synchronized boolean wouldExceed() {
+        return startsInWindow() >= maxStarts;
+    }
+
     private void pruneExpired(long now) {
         while (!startTimestamps.isEmpty()) {
             long head = startTimestamps.peekFirst();

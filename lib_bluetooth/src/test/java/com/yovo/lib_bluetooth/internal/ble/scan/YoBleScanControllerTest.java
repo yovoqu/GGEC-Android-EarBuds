@@ -21,7 +21,6 @@ import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleScanObserver;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
-import com.yovo.lib_bluetooth.model.ble.BleScanThrottlePolicy;
 
 import org.junit.After;
 import org.junit.Test;
@@ -391,7 +390,6 @@ public final class YoBleScanControllerTest {
     @NonNull
     private static BleScanConfig quickConfig() {
         return BleScanConfig.builder()
-                .throttlePolicy(BleScanThrottlePolicy.UNRESTRICTED)
                 .timeoutMillis(0L)
                 .reportDelayMillis(0L)
                 .build();
@@ -400,7 +398,6 @@ public final class YoBleScanControllerTest {
     @NonNull
     private static BleScanConfig lostConfig() {
         return BleScanConfig.builder()
-                .throttlePolicy(BleScanThrottlePolicy.UNRESTRICTED)
                 .timeoutMillis(0L)
                 .reportDelayMillis(0L)
                 .matchLostTimeoutMillis(1_000L)
@@ -451,6 +448,16 @@ public final class YoBleScanControllerTest {
 
         @Override
         public boolean supportsHardwareBatching() {
+            return false;
+        }
+
+        @Override
+        public boolean supportsOffloadedFiltering() {
+            return false;
+        }
+
+        @Override
+        public boolean supportsExtendedAdvertising() {
             return false;
         }
     }

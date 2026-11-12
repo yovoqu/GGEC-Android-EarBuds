@@ -5,7 +5,6 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
@@ -24,6 +23,7 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtCapabilitySour
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.Collections;
 import java.util.EnumMap;

@@ -14,10 +14,13 @@ import com.yovo.lib_bluetooth.internal.ble.internal.android.receiver.YoBleAndroi
 import com.yovo.lib_bluetooth.internal.ble.internal.android.receiver.YoBleBondStateReceiver;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntimeConfig;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
 
 /**
  * Android 平台 BLE 依赖装配图：组装真机 Scan / GATT / Bond / L2CAP / Peripheral 适配器与系统广播监听。
+ *
+ * <p>权限检查器由装配根 {@code BluetoothSdkCore} 构造后传入，本图只做向下分发。</p>
  */
 public final class YoBleAndroidModuleGraph {
 
@@ -32,10 +35,12 @@ public final class YoBleAndroidModuleGraph {
 
     @NonNull
     public static YoBleAndroidModuleGraph create(@NonNull Context context,
-                                                 @NonNull BleConfig config) {
+                                                 @NonNull BleConfig config,
+                                                 @NonNull YoBluetoothPermissionChecker permissionChecker) {
         Context appContext = context.getApplicationContext();
         YoBluetoothAdapterProvider adapterProvider = new YoBluetoothAdapterProvider(appContext);
-        YoBleCapabilityInspector capabilityInspector = new YoBleAndroidCapabilityInspector(appContext);
+        YoBleCapabilityInspector capabilityInspector =
+                new YoBleAndroidCapabilityInspector(appContext, permissionChecker);
         YoBleHiddenApiPolicy cachePolicy = config.allowHiddenApiCacheRefresh()
                 ? YoBleHiddenApiPolicy.EXPLICITLY_ENABLED
                 : YoBleHiddenApiPolicy.DISABLED;

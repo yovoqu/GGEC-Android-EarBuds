@@ -38,85 +38,132 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
 }
 
-tasks.register('checkLibBluetoothProviderBoundary') {
+// ── 结构性边界门禁 ────────────────────────────────────────────────────────────
+// 权威规则见 docs/architecture/2026-11-refactor/design.md §1.2 / §8。
+// 判定只用目录事实（provider/**、api/**、model/**、internal/**、根包），
+// 不含任何类名、文件名或路径白名单；边界错了修边界，不放宽门禁。
+
+def LIB_BT_ROOT = 'src/main/java/com/yovo/lib_bluetooth'
+def PROVIDER_ROOT = "${LIB_BT_ROOT}/provider"
+def API_ROOT = "${LIB_BT_ROOT}/api"
+def MODEL_ROOT = "${LIB_BT_ROOT}/model"
+
+/** 模块唯一对外门面，位于根包；根包不允许出现第二个文件。 */
+def ROOT_PACKAGE_FACADE = 'YoBluetoothSDK.java'
+
+tasks.register('checkLibBluetoothBoundary') {
     group = 'verification'
-    description = 'Fail if non-provider code imports lib_common directly.'
+    description = '结构性边界：lib_common 只在 provider/** 接入；api/model 不引用 provider/internal；provider 无静态可写状态与安装入口；根包只放唯一门面。'
     doLast {
         def offenders = []
         fileTree(project.projectDir) {
             include 'src/main/java/**/*.java'
-            exclude 'src/main/java/com/yovo/lib_bluetooth/provider/lib_common/**'
-            exclude 'src/main/java/com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
         }.each { file ->
+            String rel = project.relativePath(file).replace('\\', '/')
+            boolean inProvider = rel.startsWith("${PROVIDER_ROOT}/")
+            boolean inApi = rel.startsWith("${API_ROOT}/")
+            boolean inModel = rel.startsWith("${MODEL_ROOT}/")
             file.text.eachLine { line, index ->
-                if (line =~ /^\s*import\s+com\.yovo\.lib_common\./) {
-                    offenders << "${file}:${index}: ${line.trim()}"
+                String trimmed = line.trim()
+                String at = "${rel}:${index + 1}"
+                if (trimmed.startsWith('import ')) {
+                    // R1 依赖单点接入：被依赖模块只允许在 provider/** 出现
+                    if (trimmed ==~ /import\s+com\.yovo\.lib_common\..*;/ && !inProvider) {
+                        offenders << "${at}: 非 provider 代码直接依赖 lib_common → ${trimmed}"
+                    }
+                    // R2 实现不外泄：api/model 不得引用 provider 或 internal
+                    boolean touchesProvider = trimmed ==~ /import\s+com\.yovo\.lib_bluetooth\.provider\..*;/
+                    boolean touchesInternal = trimmed ==~ /import\s+com\.yovo\.lib_bluetooth\.internal\..*;/
+                    if ((inApi || inModel) && (touchesProvider || touchesInternal)) {
+                        offenders << "${at}: api/model 引用实现层 → ${trimmed}"
+                    }
+                    return
+                }
+                if (!inProvider) {
+                    return
+                }
+                // R3 provider 只做适配：不得持有静态可写状态（跨客户端共享的可变全局状态）
+                if (trimmed ==~ /.*\bstatic\b(?!\s+final\b).*/ && !trimmed.contains('(')
+                        && (trimmed.contains('=') || trimmed.endsWith(';'))) {
+                    offenders << "${at}: provider 不得持有静态可写状态 → ${trimmed}"
+                }
+                // R3 provider 不得导出安装 / 端口替换入口
+                if (trimmed ==~ /.*\b(?:install|installAll|setPort)\s*\(.*\).*/) {
+                    offenders << "${at}: provider 不得声明安装入口 → ${trimmed}"
                 }
             }
+        }
+        def rootFiles = fileTree("${project.projectDir}/${LIB_BT_ROOT}") {
+            include '*.java'
+        }.files*.name.sort()
+        if (rootFiles != [ROOT_PACKAGE_FACADE]) {
+            offenders << "根包只允许 ${ROOT_PACKAGE_FACADE}，当前: ${rootFiles.join(', ')}"
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    'lib_bluetooth 非 provider 代码禁止直接 import lib_common:\n'
-                            + offenders.join('\n'))
-        }
-    }
-}
-
-tasks.register('checkLibBluetoothApiSurface') {
-    group = 'verification'
-    description = 'Fail if lib_bluetooth exposes more than YoCbtClient / YoBleClient API files.'
-    doLast {
-        def apiFiles = fileTree("${project.projectDir}/src/main/java/com/yovo/lib_bluetooth/api") {
-            include '*.java'
-        }.files.collect { it.name }.sort()
-        def expected = ['YoBleClient.java', 'YoCbtClient.java']
-        if (apiFiles != expected) {
-            throw new GradleException(
-                    'lib_bluetooth api 目录必须只包含两个门面文件，当前: ' + apiFiles.join(', '))
-        }
-        def apiOffenders = []
-        fileTree("${project.projectDir}/src/main/java/com/yovo/lib_bluetooth/api") {
-            include '*.java'
-        }.each { file ->
-            file.text.eachLine { line, index ->
-                if (line =~ /^\s*import\s+com\.yovo\.lib_bluetooth\.internal\./) {
-                    apiOffenders << "${file}:${index}: ${line.trim()}"
-                }
-            }
-        }
-        if (!apiOffenders.isEmpty()) {
-            throw new GradleException(
-                    'lib_bluetooth api 禁止 import internal:\n' + apiOffenders.join('\n'))
-        }
-        def rootFiles = fileTree("${project.projectDir}/src/main/java/com/yovo/lib_bluetooth") {
-            include '*.java'
-        }.files.collect { it.name }.sort()
-        if (rootFiles != ['YoBluetoothSDK.java']) {
-            throw new GradleException(
-                    'lib_bluetooth 根包只允许 YoBluetoothSDK.java，当前: ' + rootFiles.join(', '))
+            throw new GradleException('lib_bluetooth 边界门禁未通过：\n' + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkLibBluetoothLogSeam') {
     group = 'verification'
-    description = 'Ensure YoBtLogger is the single logging seam: only it (and provider layer) may import lib_common.log.'
+    description = '日志唯一缝：lib_common.log 只在 provider/** 内被调用，模块内其余位置只经 YoBtLogger。'
     doLast {
         def offenders = []
         fileTree(project.projectDir) {
             include 'src/main/java/**/*.java'
-            exclude 'src/main/java/com/yovo/lib_bluetooth/provider/**'
-            exclude 'src/main/java/com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
         }.each { file ->
+            String rel = project.relativePath(file).replace('\\', '/')
+            if (rel.startsWith("${PROVIDER_ROOT}/")) {
+                return
+            }
             file.text.eachLine { line, index ->
-                if (line =~ /^\s*import\s+com\.yovo\.lib_common\.log\./) {
-                    offenders << "${file}:${index}: ${line.trim()}"
+                String trimmed = line.trim()
+                if (trimmed =~ /\bYoLog\s*\./) {
+                    offenders << "${rel}:${index + 1}: provider/** 之外直接调用 YoLog → ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('日志缝被绕过（只允许 provider/** 直接使用 lib_common.log）：\n'
+                    + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.register('checkLibBluetoothScanMechanismOnly') {
+    group = 'verification'
+    description = 'lib 机制层不得出现产品分类学概念（产品型号/项目/产品形态类型/能力），只认帧与通用 BLE 概念。'
+    doLast {
+        def offenders = []
+        // 口径（lead 裁决，勿改）：**裸 `deviceType` 不封** —— 它是平台蓝牙设备类型
+        // （BleDeviceType ← BluetoothDevice.getType()、YoCbtDeviceType ← BluetoothClass.Device），
+        // 属 product-taxonomy §2.2 允许 lib 处理的通用 BLE 概念；本门禁只封**产品分类学标识**。
+        //
+        // 产品分类学词汇（见 docs/architecture/2026-11-refactor/product-taxonomy.md §2.2）：
+        // 产品型号 / 项目 / 能力 / 产品形态类型（biz 的 HsDeviceType）。
+        //
+        // 不要为了"看起来更严"把裸 `deviceType` 加进下面的列表：那会逼着改 BleDeviceIdentity.deviceType()
+        // 这类平台模型 getter，是跨模块契约变更，且与"lib 可处理通用 BLE 概念"的规则直接冲突。
+        def banned = ~/(?i)\b(modelId|projectId|hsCapability|hsDeviceType|productModel|productId|variantId)\b|\bhs0/
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            String rel = project.relativePath(file).replace('\\', '/')
+            file.text.eachLine { line, index ->
+                String trimmed = line.trim()
+                // 注释行可排除：只允许注释解释“本层不得引入业务概念”，不参与判定
+                if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+                    return
+                }
+                if (trimmed =~ banned) {
+                    offenders << "${rel}:${index + 1}: ${trimmed}"
                 }
             }
         }
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                    'Only YoBtLogger may import lib_common.log (single logging seam):\n'
+                    'lib_bluetooth 机制层出现业务概念（产品型号/项目/设备类型/能力属于 biz）：\n'
                             + offenders.join('\n'))
         }
     }
@@ -124,26 +171,20 @@ tasks.register('checkLibBluetoothLogSeam') {
 
 tasks.register('checkNoStrayLogging') {
     group = 'verification'
-    description = 'Fail on android.util.Log / System.out/err / printStackTrace / direct YoLog calls outside YoBtLogger.'
+    description = '禁止 android.util.Log / System.out/err / printStackTrace 等散点输出。'
     doLast {
         def offenders = []
-        def logSeam = 'com/yovo/lib_bluetooth/internal/common/diagnostics/YoBtLogger.java'
         fileTree(project.projectDir) {
             include 'src/main/java/**/*.java'
         }.each { file ->
-            def rel = project.relativePath(file).replace('\\', '/')
+            String rel = project.relativePath(file).replace('\\', '/')
             file.text.eachLine { line, index ->
-                def trimmed = line.trim()
+                String trimmed = line.trim()
                 if (trimmed.contains('import android.util.Log')
                         || trimmed.contains('System.out')
                         || trimmed.contains('System.err')
                         || trimmed.contains('printStackTrace')) {
-                    offenders << "${rel}:${index}: ${trimmed}"
-                }
-                if (!rel.endsWith(logSeam)
-                        && !rel.contains('/provider/lib_common/')
-                        && (trimmed =~ /\bYoLog\s*\./)) {
-                    offenders << "${rel}:${index}: direct YoLog call outside YoBtLogger: ${trimmed}"
+                    offenders << "${rel}:${index + 1}: ${trimmed}"
                 }
             }
         }
@@ -154,6 +195,6 @@ tasks.register('checkNoStrayLogging') {
 }
 
 tasks.named('check') {
-    dependsOn 'checkLibBluetoothProviderBoundary', 'checkLibBluetoothApiSurface',
-            'checkLibBluetoothLogSeam', 'checkNoStrayLogging'
+    dependsOn 'checkLibBluetoothBoundary', 'checkLibBluetoothLogSeam',
+            'checkLibBluetoothScanMechanismOnly', 'checkNoStrayLogging'
 }

@@ -1,3 +1,5 @@
+> 历史快照（2026-11 重构前）：本文所述 Provider 安装机制（BluetoothProviderInstaller / setPort）已删除，当前架构见 docs/architecture/2026-11-refactor/design.md。
+
 # lib_bluetooth Android SDK 全量重构提示词：经典蓝牙能力域架构版
 
 > 适用对象：代码 Agent / Cursor / Codex / 人工架构评审  

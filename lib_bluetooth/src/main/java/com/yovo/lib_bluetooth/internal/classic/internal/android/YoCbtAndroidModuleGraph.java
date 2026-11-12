@@ -59,6 +59,8 @@ import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConnection
  * @author tingfeng.yang
  * @date 2026-06-18
  * @description Android 模块依赖图，组装并持有各蓝牙能力组件实例。
+ *
+ * <p>权限检查器由装配根 {@code BluetoothSdkCore} 构造后传入，本图只做向下分发。</p>
  */
 
 public final class YoCbtAndroidModuleGraph {
@@ -186,11 +188,11 @@ public final class YoCbtAndroidModuleGraph {
     public static YoCbtAndroidModuleGraph create(
             @NonNull Context context,
             @NonNull CbtInternalClientConfig clientConfig,
-            @NonNull YoCbtProfileReceiverAdapter.ObserverProvider profileObserverProvider) {
+            @NonNull YoCbtProfileReceiverAdapter.ObserverProvider profileObserverProvider,
+            @NonNull YoBluetoothPermissionChecker permissionChecker) {
         Context appContext = context.getApplicationContext();
         YoCbtRuntime runtime = new YoCbtRuntime(clientConfig.getRuntimeConfig());
         YoBluetoothAdapterProvider adapterProvider = new YoBluetoothAdapterProvider(appContext);
-        YoBluetoothPermissionChecker permissionChecker = new YoBluetoothPermissionChecker();
         YoCbtAndroidDeviceMapper mapper = new YoCbtAndroidDeviceMapper();
         YoCbtDeviceSnapshotStore snapshotStore = new YoCbtDeviceSnapshotStore();
         YoCbtServiceCache serviceCache = new YoCbtServiceCache();

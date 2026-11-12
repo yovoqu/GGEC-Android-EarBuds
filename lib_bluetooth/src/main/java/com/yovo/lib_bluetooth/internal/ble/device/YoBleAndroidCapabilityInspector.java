@@ -24,11 +24,12 @@ public final class YoBleAndroidCapabilityInspector implements YoBleCapabilityIns
     private final YoBluetoothAdapterProvider adapterProvider;
     private final YoBluetoothPermissionChecker permissionChecker;
 
-    public YoBleAndroidCapabilityInspector(@NonNull Context context) {
+    public YoBleAndroidCapabilityInspector(@NonNull Context context,
+                                           @NonNull YoBluetoothPermissionChecker permissionChecker) {
         this.appContext = context.getApplicationContext();
         this.capabilityChecker = new YoBluetoothCapabilityChecker(this.appContext);
         this.adapterProvider = new YoBluetoothAdapterProvider(this.appContext);
-        this.permissionChecker = new YoBluetoothPermissionChecker();
+        this.permissionChecker = permissionChecker;
     }
 
     @Override
