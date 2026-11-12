@@ -31,8 +31,8 @@ public record ScanUiState(
     }
 
     public static List<ScanFilterOption> defaultFilterOptions() {
-        // 型号筛选项的唯一来源是领域目录（LoadDeviceProfiles.models() → ViewModel.filterOptions）；
-        // 初始态不硬编码 HS01/HS02，避免与目录形成第二份真源而漂移。
+        // 型号筛选项的唯一来源是领域目录（DeviceCapabilityCatalog.models() → ViewModel.filterOptions）；
+        // 初始态不硬编码任何机型，避免与目录形成第二份真源而漂移。
         return List.of(new ScanFilterOption(ScanFilterOption.ALL_MODELS, ""));
     }
 }

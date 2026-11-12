@@ -20,8 +20,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * 单个扫描结果的设备信息卡：图标 + 名称/机型 + 地址/信号 + 箭头。
- * 支持 RecyclerView ViewHolder 复用原地刷新，避免滚动与高频广播刷新时重复创建视图树与 Drawable。
+ * 扫描结果卡：只显示 BLE 名称、BLE MAC 和信号强度。
  */
 public final class ScanDeviceCard {
 
@@ -90,12 +89,13 @@ public final class ScanDeviceCard {
 
     public void bind(@NonNull ScanItem result) {
         boundItem = result;
-        String displayName = result.bleName().isEmpty() ? result.modelId() : result.bleName();
-        if (!displayName.contentEquals(name.getText())) {
-            name.setText(displayName);
+        String title = DeviceFormats.textOrUnknown(result.bleName());
+        if (!title.contentEquals(name.getText())) {
+            name.setText(title);
         }
-        if (!subtitleOf(result).contentEquals(detail.getText())) {
-            detail.setText(subtitleOf(result));
+        String subtitle = subtitleOf(result);
+        if (!subtitle.contentEquals(detail.getText())) {
+            detail.setText(subtitle);
         }
     }
 
@@ -113,11 +113,7 @@ public final class ScanDeviceCard {
 
     @NonNull
     private String subtitleOf(@NonNull ScanItem result) {
-        String signal = DeviceFormats.rssi(result.rssi());
-        return result.bleName().isEmpty() || result.bleName().equalsIgnoreCase(result.modelId())
-                ? result.bleMac() + DeviceFormats.META_SEPARATOR + signal
-                : result.modelId() + DeviceFormats.META_SEPARATOR + result.bleMac()
-                        + DeviceFormats.META_SEPARATOR + signal;
+        return result.bleAddress() + DeviceFormats.META_SEPARATOR + DeviceFormats.rssi(result.rssi());
     }
 
     @NonNull

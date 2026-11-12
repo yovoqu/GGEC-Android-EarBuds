@@ -1,5 +1,6 @@
 package com.ggec.earbuds.domain.device.usecase;
 
+import com.ggec.earbuds.domain.device.model.DeviceFailure;
 import com.ggec.earbuds.domain.device.model.ScanResult;
 import com.ggec.earbuds.domain.device.port.DevicePort;
 
@@ -16,10 +17,14 @@ public final class ScanDevices {
     }
 
     public void startBatch(Consumer<List<ScanResult>> onResults,
-                           Consumer<DevicePort.ScanFailure> onFailed,
+                           Consumer<DeviceFailure> onFailed,
                            Runnable onFinished,
                            Consumer<ScanResult> onRemoved) {
         port.startScanBatch(onResults, onFailed, onFinished, onRemoved);
+    }
+
+    public void filterModels(java.util.Set<String> modelIds) {
+        port.filterModels(modelIds);
     }
 
     public void stop() {

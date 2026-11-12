@@ -26,7 +26,7 @@ import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
-import com.yovo.lib_common.event.OneShotLiveData;
+import com.ggec.earbuds.ui.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;

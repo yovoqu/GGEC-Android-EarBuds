@@ -1,77 +1,44 @@
 package com.ggec.earbuds.ui.device.settings;
 
-import com.ggec.earbuds.domain.device.model.DeviceControls;
-import com.ggec.earbuds.domain.device.model.DeviceProfile;
+import androidx.annotation.NonNull;
+
+import com.ggec.earbuds.domain.device.model.ConnectionState;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
+import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.EqPreset;
-import com.ggec.earbuds.domain.device.model.SoundQuality;
-import com.ggec.earbuds.domain.device.policy.DeviceControlPolicy;
-import com.ggec.earbuds.ui.device.DeviceLabels;
-import com.ggec.earbuds.ui.device.DevicePage;
-import com.ggec.earbuds.ui.device.settings.page.AboutPageRows;
-import com.ggec.earbuds.ui.device.settings.page.ControlPageRows;
-import com.ggec.earbuds.ui.device.settings.page.DualPageRows;
-import com.ggec.earbuds.ui.device.settings.page.FunctionPageRows;
-import com.ggec.earbuds.ui.device.settings.page.RecordPageRows;
+import com.ggec.earbuds.ui.device.DeviceGroupLabels;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/** 领域快照到设置页强类型界面状态。 */
+/** 领域快照 + 能力描述 → 设置页界面状态。不碰 View，也不判断机型。 */
 public final class DeviceSettingsUiMapper {
 
-    public DeviceSettingsUiState map(DevicePage page, DeviceProfile profile, DeviceSnapshot snapshot,
-                                     DeviceControls controls, boolean interactive) {
-        if (profile == null || snapshot == null || !snapshot.isConnected()) {
-            return DeviceSettingsUiState.unconnected(page.titleRes);
-        }
-        DeviceControls safeControls = controls == null ? DeviceControls.empty() : controls;
-        List<DeviceSettingRow> rows = switch (page) {
-            case MUSIC -> List.of();
-            case CONTROL -> ControlPageRows.build(profile, safeControls);
-            case FUNCTION -> FunctionPageRows.build(profile, safeControls);
-            case DUAL -> DualPageRows.build(profile, safeControls);
-            case RECORD -> RecordPageRows.build(profile);
-            case ABOUT -> AboutPageRows.build(profile, snapshot);
-        };
-        DeviceSettingsUiState.MusicPanel music = page == DevicePage.MUSIC
-                ? music(profile, safeControls) : null;
-        return new DeviceSettingsUiState(true, page.titleRes, true, interactive, rows, music);
+    private final SettingsSectionFactory sections;
+
+    public DeviceSettingsUiMapper(@NonNull SettingsSectionFactory sections) {
+        this.sections = sections;
     }
 
-    private static DeviceSettingsUiState.MusicPanel music(DeviceProfile profile, DeviceControls controls) {
-        List<DeviceSettingsUiState.MusicPanel.Preset> presets = new ArrayList<>();
-        List<EqPreset> allowed = DeviceControlPolicy.presets(profile);
-        int selected = -1;
-        for (int index = 0; index < allowed.size(); index++) {
-            EqPreset preset = allowed.get(index);
-            presets.add(new DeviceSettingsUiState.MusicPanel.Preset(
-                    DeviceLabels.eq(preset), DeviceLabels.eqSubtitle(preset)));
-            if (preset == controls.eqPreset()) {
-                selected = index;
-            }
+    public DeviceSettingsUiState map(@NonNull DeviceCapabilityGroup group,
+                                     DeviceProfileView profile, DeviceSnapshot snapshot) {
+        ConnectionState connection = snapshot.connection();
+        if (profile == null || snapshot == null
+                || (connection != ConnectionState.READY && connection != ConnectionState.CONNECTING)) {
+            return DeviceSettingsUiState.unconnected(group, DeviceGroupLabels.title(group));
         }
-        List<Integer> qualities = new ArrayList<>();
-        List<SoundQuality> qualityValues = DeviceControlPolicy.qualities();
-        int selectedQuality = -1;
-        for (int index = 0; index < qualityValues.size(); index++) {
-            SoundQuality quality = qualityValues.get(index);
-            qualities.add(DeviceLabels.quality(quality));
-            if (quality == controls.soundQuality()) {
-                selectedQuality = index;
-            }
+        List<DeviceSettingRow> rows = new ArrayList<>();
+        if (group == DeviceCapabilityGroup.ABOUT) {
+            rows.addAll(AboutInfoRows.build(snapshot));
         }
-        boolean customSelected = controls.eqPreset() == EqPreset.CUSTOM && controls.customEqSaved();
-        return new DeviceSettingsUiState.MusicPanel(
-                presets,
-                customSelected ? -1 : selected,
-                controls.customEqSaved(),
-                customSelected,
-                controls.customEqName(),
-                controls.customEqGains(),
-                qualities,
-                selectedQuality,
-                controls.ldac(),
-                controls.volumeAdaptive());
+        rows.addAll(sections.rows(profile, snapshot.state(), group));
+        return new DeviceSettingsUiState(
+                group,
+                DeviceGroupLabels.title(group),
+                true,
+                snapshot.connection() == ConnectionState.READY,
+                rows,
+                snapshot.dualConnection(),
+                snapshot.recordFiles());
     }
 }

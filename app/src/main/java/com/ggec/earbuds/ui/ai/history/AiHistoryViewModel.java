@@ -13,7 +13,7 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
-import com.yovo.lib_common.event.OneShotLiveData;
+import com.ggec.earbuds.ui.OneShotLiveData;
 
 import java.time.ZoneId;
 import java.util.List;

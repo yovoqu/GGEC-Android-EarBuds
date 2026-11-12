@@ -50,7 +50,7 @@ public final class ScanScreen {
         @Override
         public boolean areItemsTheSame(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
             return oldItem.modelId().equals(newItem.modelId())
-                    && oldItem.bleMac().equalsIgnoreCase(newItem.bleMac());
+                    && oldItem.bleAddress().equalsIgnoreCase(newItem.bleAddress());
         }
 
         @Override
@@ -61,11 +61,9 @@ public final class ScanScreen {
         @Nullable
         @Override
         public Object getChangePayload(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
-            // 名称 / 型号 / MAC 变化需要完整重绑；只有 RSSI 变化时返回局部载荷，
-            // 让 RecyclerView 只跑 light bind，不重新设置名称、不整卡重排。
+            // BLE 名称或 BLE 地址变化需要完整重绑；只有 RSSI 变化时局部刷新副标题。
             if (!oldItem.bleName().equals(newItem.bleName())
-                    || !oldItem.modelId().equals(newItem.modelId())
-                    || !oldItem.bleMac().equalsIgnoreCase(newItem.bleMac())) {
+                    || !oldItem.bleAddress().equalsIgnoreCase(newItem.bleAddress())) {
                 return null;
             }
             return PAYLOAD_RSSI;

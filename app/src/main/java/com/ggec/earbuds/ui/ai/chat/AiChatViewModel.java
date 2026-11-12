@@ -8,7 +8,7 @@ import androidx.lifecycle.ViewModel;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatState;
 import com.ggec.earbuds.domain.ai.port.Subscription;
-import com.yovo.lib_common.event.OneShotLiveData;
+import com.ggec.earbuds.ui.OneShotLiveData;
 
 import java.util.Objects;
 

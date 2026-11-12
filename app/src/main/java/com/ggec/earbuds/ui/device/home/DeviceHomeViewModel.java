@@ -5,41 +5,47 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.domain.device.model.DeviceControls;
-import com.ggec.earbuds.domain.device.model.DeviceProfile;
+import com.ggec.earbuds.domain.device.model.ConnectionState;
+import com.ggec.earbuds.domain.device.model.ControlValue;
+import com.ggec.earbuds.domain.device.model.DeviceFailure;
+import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.DeviceSwitch;
+import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
-import com.ggec.earbuds.domain.device.usecase.EditDeviceControls;
-import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
+import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
+import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 
-/** 设备页签：订阅设备与控件，发布一份界面状态。 */
+/**
+ * 设备页签状态机。只消费公共协议：订阅快照、按能力目录取描述、把界面意图交给写入用例。
+ * 不调用任何项目 SDK。
+ */
 public final class DeviceHomeViewModel extends ViewModel {
 
-    private final LoadDeviceProfiles loadProfiles;
+    private final DeviceCapabilityCatalog catalog;
     private final ObserveDevice observeDevice;
     private final ConnectDevice connectDevice;
-    private final EditDeviceControls controls;
+    private final WriteDeviceControl writeControl;
     private final DeviceHomeUiMapper mapper;
 
     private final MutableLiveData<DeviceHomeUiState> uiState = new MutableLiveData<>();
+    private final MutableLiveData<DeviceFailure> failures = new MutableLiveData<>();
+    private final MutableLiveData<DeviceControlOutcome> controls = new MutableLiveData<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
-    private DeviceControls controlState = DeviceControls.empty();
     private Subscription deviceSubscription;
-    private Subscription controlSubscription;
 
-    public DeviceHomeViewModel(@NonNull LoadDeviceProfiles loadProfiles,
+    public DeviceHomeViewModel(@NonNull DeviceCapabilityCatalog catalog,
                                @NonNull ObserveDevice observeDevice,
                                @NonNull ConnectDevice connectDevice,
-                               @NonNull EditDeviceControls controls,
+                               @NonNull WriteDeviceControl writeControl,
                                @NonNull DeviceHomeUiMapper mapper) {
-        this.loadProfiles = loadProfiles;
+        this.catalog = catalog;
         this.observeDevice = observeDevice;
         this.connectDevice = connectDevice;
-        this.controls = controls;
+        this.writeControl = writeControl;
         this.mapper = mapper;
     }
 
@@ -48,29 +54,59 @@ public final class DeviceHomeViewModel extends ViewModel {
         return uiState;
     }
 
+    @NonNull
+    public LiveData<DeviceFailure> failures() {
+        return failures;
+    }
+
+    @NonNull
+    public LiveData<DeviceControlOutcome> controls() {
+        return controls;
+    }
+
     public void start() {
         if (deviceSubscription != null) {
             return;
         }
         snapshot = observeDevice.current();
-        controlState = controls.current();
         deviceSubscription = observeDevice.execute(this::onSnapshot);
-        controlSubscription = controls.observe(this::onControls);
+        publish();
     }
 
-    public void setToggle(@NonNull HomeToggle key, boolean value) {
-        DeviceSnapshot currentSnapshot;
-        synchronized (this) {
-            currentSnapshot = snapshot;
-        }
-        if (!currentSnapshot.isConnected() || !controls.isAvailable()) {
-            return;
-        }
-        controls.update(current -> current.withSwitch(DeviceSwitch.valueOf(key.name()), value));
+    public void setToggle(@NonNull String capabilityId, boolean value) {
+        write(capabilityId, new ControlValue.Toggle(value));
+    }
+
+    public void selectOption(@NonNull String capabilityId, @NonNull String optionId) {
+        write(capabilityId, new ControlValue.Choice(optionId));
     }
 
     public void disconnect() {
         connectDevice.disconnect();
+    }
+
+    private void write(String capabilityId, ControlValue value) {
+        if (!isWritable()) {
+            return;
+        }
+        writeControl.execute(capabilityId, value, result -> onWriteResult(capabilityId, result));
+    }
+
+    private boolean isWritable() {
+        DeviceSnapshot current;
+        synchronized (this) {
+            current = snapshot;
+        }
+        return current.connection() == ConnectionState.READY;
+    }
+
+    private void onWriteResult(String capabilityId, DeviceWriteResult result) {
+        if (result instanceof DeviceWriteResult.Failed failed) {
+            failures.postValue(failed.failure());
+            controls.postValue(DeviceControlOutcome.failed(capabilityId));
+            return;
+        }
+        controls.postValue(DeviceControlOutcome.ok(capabilityId));
     }
 
     private void onSnapshot(DeviceSnapshot next) {
@@ -80,27 +116,14 @@ public final class DeviceHomeViewModel extends ViewModel {
         publish();
     }
 
-    private void onControls(DeviceControls next) {
-        synchronized (this) {
-            controlState = next;
-        }
-        publish();
-    }
-
     private void publish() {
-        DeviceSnapshot shot;
-        DeviceControls current;
+        DeviceSnapshot current;
         synchronized (this) {
-            shot = snapshot;
-            current = controlState;
+            current = snapshot;
         }
-        DeviceProfile profile = loadProfiles.profileFor(shot).orElse(null);
-        if (profile == null) {
-            // CONNECTING 时 snapshot 尚未 isConnected，profileFor(snapshot) 为空；用 modelId/variantId 兜底解析，
-            // 让首页在“连接中”就能显示设备卡片与“连接中”文案（而不是回到空态）。
-            profile = loadProfiles.profileFor(shot.modelId(), shot.variantId()).orElse(null);
-        }
-        uiState.postValue(mapper.map(profile, shot, current, controls.isAvailable()));
+        DeviceProfileView profile = current.modelId() == null ? null
+                : catalog.model(current.modelId()).orElse(null);
+        uiState.postValue(mapper.map(profile, current));
     }
 
     @Override
@@ -108,10 +131,6 @@ public final class DeviceHomeViewModel extends ViewModel {
         if (deviceSubscription != null) {
             deviceSubscription.unsubscribe();
             deviceSubscription = null;
-        }
-        if (controlSubscription != null) {
-            controlSubscription.unsubscribe();
-            controlSubscription = null;
         }
         super.onCleared();
     }

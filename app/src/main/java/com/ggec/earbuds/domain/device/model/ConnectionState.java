@@ -1,15 +1,13 @@
 package com.ggec.earbuds.domain.device.model;
 
-/** 连接状态机（APP 视角）。 */
+/** 设备会话状态。与设备层会话一致：空闲、连接中、就绪、已断开。 */
 public enum ConnectionState {
     IDLE,
-    SCANNING,
     CONNECTING,
-    CONNECTED_NOT_READY,
     READY,
     DISCONNECTED;
 
     public boolean isConnected() {
-        return this == CONNECTED_NOT_READY || this == READY;
+        return this == READY;
     }
 }

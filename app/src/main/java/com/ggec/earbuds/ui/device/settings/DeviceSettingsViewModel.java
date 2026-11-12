@@ -1,56 +1,62 @@
 package com.ggec.earbuds.ui.device.settings;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.domain.device.model.DeviceControls;
-import com.ggec.earbuds.domain.device.model.DeviceProfile;
+import com.ggec.earbuds.domain.device.model.ConnectionState;
+import com.ggec.earbuds.domain.device.model.ControlValue;
+import com.ggec.earbuds.domain.device.model.DeviceAction;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
+import com.ggec.earbuds.domain.device.model.DeviceFailure;
+import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.DeviceSwitch;
-import com.ggec.earbuds.domain.device.model.EqPreset;
-import com.ggec.earbuds.domain.device.model.GestureAction;
-import com.ggec.earbuds.domain.device.model.GestureSlot;
-import com.ggec.earbuds.domain.device.model.SoundQuality;
-import com.ggec.earbuds.domain.device.policy.DeviceControlPolicy;
+import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.Subscription;
-import com.ggec.earbuds.domain.device.usecase.EditDeviceControls;
-import com.ggec.earbuds.domain.device.usecase.LoadDeviceProfiles;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
-import com.ggec.earbuds.ui.device.DevicePage;
-
-import java.util.List;
-import java.util.Optional;
+import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
+import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
+import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
+import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 
 /**
- * 设置页状态机：订阅快照与控件，把界面的语义意图翻译成领域操作。
- * View 只提交 SettingId / 索引，不接触任何领域枚举；未连接或协议控件未就绪时不伪造写操作。
+ * 设置页状态机：订阅快照、从能力目录取描述、把界面的类型化意图交给用例。
+ *
+ * <p>写入只走 {@link WriteDeviceControl}（{@code DevicePort.write}），动作只走
+ * {@link RunDeviceAction}（{@code DevicePort.perform}）。本类不拼协议字节、不推导值域、
+ * 不吞失败：失败分类经 {@link #failures()} 交给宿主播文案。</p>
  */
 public final class DeviceSettingsViewModel extends ViewModel {
 
-    private final DevicePage page;
-    private final LoadDeviceProfiles loadProfiles;
+    private final DeviceCapabilityGroup group;
+    private final DeviceCapabilityCatalog catalog;
     private final ObserveDevice observeDevice;
-    private final EditDeviceControls controls;
+    private final WriteDeviceControl writeControl;
+    private final RunDeviceAction runAction;
     private final DeviceSettingsUiMapper mapper;
 
     private final MutableLiveData<DeviceSettingsUiState> uiState = new MutableLiveData<>();
+    private final MutableLiveData<DeviceFailure> failures = new MutableLiveData<>();
+    private final MutableLiveData<DeviceControlOutcome> controls = new MutableLiveData<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
-    private DeviceControls controlState = DeviceControls.empty();
-    private Subscription deviceSubscription;
-    private Subscription controlSubscription;
+    private Subscription subscription;
+    private boolean listDataRequested;
 
-    public DeviceSettingsViewModel(@NonNull DevicePage page,
-                                   @NonNull LoadDeviceProfiles loadProfiles,
+    public DeviceSettingsViewModel(@NonNull DeviceCapabilityGroup group,
+                                   @NonNull DeviceCapabilityCatalog catalog,
                                    @NonNull ObserveDevice observeDevice,
-                                   @NonNull EditDeviceControls controls,
+                                   @NonNull WriteDeviceControl writeControl,
+                                   @NonNull RunDeviceAction runAction,
                                    @NonNull DeviceSettingsUiMapper mapper) {
-        this.page = page;
-        this.loadProfiles = loadProfiles;
+        this.group = group;
+        this.catalog = catalog;
         this.observeDevice = observeDevice;
-        this.controls = controls;
+        this.writeControl = writeControl;
+        this.runAction = runAction;
         this.mapper = mapper;
     }
 
@@ -60,140 +66,65 @@ public final class DeviceSettingsViewModel extends ViewModel {
     }
 
     @NonNull
-    public DevicePage page() {
-        return page;
+    public LiveData<DeviceFailure> failures() {
+        return failures;
+    }
+
+    /** 写入落地结果（按能力 id）：视图据此丢弃「未确认」呈现，不假装成功。 */
+    @NonNull
+    public LiveData<DeviceControlOutcome> controls() {
+        return controls;
+    }
+
+    @NonNull
+    public DeviceCapabilityGroup group() {
+        return group;
     }
 
     public void start() {
-        if (deviceSubscription != null) {
+        if (subscription != null) {
             return;
         }
         snapshot = observeDevice.current();
-        controlState = controls.current();
-        deviceSubscription = observeDevice.execute(this::onSnapshot);
-        controlSubscription = controls.observe(this::onControls);
+        subscription = observeDevice.execute(this::onSnapshot);
+        publish();
     }
 
-    // ---- 音乐与音效 ----
-
-    public void choosePreset(int index) {
-        DeviceProfile profile = activeWritableProfile().orElse(null);
-        if (profile == null) {
+    /** 控件写入：只看连接是否可写，值域与协议全部在域层。 */
+    public void write(@NonNull String capabilityId, @NonNull ControlValue value) {
+        if (!isWritable()) {
             return;
         }
-        List<EqPreset> presets = DeviceControlPolicy.presets(profile);
-        if (index < 0 || index >= presets.size()) {
-            return;
-        }
-        EqPreset preset = presets.get(index);
-        controls.update(current -> current.withEqPreset(preset));
+        writeControl.execute(capabilityId, value, result -> onResult(capabilityId, result));
     }
 
-    public void selectCustomEq() {
-        if (activeWritableProfile().isEmpty()) {
+    /** 类型化动作：重启、清除配对、查找耳机、录音等。 */
+    public void run(@NonNull DeviceAction action) {
+        if (!isWritable()) {
             return;
         }
-        controls.update(current -> current.withEqPreset(EqPreset.CUSTOM));
+        runAction.execute(action, result -> onResult(null, result));
     }
 
-    public void chooseQuality(int index) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        List<SoundQuality> qualities = DeviceControlPolicy.qualities();
-        if (index < 0 || index >= qualities.size()) {
-            return;
-        }
-        SoundQuality quality = qualities.get(index);
-        controls.update(current -> current.withSoundQuality(quality));
-    }
-
-    public void saveCustomEq(@NonNull String name, @NonNull float[] gains) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        controls.update(current -> current.withCustomEq(name, gains));
-    }
-
-    public void setLdac(boolean enabled) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        controls.update(current -> current.withSwitch(DeviceSwitch.LDAC, enabled));
-    }
-
-    public void setVolumeAdaptive(boolean enabled) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        controls.update(current -> current.withSwitch(DeviceSwitch.VOLUME_ADAPTIVE, enabled));
-    }
-
-    // ---- 其他页的语义意图 ----
-
-    public void onChoice(@NonNull SettingId id, int optionIndex) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        GestureSlot slot = gestureSlotOf(id);
-        if (slot == null) {
-            return;
-        }
-        List<GestureAction> options = DeviceControlPolicy.actions(slot);
-        if (optionIndex < 0 || optionIndex >= options.size()) {
-            return;
-        }
-        GestureAction action = options.get(optionIndex);
-        controls.update(current -> current.withGesture(slot, action));
-    }
-
-    public void onToggle(@NonNull SettingId id, boolean checked) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        DeviceSwitch key = switchOf(id);
-        if (key == null) {
-            return;
-        }
-        controls.update(current -> current.withSwitch(key, checked));
-    }
-
-    public void onAction(@NonNull SettingId id) {
-        if (activeWritableProfile().isEmpty()) {
-            return;
-        }
-        if (id == SettingId.RESET_CONTROL) {
-            controls.update(current -> DeviceControls.empty());
-        }
-    }
-
-    private Optional<DeviceProfile> activeWritableProfile() {
-        DeviceSnapshot currentSnapshot;
+    private boolean isWritable() {
+        DeviceSnapshot current;
         synchronized (this) {
-            currentSnapshot = snapshot;
+            current = snapshot;
         }
-        if (!currentSnapshot.isConnected() || !controls.isAvailable()) {
-            return Optional.empty();
-        }
-        return loadProfiles.profileFor(currentSnapshot);
+        return current.connection() == ConnectionState.READY;
     }
 
-    private static GestureSlot gestureSlotOf(SettingId id) {
-        for (GestureSlot slot : GestureSlot.values()) {
-            if (slot.name().equals(id.name())) {
-                return slot;
+    private void onResult(@Nullable String capabilityId, DeviceWriteResult result) {
+        if (result instanceof DeviceWriteResult.Failed failed) {
+            failures.postValue(failed.failure());
+            if (capabilityId != null) {
+                controls.postValue(DeviceControlOutcome.failed(capabilityId));
             }
+            return;
         }
-        return null;
-    }
-
-    private static DeviceSwitch switchOf(SettingId id) {
-        for (DeviceSwitch key : DeviceSwitch.values()) {
-            if (key.name().equals(id.name())) {
-                return key;
-            }
+        if (capabilityId != null) {
+            controls.postValue(DeviceControlOutcome.ok(capabilityId));
         }
-        return null;
     }
 
     private void onSnapshot(DeviceSnapshot next) {
@@ -203,33 +134,51 @@ public final class DeviceSettingsViewModel extends ViewModel {
         publish();
     }
 
-    private void onControls(DeviceControls next) {
+    private void publish() {
+        DeviceSnapshot current;
         synchronized (this) {
-            controlState = next;
+            current = snapshot;
         }
-        publish();
+        DeviceProfileView profile = current.modelId() == null ? null
+                : catalog.model(current.modelId()).orElse(null);
+        uiState.postValue(mapper.map(group, profile, current));
+        requestListData(profile, current);
     }
 
-    private void publish() {
-        DeviceSnapshot shot;
-        DeviceControls current;
-        synchronized (this) {
-            shot = snapshot;
-            current = controlState;
+    /**
+     * 列表类组件的数据不在能力状态里：进页（连接就绪后）主动读一次，
+     * 之后随设备事件更新快照。每次连接只读一次。
+     */
+    private void requestListData(DeviceProfileView profile, DeviceSnapshot current) {
+        if (profile == null || current.connection() != ConnectionState.READY) {
+            listDataRequested = false;
+            return;
         }
-        DeviceProfile profile = loadProfiles.profileFor(shot).orElse(null);
-        uiState.postValue(mapper.map(page, profile, shot, current, controls.isAvailable()));
+        if (listDataRequested) {
+            return;
+        }
+        listDataRequested = true;
+        switch (group) {
+            case DUAL_CONNECTION -> {
+                if (profile.supports(DeviceCapabilityIds.DUAL_CONNECTION_DEVICES)) {
+                    runAction.execute(new DeviceAction.ReadPairedDevices(), result -> onResult(null, result));
+                }
+            }
+            case RECORD -> {
+                if (profile.supports(DeviceCapabilityIds.RECORD_LIST)) {
+                    runAction.execute(new DeviceAction.ReadRecordList(), result -> onResult(null, result));
+                }
+            }
+            case MUSIC, CONTROL, FUNCTION, ABOUT -> {
+            }
+        }
     }
 
     @Override
     protected void onCleared() {
-        if (deviceSubscription != null) {
-            deviceSubscription.unsubscribe();
-            deviceSubscription = null;
-        }
-        if (controlSubscription != null) {
-            controlSubscription.unsubscribe();
-            controlSubscription = null;
+        if (subscription != null) {
+            subscription.unsubscribe();
+            subscription = null;
         }
         super.onCleared();
     }
