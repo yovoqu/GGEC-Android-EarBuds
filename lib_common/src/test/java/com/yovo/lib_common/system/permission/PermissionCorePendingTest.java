@@ -17,7 +17,8 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.Shadows;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowApplication;
 import org.robolectric.annotation.Config;
 
 @RunWith(RobolectricTestRunner.class)
@@ -27,7 +28,7 @@ public class PermissionCorePendingTest {
     @Test
     public void pendingRequests_areKeyedByActivityAndRequestCode() {
         Application app = RuntimeEnvironment.getApplication();
-        Shadows.shadowOf(app).denyPermissions(
+        Shadow.<ShadowApplication>extract(app).denyPermissions(
                 Permission.ACCESS_FINE_LOCATION.androidPermission(),
                 Permission.WRITE_EXTERNAL_STORAGE.androidPermission());
 
@@ -58,7 +59,7 @@ public class PermissionCorePendingTest {
     @Test
     public void noActivityOverload_ambiguousRequestCode_returnsIgnored() {
         Application app = RuntimeEnvironment.getApplication();
-        Shadows.shadowOf(app).denyPermissions(
+        Shadow.<ShadowApplication>extract(app).denyPermissions(
                 Permission.ACCESS_FINE_LOCATION.androidPermission(),
                 Permission.WRITE_EXTERNAL_STORAGE.androidPermission());
 
