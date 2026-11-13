@@ -5,48 +5,56 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
-import com.ggec.earbuds.domain.device.model.ConnectionState;
-import com.ggec.earbuds.domain.device.model.ControlValue;
-import com.ggec.earbuds.domain.device.model.DeviceFailure;
-import com.ggec.earbuds.domain.device.model.DeviceProfileView;
-import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
-import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
+import com.ggec.earbuds.domain.device.model.ConnectSettlement;
+import com.ggec.earbuds.domain.device.model.DeviceId;
+import com.ggec.earbuds.domain.device.model.DeviceRecord;
+import com.ggec.earbuds.domain.device.model.DeviceRoster;
+import com.ggec.earbuds.domain.device.model.DeviceTarget;
 import com.ggec.earbuds.domain.device.port.Subscription;
-import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
-import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
-import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
+import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
+import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
+import com.ggec.earbuds.domain.device.usecase.OpenDevice;
+import com.ggec.earbuds.domain.device.usecase.RenameDevice;
+import com.ggec.earbuds.ui.device.roster.DeviceRosterEvent;
+import com.yovo.lib_common.event.OneShotLiveData;
+
+import java.util.Objects;
 
 /**
- * 设备页签状态机。只消费公共协议：订阅快照、按能力目录取描述、把界面意图交给写入用例。
- * 不调用任何项目 SDK。
+ * 设备页视图模型：台账 → 标题栏（名称 + MAC·型号 + 下拉）与能力入口。
+ *
+ * <p>只经用例触达领域：观察台账、列能力入口、打开设备、改名、忘记。能力入口不在界面里
+ * 推断，全部来自 {@link ListDeviceEntries}（数据源是 biz 设备目录）。</p>
  */
 public final class DeviceHomeViewModel extends ViewModel {
 
-    private final DeviceCapabilityCatalog catalog;
-    private final ObserveDevice observeDevice;
-    private final ConnectDevice connectDevice;
-    private final WriteDeviceControl writeControl;
+    private final ObserveDeviceRoster observeRoster;
+    private final ListDeviceEntries listEntries;
+    private final OpenDevice openDevice;
+    private final RenameDevice renameDevice;
+    private final ForgetDevice forgetDevice;
     private final DeviceHomeUiMapper mapper;
 
     private final MutableLiveData<DeviceHomeUiState> uiState = new MutableLiveData<>();
-    private final MutableLiveData<DeviceFailure> failures = new MutableLiveData<>();
-    private final MutableLiveData<DeviceControlOutcome> controls = new MutableLiveData<>();
+    private final OneShotLiveData<DeviceRosterEvent> events = new OneShotLiveData<>();
 
-    private DeviceSnapshot snapshot = DeviceSnapshot.idle();
-    private Subscription deviceSubscription;
+    private Subscription rosterSubscription;
+    private Subscription failureSubscription;
+    private DeviceRoster roster = DeviceRoster.empty();
 
-    public DeviceHomeViewModel(@NonNull DeviceCapabilityCatalog catalog,
-                               @NonNull ObserveDevice observeDevice,
-                               @NonNull ConnectDevice connectDevice,
-                               @NonNull WriteDeviceControl writeControl,
+    public DeviceHomeViewModel(@NonNull ObserveDeviceRoster observeRoster,
+                               @NonNull ListDeviceEntries listEntries,
+                               @NonNull OpenDevice openDevice,
+                               @NonNull RenameDevice renameDevice,
+                               @NonNull ForgetDevice forgetDevice,
                                @NonNull DeviceHomeUiMapper mapper) {
-        this.catalog = catalog;
-        this.observeDevice = observeDevice;
-        this.connectDevice = connectDevice;
-        this.writeControl = writeControl;
-        this.mapper = mapper;
+        this.observeRoster = Objects.requireNonNull(observeRoster, "observeRoster");
+        this.listEntries = Objects.requireNonNull(listEntries, "listEntries");
+        this.openDevice = Objects.requireNonNull(openDevice, "openDevice");
+        this.renameDevice = Objects.requireNonNull(renameDevice, "renameDevice");
+        this.forgetDevice = Objects.requireNonNull(forgetDevice, "forgetDevice");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
     @NonNull
@@ -55,83 +63,105 @@ public final class DeviceHomeViewModel extends ViewModel {
     }
 
     @NonNull
-    public LiveData<DeviceFailure> failures() {
-        return failures;
-    }
-
-    @NonNull
-    public LiveData<DeviceControlOutcome> controls() {
-        return controls;
+    public LiveData<DeviceRosterEvent> events() {
+        return events;
     }
 
     public void start() {
-        if (deviceSubscription != null) {
+        if (rosterSubscription != null) {
             return;
         }
-        snapshot = observeDevice.current();
-        deviceSubscription = observeDevice.execute(this::onSnapshot);
-        publish();
+        failureSubscription = observeRoster.observeFailures(
+                failure -> events.postValue(new DeviceRosterEvent.StoreFailed()));
+        observeRoster.startupFailure().ifPresent(
+                failure -> events.postValue(new DeviceRosterEvent.StoreFailed()));
+        rosterSubscription = observeRoster.execute(this::onRoster);
     }
 
-    public void setToggle(@NonNull String capabilityId, boolean value) {
-        write(capabilityId, new ControlValue.Toggle(value));
-    }
-
-    public void selectOption(@NonNull String capabilityId, @NonNull String optionId) {
-        write(capabilityId, new ControlValue.Choice(optionId));
-    }
-
-    public void disconnect() {
-        connectDevice.disconnect();
-    }
-
-    private void write(String capabilityId, ControlValue value) {
-        if (!isWritable()) {
+    /** 下拉里选中一台：先断开当前设备，再由用例连接目标（会话内部保证顺序）。 */
+    public void select(@NonNull String key) {
+        DeviceRecord record = find(key);
+        if (record == null) {
+            events.postValue(new DeviceRosterEvent.DeviceMissing());
             return;
         }
-        writeControl.execute(capabilityId, value, result -> onWriteResult(capabilityId, result));
+        openDevice.execute(DeviceTarget.of(record), settlement -> {
+            if (settlement instanceof ConnectSettlement.Ready) {
+                events.postValue(new DeviceRosterEvent.OpenSucceeded(record.id()));
+                return;
+            }
+            if (settlement instanceof ConnectSettlement.Failed failed) {
+                events.postValue(new DeviceRosterEvent.OpenFailed(failed.failure()));
+            }
+        });
     }
 
-    private boolean isWritable() {
-        DeviceSnapshot current;
-        synchronized (this) {
-            current = snapshot;
-        }
-        return current.connection() == ConnectionState.READY;
-    }
-
-    private void onWriteResult(String capabilityId, DeviceWriteResult result) {
-        if (result instanceof DeviceWriteResult.Failed failed) {
-            failures.postValue(failed.failure());
-            controls.postValue(DeviceControlOutcome.failed(capabilityId));
+    public void renameActive(@NonNull String alias) {
+        DeviceRecord active = activeRecord();
+        if (active == null) {
+            events.postValue(new DeviceRosterEvent.DeviceMissing());
             return;
         }
-        controls.postValue(DeviceControlOutcome.ok(capabilityId));
+        if (!renameDevice.execute(active.id(), alias)) {
+            events.postValue(new DeviceRosterEvent.DeviceMissing());
+        }
     }
 
-    private void onSnapshot(DeviceSnapshot next) {
-        synchronized (this) {
-            snapshot = next;
+    public void forgetActive() {
+        DeviceRecord active = activeRecord();
+        if (active == null) {
+            events.postValue(new DeviceRosterEvent.DeviceMissing());
+            return;
         }
-        publish();
+        if (!forgetDevice.execute(active.id())) {
+            events.postValue(new DeviceRosterEvent.DeviceMissing());
+        }
     }
 
-    private void publish() {
-        DeviceSnapshot current;
-        synchronized (this) {
-            current = snapshot;
+    @NonNull
+    public String activeName() {
+        DeviceRecord active = activeRecord();
+        return active == null ? "" : active.displayName();
+    }
+
+    private DeviceRecord activeRecord() {
+        return roster.activeId().flatMap(roster::find).orElse(null);
+    }
+
+    private DeviceRecord find(String key) {
+        for (DeviceRecord record : roster.devices()) {
+            if (record.id().key().equals(key)) {
+                return record;
+            }
         }
-        DeviceProfileView profile = current.modelId() == null ? null
-                : catalog.model(current.modelId()).orElse(null);
-        uiState.postValue(mapper.map(profile, current));
+        return null;
+    }
+
+    private void onRoster(@NonNull DeviceRoster next) {
+        roster = next;
+        uiState.postValue(mapper.map(next, listEntries.execute(next.activeId().orElse(null))));
     }
 
     @Override
     protected void onCleared() {
-        if (deviceSubscription != null) {
-            deviceSubscription.unsubscribe();
-            deviceSubscription = null;
+        if (rosterSubscription != null) {
+            rosterSubscription.unsubscribe();
+            rosterSubscription = null;
+        }
+        if (failureSubscription != null) {
+            failureSubscription.unsubscribe();
+            failureSubscription = null;
         }
         super.onCleared();
+    }
+
+    /** 供页面在“忘记设备”时确认文案使用；key 由 {@link DeviceId#key()} 生成。 */
+    @NonNull
+    static DeviceId idOf(@NonNull String key) {
+        int split = key.lastIndexOf('@');
+        if (split <= 0 || split == key.length() - 1) {
+            throw new IllegalArgumentException("device key is broken: " + key);
+        }
+        return new DeviceId(key.substring(0, split), key.substring(split + 1));
     }
 }

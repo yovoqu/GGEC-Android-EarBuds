@@ -32,6 +32,9 @@ public final class DeviceSettingsUiMapper {
             rows.addAll(AboutInfoRows.build(snapshot));
         }
         rows.addAll(sections.rows(profile, snapshot.state(), group));
+        if (group == DeviceCapabilityGroup.ABOUT) {
+            rows.add(sections.deviceManagementRow());
+        }
         return new DeviceSettingsUiState(
                 group,
                 DeviceGroupLabels.title(group),

@@ -116,6 +116,17 @@
     <string name="ai_history_load_failed_action">重试</string>
 
     <!-- 设备 -->
+    <string name="about_device_management">设备管理</string>
+    <string name="device_forget_confirm">从 APP 的台账中移除这台设备？蓝牙绑定不会被改动。</string>
+    <string name="device_rename">重命名设备</string>
+    <string name="device_forget">忘记此设备</string>
+    <string name="device_home_empty_title">还没有可管理的设备</string>
+    <string name="device_home_empty_body">打开耳机并靠近手机，点右上角 + 添加一台设备。之后这里会是它的功能入口。</string>
+    <string name="device_home_disconnected_body">当前没有连接中的设备。点标题右侧的下拉选择已保存的设备，或点 + 添加新设备。</string>
+    <string name="device_entry_count">%1$d 项设置</string>
+    <string name="device_more">更多操作</string>
+    <string name="device_switch">切换设备</string>
+    <string name="device_switch_connected">%1$s（已连接）</string>
     <string name="device_add">添加设备</string>
     <string name="device_back">返回</string>
     <string name="device_battery_left">左耳</string>
@@ -126,6 +137,7 @@
     <string name="device_wear_none">未佩戴</string>
     <string name="device_state_idle">未连接</string>
     <string name="device_state_connecting">连接中</string>
+    <string name="device_connect_in_progress">正在连接</string>
     <string name="device_state_ready">已连接</string>
     <string name="device_state_disconnected">已断开</string>
     <string name="device_entry_music">音乐与音效</string>
@@ -229,4 +241,24 @@
     <string name="device_paired_business_idle">空闲</string>
     <string name="device_paired_business_music">音乐</string>
     <string name="device_paired_business_call">通话</string>
+    <!-- 设备台账（多设备管理） -->
+    <string name="ai_call_error_unknown">出了点问题，请重试。</string>
+    <string name="device_roster_empty_title">还没有可管理的设备</string>
+    <string name="device_roster_empty_body">打开耳机并靠近手机，点右上角 + 添加一台设备。之后每台设备的最后状态都会留在这里。</string>
+    <string name="device_roster_battery">电量 %1$s</string>
+    <string name="device_roster_firmware">固件 %1$s</string>
+    <string name="device_roster_status_just_now">刚刚同步</string>
+    <string name="device_roster_status_minutes">%1$d 分钟前同步</string>
+    <string name="device_roster_status_hours">%1$d 小时前同步</string>
+    <string name="device_roster_status_days">%1$d 天前同步</string>
+    <string name="device_roster_status_never">从未同步</string>
+    <string name="device_roster_more">更多操作</string>
+    <string name="device_roster_rename">重命名</string>
+    <string name="device_roster_rename_title">设备名称</string>
+    <string name="device_roster_forget">忘记此设备</string>
+    <string name="device_roster_forget_title">忘记设备</string>
+    <string name="device_roster_forget_body">将从本机移除「%1$s」的档案，不会改动耳机的蓝牙配对。</string>
+    <string name="device_error_store">设备记录读取失败，已保留损坏文件。</string>
+    <string name="device_error_not_found">该设备已不在列表中。</string>
+    <string name="device_error_incomplete_identity">这台设备没有上报经典蓝牙地址，暂时无法连接。</string>
 </resources>

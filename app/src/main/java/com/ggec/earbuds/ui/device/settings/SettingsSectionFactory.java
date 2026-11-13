@@ -37,6 +37,17 @@ public final class SettingsSectionFactory {
         }
     }
 
+    /**
+     * 「关于设备」末尾的 APP 级设备管理行：重命名别名、忘记设备。
+     *
+     * <p>这两件事属于 APP 台账，不来自 biz 能力目录，所以由工厂以固定 id 追加，视图按 kind 渲染。</p>
+     */
+    @NonNull
+    public DeviceSettingRow deviceManagementRow() {
+        return new DeviceSettingRow.Action(DeviceCapabilityIds.DEVICE_MANAGEMENT, "",
+                DeviceSettingRow.ActionKind.DEVICE_MANAGEMENT);
+    }
+
     @NonNull
     public List<Section> build(@NonNull DeviceProfileView profile, @NonNull DeviceState state) {
         List<Section> sections = new ArrayList<>();
@@ -126,6 +137,7 @@ public final class SettingsSectionFactory {
             case DeviceCapabilityIds.RECORD_LOCAL -> DeviceSettingRow.ActionKind.RECORD_LOCAL;
             case DeviceCapabilityIds.RECORD_STREAM -> DeviceSettingRow.ActionKind.RECORD_STREAM;
             case DeviceCapabilityIds.RECORD_TRANSFER -> DeviceSettingRow.ActionKind.RECORD_TRANSFER;
+            case DeviceCapabilityIds.DEVICE_MANAGEMENT -> DeviceSettingRow.ActionKind.DEVICE_MANAGEMENT;
             default -> null;
         };
     }

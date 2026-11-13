@@ -18,7 +18,6 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.SimpleItemAnimator;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
@@ -84,6 +83,7 @@ public final class ScanScreen {
     private final TextView emptyBody;
     private final YoButton action;
     private final YoSelect filterSelect;
+    private final ScanConnectDialog connectDialog;
 
     private List<ScanFilterOption> renderedOptions = List.of();
     private String lastOptionsSignature = "";
@@ -100,6 +100,7 @@ public final class ScanScreen {
         this.activity = activity;
         this.theme = DeviceTheme.of(activity);
         this.listener = listener;
+        this.connectDialog = new ScanConnectDialog(activity);
 
         root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -121,9 +122,7 @@ public final class ScanScreen {
         // RV 尺寸固定为 MATCH_PARENT，内容变化不改变自身大小：开启后避免每次 submitList 触发 requestLayout。
         recyclerView.setHasFixedSize(true);
         recyclerView.setPadding(0, 0, 0, theme.dp(DeviceTheme.SPACE_S));
-        if (recyclerView.getItemAnimator() instanceof SimpleItemAnimator animator) {
-            animator.setSupportsChangeAnimations(false);
-        }
+        recyclerView.setItemAnimator(new ScanCardAnimator(theme.dp(ScanListMotion.APPEAR_OFFSET_DP)));
         adapter = new ScanDeviceAdapter();
         recyclerView.setAdapter(adapter);
         recyclerView.setVisibility(View.GONE);
@@ -175,11 +174,13 @@ public final class ScanScreen {
     }
 
     public void destroy() {
+        connectDialog.destroy();
         recyclerView.setAdapter(null);
         components.close();
     }
 
     public void render(@NonNull ScanUiState state) {
+        connectDialog.render(state.connectPhase() == ScanConnectPhase.CONNECTING);
         bindFilter(state);
         boolean scanning = state.scanning();
         if (lastScanning == null || lastScanning != scanning) {

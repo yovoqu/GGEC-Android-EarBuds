@@ -9,7 +9,8 @@ public record ScanUiState(
         String selectedFilterModelId,
         List<ScanFilterOption> filterOptions,
         List<ScanItem> results,
-        int totalDiscoveredCount
+        int totalDiscoveredCount,
+        ScanConnectPhase connectPhase
 ) {
 
     public ScanUiState {
@@ -18,6 +19,7 @@ public record ScanUiState(
         filterOptions = filterOptions == null ? List.of() : List.copyOf(filterOptions);
         results = results == null ? List.of() : List.copyOf(results);
         totalDiscoveredCount = Math.max(0, totalDiscoveredCount);
+        connectPhase = connectPhase == null ? ScanConnectPhase.IDLE : connectPhase;
     }
 
     public static ScanUiState idle() {
@@ -27,7 +29,8 @@ public record ScanUiState(
                 ScanFilterOption.ALL_MODELS,
                 defaultFilterOptions(),
                 List.of(),
-                0);
+                0,
+                ScanConnectPhase.IDLE);
     }
 
     public static List<ScanFilterOption> defaultFilterOptions() {

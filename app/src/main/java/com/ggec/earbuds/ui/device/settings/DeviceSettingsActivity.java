@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.ui.device.DeviceFailureText;
@@ -47,14 +48,18 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
                 screen.render(state);
             }
         });
-        viewModel.failures().observe(this, failure -> {
-            if (failure != null) {
-                YoToast.showWarning(this, getString(DeviceFailureText.message(failure)));
-            }
-        });
-        viewModel.controls().observe(this, outcome -> {
-            if (outcome != null) {
-                screen.onControlOutcome(outcome);
+        viewModel.events().observe(this, event -> {
+            switch (event) {
+                case null -> {
+                }
+                case DeviceSettingsEvent.RosterMissing ignored ->
+                        YoToast.showWarning(this, getString(R.string.device_error_not_found));
+                case DeviceSettingsEvent.Closed ignored -> finish();
+                case DeviceSettingsEvent.Failure failure ->
+                        YoToast.showWarning(this,
+                                getString(DeviceFailureText.message(failure.failure())));
+                case DeviceSettingsEvent.ControlOutcome outcome ->
+                        screen.onControlOutcome(outcome.outcome());
             }
         });
         viewModel.start();
@@ -63,8 +68,8 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
     @NonNull
     private DeviceCapabilityGroup group() {
         String raw = getIntent().getStringExtra(EXTRA_GROUP);
-        if (raw == null) {
-            return DeviceCapabilityGroup.ABOUT;
+        if (raw == null || raw.isEmpty()) {
+            throw new IllegalStateException("DeviceSettingsActivity requires EXTRA_GROUP");
         }
         return DeviceCapabilityGroup.valueOf(raw);
     }

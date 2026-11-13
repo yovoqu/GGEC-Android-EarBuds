@@ -21,6 +21,7 @@ public final class AppExecutors {
     private final Executor settingsOperation;
     private final Executor realtimeFetch;
     private final Executor aiCallbacks;
+    private final Executor deviceStore;
     public AppExecutors() {
         settingsPersistence = serial("ai-settings-persist");
         chatState = serial("ai-chat");
@@ -29,6 +30,7 @@ public final class AppExecutors {
         settingsOperation = fixed("ai-settings-operation", 2);
         realtimeFetch = serial("ai-chatgpt-realtime");
         aiCallbacks = serial("ai-callbacks");
+        deviceStore = serial("device-store");
     }
 
     @NonNull public Executor settingsPersistence() {
@@ -57,6 +59,11 @@ public final class AppExecutors {
 
     @NonNull public Executor aiCallbacks() {
         return aiCallbacks;
+    }
+
+    /** 设备台账落盘：单写者，合并写入。 */
+    @NonNull public Executor deviceStore() {
+        return deviceStore;
     }
 
     @NonNull

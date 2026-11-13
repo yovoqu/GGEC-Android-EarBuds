@@ -27,6 +27,9 @@ public final class DeviceFailureText {
             case UNSUPPORTED_CAPABILITY -> R.string.device_error_unsupported;
             case DEVICE_ERROR -> R.string.device_error_device;
             case INTERNAL_ERROR -> R.string.device_error_internal;
+            case INCOMPLETE_IDENTITY -> R.string.device_error_incomplete_identity;
+            case STORE_FAILED -> R.string.device_error_store;
+            case DEVICE_NOT_FOUND -> R.string.device_error_not_found;
         };
     }
 }

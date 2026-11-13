@@ -31,7 +31,7 @@ public final class AppContainer {
         executors = new AppExecutors();
         ai = new AiGraph(appContext, executors);
         shell = new ShellGraph();
-        device = new DeviceGraph(appContext);
+        device = new DeviceGraph(appContext, executors.deviceStore(), System::currentTimeMillis);
     }
 
     @NonNull
