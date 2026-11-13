@@ -10,8 +10,8 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.ViewModelStoreOwner;
 
 import com.yovo.biz_appupdate.YoAppUpdate;
-import com.yovo.biz_appupdate.internal.contract.LogPort;
 import com.yovo.biz_appupdate.internal.di.AppUpdateGraph;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 import com.yovo.biz_appupdate.internal.engine.SplashGate;
 import com.yovo.biz_appupdate.internal.model.DownloadDirSpec;
 import com.yovo.biz_appupdate.internal.ui.UpdateUiController;
@@ -36,7 +36,7 @@ public final class YoAppUpdateCore {
                                @NonNull YoAppUpdate.Config config) {
         instance = new YoAppUpdateCore(
                 AppUpdateGraph.create(context, ContractMapper.toInternalConfig(config)));
-        instance.log().i(TAG, "YoAppUpdate 初始化完成：下载目录类型="
+        YoUpdateLogger.i(TAG, "YoAppUpdate 初始化完成：下载目录类型="
                 + instance.graph.config().downloadDir().type()
                 + "，自动安装=" + instance.graph.config().autoInstallOnLaunch()
                 + "，仅 WiFi=" + instance.graph.config().wifiOnly()
@@ -69,22 +69,22 @@ public final class YoAppUpdateCore {
 
     public boolean requestDownloadDirPermissionIfNeeded(@NonNull Activity activity) {
         if (graph.downloadDirAccess().isAccessible()) {
-            log().d(TAG, "下载目录已可访问，无需请求权限");
+            YoUpdateLogger.d(TAG, "下载目录已可访问，无需请求权限");
             return true;
         }
         if (graph.config().downloadDir().type() == DownloadDirSpec.Type.SAF) {
-            log().d(TAG, "SAF 下载目录，不请求存储权限");
+            YoUpdateLogger.d(TAG, "SAF 下载目录，不请求存储权限");
             return true;
         }
         boolean requested = graph.downloadDirPermission().requestIfNeeded(
                 activity, graph.config().downloadDir().type());
-        log().d(TAG, "请求下载目录权限结果=" + requested);
+        YoUpdateLogger.d(TAG, "请求下载目录权限结果=" + requested);
         return requested;
     }
 
     public boolean requestInstallUnknownSources(@NonNull Activity activity) {
         boolean requested = graph.installPermission().requestIfNeeded(activity);
-        log().d(TAG, "请求安装未知来源权限结果=" + requested);
+        YoUpdateLogger.d(TAG, "请求安装未知来源权限结果=" + requested);
         return requested;
     }
 
@@ -111,7 +111,7 @@ public final class YoAppUpdateCore {
         viewModel.attach(launchIntent);
         UpdateUiController controller =
                 new UpdateUiController(activity, viewModel, host);
-        log().d(TAG, "更新 UI 已挂载");
+        YoUpdateLogger.d(TAG, "更新 UI 已挂载");
         return new YoAppUpdate.UpdateUiSession() {
             @Override
             public void checkUpdate() {
@@ -158,10 +158,5 @@ public final class YoAppUpdateCore {
                     .get(UpdateViewModel.class);
         }
         return new UpdateViewModel(graph.engine());
-    }
-
-    @NonNull
-    private LogPort log() {
-        return graph.logPort();
     }
 }

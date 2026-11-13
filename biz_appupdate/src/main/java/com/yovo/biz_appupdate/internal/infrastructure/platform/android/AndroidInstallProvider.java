@@ -9,11 +9,13 @@ import androidx.annotation.NonNull;
 import androidx.core.content.FileProvider;
 
 import com.yovo.biz_appupdate.internal.contract.InstallProvider;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 import java.io.File;
 
 public final class AndroidInstallProvider implements InstallProvider {
 
+    private static final String TAG = "AndroidInstallProvider";
     private static final String MIME = "application/vnd.android.package-archive";
 
     private final String fileProviderAuthority;
@@ -36,6 +38,7 @@ public final class AndroidInstallProvider implements InstallProvider {
             context.startActivity(intent);
             return Result.SUCCESS;
         } catch (ActivityNotFoundException | IllegalArgumentException e) {
+            YoUpdateLogger.w(TAG, "无法拉起安装器: " + apkFile.getAbsolutePath(), e);
             return Result.NO_INSTALLER;
         }
     }

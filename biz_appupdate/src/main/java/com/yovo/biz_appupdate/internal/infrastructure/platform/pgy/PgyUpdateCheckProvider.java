@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 import com.yovo.biz_appupdate.BuildConfig;
 import com.yovo.biz_appupdate.internal.contract.UpdateCheckProvider;
 import com.yovo.biz_appupdate.internal.model.RemoteUpdate;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 import org.json.JSONObject;
 
@@ -26,6 +27,7 @@ import java.util.concurrent.Executors;
 
 public final class PgyUpdateCheckProvider implements UpdateCheckProvider {
 
+    private static final String TAG = "PgyUpdateCheck";
     private static final String API_URL = "https://api.pgyer.com/apiv2/app/check";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -93,6 +95,7 @@ public final class PgyUpdateCheckProvider implements UpdateCheckProvider {
                         PgyerCheckMapper.parseFileSize(data.opt("buildFileSize")));
                 MAIN.post(() -> callback.onSuccess(update));
             } catch (Exception e) {
+                YoUpdateLogger.e(TAG, "检查更新请求失败", e);
                 MAIN.post(() -> callback.onError(e.getMessage() != null ? e.getMessage() : "check failed"));
             } finally {
                 if (conn != null) {

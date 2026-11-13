@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_appupdate.internal.contract.ApkVerifier;
 import com.yovo.biz_appupdate.internal.model.LocalApk;
 import com.yovo.biz_appupdate.internal.model.RemoteUpdate;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -29,6 +30,8 @@ import java.util.Locale;
  * </ul>
  */
 public final class AndroidApkVerifier implements ApkVerifier {
+
+    private static final String TAG = "AndroidApkVerifier";
 
     private final AndroidApkMetaReader metaReader;
 
@@ -92,6 +95,7 @@ public final class AndroidApkVerifier implements ApkVerifier {
             }
             return sb.toString();
         } catch (IOException | NoSuchAlgorithmException e) {
+            YoUpdateLogger.e(TAG, "计算 APK 摘要失败: " + algorithm, e);
             return null;
         }
     }
