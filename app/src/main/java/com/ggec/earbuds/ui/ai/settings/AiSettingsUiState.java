@@ -1,11 +1,14 @@
 package com.ggec.earbuds.ui.ai.settings;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
+import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 
 import java.util.List;
 import java.util.Objects;
@@ -30,10 +33,14 @@ public record AiSettingsUiState(
         List<PlatformRow> platforms,
         @NonNull Identity identity,
         @NonNull Voice voice,
-        @NonNull Style style) {
+        @NonNull Style style,
+        @NonNull AiSettingsPersistenceStatus persistence,
+        @NonNull List<AiPlatformTemplate> templates) {
 
     public AiSettingsUiState {
         platforms = List.copyOf(platforms);
+        Objects.requireNonNull(persistence, "persistence");
+        templates = List.copyOf(templates);
     }
 
     /**
@@ -76,7 +83,8 @@ public record AiSettingsUiState(
                         @NonNull String baseUrl, boolean baseUrlCustom,
                         @NonNull String realtimeModelId, @NonNull List<VoiceModelOption> models,
                         boolean fetching, @NonNull String defaultDuplexId,
-                        @NonNull List<DuplexOption> duplexOptions) {
+                        @NonNull List<DuplexOption> duplexOptions,
+                        @DrawableRes int providerIconRes) {
 
         public Voice {
             options = List.copyOf(options);
@@ -88,7 +96,8 @@ public record AiSettingsUiState(
         @NonNull
         public Voice fetching(boolean value) {
             return new Voice(modelId, modelName, configured, options, baseUrl, baseUrlCustom,
-                    realtimeModelId, models, value, defaultDuplexId, duplexOptions);
+                    realtimeModelId, models, value, defaultDuplexId, duplexOptions,
+                    providerIconRes);
         }
     }
 
@@ -105,7 +114,8 @@ public record AiSettingsUiState(
      *
      * @param configured 这一家是否已经存过 Key：切换前就能看出"切过去还差什么"
      */
-    public record VoiceOption(@NonNull String id, @NonNull String name, boolean current, boolean configured) {
+    public record VoiceOption(@NonNull String id, @NonNull String name, boolean current,
+                              boolean configured, @DrawableRes int iconRes) {
     }
 
     /**
@@ -124,13 +134,15 @@ public record AiSettingsUiState(
         return new AiSettingsUiState(false, false, AiInteractionMode.defaultMode(), AiText.of(0),
                 List.of(), new Identity(null, null, 0, 0),
                 new Voice("", "", false, List.of(), "", false, "", List.of(), false,
-                        "", List.of()),
-                new Style("", AiText.of(0)));
+                        "", List.of(), 0),
+                new Style("", AiText.of(0)),
+                AiSettingsPersistenceStatus.SAVED, List.of());
     }
 
     @NonNull
     public AiSettingsUiState failedLoading() {
-        return new AiSettingsUiState(false, true, mode, modeHint, platforms, identity, voice, style);
+        return new AiSettingsUiState(false, true, mode, modeHint, platforms, identity, voice, style,
+                persistence, templates);
     }
 
     /**
@@ -145,11 +157,12 @@ public record AiSettingsUiState(
             return this;
         }
         return new AiSettingsUiState(loaded, loadFailed, next, modeHint(next), platforms, identity,
-                voice, style);
+                voice, style, persistence, templates);
     }
 
+    /** 分段下方那行说明：单源，mapper 与状态机都用它，不各写一份资源选择。 */
     @NonNull
-    private static AiText modeHint(@NonNull AiInteractionMode mode) {
+    public static AiText modeHint(@NonNull AiInteractionMode mode) {
         return AiText.of(mode == AiInteractionMode.VOICE
                 ? R.string.ai_settings_mode_voice_hint
                 : R.string.ai_settings_mode_text_hint);
@@ -158,6 +171,25 @@ public record AiSettingsUiState(
     @NonNull
     public AiSettingsUiState withFetchingVoice(boolean fetching) {
         return new AiSettingsUiState(loaded, loadFailed, mode, modeHint, platforms, identity,
-                voice.fetching(fetching), style);
+                voice.fetching(fetching), style, persistence, templates);
+    }
+
+    @NonNull
+    public AiSettingsUiState withPersistence(@NonNull AiSettingsPersistenceStatus next) {
+        if (next == persistence) {
+            return this;
+        }
+        return new AiSettingsUiState(loaded, loadFailed, mode, modeHint, platforms, identity, voice,
+                style, next, templates);
+    }
+
+    @NonNull
+    public AiSettingsUiState withTemplates(@NonNull List<AiPlatformTemplate> next) {
+        List<AiPlatformTemplate> copied = List.copyOf(next);
+        if (copied.equals(templates)) {
+            return this;
+        }
+        return new AiSettingsUiState(loaded, loadFailed, mode, modeHint, platforms, identity, voice,
+                style, persistence, copied);
     }
 }

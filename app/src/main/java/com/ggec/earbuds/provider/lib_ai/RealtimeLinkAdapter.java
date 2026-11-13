@@ -26,9 +26,6 @@ import java.util.Objects;
  */
 public final class RealtimeLinkAdapter implements AiRealtimeLink {
 
-    private static final int MIN_REDACTED_KEY = 8;
-    private static final int MAX_MESSAGE = 300;
-
     @Nullable
     private volatile YoRealtime.Connection current;
     private volatile int outputSampleRateHz = YoRealtimeConfig.DEFAULT_WIRE_SAMPLE_RATE_HZ;
@@ -65,7 +62,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
         } catch (IllegalArgumentException unusable) {
             failureReported = true;
             emit(listener, new AiRealtimeOutput.Failed(new AiFailure(AiFailureKind.BAD_REQUEST,
-                    redact(unusable.getMessage(), config.apiKey()), unusable)));
+                    LibAiFailures.redact(unusable.getMessage(), config.apiKey()), unusable)));
             return;
         }
 
@@ -73,7 +70,7 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             current = YoRealtime.open(realtime, output -> deliver(output, listener, config.apiKey()));
         } catch (RuntimeException broken) {
             failOnce(listener, new AiFailure(AiFailureKind.UNKNOWN,
-                    redact(broken.getMessage(), config.apiKey()), broken));
+                    LibAiFailures.redact(broken.getMessage(), config.apiKey()), broken));
         }
     }
 
@@ -150,7 +147,8 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             case YoRealtimeOutput.TranslationDelta ignored -> {
             }
             case YoRealtimeOutput.Failed failed -> failOnce(listener, new AiFailure(
-                    kindOf(failed.kind()), redact(failed.message(), apiKey)));
+                    LibAiFailures.kind(failed.kind()),
+                    LibAiFailures.redact(failed.message(), apiKey)));
             case YoRealtimeOutput.Closed ignored -> failOnce(listener,
                     new AiFailure(AiFailureKind.NETWORK, null));
         }
@@ -169,40 +167,6 @@ public final class RealtimeLinkAdapter implements AiRealtimeLink {
             return;
         }
         listener.onOutput(output);
-    }
-
-    public static AiFailureKind kindOf(@Nullable YoAiErrorKind kind) {
-        if (kind == null) {
-            return AiFailureKind.UNKNOWN;
-        }
-        return switch (kind) {
-            case AUTHENTICATION -> AiFailureKind.AUTHENTICATION;
-            case PERMISSION -> AiFailureKind.PERMISSION;
-            case QUOTA -> AiFailureKind.QUOTA;
-            case RATE_LIMITED -> AiFailureKind.RATE_LIMITED;
-            case NOT_FOUND -> AiFailureKind.NOT_FOUND;
-            case BAD_REQUEST -> AiFailureKind.BAD_REQUEST;
-            case CONTENT_FILTERED -> AiFailureKind.CONTENT_FILTERED;
-            case CONTEXT_LENGTH -> AiFailureKind.CONTEXT_LENGTH;
-            case UNSUPPORTED_PARAM -> AiFailureKind.UNSUPPORTED_PARAM;
-            case OVERLOADED -> AiFailureKind.OVERLOADED;
-            case SERVER -> AiFailureKind.SERVER;
-            case NETWORK -> AiFailureKind.NETWORK;
-            case TIMEOUT -> AiFailureKind.TIMEOUT;
-            case CANCELLED -> AiFailureKind.CANCELLED;
-            case PROTOCOL -> AiFailureKind.PROTOCOL;
-            case UNSUPPORTED_CAPABILITY -> AiFailureKind.UNSUPPORTED_CAPABILITY;
-            case UNKNOWN -> AiFailureKind.UNKNOWN;
-        };
-    }
-
-    @NonNull
-    private static String redact(@Nullable String message, @Nullable String apiKey) {
-        String clean = message == null ? "" : message;
-        if (apiKey != null && apiKey.length() >= MIN_REDACTED_KEY) {
-            clean = clean.replace(apiKey, "***");
-        }
-        return clean.length() > MAX_MESSAGE ? clean.substring(0, MAX_MESSAGE) : clean;
     }
 
     private static void bestEffort(Runnable step) {

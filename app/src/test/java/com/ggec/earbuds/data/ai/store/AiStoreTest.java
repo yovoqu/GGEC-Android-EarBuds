@@ -56,7 +56,7 @@ public class AiStoreTest {
     }
 
     @Test
-    public void unreadableSecretsReadAsMissingNotAsErrors() {
+    public void undecryptableSecretReadsAsMissingNotAsError() {
         MemoryDocumentStore documents = new MemoryDocumentStore();
         ReverseCipher cipher = new ReverseCipher();
         EncryptedSecretStore store = new EncryptedSecretStore(documents, cipher);
@@ -65,11 +65,29 @@ public class AiStoreTest {
         cipher.broken = true;
         assertNull(store.get("apikey.a"));
         assertNull(store.get("never-stored"));
-        documents.documents.put("secrets.json", "corrupt");
-        assertNull(store.get("apikey.a"));
         cipher.broken = false;
         store.put("apikey.c", "fresh");
         assertEquals("fresh", store.get("apikey.c"));
+    }
+
+    @Test
+    public void corruptSecretsDocumentIsReportedAndNeverOverwritten() {
+        MemoryDocumentStore documents = new MemoryDocumentStore();
+        EncryptedSecretStore store = new EncryptedSecretStore(documents, new ReverseCipher());
+        documents.documents.put("secrets.json", "corrupt");
+
+        try {
+            store.get("apikey.a");
+            fail("a corrupt secrets document must not read as empty");
+        } catch (AiStorageException expected) {
+            assertEquals("corrupt", documents.documents.get("secrets.json"));
+        }
+        try {
+            store.put("apikey.a", "new-secret");
+            fail("writing over a corrupt document would drop the other keys");
+        } catch (AiStorageException expected) {
+            assertEquals("corrupt", documents.documents.get("secrets.json"));
+        }
     }
 
     @Test

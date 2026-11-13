@@ -2,6 +2,7 @@ package com.ggec.earbuds.data.ai.json;
 
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.data.json.JsonValues;
 import com.ggec.earbuds.domain.ai.model.AiConversation;
 import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;

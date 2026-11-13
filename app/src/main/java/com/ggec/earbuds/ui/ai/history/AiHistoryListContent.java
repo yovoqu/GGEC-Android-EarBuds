@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.navigation.YoMenu;
 
 import java.util.ArrayList;
@@ -42,14 +43,16 @@ final class AiHistoryListContent {
 
     private final AppCompatActivity activity;
     private final AiTheme theme;
+    private final YoComponents components;
     private final Listener listener;
     private final LinearLayout column;
     private List<String> signature = List.of();
 
     AiHistoryListContent(@NonNull AppCompatActivity activity, @NonNull AiTheme theme,
-                         @NonNull Listener listener) {
+                         @NonNull YoComponents components, @NonNull Listener listener) {
         this.activity = activity;
         this.theme = theme;
+        this.components = components;
         this.listener = listener;
         column = new LinearLayout(activity);
         column.setOrientation(LinearLayout.VERTICAL);
@@ -251,7 +254,7 @@ final class AiHistoryListContent {
                 })
                 .build();
         menu.addDestructiveItem(ACTION_DELETE, activity.getString(R.string.ai_delete));
-        menu.setOnDismissListener(menu::destroy);
+        components.own(menu::destroy);
         menu.show();
     }
 }

@@ -34,7 +34,7 @@ public final class AiEmptyStateView extends ScrollView {
         void onSuggestion(@NonNull String text);
     }
 
-    private static final long ENTRANCE_DURATION_MS = 240L;
+    private static final long ENTRANCE_DURATION_MS = AiTheme.DURATION_L;
     private static final long ENTRANCE_STEP_MS = 60L;
     private static final float ENTRANCE_OFFSET_DP = 10f;
 

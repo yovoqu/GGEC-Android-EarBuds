@@ -43,9 +43,9 @@ public class AiJsonTest {
     public void settingsRoundTripWithoutTheKey() throws Exception {
         AiModel reasoning = new AiModel("deepseek-reasoner", "DeepSeek R", 64_000, 8_000,
                 Set.of(AiModelFeature.REASONING, AiModelFeature.VISION), false, null);
-        AiSpeedResult ok = new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 320, 710, null, null, 77);
+        AiSpeedResult ok = new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 320, 710, null, null, 77, 42);
         AiSpeedResult failed = new AiSpeedResult("deepseek-reasoner", AiSpeedResult.Status.FAILED, -1, 40,
-                AiFailureKind.AUTHENTICATION, "bad key", 78);
+                AiFailureKind.AUTHENTICATION, "bad key", 78, -1);
         AiPlatformConfig platform = new AiPlatformConfig("custom-1a2b3c4d", "openai-compatible", "公司网关",
                 "https://gw.example.com", true, AiProtocol.RESPONSES,
                 List.of(new AiModel("deepseek-chat", "deepseek-chat", null, null, Set.of(), false, null),
@@ -67,6 +67,8 @@ public class AiJsonTest {
         AiPlatformConfig round = decoded.platforms().get(0);
         assertFalse("文档不保存密钥，解出来是未配置", round.configured());
         assertEquals(platform.withoutCredential(), round);
+        assertEquals("usage 回来的输出 token 数要跟着测速结果一起持久化", 42,
+                round.speedResults().get("deepseek-chat").outputTokens());
         assertEquals(settings.textSelection(), decoded.textSelection());
         assertEquals(settings.voice().model(), decoded.voice().model());
         assertEquals("语音 Key 只走加密存储，文档里没有配置标记", false, decoded.voice().configured());

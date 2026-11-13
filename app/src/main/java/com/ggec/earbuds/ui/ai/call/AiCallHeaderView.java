@@ -145,7 +145,7 @@ public final class AiCallHeaderView extends RelativeLayout {
 
         GradientDrawable duplexRippleMask = new GradientDrawable();
         duplexRippleMask.setCornerRadius(theme.dp(12f));
-        duplexRippleMask.setColor(0xFFFFFFFF);
+        duplexRippleMask.setColor(AiTheme.MEDIA_WHITE);
         duplexButton.setBackground(new RippleDrawable(
                 ColorStateList.valueOf(theme.brandSoft), null, duplexRippleMask));
         duplexButton.setOnClickListener(v -> listener.onToggleDuplex());
@@ -156,7 +156,7 @@ public final class AiCallHeaderView extends RelativeLayout {
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconPx, iconPx);
         duplexButton.addView(duplexIcon, iconParams);
 
-        duplexText = theme.text(12.5f, theme.brand, AiTheme.Weight.MEDIUM);
+        duplexText = theme.text(AiTheme.TEXT_CAPTION_LARGE, theme.brand, AiTheme.Weight.MEDIUM);
         duplexText.setSingleLine(true);
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -183,9 +183,9 @@ public final class AiCallHeaderView extends RelativeLayout {
         }
 
         int dotColor = switch (state.phase()) {
-            case LISTENING -> theme.isDark() ? 0xFF00E676 : 0xFF10B981;
+            case LISTENING -> theme.callPalette(AiTheme.CallPhase.LISTENING).colorC();
             case SPEAKING, CONNECTING -> theme.brand;
-            case THINKING -> theme.isDark() ? 0xFFA855F7 : 0xFF7C3AED;
+            case THINKING -> theme.callPalette(AiTheme.CallPhase.THINKING).colorB();
             case OFFLINE -> theme.text3;
         };
         if (dotColor != lastDotColor) {

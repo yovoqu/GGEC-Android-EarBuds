@@ -52,13 +52,9 @@ public final class AiSettingsActivity extends AppCompatActivity {
             }
             current = state;
             screen.render(state);
+            screen.showSaveStatus(state.persistence());
         });
         viewModel.events().observe(this, this::showEvent);
-        viewModel.saveStatus().observe(this, status -> {
-            if (status != null) {
-                screen.showSaveStatus(status);
-            }
-        });
         viewModel.start();
     }
 
@@ -79,6 +75,7 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        screen.destroy();
         components.close();
         super.onDestroy();
     }
@@ -161,8 +158,9 @@ public final class AiSettingsActivity extends AppCompatActivity {
 
         @Override
         public void onAddPlatform() {
-            List<AiPlatformTemplate> templates = viewModel.templates().getValue();
-            dialogs.showAddPlatform(templates == null ? List.of() : templates, this);
+            List<AiPlatformTemplate> templates = current == null
+                    ? List.of() : current.templates();
+            dialogs.showAddPlatform(templates, this);
         }
 
         @Override

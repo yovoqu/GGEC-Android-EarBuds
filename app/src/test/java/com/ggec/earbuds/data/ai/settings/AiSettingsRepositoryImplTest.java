@@ -185,10 +185,18 @@ public class AiSettingsRepositoryImplTest {
     }
 
     @Test
-    public void aCorruptDocumentFallsBackToEmptySettings() {
+    public void aCorruptDocumentIsReportedAsStorageFailureAndLeftOnDisk() {
         documents.documents.put("settings.json", "{{{ not json");
 
-        assertEquals(AiSettings.EMPTY, repository().load());
+        try {
+            repository().load();
+            fail("a corrupt document must not be read as empty settings");
+        } catch (AiFailure failure) {
+            assertEquals(AiFailureKind.STORAGE, failure.kind());
+            assertTrue(failure.getCause() instanceof AiStorageException);
+        }
+        assertEquals("the damaged document stays on disk for recovery",
+                "{{{ not json", documents.documents.get("settings.json"));
     }
 
     @Test

@@ -49,7 +49,7 @@ public final class RunSpeedTest {
             public void onResult(AiSpeedResult result) {
                 AiSpeedResult stamped = new AiSpeedResult(result.modelId(), result.status(),
                         result.firstTokenMillis(), result.totalMillis(), result.failureKind(),
-                        result.message(), clock.now());
+                        result.message(), clock.now(), result.outputTokens());
                 repository.update(settings -> settings.platform(platformId)
                         .map(current -> settings.withPlatform(current.withSpeedResult(stamped)))
                         .orElse(settings));

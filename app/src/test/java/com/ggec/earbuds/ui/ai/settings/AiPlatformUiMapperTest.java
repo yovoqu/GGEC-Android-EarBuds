@@ -54,7 +54,7 @@ public final class AiPlatformUiMapperTest {
     public void aSuccessfulProbeBecomesTheConnectionResult() {
         AiPlatformConfig config = config("sk-abc", List.of(model("chat", null)))
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.OK,
-                        829L, 1500L, null, null, 1L));
+                        829L, 1500L, null, null, 1L, -1));
 
         AiPlatformUiState.Connection connection = mapper.map(
                 settings(config, "chat"), config, null, Set.of(), false, false, "").connection();
@@ -70,7 +70,7 @@ public final class AiPlatformUiMapperTest {
         AiModel model = model("chat", 128_000);
         AiPlatformConfig config = config("sk-abc", List.of(model))
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.OK,
-                        645L, 2000L, null, null, 1L));
+                        645L, 2000L, null, null, 1L, -1));
 
         AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
                 Set.of(), false, false, "").models().rows().get(0);
@@ -86,7 +86,7 @@ public final class AiPlatformUiMapperTest {
         AiModel model = model("chat", null);
         AiPlatformConfig config = config("sk-abc", List.of(model))
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.OK,
-                        300L, 900L, null, null, 1L));
+                        300L, 900L, null, null, 1L, -1));
 
         AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
                 Set.of("chat"), true, false, "").models().rows().get(0);
@@ -99,7 +99,7 @@ public final class AiPlatformUiMapperTest {
         AiModel model = model("chat", null);
         AiPlatformConfig config = config("sk-abc", List.of(model))
                 .withSpeedResult(new AiSpeedResult("chat", AiSpeedResult.Status.TIMEOUT,
-                        -1L, 25_000L, null, null, 1L));
+                        -1L, 25_000L, null, null, 1L, -1));
 
         AiPlatformUiState.Row row = mapper.map(settings(config, "chat"), config, null,
                 Set.of(), false, false, "").models().rows().get(0);
@@ -126,8 +126,8 @@ public final class AiPlatformUiMapperTest {
         AiModel slow = model("slow", null);
         AiModel fast = model("fast", null);
         AiPlatformConfig config = config("sk-abc", List.of(slow, fast))
-                .withSpeedResult(new AiSpeedResult("slow", AiSpeedResult.Status.OK, 1200L, 2000L, null, null, 1L))
-                .withSpeedResult(new AiSpeedResult("fast", AiSpeedResult.Status.OK, 420L, 900L, null, null, 1L));
+                .withSpeedResult(new AiSpeedResult("slow", AiSpeedResult.Status.OK, 1200L, 2000L, null, null, 1L, -1))
+                .withSpeedResult(new AiSpeedResult("fast", AiSpeedResult.Status.OK, 420L, 900L, null, null, 1L, -1));
 
         AiPlatformUiState.Models models = mapper.map(settings(config, "fast"), config, null,
                 Set.of(), false, false, "").models();
@@ -199,8 +199,8 @@ public final class AiPlatformUiMapperTest {
     public void theFastestConclusionIgnoresTheFilter() {
         List<AiModel> nine = models(9);
         AiPlatformConfig config = config("sk-abc", nine)
-                .withSpeedResult(new AiSpeedResult("m0", AiSpeedResult.Status.OK, 900L, 1200L, null, null, 1L))
-                .withSpeedResult(new AiSpeedResult("m8", AiSpeedResult.Status.OK, 300L, 800L, null, null, 1L));
+                .withSpeedResult(new AiSpeedResult("m0", AiSpeedResult.Status.OK, 900L, 1200L, null, null, 1L, -1))
+                .withSpeedResult(new AiSpeedResult("m8", AiSpeedResult.Status.OK, 300L, 800L, null, null, 1L, -1));
 
         AiPlatformUiState.Models models = mapper.map(settings(config, "m0"), config, null,
                 Set.of(), false, false, "m0").models();

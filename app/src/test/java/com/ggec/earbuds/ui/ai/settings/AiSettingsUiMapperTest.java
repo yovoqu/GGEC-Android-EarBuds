@@ -132,6 +132,13 @@ public class AiSettingsUiMapperTest {
         assertEquals("ChatGPT", voice.modelName());
         assertFalse("只选了模型、没填 Key 时不算可用", voice.configured());
         assertTrue(voice.options().get(0).current());
+        assertEquals("图标由映射层给出，视图不再按厂商 id 自己选",
+                R.drawable.ic_ai_provider_chatgpt, voice.providerIconRes());
+        assertEquals(R.drawable.ic_ai_provider_chatgpt, voice.options().get(0).iconRes());
+        assertEquals(R.drawable.ic_ai_provider_qwen,
+                voice.options().stream()
+                        .filter(option -> option.id().equals(AiVoiceModel.QWEN.id()))
+                        .findFirst().orElseThrow().iconRes());
     }
 
     @Test

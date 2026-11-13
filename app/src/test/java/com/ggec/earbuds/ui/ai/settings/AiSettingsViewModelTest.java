@@ -18,6 +18,7 @@ import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeCredentialStore;
@@ -66,7 +67,7 @@ public class AiSettingsViewModelTest {
                 Runnable::run,
                 new LoadPlatformTemplates(catalog),
                 preferences,
-                credentials,
+                new SaveVoiceApiKey(repository, credentials),
                 new AiSettingsUiMapper());
     }
 
@@ -77,7 +78,7 @@ public class AiSettingsViewModelTest {
         assertTrue(state.loaded());
         assertEquals(1, state.platforms().size());
         assertEquals("deepseek", state.platforms().get(0).name());
-        assertEquals(2, viewModel.templates().getValue().size());
+        assertEquals(2, viewModel.uiState().getValue().templates().size());
     }
 
     /**
@@ -240,7 +241,9 @@ public class AiSettingsViewModelTest {
                 new ObserveAiSettingsPersistence(deferred),
                 new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of(), new FakeCredentialStore()),
                 new SaveAiSettings(deferred), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(), new FakeCredentialStore(), new AiSettingsUiMapper());
+                new MemoryAiUiPreferences(),
+                new SaveVoiceApiKey(deferred, new FakeCredentialStore()),
+                new AiSettingsUiMapper());
 
         loading.start();
 

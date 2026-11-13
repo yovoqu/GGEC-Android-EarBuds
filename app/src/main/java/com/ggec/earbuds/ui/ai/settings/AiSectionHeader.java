@@ -26,14 +26,19 @@ final class AiSectionHeader {
     @NonNull
     static View titleOnly(@NonNull AiTheme theme, @NonNull Context context,
                           @NonNull CharSequence title) {
-        return build(theme, context, title, null, null);
+        LinearLayout header = container(theme, context);
+        TextView label = title(theme);
+        label.setText(title);
+        header.addView(label, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return header;
     }
 
     @NonNull
     static View withAction(@NonNull AiTheme theme, @NonNull Context context,
                            @NonNull TextView title,
                            @NonNull TextView action, @NonNull Runnable onAction) {
-        LinearLayout header = build(theme, context, null, null, null);
+        LinearLayout header = container(theme, context);
         header.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         action.setOnClickListener(view -> onAction.run());
@@ -57,31 +62,12 @@ final class AiSectionHeader {
     }
 
     @NonNull
-    private static LinearLayout build(@NonNull AiTheme theme, @NonNull Context context,
-                                      @Nullable CharSequence title,
-                                      @Nullable CharSequence action, @Nullable Runnable onAction) {
+    private static LinearLayout container(@NonNull AiTheme theme, @NonNull Context context) {
         LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(theme.dp(AiTheme.LIST_EDGE), theme.dp(AiTheme.SPACE_XL),
                 theme.dp(AiTheme.LIST_EDGE), theme.dp(AiTheme.SPACE_S));
-        if (title != null) {
-            TextView label = AiSectionHeader.title(theme);
-            label.setText(title);
-            header.addView(label, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        if (action != null) {
-            TextView actionView = AiSectionHeader.action(theme);
-            actionView.setText(action);
-            actionView.setOnClickListener(view -> {
-                if (onAction != null) {
-                    onAction.run();
-                }
-            });
-            header.addView(actionView, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
         return header;
     }
 }

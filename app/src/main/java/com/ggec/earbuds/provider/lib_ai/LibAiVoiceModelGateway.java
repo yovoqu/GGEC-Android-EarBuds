@@ -8,7 +8,6 @@ import com.yovo.lib_ai.catalog.YoPlatformSettings;
 import com.yovo.lib_ai.platform.YoPlatform;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * 按 APP 给出的地址和密钥向服务商拉 {@code /v1/models}，原样交回全部模型和 SDK 类别。
@@ -23,7 +22,7 @@ public final class LibAiVoiceModelGateway implements AiVoiceModelGateway {
 
     @Override
     public List<AiModel> fetch(String baseUrl, String apiKey) {
-        String effectiveUrl = normalizeForOpenAiCompatible(baseUrl);
+        String effectiveUrl = LibAiPlatformCatalog.normalizeForRequest(baseUrl);
         YoPlatform platform = YoPlatformCatalog.standard().create(
                 YoPlatformSettings.builder(YoPlatformCatalog.OPENAI_COMPATIBLE)
                         .instanceId(INSTANCE_ID)
@@ -44,25 +43,4 @@ public final class LibAiVoiceModelGateway implements AiVoiceModelGateway {
         }
     }
 
-    private static String normalizeForOpenAiCompatible(String baseUrl) {
-        if (baseUrl == null) {
-            return "";
-        }
-        String trimmed = baseUrl.trim();
-        while (trimmed.endsWith("/")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 1);
-        }
-        String lower = trimmed.toLowerCase(Locale.ROOT);
-        // DashScope 的 OpenAI 兼容接口（含 /models）挂在 /compatible-mode/v1 下。
-        // 如果给的是裸 host（如语音默认预设 https://dashscope.aliyuncs.com），补全兼容路径。
-        if (lower.contains("dashscope") || lower.contains("aliyuncs")) {
-            if (lower.endsWith("/compatible-mode")) {
-                return trimmed + "/v1";
-            }
-            if (!lower.endsWith("/compatible-mode/v1")) {
-                return trimmed + "/compatible-mode/v1";
-            }
-        }
-        return trimmed;
-    }
 }

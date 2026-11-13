@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
@@ -64,7 +65,7 @@ final class PlatformAdvancedSection {
         if (!expanded) {
             list.addItem(ListPrefixSpec.iconTinted(R.drawable.ic_ai_swap, theme.text2),
                     ListTextSpec.of(context.getString(R.string.ai_settings_advanced_section),
-                            context.getString(next.protocolRes()) + " · " + url),
+                            context.getString(next.protocolRes()) + AiFormat.SEPARATOR + url),
                     ListSuffixSpec.icon(R.drawable.ic_ai_chevron_down, theme.text3));
             return;
         }

@@ -13,35 +13,35 @@ public final class RealtimeLinkAdapterTest {
     @Test
     public void everyLibraryErrorKindMapsToOneDomainFailureKind() {
         assertEquals(AiFailureKind.AUTHENTICATION,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.AUTHENTICATION));
+                LibAiFailures.kind(YoAiErrorKind.AUTHENTICATION));
         assertEquals(AiFailureKind.PERMISSION,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.PERMISSION));
-        assertEquals(AiFailureKind.QUOTA, RealtimeLinkAdapter.kindOf(YoAiErrorKind.QUOTA));
+                LibAiFailures.kind(YoAiErrorKind.PERMISSION));
+        assertEquals(AiFailureKind.QUOTA, LibAiFailures.kind(YoAiErrorKind.QUOTA));
         assertEquals(AiFailureKind.RATE_LIMITED,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.RATE_LIMITED));
-        assertEquals(AiFailureKind.NOT_FOUND, RealtimeLinkAdapter.kindOf(YoAiErrorKind.NOT_FOUND));
+                LibAiFailures.kind(YoAiErrorKind.RATE_LIMITED));
+        assertEquals(AiFailureKind.NOT_FOUND, LibAiFailures.kind(YoAiErrorKind.NOT_FOUND));
         assertEquals(AiFailureKind.BAD_REQUEST,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.BAD_REQUEST));
+                LibAiFailures.kind(YoAiErrorKind.BAD_REQUEST));
         assertEquals(AiFailureKind.CONTENT_FILTERED,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.CONTENT_FILTERED));
+                LibAiFailures.kind(YoAiErrorKind.CONTENT_FILTERED));
         assertEquals(AiFailureKind.CONTEXT_LENGTH,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.CONTEXT_LENGTH));
+                LibAiFailures.kind(YoAiErrorKind.CONTEXT_LENGTH));
         assertEquals(AiFailureKind.UNSUPPORTED_PARAM,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.UNSUPPORTED_PARAM));
+                LibAiFailures.kind(YoAiErrorKind.UNSUPPORTED_PARAM));
         assertEquals(AiFailureKind.OVERLOADED,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.OVERLOADED));
-        assertEquals(AiFailureKind.SERVER, RealtimeLinkAdapter.kindOf(YoAiErrorKind.SERVER));
-        assertEquals(AiFailureKind.NETWORK, RealtimeLinkAdapter.kindOf(YoAiErrorKind.NETWORK));
-        assertEquals(AiFailureKind.TIMEOUT, RealtimeLinkAdapter.kindOf(YoAiErrorKind.TIMEOUT));
-        assertEquals(AiFailureKind.CANCELLED, RealtimeLinkAdapter.kindOf(YoAiErrorKind.CANCELLED));
-        assertEquals(AiFailureKind.PROTOCOL, RealtimeLinkAdapter.kindOf(YoAiErrorKind.PROTOCOL));
+                LibAiFailures.kind(YoAiErrorKind.OVERLOADED));
+        assertEquals(AiFailureKind.SERVER, LibAiFailures.kind(YoAiErrorKind.SERVER));
+        assertEquals(AiFailureKind.NETWORK, LibAiFailures.kind(YoAiErrorKind.NETWORK));
+        assertEquals(AiFailureKind.TIMEOUT, LibAiFailures.kind(YoAiErrorKind.TIMEOUT));
+        assertEquals(AiFailureKind.CANCELLED, LibAiFailures.kind(YoAiErrorKind.CANCELLED));
+        assertEquals(AiFailureKind.PROTOCOL, LibAiFailures.kind(YoAiErrorKind.PROTOCOL));
         assertEquals(AiFailureKind.UNSUPPORTED_CAPABILITY,
-                RealtimeLinkAdapter.kindOf(YoAiErrorKind.UNSUPPORTED_CAPABILITY));
-        assertEquals(AiFailureKind.UNKNOWN, RealtimeLinkAdapter.kindOf(YoAiErrorKind.UNKNOWN));
+                LibAiFailures.kind(YoAiErrorKind.UNSUPPORTED_CAPABILITY));
+        assertEquals(AiFailureKind.UNKNOWN, LibAiFailures.kind(YoAiErrorKind.UNKNOWN));
     }
 
     @Test
     public void missingKindFallsBackToUnknownBecauseTheLibraryReportedNoCategory() {
-        assertEquals(AiFailureKind.UNKNOWN, RealtimeLinkAdapter.kindOf(null));
+        assertEquals(AiFailureKind.UNKNOWN, LibAiFailures.kind(null));
     }
 }

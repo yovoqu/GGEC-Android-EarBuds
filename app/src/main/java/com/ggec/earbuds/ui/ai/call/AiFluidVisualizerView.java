@@ -409,31 +409,19 @@ public final class AiFluidVisualizerView extends View {
     }
 
     private void updatePalette() {
-        boolean dark = theme.isDark();
         switch (phase) {
-            case LISTENING -> {
-                colorA = dark ? 0xFF00F2FE : 0xFF00B4D8;
-                colorB = dark ? 0xFF4FACFE : 0xFF0077B6;
-                colorC = dark ? 0xFF00E676 : 0xFF10B981;
-                auraGlow = dark ? 0xFF00F2FE : 0xFF00B4D8;
-            }
-            case SPEAKING -> {
-                colorA = dark ? 0xFF3B82F6 : 0xFF2563EB;
-                colorB = dark ? 0xFF8B5CF6 : 0xFF7C3AED;
-                colorC = dark ? 0xFFEC4899 : 0xFFDB2777;
-                auraGlow = dark ? 0xFF6366F1 : 0xFF4F46E5;
-            }
-            case THINKING -> {
-                colorA = dark ? 0xFF7C3AED : 0xFF6366F1;
-                colorB = dark ? 0xFFC026D3 : 0xFFA855F7;
-                colorC = dark ? 0xFF38BDF8 : 0xFF0284C7;
-                auraGlow = dark ? 0xFF9333EA : 0xFF7C3AED;
-            }
-            case CONNECTING -> {
-                colorA = dark ? 0xFF06B6D4 : 0xFF0891B2;
-                colorB = dark ? 0xFF0284C7 : 0xFF0369A1;
-                colorC = dark ? 0xFF3B82F6 : 0xFF1D4ED8;
-                auraGlow = dark ? 0xFF0284C7 : 0xFF0891B2;
+            case LISTENING, SPEAKING, THINKING, CONNECTING -> {
+                AiTheme.CallPalette palette = theme.callPalette(switch (phase) {
+                    case LISTENING -> AiTheme.CallPhase.LISTENING;
+                    case SPEAKING -> AiTheme.CallPhase.SPEAKING;
+                    case THINKING -> AiTheme.CallPhase.THINKING;
+                    case CONNECTING -> AiTheme.CallPhase.CONNECTING;
+                    default -> throw new IllegalStateException("unexpected phase " + phase);
+                });
+                colorA = palette.colorA();
+                colorB = palette.colorB();
+                colorC = palette.colorC();
+                auraGlow = palette.auraGlow();
             }
             case OFFLINE -> {
                 colorA = theme.text3;

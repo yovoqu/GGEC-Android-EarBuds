@@ -8,7 +8,7 @@ import com.ggec.earbuds.domain.ai.model.AiValidationException;
  */
 public final class AiModelIdPolicy {
 
-    static final int MAX_LENGTH = 200;
+    public static final int MAX_LENGTH = 200;
 
     public String normalize(String raw) {
         String id = raw == null ? "" : raw.strip();

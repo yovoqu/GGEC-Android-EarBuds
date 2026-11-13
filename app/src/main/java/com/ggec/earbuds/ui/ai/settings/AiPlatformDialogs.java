@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.ai.policy.AiModelIdPolicy;
 import com.ggec.earbuds.ui.ai.AiDialogs;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoTextInput;
@@ -39,7 +40,7 @@ final class AiPlatformDialogs {
                 })
                 .build();
         menu.addDestructiveItem(MENU_DELETE, activity.getString(R.string.ai_delete));
-        menu.setOnDismissListener(menu::destroy);
+        components.own(menu::destroy);
         menu.show();
     }
 
@@ -54,10 +55,10 @@ final class AiPlatformDialogs {
     void showManualAdd(@NonNull Listener listener) {
         YoTextInput field = YoTextInput.create(activity)
                 .setPlaceholder(activity.getString(R.string.ai_settings_add_model_hint))
-                .setMaxLength(128)
+                .setMaxLength(AiModelIdPolicy.MAX_LENGTH)
                 .setShowErrorEnabled(true)
                 .build();
-        YoDialog.create(activity)
+        YoDialog created = YoDialog.create(activity)
                 .kind(YoDialog.Kind.INPUT)
                 .hosted(field)
                 .setButtonDirection(YoDialog.ButtonDirection.HORIZONTAL)
@@ -67,7 +68,10 @@ final class AiPlatformDialogs {
                         YoDialog.Action.positive(activity.getString(R.string.ai_settings_create),
                                 () -> listener.onAddManualModel(String.valueOf(field.getText())))
                 )
-                .show();
+                .build();
+        components.own(field::destroy);
+        components.own(created::destroy);
+        created.show();
     }
 
     interface Listener {

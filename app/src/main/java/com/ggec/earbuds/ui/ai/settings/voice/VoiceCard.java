@@ -37,20 +37,6 @@ final class VoiceCard {
         return line;
     }
 
-    /** 副标题里不放协议头：一段 https:// 会把地址挤到看不见，而它从来不变。 */
-    @NonNull
-    static String host(@NonNull String baseUrl) {
-        String value = baseUrl.strip();
-        int scheme = value.indexOf("://");
-        if (scheme >= 0) {
-            value = value.substring(scheme + 3);
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
-    }
-
     @NonNull
     static LinearLayout.LayoutParams matchWrap() {
         return new LinearLayout.LayoutParams(

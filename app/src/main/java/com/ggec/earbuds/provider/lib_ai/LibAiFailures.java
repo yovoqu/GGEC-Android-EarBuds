@@ -29,7 +29,11 @@ final class LibAiFailures {
         return new AiFailure(kind(YoAiErrors.kindOf(error)), redact(error.getMessage(), apiKey), error);
     }
 
-    static AiFailureKind kind(YoAiErrorKind kind) {
+    /** 失败分类的唯一映射；未知（含 null）归 {@link AiFailureKind#UNKNOWN}。 */
+    static AiFailureKind kind(@Nullable YoAiErrorKind kind) {
+        if (kind == null) {
+            return AiFailureKind.UNKNOWN;
+        }
         return switch (kind) {
             case AUTHENTICATION -> AiFailureKind.AUTHENTICATION;
             case PERMISSION -> AiFailureKind.PERMISSION;

@@ -67,6 +67,52 @@ public final class AiTheme {
     /** 空状态的标题距内容区顶部的高度；三种空状态共用一个起点。*/
     public static final float EMPTY_TOP = 88f;
 
+    // ---- 动效时长 ----
+    public static final long DURATION_XS = 120L;
+    public static final long DURATION_S = 140L;
+    public static final long DURATION_M = 160L;
+    /** 空状态入场。 */
+    public static final long DURATION_L = 240L;
+    /** 程序滚动到末尾后等待滚动收尾的时间。 */
+    public static final long DURATION_SCROLL_SETTLE = 300L;
+
+    // ---- 字号补充 ----
+    /** 12 与 13 之间的紧凑标签（存储横幅、双工标签）。 */
+    public static final float TEXT_CAPTION_LARGE = 12.5f;
+    /** 二级分区标题。 */
+    public static final float TEXT_SECTION = 16f;
+
+    // ---- 媒体层（半透明卡片、遮罩） ----
+    public static final int MEDIA_WHITE = 0xFFFFFFFF;
+    public static final int MEDIA_BLACK = 0xFF000000;
+
+    // ---- 输入区 ----
+    public static final float COMPOSER_PAD = 10f;
+    public static final float INPUT_PAD = 11f;
+    public static final float TEXT_INPUT = 16f;
+    public static final float SEND_SIZE = 36f;
+    public static final float SEND_GLYPH_PAD = 9f;
+    public static final float SEND_MARGIN = 6f;
+    public static final float SEND_RADIUS = 18f;
+
+    // ---- 通话页 ----
+    public static final int CALL_PAGE_DARK_TOP = 0xFF080C14;
+    public static final int CALL_PAGE_DARK_MID = 0xFF0F172A;
+    public static final int HANGUP_START = 0xFFEF4444;
+    public static final int HANGUP_END = 0xFFDC2626;
+
+    /** 声场配色按语义阶段取，不按调用点各写一份色值。 */
+    public enum CallPhase {
+        CONNECTING,
+        LISTENING,
+        THINKING,
+        SPEAKING
+    }
+
+    public record CallPalette(@ColorInt int colorA, @ColorInt int colorB,
+                              @ColorInt int colorC, @ColorInt int auraGlow) {
+    }
+
     public final Context context;
     public final float density;
     public final boolean dark;
@@ -127,6 +173,33 @@ public final class AiTheme {
 
     public float dpf(float value) {
         return value * density;
+    }
+
+    /** 通话页三段渐变：深色是黑曜石夜空，浅色是纯白雪夜。 */
+    @NonNull
+    public int[] callPageStops() {
+        return dark
+                ? new int[]{CALL_PAGE_DARK_TOP, CALL_PAGE_DARK_MID, CALL_PAGE_DARK_TOP}
+                : new int[]{page, ColorUtils.blendARGB(page, MEDIA_WHITE, 0.4f), page};
+    }
+
+    /** 语音声场四个阶段的配色（含光晕）。 */
+    @NonNull
+    public CallPalette callPalette(@NonNull CallPhase phase) {
+        return switch (phase) {
+            case LISTENING -> new CallPalette(dark ? 0xFF00F2FE : 0xFF00B4D8,
+                    dark ? 0xFF4FACFE : 0xFF0077B6, dark ? 0xFF00E676 : 0xFF10B981,
+                    dark ? 0xFF00F2FE : 0xFF00B4D8);
+            case SPEAKING -> new CallPalette(dark ? 0xFF3B82F6 : 0xFF2563EB,
+                    dark ? 0xFF8B5CF6 : 0xFF7C3AED, dark ? 0xFFEC4899 : 0xFFDB2777,
+                    dark ? 0xFF6366F1 : 0xFF4F46E5);
+            case THINKING -> new CallPalette(dark ? 0xFF7C3AED : 0xFF6366F1,
+                    dark ? 0xFFC026D3 : 0xFFA855F7, dark ? 0xFF38BDF8 : 0xFF0284C7,
+                    dark ? 0xFF9333EA : 0xFF7C3AED);
+            case CONNECTING -> new CallPalette(dark ? 0xFF06B6D4 : 0xFF0891B2,
+                    dark ? 0xFF0284C7 : 0xFF0369A1, dark ? 0xFF3B82F6 : 0xFF1D4ED8,
+                    dark ? 0xFF0284C7 : 0xFF0891B2);
+        };
     }
 
     // ---- 文本与图标 ----
@@ -240,20 +313,20 @@ public final class AiTheme {
     /** 在内容背景上叠一层按下的水波纹，水波纹被限制。{@code content} 的形状内。*/
     @NonNull
     public Drawable pressable(@NonNull Drawable content, float radiusDp) {
-        Drawable mask = rounded(0xFFFFFFFF, radiusDp);
+        Drawable mask = rounded(MEDIA_WHITE, radiusDp);
         return new RippleDrawable(ColorStateList.valueOf(ripple), content, mask);
     }
 
     /** 无底色的可点击背景，只有按下的水波纹。*/
     @NonNull
     public Drawable pressable(float radiusDp) {
-        Drawable mask = rounded(0xFFFFFFFF, radiusDp);
+        Drawable mask = rounded(MEDIA_WHITE, radiusDp);
         return new RippleDrawable(ColorStateList.valueOf(ripple), null, mask);
     }
 
     @NonNull
     private Drawable pressableCircle() {
-        GradientDrawable mask = circle(0xFFFFFFFF);
+        GradientDrawable mask = circle(MEDIA_WHITE);
         return new RippleDrawable(ColorStateList.valueOf(ripple), null, mask);
     }
 }

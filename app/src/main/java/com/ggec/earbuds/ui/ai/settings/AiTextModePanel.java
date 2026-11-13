@@ -138,7 +138,7 @@ final class AiTextModePanel {
     }
 
     private TextView newBadge() {
-        TextView created = theme.text(AiTheme.TEXT_HEADLINE - 4, theme.brand, AiTheme.Weight.MEDIUM);
+        TextView created = theme.text(AiTheme.TEXT_SECTION, theme.brand, AiTheme.Weight.MEDIUM);
         created.setGravity(Gravity.CENTER);
         created.setBackground(theme.rounded(theme.brandSoft, AiTheme.RADIUS_ROW));
         created.setMinWidth(theme.dp(AiTheme.TOUCH_TARGET));

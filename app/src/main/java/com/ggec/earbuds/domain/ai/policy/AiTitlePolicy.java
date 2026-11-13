@@ -13,7 +13,7 @@ public final class AiTitlePolicy {
      * 把居中的勾和右尾巴一起顶歪——所以收到 16。
      */
     static final int MAX_CODE_POINTS = 16;
-    static final int MAX_RENAMED_CODE_POINTS = 40;
+    public static final int MAX_RENAMED_CODE_POINTS = 40;
 
     public String titleFor(String firstUserText) {
         String collapsed = AiPlainText.of(firstUserText);

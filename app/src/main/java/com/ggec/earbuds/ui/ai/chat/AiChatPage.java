@@ -57,7 +57,7 @@ public final class AiChatPage implements AiMessageActions {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(theme.page);
 
-        menus = new AiChatMenus(activity, new AiChatMenus.Listener() {
+        menus = new AiChatMenus(activity, components, new AiChatMenus.Listener() {
             @Override
             public void onNewConversation() {
                 viewModel.newConversation();

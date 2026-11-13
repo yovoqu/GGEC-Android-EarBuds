@@ -23,16 +23,28 @@ public final class EncryptedCredentialStore implements AiCredentialStore {
         this.secrets = Objects.requireNonNull(secrets, "secrets");
     }
 
+    /** 平台密钥在密文文档里的别名。单源：仓库与 UI 都从这里取，不再各写一份前缀。 */
+    @NonNull
+    public static String platformAlias(@NonNull String platformId) {
+        return PLATFORM_PREFIX + platformId;
+    }
+
+    /** 语音模型密钥的别名。 */
+    @NonNull
+    public static String voiceAlias(@NonNull AiVoiceModel model) {
+        return VOICE_PREFIX + model.id();
+    }
+
     @Nullable
     @Override
     public String platformKey(@NonNull String platformId) {
-        return blankToNull(secrets.get(PLATFORM_PREFIX + platformId));
+        return blankToNull(secrets.get(platformAlias(platformId)));
     }
 
     @Nullable
     @Override
     public String voiceKey(@NonNull AiVoiceModel model) {
-        return blankToNull(secrets.get(VOICE_PREFIX + model.id()));
+        return blankToNull(secrets.get(voiceAlias(model)));
     }
 
     @Override
@@ -47,12 +59,12 @@ public final class EncryptedCredentialStore implements AiCredentialStore {
 
     @Override
     public void putPlatformKey(@NonNull String platformId, @NonNull String key) {
-        put(PLATFORM_PREFIX + platformId, key);
+        put(platformAlias(platformId), key);
     }
 
     @Override
     public void putVoiceKey(@NonNull AiVoiceModel model, @NonNull String key) {
-        put(VOICE_PREFIX + model.id(), key);
+        put(voiceAlias(model), key);
     }
 
     private void put(@NonNull String alias, @NonNull String key) {

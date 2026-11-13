@@ -61,7 +61,7 @@ public final class AiComposerView extends LinearLayout {
         super(theme.context);
         this.theme = theme;
         setOrientation(VERTICAL);
-        setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(10), theme.dp(AiTheme.PAGE_INSET), theme.dp(10));
+        setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.COMPOSER_PAD), theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.COMPOSER_PAD));
 
         meta = theme.text(AiTheme.TEXT_CAPTION, theme.text3, AiTheme.Weight.MEDIUM);
         meta.setSingleLine(true);
@@ -80,7 +80,7 @@ public final class AiComposerView extends LinearLayout {
 
         input = new EditText(theme.context);
         input.setBackground(null);
-        input.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f);
+        input.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, AiTheme.TEXT_INPUT);
         input.setTextColor(theme.text1);
         input.setHintTextColor(theme.hint);
         input.setHint(R.string.ai_composer_hint);
@@ -92,17 +92,17 @@ public final class AiComposerView extends LinearLayout {
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         input.setLineSpacing(theme.dpf(3), 1f);
-        input.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(11), theme.dp(AiTheme.SPACE_S), theme.dp(11));
+        input.setPadding(theme.dp(AiTheme.SPACE_L), theme.dp(AiTheme.INPUT_PAD), theme.dp(AiTheme.SPACE_S), theme.dp(AiTheme.INPUT_PAD));
         YoFonts.applyRegular(input);
         field.addView(input, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         sendButton = new ImageView(theme.context);
         sendButton.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        int pad = theme.dp(9);
+        int pad = theme.dp(AiTheme.SEND_GLYPH_PAD);
         sendButton.setPadding(pad, pad, pad, pad);
-        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(theme.dp(36), theme.dp(36));
-        sendParams.setMarginEnd(theme.dp(6));
-        sendParams.bottomMargin = theme.dp(6);
+        LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(theme.dp(AiTheme.SEND_SIZE), theme.dp(AiTheme.SEND_SIZE));
+        sendParams.setMarginEnd(theme.dp(AiTheme.SEND_MARGIN));
+        sendParams.bottomMargin = theme.dp(AiTheme.SEND_MARGIN);
         field.addView(sendButton, sendParams);
 
         input.addTextChangedListener(new TextWatcher() {
@@ -237,7 +237,7 @@ public final class AiComposerView extends LinearLayout {
         sendButton.setImageResource(stop ? R.drawable.ic_ai_stop : R.drawable.ic_ai_send);
         sendButton.setColorFilter(theme.onBrand, PorterDuff.Mode.SRC_IN);
         sendButton.setAlpha(1f);
-        sendButton.setBackground(theme.pressable(theme.circle(theme.brand), 18));
+        sendButton.setBackground(theme.pressable(theme.circle(theme.brand), AiTheme.SEND_RADIUS));
         sendButton.setContentDescription(theme.context.getString(stop ? R.string.ai_stop : R.string.ai_send));
     }
 }

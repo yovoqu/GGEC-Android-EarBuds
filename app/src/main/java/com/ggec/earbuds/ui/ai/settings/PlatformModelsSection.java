@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
@@ -96,7 +97,8 @@ final class PlatformModelsSection {
 
     void bind(@NonNull AiPlatformUiState.Models next) {
         current = next;
-        title.setText(context.getString(R.string.ai_settings_models_section) + " · " + next.count());
+        title.setText(AiFormat.sectionTitle(context, R.string.ai_settings_models_section,
+                next.count()));
         action.setText(next.count() == 0
                 ? context.getString(R.string.ai_settings_models_fetch)
                 : next.actionLabel().resolve(context));
@@ -177,7 +179,7 @@ final class PlatformModelsSection {
         StringBuilder text = new StringBuilder();
         for (AiText fact : facts) {
             if (text.length() > 0) {
-                text.append(" · ");
+                text.append(AiFormat.SEPARATOR);
             }
             text.append(fact.resolve(context));
         }

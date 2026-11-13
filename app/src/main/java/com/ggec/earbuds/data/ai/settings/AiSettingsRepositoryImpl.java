@@ -2,6 +2,8 @@ package com.ggec.earbuds.data.ai.settings;
 
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
 import com.ggec.earbuds.data.ai.store.AiDocumentStore;
+import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
+import com.ggec.earbuds.data.ai.store.AiStorageException;
 import com.ggec.earbuds.data.ai.store.SecretStore;
 import com.ggec.earbuds.data.ai.store.StorageGuard;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -42,8 +44,6 @@ import java.util.function.UnaryOperator;
 public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
 
     private static final String DOCUMENT = "settings.json";
-    private static final String KEY_PREFIX = "apikey.";
-    private static final String VOICE_KEY_PREFIX = "voicekey.";
 
     private final AiDocumentStore documents;
     private final SecretStore secrets;
@@ -84,7 +84,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     public AiSettings load() {
         synchronized (lock) {
             AiSettings stored = StorageGuard.call(this::loaded);
-            AiSettings derived = deriveCredentials(stored);
+            AiSettings derived = StorageGuard.call(() -> deriveCredentials(stored));
             if (derived != stored) {
                 current = derived;
             }
@@ -133,7 +133,8 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         long nextRevision;
         synchronized (lock) {
             AiSettings before = StorageGuard.call(this::loaded);
-            AiSettings changed = deriveCredentials(Objects.requireNonNull(change.apply(before), "change"));
+            AiSettings changed = StorageGuard.call(
+                    () -> deriveCredentials(Objects.requireNonNull(change.apply(before), "change")));
             if (changed.equals(before)) {
                 return before;
             }
@@ -229,19 +230,20 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
             try {
                 stored = json.decode(text);
             } catch (JSONException corrupt) {
-                stored = AiSettings.EMPTY;
+                // 损坏的文档按存储失败上报并保留原文件；当成空设置再写回会静默清空用户配置。
+                throw new AiStorageException("settings.json is corrupt", corrupt);
             }
         }
         List<AiPlatformConfig> platforms = new ArrayList<>();
         for (AiPlatformConfig platform : stored.platforms()) {
-            String key = secrets.get(KEY_PREFIX + platform.id());
+            String key = secrets.get(EncryptedCredentialStore.platformAlias(platform.id()));
             boolean configured = key != null && !key.isBlank();
             platforms.add(platform.withConnection(platform.name(), configured,
                     platform.baseUrl(), platform.protocol()));
         }
         Set<AiVoiceModel> configuredVoices = EnumSet.noneOf(AiVoiceModel.class);
         for (AiVoiceModel model : AiVoiceModel.values()) {
-            String key = secrets.get(VOICE_KEY_PREFIX + model.id());
+            String key = secrets.get(EncryptedCredentialStore.voiceAlias(model));
             if (key != null && !key.isBlank()) {
                 configuredVoices.add(model);
             }
@@ -257,7 +259,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         List<AiPlatformConfig> platforms = new ArrayList<>(settings.platforms().size());
         boolean platformChanged = false;
         for (AiPlatformConfig platform : settings.platforms()) {
-            String key = secrets.get(KEY_PREFIX + platform.id());
+            String key = secrets.get(EncryptedCredentialStore.platformAlias(platform.id()));
             boolean configured = key != null && !key.isBlank();
             AiPlatformConfig derived = platform.configured() == configured ? platform
                     : platform.withConnection(platform.name(), configured,
@@ -267,7 +269,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         }
         Set<AiVoiceModel> configured = EnumSet.noneOf(AiVoiceModel.class);
         for (AiVoiceModel model : AiVoiceModel.values()) {
-            String key = secrets.get(VOICE_KEY_PREFIX + model.id());
+            String key = secrets.get(EncryptedCredentialStore.voiceAlias(model));
             if (key != null && !key.isBlank()) {
                 configured.add(model);
             }
@@ -288,7 +290,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         // 删平台时顺手清掉它的密钥；密钥的写入由 SavePlatform 用例负责，仓库从不落明文。
         for (AiPlatformConfig platform : before.platforms()) {
             if (next.platform(platform.id()).isEmpty()) {
-                secrets.remove(KEY_PREFIX + platform.id());
+                secrets.remove(EncryptedCredentialStore.platformAlias(platform.id()));
             }
         }
         documents.write(DOCUMENT, json.encode(next));

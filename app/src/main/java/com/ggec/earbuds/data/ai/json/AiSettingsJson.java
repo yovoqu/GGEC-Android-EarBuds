@@ -1,5 +1,6 @@
 package com.ggec.earbuds.data.ai.json;
 
+import com.ggec.earbuds.data.json.JsonValues;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiModel;
@@ -131,9 +132,10 @@ public final class AiSettingsJson {
         if (!state.realtimeModels().isEmpty()) {
             JSONArray models = new JSONArray();
             for (AiModel listed : state.realtimeModels()) {
+                StoredModel stored = StoredModel.of(listed);
                 JSONObject item = new JSONObject();
-                JsonValues.put(item, "id", listed.id());
-                JsonValues.put(item, "category", listed.category() == null ? null : listed.category().id());
+                JsonValues.put(item, "id", stored.id());
+                JsonValues.put(item, "category", stored.categoryId());
                 models.put(item);
             }
             JsonValues.put(json, "models", models);
@@ -194,13 +196,10 @@ public final class AiSettingsJson {
             if (object == null) {
                 continue;
             }
-            AiModelCategory category = AiModelCategory.fromId(JsonValues.string(object, "category"));
-            if (category == null) {
-                continue;
-            }
-            AiModel item = new AiModel(object.optString("id", ""), object.optString("id", ""),
-                    null, null, Set.of(), false, category);
-            if (!item.id().isEmpty()) {
+            StoredModel stored = new StoredModel(JsonValues.string(object, "id", ""),
+                    JsonValues.string(object, "category"));
+            AiModel item = stored.toDomain();
+            if (item != null) {
                 models.add(item);
             }
         }
@@ -336,6 +335,7 @@ public final class AiSettingsJson {
         JsonValues.put(json, "failure", result.failureKind() == null ? null : result.failureKind().name());
         JsonValues.put(json, "message", result.message());
         JsonValues.put(json, "at", result.testedAtMillis());
+        JsonValues.put(json, "tokens", result.outputTokens());
         return json;
     }
 
@@ -354,6 +354,7 @@ public final class AiSettingsJson {
         String failure = JsonValues.string(json, "failure");
         return new AiSpeedResult(modelId, parsed, JsonValues.number(json, "first", -1L),
                 JsonValues.number(json, "total", 0L), failure == null ? null : AiFailureKind.fromName(failure),
-                JsonValues.string(json, "message"), JsonValues.number(json, "at", 0L));
+                JsonValues.string(json, "message"), JsonValues.number(json, "at", 0L),
+                (int) JsonValues.number(json, "tokens", -1));
     }
 }

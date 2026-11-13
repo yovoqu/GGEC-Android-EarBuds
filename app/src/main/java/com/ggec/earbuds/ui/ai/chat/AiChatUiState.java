@@ -29,10 +29,6 @@ public record AiChatUiState(
     public record Composer(boolean enabled, boolean generating, @Nullable String modelChip) {
     }
 
-    public boolean canSend() {
-        return composer.enabled() && !composer.generating();
-    }
-
     public AiChatUiState {
         messages = List.copyOf(messages);
     }

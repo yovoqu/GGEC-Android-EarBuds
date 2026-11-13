@@ -174,7 +174,7 @@ public class AiSettingsModelTest {
 
     @Test
     public void changingTheHostDropsTheModelCacheButChangingTheKeyKeepsIt() {
-        AiSpeedResult result = new AiSpeedResult("m1", AiSpeedResult.Status.OK, 100, 200, null, null, 5);
+        AiSpeedResult result = new AiSpeedResult("m1", AiSpeedResult.Status.OK, 100, 200, null, null, 5, -1);
         AiPlatformConfig cached = platform("deepseek", "k", "m1", "m2").withModels(
                 List.of(model("m1"), model("m2")), 99L).withSpeedResult(result);
 
@@ -192,8 +192,8 @@ public class AiSettingsModelTest {
 
     @Test
     public void refreshingModelsKeepsSpeedResultsOnlyForModelsThatSurvive() {
-        AiSpeedResult kept = new AiSpeedResult("m1", AiSpeedResult.Status.OK, 100, 200, null, null, 5);
-        AiSpeedResult dropped = new AiSpeedResult("m2", AiSpeedResult.Status.OK, 300, 400, null, null, 5);
+        AiSpeedResult kept = new AiSpeedResult("m1", AiSpeedResult.Status.OK, 100, 200, null, null, 5, -1);
+        AiSpeedResult dropped = new AiSpeedResult("m2", AiSpeedResult.Status.OK, 300, 400, null, null, 5, -1);
         AiPlatformConfig config = platform("p", "k").withModels(List.of(model("m1"), model("m2")), 1L)
                 .withSpeedResult(kept).withSpeedResult(dropped);
 

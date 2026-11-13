@@ -73,9 +73,13 @@ public final class EncryptedSecretStore implements SecretStore {
         }
         try {
             JSONObject items = new JSONObject(text).optJSONObject("items");
-            return items == null ? new JSONObject() : items;
+            if (items == null) {
+                throw new AiStorageException("secrets.json has no items object");
+            }
+            return items;
         } catch (JSONException corrupt) {
-            return new JSONObject();
+            // 损坏的密钥文档绝不能当成"空"再写回去：那会把其余密钥一起抹掉。
+            throw new AiStorageException("secrets.json is corrupt", corrupt);
         }
     }
 

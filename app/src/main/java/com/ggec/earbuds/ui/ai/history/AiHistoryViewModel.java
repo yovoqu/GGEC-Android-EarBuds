@@ -13,7 +13,7 @@ import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.port.AiClock;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.ListConversations;
-import com.ggec.earbuds.ui.OneShotLiveData;
+import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.time.ZoneId;
 import java.util.List;
@@ -45,7 +45,7 @@ public final class AiHistoryViewModel extends ViewModel {
     private final ZoneId zone;
 
     private final MutableLiveData<AiHistoryUiState> uiState =
-            new MutableLiveData<>(AiHistoryUiState.from(false, false, List.of()));
+            new MutableLiveData<>(AiHistoryUiState.initial());
     private final OneShotLiveData<AiHistoryEvent> events = new OneShotLiveData<>();
     private final Subscription subscription;
 
@@ -116,15 +116,15 @@ public final class AiHistoryViewModel extends ViewModel {
                 // 读不出来时保留上一次的行。列表本来就是空的时候不弹 toast：
                 // 面板会就地写「没能读取对话记录」+「重试」，状态由界面承载，不由 toast 承载。
                 AiHistoryUiState current = uiState.getValue();
-                publishState(AiHistoryUiState.from(
-                        true, true, current == null ? List.of() : current.items()));
+                publishState(AiHistoryUiState.of(
+                        current == null ? List.of() : current.items(), true));
                 if (!itemsAreEmpty()) {
                     events.postValue(AiHistoryEvent.toast(R.string.ai_history_load_failed));
                 }
                 return;
             }
-            publishState(AiHistoryUiState.from(
-                    true, false, mapper.map(summaries, currentId, clock.now(), zone)));
+            publishState(AiHistoryUiState.of(
+                    mapper.map(summaries, currentId, clock.now(), zone), false));
         });
     }
 

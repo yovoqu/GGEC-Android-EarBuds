@@ -143,6 +143,6 @@ public class AiConversationPoliciesTest {
     }
 
     private static AiSpeedResult speed(String model, AiSpeedResult.Status status, long first, long total) {
-        return new AiSpeedResult(model, status, first, total, null, null, 0);
+        return new AiSpeedResult(model, status, first, total, null, null, 0, -1);
     }
 }

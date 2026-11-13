@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.ai.policy.AiTitlePolicy;
 import com.yohu.youi.api.controls.YoTextInput;
 import com.yohu.youi.api.feedback.YoDialog;
 
@@ -23,7 +24,7 @@ import com.yohu.youi.api.feedback.YoDialog;
 final class AiHistoryRenameDialog {
 
     /** 标题长度上限与领域里的 {@code AiTitlePolicy.MAX_RENAMED_CODE_POINTS} 一致。 */
-    private static final int MAX_TITLE_LENGTH = 40;
+    private static final int MAX_TITLE_LENGTH = AiTitlePolicy.MAX_RENAMED_CODE_POINTS;
 
     private AiHistoryRenameDialog() {
     }

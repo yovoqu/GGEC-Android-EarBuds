@@ -16,35 +16,20 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 把 SDK 的 {@link YoModelSpec} 抄成领域模型。文本页只留 {@code conversational} 的类别，
- * 语音页保留全部类别。类别原样写入 {@link com.ggec.earbuds.domain.ai.model.AiModelCategory}，
- * 不按名字改判。
+ * 把 SDK 的 {@link YoModelSpec} 抄成领域模型。
  *
- * <p>模型清单只有两个来源：平台 {@code /models} 的真实返回，或用户手填的 id。
- * 这里不补任何厂商默认模型。排序：发布时间新的在前，没有发布时间的排在最后，再按名字。</p>
+ * <p><b>不筛选</b>：平台返回什么就映射什么，类别原样写入 {@link AiModelCategory}。
+ * 哪些模型能用于文本对话、哪些能用于实时语音，由领域策略
+ * （{@code AiPlatformConfig.chatModels()} / {@code VoiceModelPolicy}）决定——
+ * 网关替用户挑模型会造出“网页里有、列表里没有”的黑洞。</p>
+ *
+ * <p>排序：发布时间新的在前，没有发布时间的排在最后，再按名字。</p>
  */
 final class LibAiModels {
 
     private LibAiModels() {
     }
 
-    static List<AiModel> models(List<YoModelInfo> infos) {
-        List<YoModelInfo> selectable = new ArrayList<>();
-        for (YoModelInfo info : infos) {
-            if (info.spec().category().conversational()) {
-                selectable.add(info);
-            }
-        }
-        selectable.sort(Comparator.comparingLong(LibAiModels::recency).reversed()
-                .thenComparing(info -> info.displayName().toLowerCase(Locale.ROOT)));
-        List<AiModel> models = new ArrayList<>(selectable.size());
-        for (YoModelInfo info : selectable) {
-            models.add(toModel(info));
-        }
-        return models;
-    }
-
-    /** 语音设置要的全部模型：不按类别过滤，类别随规格一起回去。 */
     static List<AiModel> all(List<YoModelInfo> infos) {
         List<YoModelInfo> selectable = new ArrayList<>();
         for (YoModelInfo info : infos) {

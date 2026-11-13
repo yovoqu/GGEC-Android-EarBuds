@@ -63,7 +63,7 @@ public final class AiCallSubtitleView extends FrameLayout {
         // 1. 自适应高质感磨砂质感卡片底座
         int cardBgColor = theme.isDark()
                 ? ColorUtils.setAlphaComponent(theme.card, 0xD8)
-                : ColorUtils.setAlphaComponent(0xFFFFFFFF, 0xF4);
+                : ColorUtils.setAlphaComponent(AiTheme.MEDIA_WHITE, 0xF4);
         GradientDrawable bg = theme.roundedStroke(cardBgColor, CARD_RADIUS_DP, theme.cardStroke, 1f);
         setBackground(bg);
         setPadding(padH, padV, padH, padV);
@@ -81,7 +81,7 @@ public final class AiCallSubtitleView extends FrameLayout {
         });
         setClipToOutline(true);
 
-        int subShadowColor = theme.isDark() ? 0xFF000000 : theme.text1;
+        int subShadowColor = theme.isDark() ? AiTheme.MEDIA_BLACK : theme.text1;
         setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(subShadowColor, theme.isDark() ? 0x50 : 0x16));
         setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(subShadowColor, theme.isDark() ? 0x28 : 0x0B));
 
@@ -167,7 +167,8 @@ public final class AiCallSubtitleView extends FrameLayout {
                         if (content != null) {
                             scrollView.smoothScrollTo(0, content.getBottom());
                         }
-                        scrollView.postDelayed(scrollEngine::onProgrammaticScrollFinished, 300L);
+                        scrollView.postDelayed(scrollEngine::onProgrammaticScrollFinished,
+                                AiTheme.DURATION_SCROLL_SETTLE);
                     }
                 },
                 this::animatePillVisibility,
@@ -266,10 +267,10 @@ public final class AiCallSubtitleView extends FrameLayout {
             scrollPill.setAlpha(0f);
             scrollPill.setVisibility(VISIBLE);
             scrollPill.animate().cancel();
-            scrollPill.animate().alpha(1f).setDuration(160).start();
+            scrollPill.animate().alpha(1f).setDuration(AiTheme.DURATION_M).start();
         } else if (!visible && scrollPill.getVisibility() == VISIBLE) {
             scrollPill.animate().cancel();
-            scrollPill.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+            scrollPill.animate().alpha(0f).setDuration(AiTheme.DURATION_XS).withEndAction(() -> {
                 scrollPill.setVisibility(GONE);
             }).start();
         }

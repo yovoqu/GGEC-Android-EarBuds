@@ -1,7 +1,5 @@
 package com.ggec.earbuds.ui.ai.call;
 
-import android.os.Handler;
-import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -13,8 +11,10 @@ import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
+import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
@@ -35,9 +35,8 @@ public final class AiCallViewModel extends ViewModel {
 
     private final MutableLiveData<AiCallUiState> uiState =
             new MutableLiveData<>(AiCallUiState.connecting(VoiceDuplex.defaultMode()));
-    private final MutableLiveData<Float> meter = new MutableLiveData<>(0f);
-    private final MutableLiveData<List<AiSubtitleItem>> subtitleItems =
-            new MutableLiveData<>(List.of());
+    /** 一次性提示（当前只有双工切换的说明文案），由页面消费后清空。 */
+    private final OneShotLiveData<Integer> toasts = new OneShotLiveData<>();
 
     private final Object stateLock = new Object();
     private final Object timerLock = new Object();
@@ -52,6 +51,8 @@ public final class AiCallViewModel extends ViewModel {
     private String pendingSourceId;
     @Nullable
     private AiAudioSource pendingSource;
+    private float publishedLevel;
+    private List<AiSubtitleItem> publishedItems = List.of();
     private long lastMeterAt;
 
     @Nullable
@@ -78,58 +79,26 @@ public final class AiCallViewModel extends ViewModel {
         }
     };
 
-    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory) {
-        this(factory, new MainTicker());
-    }
-
     public AiCallViewModel(@NonNull AiVoiceSessionFactory factory, @NonNull Ticker ticker) {
         this.factory = Objects.requireNonNull(factory, "factory");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
     }
 
-    private static final class MainTicker implements Ticker {
-        private Handler handler;
-
-        private synchronized Handler handler() {
-            if (handler == null) {
-                handler = new Handler(Looper.getMainLooper());
-            }
-            return handler;
-        }
-
-        @Override
-        public void postDelayed(@NonNull Runnable r, long delayMs) {
-            handler().postDelayed(r, delayMs);
-        }
-
-        @Override
-        public void removeCallbacks(@NonNull Runnable r) {
-            Handler current;
-            synchronized (this) {
-                current = handler;
-            }
-            if (current != null) {
-                current.removeCallbacks(r);
-            }
-        }
-    }
-
-    /** 页面唯一界面状态流。 */
+    /** 页面唯一界面状态流：阶段、按钮、双工、输入源、电平与字幕都在这里。 */
     @NonNull
     public LiveData<AiCallUiState> uiState() {
         return uiState;
     }
 
-    /** 瞬时电平独立流（0..1）。 */
     @NonNull
-    public LiveData<Float> meter() {
-        return meter;
+    public LiveData<Integer> toasts() {
+        return toasts;
     }
 
-    /** 表现层字幕项独立流。 */
-    @NonNull
-    public LiveData<List<AiSubtitleItem>> subtitleItems() {
-        return subtitleItems;
+    /** 失败后重试：先结束当前会话再起一条，供页面一键调用。 */
+    public void retry() {
+        hangUp();
+        start();
     }
 
     /** 起一路通话会话。 */
@@ -159,12 +128,14 @@ public final class AiCallViewModel extends ViewModel {
             session = created;
         }
 
-        subtitleItems.setValue(List.of());
+        publishedItems = List.of();
         uiState.setValue(AiCallUiState.connecting(initialDuplex)
                 .withMicMuted(initialMuted)
                 .withSpeakerOn(initialSpeaker)
                 .withCaptionsVisible(initialCaptions)
-                .withDurationSeconds(0));
+                .withDurationSeconds(0)
+                .withMeter(0f)
+                .withSubtitleItems(List.of()));
 
         if (pinned) {
             created.setDuplex(initialDuplex);
@@ -204,7 +175,9 @@ public final class AiCallViewModel extends ViewModel {
                 .withMicMuted(currentMuted)
                 .withSpeakerOn(currentSpeaker)
                 .withCaptionsVisible(currentCaptions)
-                .withDurationSeconds(currentDuration));
+                .withDurationSeconds(currentDuration)
+                .withMeter(0f)
+                .withSubtitleItems(List.of()));
         stopTimer();
     }
 
@@ -282,6 +255,9 @@ public final class AiCallViewModel extends ViewModel {
     public void toggleDuplex() {
         VoiceDuplex active = duplex();
         setDuplex(active == VoiceDuplex.FULL_DUPLEX ? VoiceDuplex.HALF_DUPLEX : VoiceDuplex.FULL_DUPLEX);
+        toasts.setValue(duplex() == VoiceDuplex.FULL_DUPLEX
+                ? R.string.ai_call_duplex_full_hint
+                : R.string.ai_call_duplex_half_hint);
     }
 
     @NonNull
@@ -387,6 +363,21 @@ public final class AiCallViewModel extends ViewModel {
                 .withDurationSeconds(currentDuration)
                 .withCaptionsVisible(currentCaptions);
 
+        float level = snapshot.state() == AiVoiceSnapshot.State.LISTENING
+                ? snapshot.inputLevel() : 0f;
+        long now = System.currentTimeMillis();
+        if (now - lastMeterAt >= 45L || Math.abs(level - publishedLevel) >= 0.04f) {
+            lastMeterAt = now;
+            publishedLevel = level;
+        }
+        mapped = mapped.withMeter(publishedLevel);
+
+        List<AiSubtitleItem> items = AiSubtitleMapper.fromDomainTurns(snapshot.turns());
+        if (!items.equals(publishedItems)) {
+            publishedItems = items;
+        }
+        mapped = mapped.withSubtitleItems(publishedItems);
+
         if (!Objects.equals(uiState.getValue(), mapped)) {
             uiState.postValue(mapped);
         }
@@ -395,21 +386,6 @@ public final class AiCallViewModel extends ViewModel {
             startTimer();
         } else if (mapped.ended()) {
             stopTimer();
-        }
-
-        float level = snapshot.state() == AiVoiceSnapshot.State.LISTENING
-                ? snapshot.inputLevel() : 0f;
-        long now = System.currentTimeMillis();
-        Float previous = meter.getValue();
-        float old = previous == null ? 0f : previous;
-        if (now - lastMeterAt >= 45L || Math.abs(level - old) >= 0.04f) {
-            lastMeterAt = now;
-            meter.postValue(level);
-        }
-
-        List<AiSubtitleItem> currentItems = AiSubtitleMapper.fromDomainTurns(snapshot.turns());
-        if (!Objects.equals(subtitleItems.getValue(), currentItems)) {
-            subtitleItems.postValue(currentItems);
         }
     }
 

@@ -6,6 +6,7 @@ import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiMessageFailure;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,7 +28,8 @@ public final class AiChatUiMapper {
             items.add(map(messages.get(i), i == messages.size() - 1, state, reasoningOverrides));
         }
         AiActiveModel model = state.model();
-        String label = model == null ? "" : model.platform().name() + " · " + model.model().name();
+        String label = model == null ? ""
+                : model.platform().name() + AiFormat.SEPARATOR + model.model().name();
         return new AiChatUiState(
                 state.loaded(),
                 items,

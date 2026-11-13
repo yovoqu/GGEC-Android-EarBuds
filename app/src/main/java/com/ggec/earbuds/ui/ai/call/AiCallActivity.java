@@ -75,8 +75,11 @@ public final class AiCallActivity extends AppCompatActivity {
                 screen.render(state);
             }
         });
-        viewModel.meter().observe(this, screen::setLevel);
-        viewModel.subtitleItems().observe(this, screen::setSubtitleItems);
+        viewModel.toasts().observe(this, messageRes -> {
+            if (messageRes != null) {
+                YoToast.show(this, getString(messageRes));
+            }
+        });
     }
 
     @NonNull
@@ -144,8 +147,7 @@ public final class AiCallActivity extends AppCompatActivity {
         @Override
         public void onAction(@NonNull AiCallUiState.Action action) {
             if (action == AiCallUiState.Action.RETRY) {
-                viewModel.hangUp();
-                viewModel.start();
+                viewModel.retry();
             } else if (action == AiCallUiState.Action.SETTINGS) {
                 finishing = true;
                 viewModel.hangUp();
@@ -172,11 +174,6 @@ public final class AiCallActivity extends AppCompatActivity {
         @Override
         public void onToggleDuplex() {
             viewModel.toggleDuplex();
-            VoiceDuplex next = viewModel.duplex();
-            int hintRes = (next == VoiceDuplex.FULL_DUPLEX)
-                    ? R.string.ai_call_duplex_full_hint
-                    : R.string.ai_call_duplex_half_hint;
-            YoToast.show(AiCallActivity.this, getString(hintRes));
         }
 
         @Override
