@@ -122,8 +122,8 @@ public final class YoCbtAndroidReceiverRegistry {
                 YoBtLogger.w(TAG, "unregisterAll 期间注销接收器出错: "
                         + entry.receiver, e);
             } catch (Exception e) {
-                YoBtLogger.e(TAG, "unregisterAll 期间发生意外错误: "
-                        + entry.receiver, e);
+                BluetoothDiagnosticsBus.get().recordException(TAG,
+                        "unregisterAll 期间发生意外错误: " + entry.receiver, e);
             }
         }
         receivers.clear();
