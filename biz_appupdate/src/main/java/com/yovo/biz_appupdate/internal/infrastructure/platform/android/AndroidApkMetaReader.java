@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.biz_appupdate.internal.contract.ApkMetaReader;
 import com.yovo.biz_appupdate.internal.model.LocalApk;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 import java.io.File;
 import java.security.MessageDigest;
@@ -22,6 +23,8 @@ import java.util.Locale;
  * 通过 PackageManager 读取 APK 真实版本、包名与签名。
  */
 public final class AndroidApkMetaReader implements ApkMetaReader {
+
+    private static final String TAG = "AndroidApkMetaReader";
 
     private final Context appContext;
 
@@ -118,6 +121,7 @@ public final class AndroidApkMetaReader implements ApkMetaReader {
             }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
+            YoUpdateLogger.e(TAG, "SHA-256 不可用", e);
             return null;
         }
     }

@@ -77,6 +77,35 @@ tasks.register('checkBizAppUpdateInternalImports') {
     }
 }
 
+tasks.register('checkBizAppUpdateLogSeam') {
+    group = 'verification'
+    description = '日志唯一缝：lib_common.log 只在 provider/lib_common/log 内被调用。'
+    doLast {
+        def offenders = []
+        def seam = 'src/main/java/com/yovo/biz_appupdate/provider/lib_common/log/'
+        fileTree(project.projectDir) {
+            include 'src/main/java/**/*.java'
+        }.each { file ->
+            String rel = project.relativePath(file).replace('\\', '/')
+            boolean inSeam = rel.startsWith(seam)
+            file.text.eachLine { line, index ->
+                String trimmed = line.trim()
+                if (!inSeam && (trimmed.contains('import com.yovo.lib_common.log.')
+                        || trimmed =~ /\bYoLog\s*\./)) {
+                    offenders << "${rel}:${index + 1}: 日志缝之外直接使用 lib_common.log → ${trimmed}"
+                }
+                if (trimmed.contains('import android.util.Log')
+                        || trimmed.contains('printStackTrace')) {
+                    offenders << "${rel}:${index + 1}: 散点日志 → ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_appupdate 日志缝被绕过：\n' + offenders.join('\n'))
+        }
+    }
+}
+
 tasks.named('check') {
-    dependsOn 'checkBizAppUpdateInternalImports'
+    dependsOn 'checkBizAppUpdateInternalImports', 'checkBizAppUpdateLogSeam'
 }

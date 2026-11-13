@@ -16,7 +16,6 @@ import com.yovo.biz_appupdate.internal.contract.DownloadProvider;
 import com.yovo.biz_appupdate.internal.contract.InstallPermissionPort;
 import com.yovo.biz_appupdate.internal.contract.InstallProvider;
 import com.yovo.biz_appupdate.internal.contract.LaunchPromptBridge;
-import com.yovo.biz_appupdate.internal.contract.LogPort;
 import com.yovo.biz_appupdate.internal.contract.PromptProvider;
 import com.yovo.biz_appupdate.internal.contract.UpdateCheckProvider;
 import com.yovo.biz_appupdate.internal.contract.UpdateMetaStore;
@@ -47,7 +46,7 @@ import com.yovo.biz_appupdate.internal.interactor.ResolveLaunchUpdateAction;
 import com.yovo.biz_appupdate.provider.lib_common.YoDownloadProvider;
 import com.yovo.biz_appupdate.provider.lib_common.YoPermissionProvider;
 import com.yovo.biz_appupdate.provider.lib_common.FileManagerProvider;
-import com.yovo.biz_appupdate.provider.lib_common.LogProvider;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 /**
  * SDK 依赖容器：自底向上组装契约端口、基础设施适配器、交互层与引擎。
@@ -55,7 +54,6 @@ import com.yovo.biz_appupdate.provider.lib_common.LogProvider;
 public final class AppUpdateGraph {
 
     private final AppUpdateConfig config;
-    private final LogPort logPort;
     private final ApkStorage apkStorage;
     private final SafTreeStorePort safTreeStore;
     private final LaunchPromptBridge launchPromptBridge;
@@ -67,8 +65,8 @@ public final class AppUpdateGraph {
     private AppUpdateGraph(@NonNull Context context, @NonNull AppUpdateConfig config) {
         this.config = config;
         Context app = context.getApplicationContext();
+        YoUpdateLogger.ensureInitialized(app);
 
-        logPort = new LogProvider();
         YoPermissionProvider permissionProvider = new YoPermissionProvider(app);
         FileManagerProvider fileManagerProvider = new FileManagerProvider(app);
         safTreeStore = fileManagerProvider;
@@ -130,7 +128,6 @@ public final class AppUpdateGraph {
                 downloadDirAccess,
                 installPermission,
                 safTreeStore,
-                logPort,
                 config.downloadDir().type() == DownloadDirSpec.Type.SAF);
     }
 
@@ -143,11 +140,6 @@ public final class AppUpdateGraph {
     @NonNull
     public AppUpdateConfig config() {
         return config;
-    }
-
-    @NonNull
-    public LogPort logPort() {
-        return logPort;
     }
 
     @NonNull
