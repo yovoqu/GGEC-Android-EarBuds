@@ -12,11 +12,14 @@ import com.yovo.biz_ggec_hs.internal.link.HsMainDelay;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.HsNearbyScanner;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.YoBleCommandLink;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.YoClassicRadio;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 组合根：把 provider 的链路适配、中层协议引擎、上层会话/扫描与设备目录装在一起。
  *
- * <p>这是模块里唯一构造 {@code provider/**} 的地方。对外只经过 {@code YoHsSdk}。</p>
+ * <p>这是模块里唯一构造 {@code provider/lib_bluetooth} 适配、并调用
+ * {@code HsLog.ensureInitialized} 的地方。日志调用点直接用 {@code HsLog}。
+ * 对外只经过 {@code YoHsSdk}。</p>
  */
 public final class HsGraph {
 
@@ -31,6 +34,7 @@ public final class HsGraph {
     }
 
     public static HsGraph open(Context context) {
+        HsLog.ensureInitialized(context);
         YoBleCommandLink link = YoBleCommandLink.open(context);
         HsProtocolEngine engine = new HsProtocolEngine(link);
         HsCatalogImpl catalog = new HsCatalogImpl();

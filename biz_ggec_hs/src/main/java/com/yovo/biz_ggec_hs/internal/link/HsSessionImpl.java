@@ -17,7 +17,7 @@ import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 import com.yovo.biz_ggec_hs.internal.interact.HsSnapshotAssembler;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;

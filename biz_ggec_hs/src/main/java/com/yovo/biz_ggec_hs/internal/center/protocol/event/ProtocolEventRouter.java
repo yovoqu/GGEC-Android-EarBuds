@@ -1,6 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.event;
 
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.util.ArrayList;
 import java.util.HashMap;

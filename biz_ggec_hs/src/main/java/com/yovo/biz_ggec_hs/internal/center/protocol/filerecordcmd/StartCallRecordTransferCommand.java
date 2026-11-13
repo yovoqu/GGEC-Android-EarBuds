@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 开始通话录音随录随传（协议 EC D0）。

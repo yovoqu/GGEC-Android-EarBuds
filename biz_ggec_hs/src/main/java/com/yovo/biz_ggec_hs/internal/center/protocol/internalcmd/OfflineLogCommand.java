@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.internalcmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 离线 log 开关命令（协议 EC D3，SDK 内部 / Debug 使用）。

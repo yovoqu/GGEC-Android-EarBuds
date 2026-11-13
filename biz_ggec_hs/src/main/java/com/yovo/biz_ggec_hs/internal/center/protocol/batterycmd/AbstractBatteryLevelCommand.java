@@ -1,7 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.batterycmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 单路电量查询的公共协议实现。

@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 同声传译状态查询命令（协议 EC DB）。
