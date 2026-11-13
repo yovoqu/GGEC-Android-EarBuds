@@ -1,50 +1,55 @@
 package com.ggec.earbuds.provider.biz_ggec_hs;
 
-
-import com.yovo.biz_ggec_hs.YoHsSdk;
-import com.yovo.biz_ggec_hs.api.HsDevice;
-import com.yovo.biz_ggec_hs.api.HsScan;
-import com.yovo.biz_ggec_hs.api.HsControl;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.device.model.BatterySnapshot;
+import com.ggec.earbuds.domain.device.model.ConnectSettlement;
 import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceState;
+import com.ggec.earbuds.domain.device.model.DeviceTarget;
 import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
 import com.ggec.earbuds.domain.device.model.DualConnectionView;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.ScanResult;
 import com.ggec.earbuds.domain.device.model.WearState;
-import com.ggec.earbuds.domain.device.port.DevicePort;
+import com.ggec.earbuds.domain.device.port.DeviceLinkPort;
 import com.ggec.earbuds.domain.device.port.Subscription;
+import com.yovo.biz_ggec_hs.YoHsSdk;
+import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.api.HsDevice;
+import com.yovo.biz_ggec_hs.api.HsScan;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * 把 {@code biz_ggec_hs} 的扫描订阅与会话投影成 APP 的设备端口。
+ * 把 {@code biz_ggec_hs} 的扫描订阅与会话投影成 APP 的设备链路端口。
  *
- * <p>本类只做「biz 事件 → {@link DeviceSnapshot} / {@link ScanResult}」的投影与生命周期持有：
- * 扫描参数、广播识别、协议帧、能力路由、连接就绪超时都在 biz 内部。这里不解释协议字节，
- * 不持有「机型 → 能力」表，也不做业务重试。</p>
+ * <p>本类只做「biz 事件 → {@link DeviceSnapshot} / {@link ScanResult}」的投影与
+ * SDK 生命周期持有：扫描参数、广播识别、协议帧、能力路由、连接就绪超时都在 biz 内部。
+ * 这里不解释协议字节，不持有「机型 → 能力」表，不做重试，也不判定"谁被取代"
+ * （换设备的仲裁在 {@code domain/device/session/DeviceSession}）。</p>
  *
  * <p>会话事实（电量、设备信息、控制值、双连接、录音列表）只在<b>本会话</b>内有效：
  * 连接与断开都把它们清空，绝不把上一台设备的值带到新会话。</p>
  */
-public final class HsDevicePortAdapter implements DevicePort {
+public final class HsDeviceLinkAdapter implements DeviceLinkPort {
 
     private final YoHsSdk sdk;
-    private final CopyOnWriteArrayList<Consumer<DeviceSnapshot>> listeners = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<Consumer<DeviceSnapshot>> listeners =
+            new CopyOnWriteArrayList<>();
     private final Object lock = new Object();
     private final Observer observer = new Observer();
 
@@ -55,10 +60,13 @@ public final class HsDevicePortAdapter implements DevicePort {
     private HsDevice.Snapshot sessionSnapshot;
     private String targetModelId = "";
     private HsDevice.Radios targetRadios = HsDevice.Radios.none();
+    /** 当前连接尝试是否已经看到 CONNECTING。用来区分掉线与"还没开始"。 */
+    private boolean connectSawLink;
+    private Consumer<ConnectSettlement> connectSettlement;
     private Optional<DualConnectionView> dualConnection = Optional.empty();
     private List<RecordFileView> recordFiles = List.of();
 
-    public HsDevicePortAdapter(@NonNull YoHsSdk sdk) {
+    public HsDeviceLinkAdapter(@NonNull YoHsSdk sdk) {
         this.sdk = Objects.requireNonNull(sdk, "sdk");
         this.sdk.watch(observer);
     }
@@ -81,23 +89,24 @@ public final class HsDevicePortAdapter implements DevicePort {
     }
 
     @Override
-    public void connect(String modelId, String bleAddress, String bleName,
-                        String classicAddress, String classicName) {
-        if (bleAddress == null || bleAddress.isEmpty()) {
-            throw new IllegalArgumentException("connect requires a non-empty BLE address");
+    public void connect(DeviceTarget target, Consumer<ConnectSettlement> onSettled) {
+        Objects.requireNonNull(target, "target");
+        if (onSettled == null) {
+            throw new IllegalArgumentException("connect requires a settlement callback");
         }
-        String targetModel = modelId == null ? "" : modelId;
         HsDevice.Radios radios = new HsDevice.Radios(
-                bleAddress,
-                bleName == null ? "" : bleName,
-                classicAddress == null ? "" : classicAddress,
-                classicName == null ? "" : classicName);
+                target.id().bleAddress(),
+                target.identity().bleName(),
+                target.identity().classicAddress(),
+                target.identity().classicName());
         synchronized (lock) {
-            targetModelId = targetModel;
+            targetModelId = target.id().modelId();
             targetRadios = radios;
             clearSessionFactsLocked();
+            connectSawLink = false;
+            connectSettlement = onSettled;
         }
-        sdk.connect(targetModel, radios);
+        sdk.connect(targetModelId, radios);
         synchronized (lock) {
             applyConnectionLocked(sdk.connection());
         }
@@ -106,9 +115,13 @@ public final class HsDevicePortAdapter implements DevicePort {
 
     @Override
     public void disconnect() {
+        synchronized (lock) {
+            connectSettlement = null;
+            connectSawLink = false;
+            clearSessionFactsLocked();
+        }
         sdk.disconnect();
         synchronized (lock) {
-            clearSessionFactsLocked();
             applyConnectionLocked(sdk.connection());
         }
         publish();
@@ -157,12 +170,12 @@ public final class HsDevicePortAdapter implements DevicePort {
     }
 
     @Override
-    public void filterModels(java.util.Set<String> modelIds) {
+    public void filterModels(Set<String> modelIds) {
         if (modelIds == null || modelIds.isEmpty()) {
             sdk.filter(HsScan.Rule.none());
             return;
         }
-        sdk.filter(new HsScan.Rule(java.util.Set.of(), java.util.Set.of(), java.util.Set.copyOf(modelIds),
+        sdk.filter(new HsScan.Rule(Set.of(), Set.of(), Set.copyOf(modelIds),
                 false, HsScan.Rule.MIN_RSSI_UNRESTRICTED));
     }
 
@@ -291,10 +304,32 @@ public final class HsDevicePortAdapter implements DevicePort {
 
         @Override
         public void onConnectionChanged(@NonNull HsControl.State state, @Nullable HsControl.Failure failure) {
+            Consumer<ConnectSettlement> callback = null;
+            ConnectSettlement outcome = null;
             synchronized (lock) {
                 applyConnectionLocked(state);
+                if (connectSettlement != null) {
+                    if (state == HsControl.State.CONNECTING) {
+                        connectSawLink = true;
+                    } else if (state == HsControl.State.READY) {
+                        callback = connectSettlement;
+                        connectSettlement = null;
+                        outcome = new ConnectSettlement.Ready();
+                    } else if (state == HsControl.State.DISCONNECTED && failure != null) {
+                        callback = connectSettlement;
+                        connectSettlement = null;
+                        outcome = new ConnectSettlement.Failed(HsValueMapper.toFailure(failure));
+                    } else if (state == HsControl.State.DISCONNECTED && connectSawLink) {
+                        callback = connectSettlement;
+                        connectSettlement = null;
+                        outcome = new ConnectSettlement.Failed(DeviceFailure.DEVICE_ERROR);
+                    }
+                }
             }
             publish();
+            if (callback != null) {
+                callback.accept(outcome);
+            }
         }
 
         @Override
@@ -317,8 +352,7 @@ public final class HsDevicePortAdapter implements DevicePort {
                 }
                 case HsControl.Event.PairedDevicesChanged changed -> {
                     synchronized (lock) {
-                        // 只有拿过完整双连接状态（开关 + 优先设备 + 列表）之后才更新列表：
-                        // 单独一份设备列表无法填满 DualConnectionView 的开关与优先设备字段，
+                        // 只有拿过完整双连接状态之后才更新列表：单独一份列表填不满开关与优先设备字段，
                         // 用假值补齐就是替设备编造状态。
                         if (dualConnection.isPresent()) {
                             DualConnectionView previous = dualConnection.get();

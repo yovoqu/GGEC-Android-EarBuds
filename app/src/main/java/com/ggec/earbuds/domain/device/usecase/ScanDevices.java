@@ -2,17 +2,18 @@ package com.ggec.earbuds.domain.device.usecase;
 
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
 import com.ggec.earbuds.domain.device.model.ScanResult;
-import com.ggec.earbuds.domain.device.port.DevicePort;
+import com.ggec.earbuds.domain.device.port.DeviceLinkPort;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /** 启动 / 停止扫描。过滤与扫描器选择都由 SDK 内部完成。 */
 public final class ScanDevices {
 
-    private final DevicePort port;
+    private final DeviceLinkPort port;
 
-    public ScanDevices(DevicePort port) {
+    public ScanDevices(DeviceLinkPort port) {
         this.port = port;
     }
 
@@ -23,7 +24,7 @@ public final class ScanDevices {
         port.startScanBatch(onResults, onFailed, onFinished, onRemoved);
     }
 
-    public void filterModels(java.util.Set<String> modelIds) {
+    public void filterModels(Set<String> modelIds) {
         port.filterModels(modelIds);
     }
 
