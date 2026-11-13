@@ -9,7 +9,11 @@ import com.yovo.biz_ggec_hs.api.HsControl;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
+import com.yovo.biz_ggec_hs.internal.interact.HsModels;
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
+import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 import com.yovo.biz_ggec_hs.internal.interact.HsSnapshotAssembler;
@@ -46,6 +50,7 @@ public final class HsSessionImpl {
     static final long CONNECT_READY_TIMEOUT_MILLIS = 12_000L;
 
     private final HsProtocolEngine engine;
+    private final HsClassicRadio classicRadio;
     private final DeviceDomainStore domain;
     private final HsCatalogImpl catalog;
     private final HsCapabilityRouter router = new HsCapabilityRouter();
@@ -63,24 +68,29 @@ public final class HsSessionImpl {
     private volatile List<HsControl.Recording> recordings = List.of();
     /** 本会话是否已补查过聚合状态：每条会话一次，失败不重试。 */
     private volatile boolean deviceStatusQueried;
+    /** 当前连接代次。经典回调迟到时不得再去开 GATT。 */
+    private final AtomicInteger connectGeneration = new AtomicInteger();
+    private final ConnectionEvents connectionEvents = new ConnectionEvents();
 
-    public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog) {
-        this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())));
+    public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, HsClassicRadio classicRadio) {
+        this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())), classicRadio);
     }
 
     /**
      * 包内装配入口：主线程投递与看门狗时序都由 {@code mainThread} 决定，
      * 用例注入可控实现来推进时间、观察事件顺序。
      */
-    HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, MainThread mainThread) {
+    HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, MainThread mainThread,
+                  HsClassicRadio classicRadio) {
         this.engine = Objects.requireNonNull(engine, "engine");
+        this.classicRadio = Objects.requireNonNull(classicRadio, "classicRadio");
         this.domain = engine.domain();
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.mainThread = Objects.requireNonNull(mainThread, "mainThread");
         this.readyTimeout = new HsConnectReadyTimeout(
                 mainThread, CONNECT_READY_TIMEOUT_MILLIS, engine::onConnectAttemptTimedOut);
         // 连接事件恒挂在本类上：看门狗属于这次连接尝试，不取决于此刻有没有观察者。
-        engine.setConnectionEvents(new ConnectionEvents());
+        engine.setConnectionEvents(connectionEvents);
         engine.setDeviceObserver(new DomainEvents());
         engine.setRemoteStreamStop(this::onRemoteStreamStop);
     }
@@ -89,6 +99,9 @@ public final class HsSessionImpl {
         if (radios == null || radios.bleAddress() == null || radios.bleAddress().isBlank()) {
             throw new IllegalArgumentException("连接目标缺少 BLE 地址");
         }
+        if (radios.classicAddress() == null || radios.classicAddress().isBlank()) {
+            throw new IllegalArgumentException("连接目标缺少经典蓝牙地址");
+        }
         connectedModelId = Objects.requireNonNull(modelId, "modelId");
         connectedRadios = radios;
         sessionCapabilities = capabilitiesOf(connectedModelId);
@@ -96,7 +109,38 @@ public final class HsSessionImpl {
         dual = null;
         recordings = List.of();
         readyTimeout.cancel();
-        engine.connect(radios.bleAddress().trim());
+        int current = connectGeneration.incrementAndGet();
+        String bleAddress = radios.bleAddress().trim();
+        classicRadio.cancel();
+        classicRadio.open(radios.classicAddress().trim(), new HsClassicRadio.Callback() {
+            @Override
+            public void onReady() {
+                if (current != connectGeneration.get()) {
+                    return;
+                }
+                engine.connect(bleAddress);
+            }
+
+            @Override
+            public void onFailed(HsControl.Failure failure) {
+                if (current != connectGeneration.get()) {
+                    return;
+                }
+                connectionEvents.failBeforeLink(failure);
+            }
+
+            @Override
+            public void onLost() {
+                if (current != connectGeneration.get()) {
+                    return;
+                }
+                if (engine.isReady()) {
+                    engine.disconnect();
+                } else {
+                    connectionEvents.failBeforeLink(HsControl.Failure.DEVICE_ERROR);
+                }
+            }
+        });
     }
 
     public HsControl.Peer peer() {
@@ -112,7 +156,9 @@ public final class HsSessionImpl {
     }
 
     public void disconnect() {
+        connectGeneration.incrementAndGet();
         readyTimeout.cancel();
+        classicRadio.cancel();
         engine.disconnect();
     }
 
@@ -201,8 +247,10 @@ public final class HsSessionImpl {
     }
 
     public void close() {
+        connectGeneration.incrementAndGet();
         readyTimeout.cancel();
         observers.clear();
+        classicRadio.release();
         engine.release();
     }
 
@@ -335,8 +383,17 @@ public final class HsSessionImpl {
         @Override
         public void onDisconnected(String reason) {
             readyTimeout.cancel();
-            clearPeer();
+            // 换目标时 connect() 已经写好新的双模身份，这里清掉会把新目标抹掉。
+            if (!HsProtocolEngine.REASON_TARGET_SWITCHED.equals(reason)) {
+                clearPeer();
+            }
             publish(HsSessionState.disconnected(HsFailureMapper.ofDisconnectReason(reason)));
+        }
+
+        void failBeforeLink(HsControl.Failure failure) {
+            readyTimeout.cancel();
+            clearPeer();
+            publish(HsSessionState.disconnected(failure));
         }
 
         @Override
@@ -417,13 +474,16 @@ public final class HsSessionImpl {
         }
 
         @Override
-        public void onPairedDevicesChanged(List<com.yovo.biz_ggec_hs.api.HsControl.Paired> devices) {
-            dispatchEvent(new HsControl.Event.PairedDevicesChanged(devices));
+        public void onPairedDevicesChanged(List<ProtocolPaired> devices) {
+            dispatchEvent(new HsControl.Event.PairedDevicesChanged(HsModels.paired(devices)));
         }
 
         @Override
-        public void onDeviceInfoChanged(HsDevice.Info info) {
-            dispatchEvent(new HsControl.Event.DeviceInfoChanged(info));
+        public void onDeviceInfoChanged(ProtocolInfo info) {
+            HsDevice.Info mapped = HsModels.info(info);
+            if (mapped != null) {
+                dispatchEvent(new HsControl.Event.DeviceInfoChanged(mapped));
+            }
             dispatchSnapshot();
         }
     }

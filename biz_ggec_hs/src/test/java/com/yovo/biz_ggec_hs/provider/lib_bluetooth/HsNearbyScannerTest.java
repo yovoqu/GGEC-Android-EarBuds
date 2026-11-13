@@ -1,8 +1,7 @@
 package com.yovo.biz_ggec_hs.provider.lib_bluetooth;
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
-import com.yovo.biz_ggec_hs.internal.center.port.ScanPace;
+import com.yovo.biz_ggec_hs.internal.center.port.HsScanFault;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -127,7 +126,7 @@ public final class HsNearbyScannerTest {
                 null, null, null));
 
         assertFalse(scanner.isScanning());
-        assertEquals(List.of(HsControl.Failure.SCAN_THROTTLED), observer.failures);
+        assertEquals(List.of(HsScanFault.SCAN_THROTTLED), observer.failures);
         assertEquals("失败必须取消订阅", 1, cancellations.get());
         assertNull(readSubscription(scanner));
     }
@@ -144,7 +143,7 @@ public final class HsNearbyScannerTest {
         RecordingObserver observer = new RecordingObserver();
         scanner.start(observer);
 
-        assertEquals(List.of(HsControl.Failure.BLUETOOTH_DISABLED), observer.failures);
+        assertEquals(List.of(HsScanFault.BLUETOOTH_DISABLED), observer.failures);
         assertFalse(scanner.isScanning());
         assertEquals(1, cancellations.get());
         assertNull(readSubscription(scanner));
@@ -210,14 +209,13 @@ public final class HsNearbyScannerTest {
                 observer -> subscription(() -> {
                 }, filter), reconfigured));
 
-        scanner.applyScanProfile(ScanPace.lowPower());
         scanner.setFramePredicate(advert -> advert.rssi() >= -50);
 
         RecordingObserver observer = new RecordingObserver();
         scanner.start(observer);
 
         assertEquals("档位变更必须走 lib 的唯一重扫入口", 1, reconfigured.size());
-        assertEquals(BleScanMode.LOW_POWER, reconfigured.get(0).mode());
+        assertEquals(BleScanMode.BALANCED, reconfigured.get(0).mode());
         assertNotNull("订阅时必须带上当前谓词", filter.get());
         assertTrue(filter.get().matches(frame("11:22:33:44:55:01", -40,
                 Collections.emptyList(), new byte[0], "buds")));
@@ -305,7 +303,7 @@ public final class HsNearbyScannerTest {
     private static final class RecordingObserver implements HsBleScanLink.Observer {
         private final List<List<HsRawAdvert>> batches = new ArrayList<>();
         private final List<String> lost = new ArrayList<>();
-        private final List<HsControl.Failure> failures = new ArrayList<>();
+        private final List<HsScanFault> failures = new ArrayList<>();
         private int stops;
 
         @Override
@@ -319,7 +317,7 @@ public final class HsNearbyScannerTest {
         }
 
         @Override
-        public void onFailed(HsControl.Failure failure) {
+        public void onFailed(HsScanFault failure) {
             failures.add(failure);
         }
 

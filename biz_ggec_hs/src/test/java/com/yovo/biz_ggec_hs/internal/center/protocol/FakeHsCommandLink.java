@@ -24,11 +24,17 @@ public final class FakeHsCommandLink implements HsCommandLink {
     private final Map<String, Long> firstWrittenAtMs = new HashMap<>();
     private volatile Listener listener;
     private volatile boolean ready;
+    private volatile String openedAddress;
 
     @Override
     public void open(String macAddress) {
+        openedAddress = macAddress;
         // 与生产实现的 retireLocked 一致：换链路只清就绪标志，不补发 onReady(false)。
         ready = false;
+    }
+
+    public String openedAddress() {
+        return openedAddress;
     }
 
     @Override

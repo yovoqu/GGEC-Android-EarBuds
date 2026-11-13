@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
@@ -42,7 +42,7 @@ public class GetPairedDevicesCommand extends Command {
     @Override
     public Response parseResponse(String responseData) {
         try {
-            List<HsControl.Paired> devices = parseDevices(responseData);
+            List<ProtocolPaired> devices = parseDevices(responseData);
             if (devices == null) {
                 return completed(ResultCode.FAILED, null, "响应数据格式错误或设备数量不一致");
             }
@@ -61,7 +61,7 @@ public class GetPairedDevicesCommand extends Command {
      * 设备数量字节与 TLV 实际记录数不一致时，以实际解析结果为准并告警
      * （固件 NV 中可能存在无效配对记录，整体失败会让连接中心页面拿不到任何数据）。
      */
-    public static List<HsControl.Paired> parseDevices(String responseData) {
+    public static List<ProtocolPaired> parseDevices(String responseData) {
         HsLog.d(TAG, "解析响应数据: " + responseData);
 
         if (!ProtocolValues.isCompleteFrame(responseData, COMMAND_PREFIX)
@@ -89,7 +89,7 @@ public class GetPairedDevicesCommand extends Command {
         }
 
         String tlvHex = responseData.substring(12, tlvEndIndex);
-        List<HsControl.Paired> devices = PairedDeviceTlvParser.parseDevices(tlvHex);
+        List<ProtocolPaired> devices = PairedDeviceTlvParser.parseDevices(tlvHex);
         if (devices.size() != count) {
             HsLog.w(TAG, "已配对设备数量(" + count + ")与 TLV 实际解析(" + devices.size()
                     + ")不一致，以实际解析结果为准");

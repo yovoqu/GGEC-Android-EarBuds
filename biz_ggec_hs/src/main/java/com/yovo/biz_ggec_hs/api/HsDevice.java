@@ -35,7 +35,9 @@ public final class HsDevice {
      * 空串表示这一侧还没上报，不得用另一侧的值填上。
      *
      * <p>{@code bleAddress} 是扫描和 GATT 使用的 LE 地址。{@code bleName} 只来自广播本地名。
-     * {@code classicAddress} 是经典 BD_ADDR。{@code classicName} 是经典蓝牙名称。</p>
+     * {@code classicAddress} 是广播里算出的经典 BD_ADDR：HS01 取服务 UUID 末 6 字节，
+     * HS02 取厂商数据里的经典地址，两边算法不同，调用方不得再按 BLE 地址推算。
+     * {@code classicName} 是经典蓝牙名称。</p>
      */
     public record Radios(String bleAddress, String bleName, String classicAddress, String classicName) {
         public static Radios none() {

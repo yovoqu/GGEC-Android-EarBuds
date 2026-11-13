@@ -10,6 +10,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolDual;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolRecording;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommand;
@@ -297,13 +299,13 @@ public final class HsCapabilityRouterTest {
 
     @Test
     public void dualPageCompletionBecomesDualConnectionEvent() {
-        HsControl.Dual state =
-                new HsControl.Dual(false, "", List.of());
+        ProtocolDual state =
+                new ProtocolDual(false, "", List.of());
         Optional<HsControl.Event> event = router.deviceEvent(
                 new GetDualConnectionPageCommand(),
                 CommandCompletion.objectResult(Command.ResultCode.SUCCESS, state, "ok"));
         assertTrue(event.isPresent());
-        assertEquals(new HsControl.Event.DualConnectionChanged(state), event.get());
+        assertEquals(new HsControl.Event.DualConnectionChanged(HsModels.dual(state)), event.get());
 
         assertEquals("失败回执不产出事件", Optional.empty(), router.deviceEvent(
                 new GetDualConnectionPageCommand(),
@@ -312,12 +314,12 @@ public final class HsCapabilityRouterTest {
 
     @Test
     public void recordListCompletionBecomesRecordFilesEvent() {
-        List<HsControl.Recording> files = List.of(new HsControl.Recording("3", "3", 16, 4096L));
+        List<ProtocolRecording> files = List.of(new ProtocolRecording("3", "3", 16, 4096L));
         Optional<HsControl.Event> event = router.deviceEvent(
                 new GetRecordIdListCommand(0, 12),
                 CommandCompletion.objectResult(Command.ResultCode.SUCCESS, files, "ok"));
         assertTrue(event.isPresent());
-        assertEquals(new HsControl.Event.RecordFilesChanged(files), event.get());
+        assertEquals(new HsControl.Event.RecordFilesChanged(HsModels.recordings(files)), event.get());
     }
 
     private List<String> payloads(HsControl.Action action) {

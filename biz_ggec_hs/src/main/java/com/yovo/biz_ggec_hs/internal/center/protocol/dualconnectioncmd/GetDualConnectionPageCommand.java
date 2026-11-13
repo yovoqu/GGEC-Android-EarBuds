@@ -2,7 +2,8 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolDual;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
@@ -19,7 +20,7 @@ import java.util.List;
  * 顶层 TLV：0x01 双连接开关 / 0x02 优先设备 / 0x03 设备列表（子项解析见
  * {@link PairedDeviceTlvParser}）。信封与 EC A7 / AC / AE 一致：2 字节长度字段。
  *
- * <p>解析结果直接是契约值 {@link HsControl.Dual}（不可变）。双连接开关是
+ * <p>解析结果是协议页 {@link ProtocolDual}。双连接开关是
  * 该契约的必填项：帧里没有 0x01 就说明响应不合规，按失败上报，不猜一个「单连接」。</p>
  */
 public class GetDualConnectionPageCommand extends Command {
@@ -72,7 +73,7 @@ public class GetDualConnectionPageCommand extends Command {
 
         try {
             String payloadHex = responseData.substring(10, responseData.length() - 4);
-            HsControl.Dual state = parseTopLevelTlv(payloadHex);
+            ProtocolDual state = parseTopLevelTlv(payloadHex);
             HsLog.i(TAG, "聚合查询解析完成: " + state);
             return completed(ResultCode.SUCCESS, state, "双连接页聚合查询成功");
         } catch (RuntimeException e) {
@@ -81,10 +82,10 @@ public class GetDualConnectionPageCommand extends Command {
         }
     }
 
-    private HsControl.Dual parseTopLevelTlv(String payloadHex) {
+    private ProtocolDual parseTopLevelTlv(String payloadHex) {
         Boolean dualEnabled = null;
         String priorityAddress = "";
-        List<HsControl.Paired> devices = List.of();
+        List<ProtocolPaired> devices = List.of();
         int index = 0;
 
         while (index < payloadHex.length()) {
@@ -138,7 +139,7 @@ public class GetDualConnectionPageCommand extends Command {
         if (dualEnabled == null) {
             throw new IllegalArgumentException("响应缺少双连接开关字段");
         }
-        return new HsControl.Dual(dualEnabled, priorityAddress, devices);
+        return new ProtocolDual(dualEnabled, priorityAddress, devices);
     }
 
     private boolean parseDualConnection(String valueHex) {
@@ -168,7 +169,7 @@ public class GetDualConnectionPageCommand extends Command {
         throw new IllegalArgumentException("优先设备 TLV 状态或长度错误");
     }
 
-    private List<HsControl.Paired> parseDeviceList(String valueHex) {
+    private List<ProtocolPaired> parseDeviceList(String valueHex) {
         if (valueHex == null || valueHex.length() < 2) {
             return List.of();
         }
@@ -181,7 +182,7 @@ public class GetDualConnectionPageCommand extends Command {
         }
 
         String deviceTlvHex = valueHex.substring(2);
-        List<HsControl.Paired> devices = PairedDeviceTlvParser.parseDevices(deviceTlvHex);
+        List<ProtocolPaired> devices = PairedDeviceTlvParser.parseDevices(deviceTlvHex);
         if (devices.size() != count) {
             // 固件 NV 可能存在无效配对记录：数量字节与实际编码不一致时以实际解析结果为准，
             // 避免整个双连接页因单条脏数据失败而拿不到任何信息

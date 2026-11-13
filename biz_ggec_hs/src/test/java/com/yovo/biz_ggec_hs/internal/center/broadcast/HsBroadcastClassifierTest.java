@@ -39,6 +39,20 @@ public class HsBroadcastClassifierTest {
     }
 
     @Test
+    public void sameBleAddressUsesDifferentClassicStrategies() {
+        String ble = "11:22:33:44:55:66";
+        Hs01Identity hs01 = (Hs01Identity) HsBroadcastRuntime.classify(HsScanSnapshot.of(
+                ble, Collections.singletonList(cnUuid()), new byte[0], "HS01-Demo")).identity();
+        Hs02Identity hs02 = identifiedHs02(HsBroadcastRuntime.classify(HsScanSnapshot.of(
+                ble, Collections.emptyList(), hs02Packet("Vidda V11", "01:02:03:04:05:06"), null)));
+
+        assertEquals("AA:BB:CC:DD:EE:FF", hs01.classicAddress());
+        assertEquals("01:02:03:04:05:06", hs02.classicAddress());
+        assertFalse(ble.equals(hs01.classicAddress()));
+        assertFalse(hs01.classicAddress().equals(hs02.classicAddress()));
+    }
+
+    @Test
     public void classifiesHs02FromOneCompletePacket() {
         HsBroadcastReport report = HsBroadcastRuntime.classify(HsScanSnapshot.of(
                 "11:22:33:44:55:66",
@@ -155,8 +169,12 @@ public class HsBroadcastClassifierTest {
     }
 
     private static byte[] hs02Packet(String name) {
+        return hs02Packet(name, "AA:BB:CC:DD:EE:FF");
+    }
+
+    private static byte[] hs02Packet(String name, String classic) {
         byte[] nameField = completeName(name);
-        byte[] manufacturer = manufacturerOnly();
+        byte[] manufacturer = manufacturerOnly(classic);
         byte[] packet = new byte[nameField.length + manufacturer.length];
         System.arraycopy(nameField, 0, packet, 0, nameField.length);
         System.arraycopy(manufacturer, 0, packet, nameField.length, manufacturer.length);
@@ -173,6 +191,11 @@ public class HsBroadcastClassifierTest {
     }
 
     private static byte[] manufacturerOnly() {
+        return manufacturerOnly("AA:BB:CC:DD:EE:FF");
+    }
+
+    private static byte[] manufacturerOnly(String classic) {
+        String[] parts = classic.split(":");
         byte[] manufacturer = new byte[]{
                 (byte) 0xFF, (byte) 0xFF,
                 0x48, 0x43,
@@ -182,8 +205,12 @@ public class HsBroadcastClassifierTest {
                 0x01, 0x00,
                 0x00, 0x00,
                 0x0A, 0x06,
-                (byte) 0xAA, (byte) 0xBB, (byte) 0xCC,
-                (byte) 0xDD, (byte) 0xEE, (byte) 0xFF,
+                (byte) Integer.parseInt(parts[0], 16),
+                (byte) Integer.parseInt(parts[1], 16),
+                (byte) Integer.parseInt(parts[2], 16),
+                (byte) Integer.parseInt(parts[3], 16),
+                (byte) Integer.parseInt(parts[4], 16),
+                (byte) Integer.parseInt(parts[5], 16),
                 0x0B, 0x01, 0x00
         };
         byte[] packet = new byte[manufacturer.length + 2];

@@ -111,7 +111,7 @@ public final class HsBatteryProjectionTest {
         private final FakeHsCommandLink link = new FakeHsCommandLink();
         private final HsProtocolEngine engine = new HsProtocolEngine(link);
         private final HsSessionImpl session =
-                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread());
+                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio());
         private final List<HsDevice.Snapshot> snapshots = new CopyOnWriteArrayList<>();
         private final Object lock = new Object();
         private volatile boolean ready;
@@ -136,7 +136,7 @@ public final class HsBatteryProjectionTest {
         }
 
         private void connectReady() throws Exception {
-            session.connect("HS02", new HsDevice.Radios(MAC, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             link.ready();
             awaitReady();
             if (link.awaitWritten(EAR_COLOR_QUERY)) {

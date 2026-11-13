@@ -8,7 +8,6 @@ import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommandV11;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.PressActionConfiguration;
-import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -82,8 +81,8 @@ public final class HsCatalogImpl {
 
     /** 音质模式选项。 */
     private static final List<HsDevice.Option> SOUND_QUALITY_OPTIONS = List.of(
-            new HsDevice.Option(HsCapabilityRouter.SOUND_QUALITY_HIGH, "高音质"),
-            new HsDevice.Option(HsCapabilityRouter.SOUND_QUALITY_ENDURANCE, "高续航"));
+            new HsDevice.Option(HsOptionIds.SOUND_QUALITY_HIGH, "高音质"),
+            new HsDevice.Option(HsOptionIds.SOUND_QUALITY_ENDURANCE, "高续航"));
 
     /** 耳类型：0 左右耳，1 左耳，2 右耳（协议取值）。 */
     private static final String[] EAR_TYPES = {"左右耳", "左耳", "右耳"};
@@ -250,20 +249,11 @@ public final class HsCatalogImpl {
      */
     private static void validateGate(HsDevice.Feature descriptor) {
         validateNoRange(descriptor);
-        HsDevice.Capability capability = descriptor.capability();
-        if (HsCapabilityRouter.supportsWrite(capability)) {
-            throw new IllegalStateException("GATE 能力不得有写入命令: " + capability);
-        }
     }
 
-    /** 动作型：必须能落到一条可达命令，否则 UI 只会渲染出永远失败的按钮。 */
+    /** 动作型不带值域。能不能落到命令由 {@link com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter#verify} 核对。 */
     private static void validateAction(HsDevice.Feature descriptor) {
         validateNoRange(descriptor);
-        HsDevice.Capability capability = descriptor.capability();
-        if (!HsCapabilityRouter.supportsWrite(capability)
-                && !HsCapabilityRouter.supportsAction(capability)) {
-            throw new IllegalStateException("ACTION 能力缺少可达命令: " + capability);
-        }
     }
 
     private static void validateNoRange(HsDevice.Feature descriptor) {
@@ -362,7 +352,7 @@ public final class HsCatalogImpl {
         for (int earType = 0; earType < EAR_TYPES.length; earType++) {
             for (int actionType = 0; actionType <= actionMax; actionType++) {
                 options.add(new HsDevice.Option(
-                        HsCapabilityRouter.pressOptionId(earType, actionType),
+                        HsOptionIds.press(earType, actionType),
                         EAR_TYPES[earType] + " · " + actionTitles[actionType]));
             }
         }
@@ -379,7 +369,7 @@ public final class HsCatalogImpl {
                         ? TAP_TWICE_FUNCTIONS : TAP_TRIPLE_FUNCTIONS;
                 for (int functionType = 0; functionType < functions.length; functionType++) {
                     options.add(new HsDevice.Option(
-                            HsCapabilityRouter.tapOptionId(earSide, tapType, functionType),
+                            HsOptionIds.tap(earSide, tapType, functionType),
                             EAR_SIDES[earIndex] + " · " + TAP_TYPES[tapIndex]
                                     + " · " + functions[functionType]));
                 }

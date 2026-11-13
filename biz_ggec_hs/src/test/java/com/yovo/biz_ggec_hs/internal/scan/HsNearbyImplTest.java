@@ -2,12 +2,12 @@ package com.yovo.biz_ggec_hs.internal.scan;
 
 import com.yovo.biz_ggec_hs.internal.center.broadcast.HsMarket;
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
+import com.yovo.biz_ggec_hs.internal.center.port.HsScanFault;
 
 
 import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.api.HsScan;
 import com.yovo.biz_ggec_hs.api.HsControl;
-import com.yovo.biz_ggec_hs.internal.center.port.ScanPace;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -215,12 +215,6 @@ public final class HsNearbyImplTest {
     }
 
     @Test
-    public void scanProfileIsForwardedToTheMechanismLayer() {
-        nearby.start(observer, ScanPace.lowPower());
-        assertEquals(ScanPace.Mode.LOW_POWER, link.profile.mode());
-    }
-
-    @Test
     public void healthReportsSilentAndThrottled() {
         nearby.start(observer);
         assertFalse("刚开始扫描不算静默", nearby.health().silent());
@@ -229,7 +223,7 @@ public final class HsNearbyImplTest {
         now.set(START_AT + HsNearbyImpl.SILENT_WINDOW_MILLIS + 1L);
         assertTrue("扫描中长时间无帧应报静默", nearby.health().silent());
 
-        link.failCurrent(HsControl.Failure.SCAN_THROTTLED);
+        link.failCurrent(HsScanFault.SCAN_THROTTLED);
         assertTrue("限流拒绝时应报 throttled", nearby.health().throttled());
         assertFalse("失败后不再处于扫描中", nearby.health().scanning());
         assertEquals(HsControl.Failure.SCAN_THROTTLED, observer.failures.get(0));
@@ -348,7 +342,6 @@ public final class HsNearbyImplTest {
         private boolean scanning;
         private int startCount;
         private Predicate<HsRawAdvert> predicate;
-        private ScanPace profile;
 
         @Override
         public void start(Observer observer) {
@@ -372,11 +365,6 @@ public final class HsNearbyImplTest {
             this.predicate = predicate;
         }
 
-        @Override
-        public void applyScanProfile(ScanPace profile) {
-            this.profile = profile;
-        }
-
         Observer currentObserver() {
             return observers.get(observers.size() - 1);
         }
@@ -387,7 +375,7 @@ public final class HsNearbyImplTest {
             }
         }
 
-        void failCurrent(HsControl.Failure failure) {
+        void failCurrent(HsScanFault failure) {
             scanning = false;
             currentObserver().onFailed(failure);
         }

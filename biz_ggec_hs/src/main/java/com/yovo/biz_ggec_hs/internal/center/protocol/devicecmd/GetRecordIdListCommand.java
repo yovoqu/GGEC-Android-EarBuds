@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolRecording;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
@@ -99,7 +99,7 @@ public class GetRecordIdListCommand extends Command {
                 || responseData.length() < MIN_RESPONSE_LENGTH) {
             HsLog.e(TAG, "响应数据长度不足，实际长度: "
                     + (responseData != null ? responseData.length() : 0));
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "响应数据格式错误");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "响应数据格式错误");
         }
 
         // 响应帧布局（hex 字符索引）：
@@ -115,12 +115,12 @@ public class GetRecordIdListCommand extends Command {
             status = Integer.parseInt(responseData.substring(10, 12), 16);
         } catch (NumberFormatException e) {
             HsLog.e(TAG, "解析状态字节失败", e);
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "状态字节解析失败");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "状态字节解析失败");
         }
 
         if (status != 0x00) {
             HsLog.w(TAG, "获取录音列表失败，状态: 0x" + String.format("%02X", status));
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "获取录音列表失败");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "获取录音列表失败");
         }
 
         int fileCount;
@@ -128,7 +128,7 @@ public class GetRecordIdListCommand extends Command {
             fileCount = Integer.parseInt(responseData.substring(12, 14), 16);
         } catch (NumberFormatException e) {
             HsLog.e(TAG, "解析文件数量失败", e);
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "文件数量解析失败");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "文件数量解析失败");
         }
 
         int recordDataLength = responseData.length() - 18;
@@ -137,12 +137,12 @@ public class GetRecordIdListCommand extends Command {
         int maxAllowed = (skipNum == 0 && limitNum == 0) ? 1 : MAX_PAGE_SIZE;
         if (fileCount > maxAllowed || recordDataLength != fileCount * RECORD_HEX_LEN) {
             HsLog.e(TAG, "录音列表数量与数据长度不一致");
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "录音列表数据格式错误");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "录音列表数据格式错误");
         }
 
-        List<HsControl.Recording> records = parseRecords(responseData, fileCount);
+        List<ProtocolRecording> records = parseRecords(responseData, fileCount);
         if (records.size() != fileCount) {
-            return completed(ResultCode.FAILED, new ArrayList<HsControl.Recording>(), "录音列表记录解析不完整");
+            return completed(ResultCode.FAILED, new ArrayList<ProtocolRecording>(), "录音列表记录解析不完整");
         }
 
         String desc = "获取录音列表成功: " + records.size() + " 个文件";
@@ -157,8 +157,8 @@ public class GetRecordIdListCommand extends Command {
      * @param fileCount    协议声明的文件数量
      * @return 录音文件信息列表
      */
-    private List<HsControl.Recording> parseRecords(String responseData, int fileCount) {
-        List<HsControl.Recording> records = new ArrayList<>();
+    private List<ProtocolRecording> parseRecords(String responseData, int fileCount) {
+        List<ProtocolRecording> records = new ArrayList<>();
         if (fileCount <= 0) {
             return records;
         }
@@ -182,7 +182,7 @@ public class GetRecordIdListCommand extends Command {
             }
 
             try {
-                HsControl.Recording record = parseOneRecord(recordsHex, off);
+                ProtocolRecording record = parseOneRecord(recordsHex, off);
                 HsLog.i(TAG, "EC 获取到文件列表=" + record);
                 records.add(record);
             } catch (RuntimeException e) {
@@ -196,13 +196,13 @@ public class GetRecordIdListCommand extends Command {
     /**
      * 解析单条 20 字节录音记录。
      */
-    private HsControl.Recording parseOneRecord(String recordsHex, int charOffset) {
+    private ProtocolRecording parseOneRecord(String recordsHex, int charOffset) {
         int businessOffset = charOffset + TIME_BYTES * 2;
         int index = hexByte(recordsHex, businessOffset);
         int duration = readUInt16LittleEndian(recordsHex, businessOffset + 4);
         long size = readUInt32LittleEndian(recordsHex, businessOffset + 8);
         String fileId = String.valueOf(index);
-        return new HsControl.Recording(fileId, fileId, duration, size);
+        return new ProtocolRecording(fileId, fileId, duration, size);
     }
 
     private static int hexByte(String hex, int charOffset) {

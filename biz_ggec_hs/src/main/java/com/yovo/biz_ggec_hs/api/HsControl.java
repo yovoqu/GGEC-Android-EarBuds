@@ -8,7 +8,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 连接与设备交互：状态、控制值、动作、结果和设备事件。
+ * 连接与设备交互。
+ *
+ * <p>写入和 {@link Action} 是一发一收：本端写命令，设备回一帧。
+ * {@link Listener#onDeviceEvent} 是设备主动上报，本端不回。</p>
  */
 public final class HsControl {
 

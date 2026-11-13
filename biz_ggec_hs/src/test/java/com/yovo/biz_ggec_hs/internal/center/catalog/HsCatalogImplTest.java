@@ -26,6 +26,11 @@ public final class HsCatalogImplTest {
     private final HsCatalogImpl catalog = new HsCatalogImpl();
 
     @Test
+    public void declaredFormsMatchReachableCommands() {
+        HsCapabilityRouter.verify(catalog);
+    }
+
+    @Test
     public void exposesTwoModelsWithoutVariants() {
         assertEquals(2, catalog.models().size());
         HsDevice.Product hs01 = catalog.model("HS01").orElseThrow();

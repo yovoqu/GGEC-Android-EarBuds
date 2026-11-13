@@ -1,8 +1,8 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
 
-import com.yovo.biz_ggec_hs.api.HsDevice;
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 
@@ -202,11 +202,11 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
         if (earExchange != null) {
             dispatch(() -> observer.onLeftAndRightEarExchangeChanged(earExchange));
         }
-        List<HsControl.Paired> devices = domain.getPairedDevices();
+        List<ProtocolPaired> devices = domain.getPairedDevices();
         if (devices != null) {
             dispatch(() -> observer.onPairedDevicesChanged(devices));
         }
-        HsDevice.Info deviceInfo = domain.getDeviceInfo();
+        ProtocolInfo deviceInfo = domain.protocolInfo();
         if (deviceInfo != null) {
             dispatch(() -> observer.onDeviceInfoChanged(deviceInfo));
         }
@@ -287,12 +287,12 @@ public final class DeviceEventPipeline implements DeviceDomainStore.Observer {
     }
 
     @Override
-    public void onPairedDevicesChanged(List<HsControl.Paired> devices) {
+    public void onPairedDevicesChanged(List<ProtocolPaired> devices) {
         forward(current -> current.onPairedDevicesChanged(devices));
     }
 
     @Override
-    public void onDeviceInfoChanged(HsDevice.Info info) {
+    public void onDeviceInfoChanged(ProtocolInfo info) {
         forward(current -> current.onDeviceInfoChanged(info));
     }
 

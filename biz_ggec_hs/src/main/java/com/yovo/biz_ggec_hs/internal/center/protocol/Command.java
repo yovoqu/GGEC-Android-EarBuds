@@ -1,5 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol;
 
+import com.yovo.biz_ggec_hs.internal.center.exchange.HsTraffic;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -9,10 +10,10 @@ import java.util.Collections;
 import java.util.Set;
 
 /**
- * 协议命令基类。
+ * 协议命令定义。子类只编码、匹配和解析。
  *
- * 具体命令只负责协议编码、响应匹配和解析。请求完成状态与完成订阅均归命令实例所有，
- * 调度器只观察结果，不再通过全局 commandId 回调表推进生命周期。
+ * <p>收发角色默认是一发一收。调度、超时和在途队列在命令系统里，不在子类里。
+ * 完成状态仍挂在这一次命令实例上，调度器只观察结果。</p>
  */
 public abstract class Command {
     private static final String TAG = "Command";
@@ -94,6 +95,10 @@ public abstract class Command {
 
     protected void setCommandPrefix(String prefix) {
         this.commandPrefix = prefix;
+    }
+
+    public HsTraffic traffic() {
+        return HsTraffic.REQUEST_REPLY;
     }
 
     public abstract String getCommandData();

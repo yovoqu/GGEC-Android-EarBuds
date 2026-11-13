@@ -37,7 +37,7 @@ public final class HsSnapshotAssembler {
                         DeviceDomainStore domain,
                         HsControl.Dual dual) {
         HsControl.State connection = state.connection();
-        HsDevice.Info info = domain.getDeviceInfo();
+        HsDevice.Info info = HsModels.info(domain.protocolInfo());
         return new HsDevice.Snapshot(
                 connection,
                 battery(domain.battery()),

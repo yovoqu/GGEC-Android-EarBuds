@@ -1,7 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol;
 
 
-import com.yovo.biz_ggec_hs.api.HsDevice;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -164,9 +163,10 @@ public class HsSessionOriginTest {
 
         assertTrue("会话 A 的固件必须已回放落地",
                 observer.firmwareSeen.await(3, TimeUnit.SECONDS));
-        HsDevice.Info seeded = observer.info.get();
+        ProtocolInfo seeded = observer.info.get();
         assertEquals("会话 A 的固件必须先真的存在", FIRMWARE_TEXT, seeded.firmware());
-        assertEquals("会话 A 的耳机颜色必须先真的存在", EAR_COLOR_VALUE, seeded.earColor());
+        assertEquals("会话 A 的耳机颜色必须先真的存在",
+                Integer.valueOf(EAR_COLOR_VALUE), seeded.earColor());
         assertEquals("会话 A 的电量必须先真的存在",
                 BATTERY_LEVEL, engine.batterySnapshot().getLeftLevel());
     }
@@ -182,14 +182,14 @@ public class HsSessionOriginTest {
 
     /** 记录回放内容的观察者：最后一条设备信息与一次电量回放的计数。 */
     private static final class DeviceReplay implements DeviceDomainStore.Observer {
-        private final AtomicReference<HsDevice.Info> info = new AtomicReference<>();
+        private final AtomicReference<ProtocolInfo> info = new AtomicReference<>();
         private final AtomicInteger batteryReplays = new AtomicInteger();
         private final CountDownLatch firmwareSeen = new CountDownLatch(1);
 
         @Override
-        public void onDeviceInfoChanged(HsDevice.Info value) {
+        public void onDeviceInfoChanged(ProtocolInfo value) {
             info.set(value);
-            if (!value.firmware().isEmpty()) {
+            if (value.firmware() != null && !value.firmware().isEmpty()) {
                 firmwareSeen.countDown();
             }
         }

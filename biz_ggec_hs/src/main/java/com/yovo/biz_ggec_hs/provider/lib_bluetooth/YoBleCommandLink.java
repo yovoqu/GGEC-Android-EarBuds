@@ -8,8 +8,6 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.api.YoBleClient;
-import com.yovo.lib_bluetooth.model.ble.BleConfig;
-import com.yovo.lib_bluetooth.model.ble.BleConnectionConfig;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionState;
@@ -19,32 +17,19 @@ import com.yovo.lib_bluetooth.model.ble.BleFailure;
 import com.yovo.lib_bluetooth.model.ble.BleGattObserver;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationObserver;
-import com.yovo.lib_bluetooth.model.ble.BleNotificationSetupMode;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleTransferProgressObserver;
-import com.yovo.lib_bluetooth.model.ble.BleWriteType;
-
-import java.util.UUID;
 
 /**
  * 把 HS 命令链路落到 {@link YoBleClient}。
- * 蓝牙库只允许被 {@code provider/lib_bluetooth} 引用。
+ * 蓝牙库只允许被 {@code provider/lib_bluetooth} 引用。特征、写入类型和连接参数见 {@link HsBleSettings}。
  */
 public final class YoBleCommandLink implements HsCommandLink {
 
-    private static final UUID SERVICE_UUID =
-            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820100");
-    private static final UUID WRITE_UUID =
-            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820104");
-    private static final UUID NOTIFY_UUID =
-            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820105");
-
     private static final BleGattTarget WRITE_TARGET =
-            BleGattTarget.characteristic(SERVICE_UUID, WRITE_UUID);
+            BleGattTarget.characteristic(HsBleSettings.SERVICE_UUID, HsBleSettings.WRITE_UUID);
     private static final BleGattTarget NOTIFY_TARGET =
-            BleGattTarget.characteristic(SERVICE_UUID, NOTIFY_UUID);
-    private static final BleConnectionConfig CONNECTION =
-            BleConnectionConfig.builder().build();
+            BleGattTarget.characteristic(HsBleSettings.SERVICE_UUID, HsBleSettings.NOTIFY_UUID);
 
     private final YoBleClient client;
     private final Object lock = new Object();
@@ -69,8 +54,7 @@ public final class YoBleCommandLink implements HsCommandLink {
     public static YoBleCommandLink open(@NonNull Context context) {
         Context application = context.getApplicationContext();
         Context target = application == null ? context : application;
-        BleConfig config = BleConfig.builder().callbackOnMainThread(false).build();
-        return new YoBleCommandLink(YoBluetoothSDK.ble(target, config));
+        return new YoBleCommandLink(YoBluetoothSDK.ble(target, HsBleSettings.CLIENT));
     }
 
     /** 同一条 BLE 客户端供附近扫描复用，避免再创建一个运行时。 */
@@ -101,7 +85,8 @@ public final class YoBleCommandLink implements HsCommandLink {
             deviceId = target;
         }
         retired.cancel(client);
-        BleOperationHandle handle = client.connect(target, CONNECTION, new ConnectionWatcher(currentGeneration));
+        BleOperationHandle handle = client.connect(
+                target, HsBleSettings.CONNECTION, new ConnectionWatcher(currentGeneration));
         synchronized (lock) {
             if (currentGeneration != generation) {
                 handle.cancel();
@@ -150,7 +135,7 @@ public final class YoBleCommandLink implements HsCommandLink {
         // lib 把动作投进自己的状态线程（YoBleRuntime#state），线程内异常由 runStateTask 隔离记录，
         // 受理路径不抛受检或运行时异常。因此这里没有任何可捕获的写失败——失败由回调类型化送达。
         if (copy.length <= maxPayload) {
-            client.write(target, WRITE_TARGET, copy, BleWriteType.WITHOUT_RESPONSE,
+            client.write(target, WRITE_TARGET, copy, HsBleSettings.WRITE_TYPE,
                     new BleGattObserver() {
                         @Override
                         public void onWrite(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target) {
@@ -166,7 +151,7 @@ public final class YoBleCommandLink implements HsCommandLink {
                     });
         } else {
             // H-04：超过当前 MTU 单包载荷上限的长帧走分片写（默认 splitter 依 MTU 切片）。
-            client.writeSplit(target, WRITE_TARGET, copy, BleWriteType.WITHOUT_RESPONSE, null,
+            client.writeSplit(target, WRITE_TARGET, copy, HsBleSettings.WRITE_TYPE, null,
                     new BleTransferProgressObserver() {
                         @Override
                         public void onCompleted(@NonNull BleDeviceId deviceId,
@@ -211,7 +196,7 @@ public final class YoBleCommandLink implements HsCommandLink {
     private int maxWritePayloadBytes(@NonNull BleDeviceId target) {
         return client.getConnectionSnapshot(target)
                 .requireValue()
-                .maxWritePayloadBytes(BleWriteType.WITHOUT_RESPONSE);
+                .maxWritePayloadBytes(HsBleSettings.WRITE_TYPE);
     }
 
     private void ensureSubscribed(int currentGeneration) {
@@ -223,7 +208,7 @@ public final class YoBleCommandLink implements HsCommandLink {
             target = deviceId;
         }
         BleOperationHandle handle = client.subscribe(
-                target, NOTIFY_TARGET, BleNotificationSetupMode.DEFAULT,
+                target, NOTIFY_TARGET, HsBleSettings.NOTIFY_MODE,
                 new NotifyWatcher(currentGeneration));
         synchronized (lock) {
             if (currentGeneration != generation) {

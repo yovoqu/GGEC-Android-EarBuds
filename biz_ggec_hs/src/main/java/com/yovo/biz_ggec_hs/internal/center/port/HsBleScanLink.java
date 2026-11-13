@@ -4,8 +4,6 @@ package com.yovo.biz_ggec_hs.internal.center.port;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
-import com.yovo.biz_ggec_hs.internal.center.port.ScanPace;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -14,8 +12,8 @@ import java.util.function.Predicate;
  *
  * <p>失败分类由实现方把蓝牙库错误码映射成 {@link HsControl.Failure} 后交上来，上层不再认识库错误码。</p>
  *
- * <p>两条可选能力（帧级谓词、扫描档位）是**机制层**的接口：实现方按扫描栈的能力落地；
- * 业务层的真源永远是自己维护的设备表 + 过滤规则，谓词只是省流量的前置过滤，不能成为唯一真源。</p>
+ * <p>帧级谓词是机制层的省流量入口。扫描档位由蓝牙适配自己的设置决定，不从这里传入。
+ * 业务层的真源永远是自己维护的设备表 + 过滤规则。</p>
  */
 public interface HsBleScanLink {
 
@@ -31,12 +29,6 @@ public interface HsBleScanLink {
      * <p>扫描栈尚未提供该机制时实现方可忽略——忽略只意味着「不省流量」，识别与规则结果不变。</p>
      */
     default void setFramePredicate(Predicate<HsRawAdvert> predicate) { }
-
-    /**
-     * 应用扫描档位（平台参数）。扫描栈尚未提供参数化入口时实现方可忽略，
-     * 此时仍按扫描栈默认档位工作，业务规则语义不变。
-     */
-    default void applyScanProfile(ScanPace profile) { }
 
     /**
      * 机制层最近一帧的时刻（毫秒，与 {@link System#currentTimeMillis()} 同口径）；
@@ -55,7 +47,7 @@ public interface HsBleScanLink {
         void onLost(String address);
 
         /** 扫描失败；实现方在投递前已结束本次订阅。 */
-        void onFailed(HsControl.Failure failure);
+        void onFailed(HsScanFault failure);
 
         /** 扫描被停止（含库侧主动停止）。 */
         void onStopped();
