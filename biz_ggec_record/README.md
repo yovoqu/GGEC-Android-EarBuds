@@ -6,7 +6,7 @@ Ambiq BLE 音视频接收 + 端侧 ASR 业务库（无 UI）。
 
 - 语言：Java 21
 - BLE：仅通过 `provider/lib_bluetooth` 使用 `lib_bluetooth`
-- ASR：sherpa-onnx AAR 与中英模型随库打包（`libs/`、`src/main/assets/models/`）
+- ASR：模型在 `src/main/assets/models/`；sherpa-onnx 经独立模块 `:sherpa_onnx` 引入（AGP 禁止 library 直接 `files('*.aar')`）
 - 公开面：`YoRecordSdk` / `api/` / `model/`；禁止外部引用 `internal/`、`provider/`
 
 ## 与 HS 的关系

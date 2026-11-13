@@ -40,7 +40,9 @@ android {
 
 dependencies {
     implementation project(':lib_bluetooth')
-    implementation files('libs/sherpa-onnx-2.0.1.aar')
+    // 本地 AAR 不能 files() 进 library；经 :sherpa_onnx 包装后以 project 依赖引入。
+    // api：让 app 打包时带上 sherpa 的 classes / jni。
+    api project(':sherpa_onnx')
     // sherpa-onnx AAR 为 Kotlin 编译产物，Java 调用需 stdlib。
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.0.20'
     implementation 'androidx.annotation:annotation:1.9.1'
