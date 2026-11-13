@@ -1,4 +1,0 @@
-﻿lib_bluetooth\src\main\java\com\yovo\lib_bluetooth\internal\classic\spp\endpoint\YoCbtSppConnectStrategy.java
-lib_bluetooth\src\main\java\com\yovo\lib_bluetooth\internal\common\bluetooth\YoBluetoothPowerState.java
-lib_bluetooth\src\main\java\com\yovo\lib_bluetooth\internal\common\error\YoCommonErrorCode.java
-lib_bluetooth\src\main\java\com\yovo\lib_bluetooth\internal\common\lifecycle\YoReleaseState.java
