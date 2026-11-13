@@ -3,7 +3,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 
 import java.util.LinkedHashMap;

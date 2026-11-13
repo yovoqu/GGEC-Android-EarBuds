@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.functioncmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 佩戴检测提示音开关与查询命令（协议 EC DD）。

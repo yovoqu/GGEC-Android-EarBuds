@@ -4,7 +4,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolDual;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
 

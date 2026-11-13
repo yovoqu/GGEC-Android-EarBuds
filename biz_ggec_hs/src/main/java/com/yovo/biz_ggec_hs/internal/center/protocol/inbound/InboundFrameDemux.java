@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
 import com.yovo.biz_ggec_hs.internal.center.exchange.HsFrameRoute;
 import com.yovo.biz_ggec_hs.internal.center.exchange.HsTraffic;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.util.Locale;
 

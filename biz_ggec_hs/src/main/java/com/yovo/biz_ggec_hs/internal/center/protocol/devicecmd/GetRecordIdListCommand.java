@@ -3,7 +3,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd;
 
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolRecording;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
 

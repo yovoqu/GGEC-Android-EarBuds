@@ -7,7 +7,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
 import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.EarColorCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.functioncmd.BeginnerModeCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.LDACQueryCommand;

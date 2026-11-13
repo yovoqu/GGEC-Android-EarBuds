@@ -1,7 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 /**
  * 实时设置耳机自定义EQ模式参数

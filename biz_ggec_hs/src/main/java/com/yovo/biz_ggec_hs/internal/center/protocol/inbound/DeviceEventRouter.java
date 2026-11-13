@@ -10,7 +10,7 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd.GetPaired
 import com.yovo.biz_ggec_hs.internal.center.protocol.event.ProtocolEventRouter;
 import com.yovo.biz_ggec_hs.internal.center.protocol.functioncmd.VoiceAssistantQueryCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.ServiceStatusCommand;
-import com.yovo.biz_ggec_hs.internal.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,7 +95,7 @@ public final class DeviceEventRouter {
     private void emitFileExportStatus(String exportValue, String reason) {
         Map<String, String> status = buildStatusWithFileExport(exportValue);
         domain.setServiceStatus(status);
-        HsLog.proactive(TAG, "[SDK内部][服务状态] " + reason
+        HsLog.i(TAG, "[SDK内部][服务状态] " + reason
                 + "，文件导出=" + exportValue + " 状态=" + status);
     }
 
@@ -146,7 +146,7 @@ public final class DeviceEventRouter {
         }
         if (valid) {
             DeviceDomainStore.BatterySnapshot snapshot = domain.battery();
-            HsLog.proactive(TAG, "[主动上报][电池状态] 左耳=" + snapshot.getLeftLevel()
+            HsLog.i(TAG, "[主动上报][电池状态] 左耳=" + snapshot.getLeftLevel()
                     + ", 右耳=" + snapshot.getRightLevel()
                     + ", 充电盒=" + snapshot.getCaseLevel()
                     + ", 充电盒充电=" + snapshot.isCaseCharging()
@@ -217,13 +217,13 @@ public final class DeviceEventRouter {
                     return true;
                 }
                 domain.setEqMode(mode);
-                HsLog.proactive(TAG, "[主动上报][EQ模式] 模式=" + mode);
+                HsLog.i(TAG, "[主动上报][EQ模式] 模式=" + mode);
             } else if ("99ECB5".equals(prefix)) {
                 Map<String, String> status = ServiceStatusCommand.parseStatusMap(frame);
                 if (status != null) {
                     notifyDeviceStreamStop(status);
                     domain.setServiceStatus(status);
-                    HsLog.proactive(TAG, "[主动上报][服务状态] 状态=" + status);
+                    HsLog.i(TAG, "[主动上报][服务状态] 状态=" + status);
                 }
             }
         } catch (RuntimeException e) {
@@ -248,7 +248,7 @@ public final class DeviceEventRouter {
                     return true;
                 }
                 domain.setGameMode(status);
-                HsLog.proactive(TAG, "[主动上报][游戏模式] 开启=" + status);
+                HsLog.i(TAG, "[主动上报][游戏模式] 开启=" + status);
             } else if ("99EC9F".equals(prefix)) {
                 if (!ProtocolValues.isCompleteFrame(frame, prefix) || frame.length() != 16) {
                     return true;
@@ -258,14 +258,14 @@ public final class DeviceEventRouter {
                     return true;
                 }
                 domain.setFindAlertStatus(status);
-                HsLog.proactive(TAG, "[主动上报][提示音状态] 状态=" + status);
+                HsLog.i(TAG, "[主动上报][提示音状态] 状态=" + status);
             } else if ("99ECCB".equals(prefix)) {
                 Integer code = VoiceAssistantQueryCommand.parseStatusCode(frame);
                 if (code == null) {
                     return true;
                 }
                 domain.setVoiceAssistantCode(code);
-                HsLog.proactive(TAG, "[主动上报][语音助手] code=" + code
+                HsLog.i(TAG, "[主动上报][语音助手] code=" + code
                         + " (" + (code == 1 ? "唤醒" : "睡眠") + ")");
             } else if ("99ECD2".equals(prefix)) {
                 if (!ProtocolValues.isCompleteFrame(frame, prefix) || frame.length() != 18) {
@@ -277,7 +277,7 @@ public final class DeviceEventRouter {
                     return true;
                 }
                 domain.setBeginnerMode(earType, actionType);
-                HsLog.proactive(TAG, "[主动上报][新手模式] earType=" + earType
+                HsLog.i(TAG, "[主动上报][新手模式] earType=" + earType
                         + " actionType=" + actionType);
             } else if ("99ECD7".equals(prefix)) {
                 if (!ProtocolValues.isCompleteFrame(frame, prefix) || frame.length() != 16) {
@@ -288,7 +288,7 @@ public final class DeviceEventRouter {
                     return true;
                 }
                 domain.setLeftAndRightEarExchange(earType);
-                HsLog.proactive(TAG, "[主动上报][左右耳自适应] earType=" + earType);
+                HsLog.i(TAG, "[主动上报][左右耳自适应] earType=" + earType);
             }
         } catch (RuntimeException e) {
             HsLog.e(TAG, "解析功能状态主动上报失败: " + frame, e);
@@ -303,7 +303,7 @@ public final class DeviceEventRouter {
                 return true;
             }
             domain.setPairedDevices(devices);
-            HsLog.proactive(TAG, "[主动上报][已配对设备列表] 数量=" + devices.size());
+            HsLog.i(TAG, "[主动上报][已配对设备列表] 数量=" + devices.size());
         } catch (RuntimeException e) {
             HsLog.e(TAG, "解析已配对设备列表主动上报失败: " + frame, e);
         }
