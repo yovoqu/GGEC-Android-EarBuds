@@ -111,7 +111,8 @@ public final class HsBatteryProjectionTest {
         private final FakeHsCommandLink link = new FakeHsCommandLink();
         private final HsProtocolEngine engine = new HsProtocolEngine(link);
         private final HsSessionImpl session =
-                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio());
+                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio(),
+                new HsDeviceInfoIntake(new com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter()));
         private final List<HsDevice.Snapshot> snapshots = new CopyOnWriteArrayList<>();
         private final Object lock = new Object();
         private volatile boolean ready;

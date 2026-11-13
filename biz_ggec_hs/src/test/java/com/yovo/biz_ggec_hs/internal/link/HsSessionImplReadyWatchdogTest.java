@@ -43,7 +43,8 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio(),
+                new HsConnectionIntake());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
@@ -88,7 +89,8 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio(),
+                new HsConnectionIntake());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
@@ -121,7 +123,8 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio(),
+                new HsConnectionIntake());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
@@ -159,7 +162,8 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio(),
+                new HsConnectionIntake());
         try {
             session.connect("HS02", new HsDevice.Radios(MAC_A, "", "E8:00:00:00:00:01", ""));
             awaitEngineProcessed(engine);

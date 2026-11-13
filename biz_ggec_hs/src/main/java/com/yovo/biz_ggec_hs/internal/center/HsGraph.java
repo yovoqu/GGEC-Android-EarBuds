@@ -5,6 +5,7 @@ import android.content.Context;
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
 import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 import com.yovo.biz_ggec_hs.internal.scan.HsNearbyImpl;
+import com.yovo.biz_ggec_hs.internal.link.HsConnectionIntake;
 import com.yovo.biz_ggec_hs.internal.link.HsSessionImpl;
 import com.yovo.biz_ggec_hs.internal.center.link.HsClassicConnect;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
@@ -42,7 +43,8 @@ public final class HsGraph {
         return new HsGraph(
                 HsNearbyImpl.open(new HsNearbyScanner(link.bleClient()), catalog),
                 new HsSessionImpl(engine, catalog, new HsClassicConnect(
-                        YoClassicRadio.open(context), new HsMainDelay())),
+                        YoClassicRadio.open(context), new HsMainDelay()),
+                        new HsConnectionIntake()),
                 catalog);
     }
 

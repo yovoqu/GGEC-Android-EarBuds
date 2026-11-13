@@ -15,7 +15,6 @@ import com.yovo.biz_ggec_hs.internal.center.port.HsBleScanLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsRawAdvert;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,6 +51,8 @@ public final class HsNearbyImpl {
     private volatile long startedAtMillis;
     private volatile long lastFrameAtMillis;
     private volatile boolean throttled;
+    /** 上一帧已经交给界面的顺序。排序带宽相对它计算，避免 RSSI 噪声来回换位。 */
+    private List<HsScan.Found> lastOrdered = List.of();
 
     /** 装配入口：系统时钟 + 系统 TTL 心跳，内部类型不外露。 */
     public static HsNearbyImpl open(HsBleScanLink link, HsCatalogImpl catalog) {
@@ -133,9 +134,10 @@ public final class HsNearbyImpl {
                 devices.add(entry.toDevice());
             }
         }
-        devices.sort(Comparator.comparingInt(HsScan.Found::rssi).reversed());
+        List<HsScan.Found> ordered = HsScanOrder.arrange(devices, lastOrdered);
+        lastOrdered = ordered;
         return new HsScan.View(
-                List.copyOf(devices),
+                ordered,
                 Map.copyOf(countsByType),
                 Map.copyOf(countsByProject),
                 Map.copyOf(countsByModel),

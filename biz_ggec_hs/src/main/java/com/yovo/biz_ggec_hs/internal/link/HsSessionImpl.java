@@ -66,14 +66,17 @@ public final class HsSessionImpl {
     private volatile String connectedModelId = "";
     private volatile HsDevice.Radios connectedRadios = HsDevice.Radios.none();
     private volatile List<HsControl.Recording> recordings = List.of();
-    /** 本会话是否已补查过聚合状态：每条会话一次，失败不重试。 */
-    private volatile boolean deviceStatusQueried;
+    /** 本会话是否已按接入策略补查过：每条会话一次，失败不重试。 */
+    private volatile boolean readyIntakeSent;
+    private final HsSessionIntake intake;
     /** 当前连接代次。经典回调迟到时不得再去开 GATT。 */
     private final AtomicInteger connectGeneration = new AtomicInteger();
     private final ConnectionEvents connectionEvents = new ConnectionEvents();
 
-    public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, HsClassicRadio classicRadio) {
-        this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())), classicRadio);
+    public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, HsClassicRadio classicRadio,
+                         HsSessionIntake intake) {
+        this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())),
+                classicRadio, intake);
     }
 
     /**
@@ -81,12 +84,14 @@ public final class HsSessionImpl {
      * 用例注入可控实现来推进时间、观察事件顺序。
      */
     HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, MainThread mainThread,
-                  HsClassicRadio classicRadio) {
+                  HsClassicRadio classicRadio, HsSessionIntake intake) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.classicRadio = Objects.requireNonNull(classicRadio, "classicRadio");
         this.domain = engine.domain();
         this.catalog = Objects.requireNonNull(catalog, "catalog");
+        this.intake = Objects.requireNonNull(intake, "intake");
         this.mainThread = Objects.requireNonNull(mainThread, "mainThread");
+        engine.applySessionIntake(intake.acceptDeviceReports(), intake.probeEarColorOnReady());
         this.readyTimeout = new HsConnectReadyTimeout(
                 mainThread, CONNECT_READY_TIMEOUT_MILLIS, engine::onConnectAttemptTimedOut);
         // 连接事件恒挂在本类上：看门狗属于这次连接尝试，不取决于此刻有没有观察者。
@@ -105,7 +110,7 @@ public final class HsSessionImpl {
         connectedModelId = Objects.requireNonNull(modelId, "modelId");
         connectedRadios = radios;
         sessionCapabilities = capabilitiesOf(connectedModelId);
-        deviceStatusQueried = false;
+        readyIntakeSent = false;
         dual = null;
         recordings = List.of();
         readyTimeout.cancel();
@@ -167,7 +172,7 @@ public final class HsSessionImpl {
         connectedRadios = HsDevice.Radios.none();
         dual = null;
         recordings = List.of();
-        deviceStatusQueried = false;
+        readyIntakeSent = false;
     }
 
     public boolean isReady() {
@@ -321,17 +326,15 @@ public final class HsSessionImpl {
     }
 
     /**
-     * READY 后的会话自愈：补查一次首页聚合状态，把固件/颜色/电量/服务状态并入快照。
-     *
-     * <p>每条会话只发一次，失败不重试，也不影响 READY 与连接状态——固件继续是「未上报」。
-     * 该命令在策略表里是 SINGLE_FLIGHT，已有在途聚合查询时复用，不重复下发。</p>
+     * READY 后按接入策略补查。连接策略的查询列表为空，因此什么都不发。
+     * 每条会话只发一次，失败不重试，也不改写已经发布的 READY。
      */
-    private void queryDeviceStatusOnce() {
-        if (deviceStatusQueried) {
+    private void runReadyIntake() {
+        if (readyIntakeSent) {
             return;
         }
-        deviceStatusQueried = true;
-        for (Command query : router.sessionBootstrapQueries(connectedModelId)) {
+        readyIntakeSent = true;
+        for (Command query : intake.readyQueries(connectedModelId)) {
             engine.submit(query, null);
         }
     }
@@ -377,7 +380,7 @@ public final class HsSessionImpl {
         public void onConnected(String macAddress) {
             readyTimeout.cancel();
             publish(HsSessionState.ready());
-            queryDeviceStatusOnce();
+            runReadyIntake();
         }
 
         @Override
