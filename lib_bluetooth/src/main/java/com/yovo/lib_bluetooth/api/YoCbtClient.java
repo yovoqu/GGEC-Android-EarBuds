@@ -78,6 +78,13 @@ public interface YoCbtClient {
     @NonNull
     Result<Void> prepareProfileProxy(@NonNull CbtProfileType profileType);
 
+    /**
+     * 请求把已配对设备的 A2DP 或 Headset 连上。
+     * 接受请求不等于已经连上，调用方继续看 Profile 状态。
+     */
+    @NonNull
+    Result<Void> connectAudio(@NonNull CbtDeviceId deviceId);
+
     @NonNull
     Result<CbtProfileAggregateState> getProfileAggregateState(@NonNull CbtProfileType profileType);
 

@@ -59,6 +59,7 @@ public enum YoCbtErrorCode implements YoErrorCode {
     YO_CBT_PROFILE_PROXY_NOT_READY,
     YO_CBT_PROFILE_PROXY_ALREADY_REQUESTED,
     YO_CBT_PROFILE_PROXY_LIFECYCLE_ERROR,
+    YO_CBT_AUDIO_CONNECT_REJECTED,
 
     // ── A2DP ─────────────────────────────────────────────────────
     YO_CBT_A2DP_STATE_QUERY_FAILED,
