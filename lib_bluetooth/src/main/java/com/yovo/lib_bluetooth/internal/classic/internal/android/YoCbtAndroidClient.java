@@ -270,6 +270,20 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     }
 
     @Override
+    public YoResult<Void> connectAudio(@NonNull YoCbtDeviceId deviceId) {
+        if (released) {
+            return YoResult.failure(failure(YoCbtErrorCode.YO_CBT_RELEASED,
+                    "Classic client released", null));
+        }
+        YoResult<Void> a2dp = prepareProfileProxy(YoCbtProfileType.A2DP);
+        YoResult<Void> headset = prepareProfileProxy(YoCbtProfileType.HEADSET);
+        if (a2dp.isFailure() && headset.isFailure()) {
+            return a2dp;
+        }
+        return modules.profileProxyManager.connectAudio(deviceId);
+    }
+
+    @Override
     public YoResult<YoCbtProfileAggregateState> getProfileAggregateState(
             @NonNull YoCbtProfileType profileType) {
         if (released) {

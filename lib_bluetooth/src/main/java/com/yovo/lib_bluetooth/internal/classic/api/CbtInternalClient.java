@@ -70,6 +70,12 @@ public interface CbtInternalClient extends YoReleasable {
 
     YoResult<Void> prepareProfileProxy(@NonNull YoCbtProfileType profileType);
 
+    /**
+     * 请求系统把已配对设备的 A2DP 或 Headset 连上。
+     * 返回成功只表示请求已交给代理（或在等代理）；连上与否看 Profile 状态。
+     */
+    YoResult<Void> connectAudio(@NonNull YoCbtDeviceId deviceId);
+
     YoResult<YoCbtProfileAggregateState> getProfileAggregateState(@NonNull YoCbtProfileType profileType);
 
     /** Queries a canonical runtime profile such as A2DP, HEADSET, or SPP. */

@@ -291,6 +291,12 @@ public final class ClassicClientImpl implements YoCbtClient {
 
     @NonNull
     @Override
+    public Result<Void> connectAudio(@NonNull CbtDeviceId deviceId) {
+        return toPublic(delegate.connectAudio(toInternal(deviceId)));
+    }
+
+    @NonNull
+    @Override
     public Result<CbtProfileAggregateState> getProfileAggregateState(
             @NonNull CbtProfileType profileType) {
         YoResult<YoCbtProfileAggregateState> old =
@@ -954,6 +960,8 @@ public final class ClassicClientImpl implements YoCbtClient {
             case "YO_CBT_PROFILE_UNSUPPORTED":
             case "YO_CBT_PROFILE_TYPE_UNSUPPORTED":
                 return CbtErrorCode.PROFILE_PROXY_FAILED;
+            case "YO_CBT_AUDIO_CONNECT_REJECTED":
+                return CbtErrorCode.AUDIO_CONNECT_REJECTED;
             case "YO_CBT_PROFILE_STATE_QUERY_FAILED":
             case "YO_CBT_PROFILE_CAPABILITY_UNKNOWN":
             case "YO_CBT_A2DP_STATE_QUERY_FAILED":
