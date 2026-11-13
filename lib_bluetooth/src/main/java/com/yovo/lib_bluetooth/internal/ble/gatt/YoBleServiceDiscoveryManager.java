@@ -98,9 +98,20 @@ public final class YoBleServiceDiscoveryManager {
     public void onPlatformServicesDiscovered(int status) {
         context.runtime().checkStateThread();
         activeOpId = null;
+        // 平台发现回调必须先释放队列里的 DISCOVER_SERVICES 槽。
+        // 槽还占着时，后面的 MTU / 命令通知排不进去，会话会一直停在发现完成之后。
+        BleFailure discoveryFailure = status == 0 ? null : YoBleErrorMapper.fromGattStatus(
+                status, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
+                context.deviceId(), null, "discoverServices");
+        boolean released = context.operationQueue().complete(
+                OpKind.DISCOVER_SERVICES, null, null, discoveryFailure);
         if (status != 0) {
-            finish(YoBleErrorMapper.fromGattStatus(status, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
-                    context.deviceId(), null, "discoverServices"));
+            if (!released) {
+                finish(discoveryFailure);
+            }
+            return;
+        }
+        if (!released) {
             return;
         }
         YoBleGattTransport transport = context.transport();
