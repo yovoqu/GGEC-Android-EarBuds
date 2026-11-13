@@ -17,24 +17,28 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.common.YoComponents;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
+import com.yohu.youi.api.navigation.YoMenu;
 import com.yohu.youi.api.platform.YoSystemBar;
 
+import java.util.List;
+
 /**
- * 设备页签视图骨架：页头、滚动容器、摘要卡、能力分区列表、空态。
- * 分区与行由 {@link DeviceCapabilityListView} 渲染，本类只负责组合与转交事件。
+ * 设备页视图：标题组件（设备信息 + 下拉）、能力入口卡片、空态、添加设备。
+ *
+ * <p>职责拆分：设备信息与下拉放在 {@link DeviceTitleView}，单张能力卡放在
+ * {@link DeviceEntryCardView}；本类只做页面装配、状态分发与菜单编排。下拉菜单用 YoUI 原生能力
+ * （{@code subtitle} / {@code endIconTinted}），分隔线与按压反馈由组件自身提供。</p>
  */
 public final class DeviceHomePage {
 
     public interface Listener {
         void onOpenScan();
 
-        void onOpenGroup(@NonNull DeviceCapabilityGroup group);
+        void onSelectDevice(@NonNull String key);
 
-        void onToggle(@NonNull String capabilityId, boolean checked);
-
-        void onSelectOption(@NonNull String capabilityId, @NonNull String optionId);
+        void onOpenEntry(@NonNull DeviceCapabilityGroup group);
     }
 
     private final AppCompatActivity activity;
@@ -43,19 +47,18 @@ public final class DeviceHomePage {
     private final Listener listener;
 
     private final LinearLayout root;
+    private final DeviceTitleView titleView;
     private final NestedScrollView scroll;
-    private final View content;
-    private final View empty;
-    private final DeviceSummaryCard summary;
-    private final DeviceCapabilityListView capabilities;
-    private final DeviceEmptyState emptyState;
-    private final TextView footer;
+    private final LinearLayout cardColumn;
+    private final LinearLayout emptyBox;
+    private final TextView emptyTitle;
+    private final TextView emptyBody;
 
+    private List<DeviceHomeUiState.Choice> choices = List.of();
     private int bottomInset;
     private int lastSystemBottom;
 
-    public DeviceHomePage(@NonNull AppCompatActivity activity,
-                          @NonNull Listener listener) {
+    public DeviceHomePage(@NonNull AppCompatActivity activity, @NonNull Listener listener) {
         this.activity = activity;
         this.theme = DeviceTheme.of(activity);
         this.listener = listener;
@@ -63,58 +66,39 @@ public final class DeviceHomePage {
         root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(theme.page);
+
+        titleView = new DeviceTitleView(activity, theme, this::showDeviceMenu);
         root.addView(buildHeader(), matchWrap());
 
-        FrameLayout contentHost = new FrameLayout(activity);
-        root.addView(contentHost, new LinearLayout.LayoutParams(
+        FrameLayout host = new FrameLayout(activity);
+        root.addView(host, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         scroll = new NestedScrollView(activity);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        LinearLayout column = new LinearLayout(activity);
-        column.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(column, new ViewGroup.LayoutParams(
+        cardColumn = new LinearLayout(activity);
+        cardColumn.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(cardColumn, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        summary = new DeviceSummaryCard(activity, theme);
-        column.addView(summary.view(), cardParams());
-
-        capabilities = new DeviceCapabilityListView(activity, theme, components,
-                new DeviceCapabilityListView.Listener() {
-                    @Override
-                    public void onToggle(@NonNull String capabilityId, boolean checked) {
-                        listener.onToggle(capabilityId, checked);
-                    }
-
-                    @Override
-                    public void onSelectOption(@NonNull String capabilityId, @NonNull String optionId) {
-                        listener.onSelectOption(capabilityId, optionId);
-                    }
-
-                    @Override
-                    public void onOpenGroup(@NonNull DeviceCapabilityGroup group) {
-                        listener.onOpenGroup(group);
-                    }
-                });
-        column.addView(capabilities.view(), matchWrap());
-
-        footer = theme.text(DeviceTheme.TEXT_CAPTION, theme.hint);
-        footer.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        footerParams.topMargin = theme.dp(DeviceTheme.SPACE_XL);
-        column.addView(footer, footerParams);
-
-        content = scroll;
-        content.setVisibility(View.GONE);
-        contentHost.addView(scroll, new FrameLayout.LayoutParams(
+        host.addView(scroll, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        emptyState = new DeviceEmptyState(activity, theme);
-        empty = emptyState.view();
-        empty.setVisibility(View.GONE);
-        contentHost.addView(empty, new FrameLayout.LayoutParams(
+        emptyBox = new LinearLayout(activity);
+        emptyBox.setOrientation(LinearLayout.VERTICAL);
+        emptyBox.setGravity(Gravity.CENTER_HORIZONTAL);
+        emptyBox.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.EMPTY_TOP),
+                theme.dp(DeviceTheme.PAGE_INSET), 0);
+        emptyTitle = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
+        emptyTitle.setGravity(Gravity.CENTER_HORIZONTAL);
+        emptyBox.addView(emptyTitle, matchWrap());
+        emptyBody = theme.text(DeviceTheme.TEXT_CALLOUT, theme.hint);
+        emptyBody.setGravity(Gravity.CENTER_HORIZONTAL);
+        emptyBody.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
+        emptyBody.setPadding(0, theme.dp(DeviceTheme.SPACE_S), 0, 0);
+        emptyBox.addView(emptyBody, matchWrap());
+        emptyBox.setVisibility(View.GONE);
+        host.addView(emptyBox, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
@@ -137,62 +121,96 @@ public final class DeviceHomePage {
     }
 
     public void render(@NonNull DeviceHomeUiState state) {
-        boolean hasDevice = state.connected();
-        content.setVisibility(hasDevice ? View.VISIBLE : View.GONE);
-        empty.setVisibility(hasDevice ? View.GONE : View.VISIBLE);
-        if (!hasDevice) {
+        choices = state.devices();
+        titleView.render(state);
+
+        boolean hasEntries = !state.entries().isEmpty();
+        scroll.setVisibility(hasEntries ? View.VISIBLE : View.GONE);
+        emptyBox.setVisibility(hasEntries ? View.GONE : View.VISIBLE);
+        if (!hasEntries) {
+            emptyTitle.setText(state.emptyTitleRes());
+            emptyBody.setText(state.emptyBodyRes());
             return;
         }
-        summary.render(state);
-        capabilities.render(state.sections(), state.interactive());
-        footer.setText(state.firmware().isEmpty() ? "" : activity.getString(
-                R.string.device_firmware_footer, state.firmware()));
-    }
-
-    /** 写入落地结果：失败时让开关回到「未上报」呈现，不假装成功。 */
-    public void onControlOutcome(@NonNull DeviceControlOutcome outcome) {
-        capabilities.onControlOutcome(outcome);
+        rebuild(state.entries());
     }
 
     public void destroy() {
         components.close();
     }
 
+    /** 菜单 = 设备列表（原生主副标题 + 右侧状态点）+ 分隔线 + 重命名/忘记。 */
+    private void showDeviceMenu() {
+        if (choices.isEmpty()) {
+            return;
+        }
+        YoMenu.Builder builder = YoMenu.create(activity).setAnchorView(titleView.anchor());
+        for (int index = 0; index < choices.size(); index++) {
+            DeviceHomeUiState.Choice choice = choices.get(index);
+            YoMenu.Item item = YoMenu.Item.of(index, choice.name())
+                    .subtitle(choice.address() + DeviceFormats.META_SEPARATOR + choice.modelName());
+            if (choice.connected()) {
+                item.endIcon(R.drawable.ic_device_status_connected).endIconTinted(false);
+            }
+            builder.addItem(item);
+        }
+        YoMenu menu = builder
+                .setOnItemClickListener(id -> {
+                    if (id >= 0 && id < choices.size()) {
+                        listener.onSelectDevice(choices.get(id).key());
+                    }
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
+    }
+
+    private void rebuild(@NonNull List<DeviceHomeUiState.Entry> entries) {
+        cardColumn.removeAllViews();
+        for (DeviceHomeUiState.Entry entry : entries) {
+            DeviceEntryCardView card = new DeviceEntryCardView(activity, theme, entry.group(),
+                    listener::onOpenEntry);
+            card.render(entry);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.leftMargin = theme.dp(DeviceTheme.LIST_EDGE);
+            params.rightMargin = theme.dp(DeviceTheme.LIST_EDGE);
+            params.topMargin = theme.dp(DeviceTheme.SPACE_S);
+            cardColumn.addView(card.view(), params);
+        }
+    }
+
     private void applyScrollBottom(int systemBottom) {
         lastSystemBottom = systemBottom;
         int bottom = Math.max(systemBottom, bottomInset) + theme.dp(DeviceTheme.SPACE_XL);
         scroll.setPadding(0, 0, 0, bottom);
-        emptyState.setBottomPadding(bottom);
     }
 
+    /** 标题栏：左侧设备信息组件占满剩余宽度，右侧只留「添加设备」。 */
     private View buildHeader() {
+        LinearLayout header = new LinearLayout(activity);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XS),
+                theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_S));
+
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(theme.dp(DeviceTheme.HEADER_HEIGHT));
-        row.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.SPACE_XS),
-                theme.dp(DeviceTheme.PAGE_INSET), 0);
 
-        TextView title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        title.setText(R.string.tab_device);
-        row.addView(title, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(titleView.view(), new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         AiHeaderActionButton add = new AiHeaderActionButton(activity)
                 .icon(R.drawable.ic_ai_plus)
                 .contentDesc(R.string.device_add)
                 .onClick(v -> listener.onOpenScan());
-        row.addView(add, add.createLinearLayoutParams());
-        return row;
-    }
+        LinearLayout.LayoutParams addParams = add.createLinearLayoutParams();
+        addParams.setMarginStart(theme.dp(DeviceTheme.SPACE_XS));
+        row.addView(add, addParams);
 
-    private LinearLayout.LayoutParams cardParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = theme.dp(DeviceTheme.LIST_EDGE);
-        params.rightMargin = theme.dp(DeviceTheme.LIST_EDGE);
-        params.topMargin = theme.dp(DeviceTheme.SPACE_M);
-        return params;
+        header.addView(row, matchWrap());
+        return header;
     }
 
     private LinearLayout.LayoutParams matchWrap() {

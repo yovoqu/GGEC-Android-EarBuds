@@ -17,10 +17,14 @@ import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
+import com.ggec.earbuds.domain.device.model.DeviceId;
+import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
+import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+import com.yovo.lib_common.event.OneShotLiveData;
 
 /**
  * 设置页状态机：订阅快照、从能力目录取描述、把界面的类型化意图交给用例。
@@ -36,11 +40,12 @@ public final class DeviceSettingsViewModel extends ViewModel {
     private final ObserveDevice observeDevice;
     private final WriteDeviceControl writeControl;
     private final RunDeviceAction runAction;
+    private final ForgetDevice forgetDevice;
+    private final ObserveDeviceRoster observeRoster;
     private final DeviceSettingsUiMapper mapper;
 
     private final MutableLiveData<DeviceSettingsUiState> uiState = new MutableLiveData<>();
-    private final MutableLiveData<DeviceFailure> failures = new MutableLiveData<>();
-    private final MutableLiveData<DeviceControlOutcome> controls = new MutableLiveData<>();
+    private final OneShotLiveData<DeviceSettingsEvent> events = new OneShotLiveData<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private Subscription subscription;
@@ -51,12 +56,16 @@ public final class DeviceSettingsViewModel extends ViewModel {
                                    @NonNull ObserveDevice observeDevice,
                                    @NonNull WriteDeviceControl writeControl,
                                    @NonNull RunDeviceAction runAction,
+                                   @NonNull ForgetDevice forgetDevice,
+                                   @NonNull ObserveDeviceRoster observeRoster,
                                    @NonNull DeviceSettingsUiMapper mapper) {
         this.group = group;
         this.catalog = catalog;
         this.observeDevice = observeDevice;
         this.writeControl = writeControl;
         this.runAction = runAction;
+        this.forgetDevice = forgetDevice;
+        this.observeRoster = observeRoster;
         this.mapper = mapper;
     }
 
@@ -65,15 +74,10 @@ public final class DeviceSettingsViewModel extends ViewModel {
         return uiState;
     }
 
+    /** 写入失败与落地结果：一次性事件，页面消费后立即清空。 */
     @NonNull
-    public LiveData<DeviceFailure> failures() {
-        return failures;
-    }
-
-    /** 写入落地结果（按能力 id）：视图据此丢弃「未确认」呈现，不假装成功。 */
-    @NonNull
-    public LiveData<DeviceControlOutcome> controls() {
-        return controls;
+    public LiveData<DeviceSettingsEvent> events() {
+        return events;
     }
 
     @NonNull
@@ -106,6 +110,25 @@ public final class DeviceSettingsViewModel extends ViewModel {
         runAction.execute(action, result -> onResult(null, result));
     }
 
+    /** 设备管理：忘记设备（先断开活动会话、再从台账移除）；成功后由宿主关闭本页。 */
+    public void forgetActive() {
+        DeviceId id = activeId();
+        if (id == null) {
+            events.postValue(new DeviceSettingsEvent.RosterMissing());
+            return;
+        }
+        if (!forgetDevice.execute(id)) {
+            events.postValue(new DeviceSettingsEvent.RosterMissing());
+            return;
+        }
+        events.postValue(new DeviceSettingsEvent.Closed());
+    }
+
+    @Nullable
+    private DeviceId activeId() {
+        return observeRoster.current().activeId().orElse(null);
+    }
+
     private boolean isWritable() {
         DeviceSnapshot current;
         synchronized (this) {
@@ -116,14 +139,16 @@ public final class DeviceSettingsViewModel extends ViewModel {
 
     private void onResult(@Nullable String capabilityId, DeviceWriteResult result) {
         if (result instanceof DeviceWriteResult.Failed failed) {
-            failures.postValue(failed.failure());
+            events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
             if (capabilityId != null) {
-                controls.postValue(DeviceControlOutcome.failed(capabilityId));
+                events.postValue(new DeviceSettingsEvent.ControlOutcome(
+                        DeviceControlOutcome.failed(capabilityId)));
             }
             return;
         }
         if (capabilityId != null) {
-            controls.postValue(DeviceControlOutcome.ok(capabilityId));
+            events.postValue(new DeviceSettingsEvent.ControlOutcome(
+                    DeviceControlOutcome.ok(capabilityId)));
         }
     }
 

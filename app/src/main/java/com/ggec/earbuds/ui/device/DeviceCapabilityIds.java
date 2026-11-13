@@ -28,6 +28,9 @@ public final class DeviceCapabilityIds {
     public static final String RECORD_LIST = "RECORD_LIST";
     public static final String RECORD_TRANSFER = "RECORD_TRANSFER";
 
+    /** 关于页里的 APP 级设备管理（重命名别名 / 忘记设备），不来自 biz 能力目录。 */
+    public static final String DEVICE_MANAGEMENT = "APP_DEVICE_MANAGEMENT";
+
     public static final String DUAL_CONNECTION = "DUAL_CONNECTION";
     public static final String DUAL_CONNECTION_DEVICES = "DUAL_CONNECTION_DEVICES";
 

@@ -6,13 +6,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DualConnectionView;
 import com.ggec.earbuds.domain.device.model.PairedDeviceView;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
@@ -22,6 +22,7 @@ import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
 import com.yohu.youi.api.containers.list.ListTextSpec;
+import com.yohu.youi.api.navigation.YoMenu;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +39,10 @@ final class DualConnectionCard {
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
     private final DeviceSettingsViewModel viewModel;
+    /** 绑定周期内创建的控件：每次 bind 重建。 */
     private final List<Runnable> releases = new ArrayList<>();
+    /** 页面周期内创建、必须活到页面销毁的弹层（选项菜单）。 */
+    private final YoComponents components = new YoComponents();
 
     private final LinearLayout view;
     private final TextView title;
@@ -91,6 +95,7 @@ final class DualConnectionCard {
     }
 
     void destroy() {
+        components.close();
         releaseAll();
     }
 
@@ -150,10 +155,20 @@ final class DualConnectionCard {
         for (int index = 0; index < labels.size(); index++) {
             items[index] = activity.getString(labels.get(index));
         }
-        new AlertDialog.Builder(activity)
-                .setTitle(device.name().isEmpty() ? device.address() : device.name())
-                .setItems(items, (dialog, which) -> actions.get(which).run())
-                .show();
+        YoMenu.Builder builder = YoMenu.create(activity)
+                .setAnchorView(activity.findViewById(android.R.id.content));
+        for (int index = 0; index < items.length; index++) {
+            builder.addItem(index, items[index]);
+        }
+        YoMenu menu = builder
+                .setOnItemClickListener(id -> {
+                    if (id >= 0 && id < actions.size()) {
+                        actions.get(id).run();
+                    }
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
     }
 
     private View message(int messageRes) {

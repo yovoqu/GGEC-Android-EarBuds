@@ -71,6 +71,9 @@ final class ActionCardView {
 
     void bind(@NonNull DeviceSettingRow.Action row, boolean interactive) {
         title.setText(row.title());
+        if (row.kind() == DeviceSettingRow.ActionKind.DEVICE_MANAGEMENT) {
+            title.setText(R.string.about_device_management);
+        }
         buttons.removeAllViews();
         releaseButtons();
         switch (row.kind()) {
@@ -85,6 +88,7 @@ final class ActionCardView {
                     R.string.device_action_record_stream_start,
                     R.string.device_action_record_stream_stop);
             case RECORD_TRANSFER -> bindTransfer(interactive);
+            case DEVICE_MANAGEMENT -> bindDeviceManagement(interactive);
         }
     }
 
@@ -137,6 +141,17 @@ final class ActionCardView {
             RecordFileView newest = recordFiles.get(0);
             viewModel.run(new DeviceAction.TransferRecord(newest.fileId(), true));
         });
+    }
+
+    /**
+     * 设备管理：忘记设备（先断活动会话、再从台账移除，成功后关闭本页）。
+     *
+     * <p>改名不在这里重复提供：设备名由 biz 的 {@code RENAME} 能力行负责，
+     * 两个同名按钮只会让用户分不清改的是设备还是台账。</p>
+     */
+    private void bindDeviceManagement(boolean interactive) {
+        addButton(R.string.device_forget, interactive, true, () -> confirm(
+                R.string.device_forget_confirm, viewModel::forgetActive));
     }
 
     private void addButton(@StringRes int labelRes, boolean enabled, boolean destructive,

@@ -1,87 +1,53 @@
 package com.ggec.earbuds.ui.device.home;
 
-import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.CapabilityOption;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
+
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
-import com.ggec.earbuds.ui.device.DeviceFormats;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
- * 设备页签的界面状态（不可变）。
+ * 设备页的界面状态（不可变）。
  *
- * <p>分区与行全部由能力描述符生成：{@link Section#group()} 是分区（按
- * {@link DeviceCapabilityGroup} 声明顺序），{@link Row} 是行，控件种类由描述符的 kind 决定。
- * 这里没有任何机型知识，也没有写死的功能清单。</p>
+ * <p>标题栏两行：主标题是当前连接设备的名称，副标题是「MAC · 型号」；标题右侧是设备下拉，
+ * 每项只给名称、MAC、型号，已连接的那台带绿点。正文只有能力入口卡片——按 biz 目录里这台
+ * 机型真正具备的分区生成，没有横排设备卡片。</p>
  */
-public record DeviceHomeUiState(
-        String title,
-        String subtitle,
-        int connectionTextRes,
-        boolean connected,
-        String leftText,
-        String rightText,
-        String caseText,
-        int wearTextRes,
-        int chargingTextRes,
-        String firmware,
-        boolean interactive,
-        List<Section> sections
-) {
+public record DeviceHomeUiState(@NonNull String title,
+                                @NonNull String subtitle,
+                                @NonNull List<Choice> devices,
+                                @NonNull List<Entry> entries,
+                                @StringRes int emptyTitleRes,
+                                @StringRes int emptyBodyRes) {
 
     public DeviceHomeUiState {
         title = title == null ? "" : title;
         subtitle = subtitle == null ? "" : subtitle;
-        leftText = leftText == null ? DeviceFormats.UNKNOWN : leftText;
-        rightText = rightText == null ? DeviceFormats.UNKNOWN : rightText;
-        caseText = caseText == null ? DeviceFormats.UNKNOWN : caseText;
-        firmware = firmware == null ? "" : firmware;
-        sections = sections == null ? List.of() : List.copyOf(sections);
+        devices = devices == null ? List.of() : List.copyOf(devices);
+        entries = entries == null ? List.of() : List.copyOf(entries);
     }
 
-    /** 一个能力分区：分组决定分区，行顺序等于描述符声明顺序。 */
-    public record Section(DeviceCapabilityGroup group, int titleRes, List<Row> rows) {
+    /** 下拉里的一台设备。 */
+    public record Choice(@NonNull String key,
+                         @NonNull String name,
+                         @NonNull String address,
+                         @NonNull String modelName,
+                         boolean connected) {
 
-        public Section {
-            rows = rows == null ? List.of() : List.copyOf(rows);
+        public Choice {
+            key = key == null ? "" : key;
+            name = name == null ? "" : name;
+            address = address == null ? "" : address;
+            modelName = modelName == null ? "" : modelName;
         }
     }
 
-    /** 一行：能力 id 与标题都来自描述符，控件由 kind 决定。 */
-    public sealed interface Row {
-
-        String capabilityId();
-
-        String title();
-
-        /** TOGGLE：直接开关；{@code checked} 为空表示设备未上报该状态。 */
-        record Toggle(String capabilityId, String title, Optional<Boolean> checked) implements Row {
-
-            public Toggle {
-                checked = checked == null ? Optional.empty() : checked;
-            }
-        }
-
-        /** CHOICE：点开选项；{@code value} 为空表示未上报当前选项。 */
-        record Choice(String capabilityId, String title, Optional<String> value,
-                      List<CapabilityOption> options) implements Row {
-
-            public Choice {
-                value = value == null ? Optional.empty() : value;
-                options = options == null ? List.of() : List.copyOf(options);
-            }
-        }
-
-        /** LEVEL / CURVE / LIST / ACTION：首页只做入口，点击跳到所属分区的设置页。 */
-        record Link(String capabilityId, String title) implements Row {
-        }
-
-    }
-
-    public static DeviceHomeUiState disconnected() {
-        return new DeviceHomeUiState("", "", R.string.device_state_idle, false,
-                DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN, DeviceFormats.UNKNOWN,
-                0, 0, "", false, List.of());
+    /** 一个能力入口卡片。 */
+    public record Entry(@NonNull DeviceCapabilityGroup group,
+                        @StringRes int titleRes,
+                        @DrawableRes int iconRes,
+                        int count) {
     }
 }

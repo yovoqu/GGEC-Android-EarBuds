@@ -8,77 +8,112 @@ import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
+import com.ggec.earbuds.data.device.json.DeviceRosterJson;
+import com.ggec.earbuds.data.device.roster.DeviceRosterRepositoryImpl;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
-import com.ggec.earbuds.domain.device.port.DevicePort;
+import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
 import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
-import com.ggec.earbuds.domain.device.usecase.ConnectDevice;
+import com.ggec.earbuds.domain.device.session.DeviceSession;
+import com.ggec.earbuds.domain.device.usecase.CloseDevice;
+import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
+import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
+import com.ggec.earbuds.domain.device.usecase.OpenDevice;
+import com.ggec.earbuds.domain.device.usecase.RenameDevice;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
+import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
+import com.ggec.earbuds.domain.device.usecase.SyncActiveDevice;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.provider.biz_ggec_hs.HsDeviceProviders;
+import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
+import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermission;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermissionRequest;
 import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
-import com.ggec.earbuds.ui.device.scan.ScanPermissionRequest;
 import com.ggec.earbuds.ui.device.scan.ScanViewModel;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiMapper;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.device.settings.SettingsSectionFactory;
 
+import java.io.File;
+import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.function.LongSupplier;
+
 /**
- * 设备功能装配根：唯一知道设备端口与能力目录实现的地方。
+ * 设备功能装配根：唯一知道设备端口、台账仓库与用例实现的地方。
  *
- * <p>设备端口与能力目录都来自同一个 {@link HsDeviceProviders}（一条 BLE 客户端），
- * 本类只持有领域端口与用例，不出现任何 SDK 类型。</p>
+ * <p>一条 BLE 客户端 → 一条链路端口 → 一个活动会话；台账在
+ * {@link DeviceRosterRepositoryImpl} 里，落盘走注入的串行执行器。本类只持有领域端口与用例，
+ * 不出现任何 SDK 类型。</p>
  */
 public final class DeviceGraph {
 
     private final HsDeviceProviders providers;
+    private final DeviceRosterRepository roster;
+    private final DeviceSession session;
     private final DeviceCapabilityCatalog catalog;
-    private final ObserveDevice observeDevice;
-    private final ConnectDevice connectDevice;
     private final ScanDevices scanDevices;
     private final WriteDeviceControl writeControl;
     private final RunDeviceAction runAction;
+    private final ObserveDevice observeDevice;
+    private final ObserveDeviceRoster observeRoster;
+    private final OpenDevice openDevice;
+    private final CloseDevice closeDevice;
+    private final RenameDevice renameDevice;
+    private final ForgetDevice forgetDevice;
     private final ScanPermissionPort scanPermission;
-    private final DeviceHomeUiMapper homeMapper = new DeviceHomeUiMapper();
+    private final DeviceHomeUiMapper homeMapper;
+    private final ListDeviceEntries listEntries;
     private final DeviceSettingsUiMapper settingsMapper =
             new DeviceSettingsUiMapper(new SettingsSectionFactory());
 
-    public DeviceGraph(@NonNull Context appContext) {
+    public DeviceGraph(@NonNull Context appContext, @NonNull Executor storeExecutor,
+                       @NonNull LongSupplier clock) {
         Context app = appContext.getApplicationContext();
         this.providers = HsDeviceProviders.open(app);
-        DevicePort port = providers.devicePort();
+        this.roster = new DeviceRosterRepositoryImpl(
+                new File(app.getFilesDir(), "devices/roster.json"), new DeviceRosterJson(),
+                Objects.requireNonNull(storeExecutor, "storeExecutor"));
+        this.session = new DeviceSession(providers.deviceLink());
+        this.observeRoster = new ObserveDeviceRoster(roster, session, clock);
+        this.openDevice = new OpenDevice(session);
+        this.closeDevice = new CloseDevice(session);
+        this.renameDevice = new RenameDevice(roster);
+        this.forgetDevice = new ForgetDevice(roster, session);
+        this.observeDevice = new ObserveDevice(session);
         this.catalog = providers.deviceCatalog();
-        this.observeDevice = new ObserveDevice(port);
-        this.connectDevice = new ConnectDevice(port);
-        this.scanDevices = new ScanDevices(port);
-        this.writeControl = new WriteDeviceControl(port);
-        this.runAction = new RunDeviceAction(port);
+        this.homeMapper = new DeviceHomeUiMapper(catalog);
+        this.listEntries = new ListDeviceEntries(catalog);
+        this.scanDevices = new ScanDevices(providers.deviceLink());
+        this.writeControl = new WriteDeviceControl(providers.deviceLink());
+        this.runAction = new RunDeviceAction(providers.deviceLink());
         this.scanPermission = new BluetoothScanPermission(app);
+        new SyncActiveDevice(roster, session, clock).start();
     }
 
     @NonNull
     public ViewModelProvider.Factory homeFactory() {
         return new Factory<>(DeviceHomeViewModel.class,
-                () -> new DeviceHomeViewModel(catalog, observeDevice, connectDevice,
-                        writeControl, homeMapper));
+                () -> new DeviceHomeViewModel(observeRoster, listEntries, openDevice,
+                        renameDevice, forgetDevice, homeMapper));
     }
 
     @NonNull
     public ViewModelProvider.Factory scanFactory() {
         return new Factory<>(ScanViewModel.class,
-                () -> new ScanViewModel(scanDevices, connectDevice, catalog, scanPermission));
+                () -> new ScanViewModel(scanDevices, openDevice, catalog, scanPermission));
     }
 
     @NonNull
     public ViewModelProvider.Factory settingsFactory(@NonNull DeviceCapabilityGroup group) {
         return new Factory<>(DeviceSettingsViewModel.class,
                 () -> new DeviceSettingsViewModel(group, catalog, observeDevice,
-                        writeControl, runAction, settingsMapper));
+                        writeControl, runAction, forgetDevice, observeRoster,
+                        settingsMapper));
     }
 
     /**

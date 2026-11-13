@@ -4,7 +4,6 @@ import android.view.View;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
@@ -17,11 +16,13 @@ import com.ggec.earbuds.ui.device.TogglePresentation;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
 import com.yohu.youi.api.containers.list.ListTextSpec;
 import com.yohu.youi.api.controls.YoSwitch;
+import com.yohu.youi.api.navigation.YoMenu;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,6 +48,10 @@ public final class SettingsRowsView implements SettingsSectionView {
     private final SettingsChrome chrome;
     private final LinearLayout content;
     private final List<Runnable> releases = new ArrayList<>();
+    /** 本视图自己创建、需要随视图释放的 YoUI 组件（选项菜单）。 */
+    private final YoComponents components = new YoComponents();
+    /** 上次真正重建时的输入签名：相同输入不再拆掉整棵控件树。 */
+    private String renderedSignature = "";
     /** 设备未上报时用户在视图层的未确认开关位置；不写回设备状态。 */
     private final Map<String, Boolean> pendingToggles = new HashMap<>();
     /** 设备未上报时用户在视图层的未确认曲线；仅用于「已保存」呈现与编辑器回填。 */
@@ -76,6 +81,11 @@ public final class SettingsRowsView implements SettingsSectionView {
     @Override
     public void render(@NonNull DeviceSettingsUiState state) {
         lastState = state;
+        String signature = signatureOf(state);
+        if (signature.equals(renderedSignature)) {
+            return;
+        }
+        renderedSignature = signature;
         content.removeAllViews();
         release();
         for (DeviceSettingRow row : state.rows()) {
@@ -111,8 +121,16 @@ public final class SettingsRowsView implements SettingsSectionView {
             customEqSheet.destroy();
             customEqSheet = null;
         }
+        components.close();
         content.removeAllViews();
         release();
+    }
+
+    /** 行数据 + 可交互 + 视图层「未确认」状态任何一项变了才重建。 */
+    @NonNull
+    private String signatureOf(@NonNull DeviceSettingsUiState state) {
+        return state.rows() + "\u0001" + state.interactive() + "\u0001"
+                + pendingToggles + "\u0001" + curveDrafts;
     }
 
     private void release() {
@@ -246,11 +264,22 @@ public final class SettingsRowsView implements SettingsSectionView {
         for (int index = 0; index < options.size(); index++) {
             labels[index] = options.get(index).title();
         }
-        new AlertDialog.Builder(activity)
-                .setTitle(row.title())
-                .setItems(labels, (dialog, which) -> viewModel.write(row.capabilityId(),
-                        new ControlValue.Choice(options.get(which).id())))
-                .show();
+        YoMenu.Builder builder = YoMenu.create(activity)
+                .setAnchorView(activity.findViewById(android.R.id.content));
+        for (int index = 0; index < labels.length; index++) {
+            builder.addItem(index, labels[index]);
+        }
+        YoMenu menu = builder
+                .setOnItemClickListener(id -> {
+                    if (id < 0 || id >= options.size()) {
+                        return;
+                    }
+                    viewModel.write(row.capabilityId(),
+                            new ControlValue.Choice(options.get(id).id()));
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
     }
 
     private void openCustomEq(@NonNull DeviceSettingRow.Curve row) {

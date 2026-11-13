@@ -91,7 +91,8 @@ public sealed interface DeviceSettingRow {
         RESET_CONTROL,
         RECORD_LOCAL,
         RECORD_STREAM,
-        RECORD_TRANSFER
+        RECORD_TRANSFER,
+        DEVICE_MANAGEMENT
     }
 
     /** 需要专门列表组件的列表类型。 */

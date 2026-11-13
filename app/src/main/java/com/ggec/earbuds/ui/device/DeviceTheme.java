@@ -56,6 +56,8 @@ public final class DeviceTheme {
     public static final float PAGE_INSET = 20f;
     public static final float LIST_EDGE = 16f;
     public static final float HEADER_HEIGHT = 56f;
+    /** 已连接状态点：与业务状态色一致，不随深浅色变化。 */
+    public static final int CONNECTED_GREEN = 0xFF22C55E;
     public static final float ROW_HEIGHT = 56f;
     public static final float TOUCH_TARGET = 40f;
     public static final float EMPTY_TOP = 88f;

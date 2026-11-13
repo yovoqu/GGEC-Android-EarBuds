@@ -4,13 +4,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
+import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
 import com.ggec.earbuds.ui.common.YoUi;
+import com.ggec.earbuds.ui.device.DeviceFailureText;
 import com.ggec.earbuds.wiring.AppContainer;
 import com.yohu.youi.api.feedback.YoToast;
 
@@ -43,7 +47,7 @@ public final class ScanActivity extends AppCompatActivity {
         screen = new ScanScreen(this, new ScanScreen.Listener() {
             @Override
             public void onBack() {
-                finish();
+                leaveUnlessConnecting();
             }
 
             @Override
@@ -59,7 +63,6 @@ public final class ScanActivity extends AppCompatActivity {
             @Override
             public void onConnect(@NonNull ScanItem item) {
                 viewModel.connect(item);
-                finish();
             }
         });
         setContentView(screen.view());
@@ -77,6 +80,19 @@ public final class ScanActivity extends AppCompatActivity {
                 return;
             }
             YoToast.showWarning(this, getString(event.messageRes()));
+        });
+        viewModel.connectOutcomes().observe(this, outcome -> {
+            if (outcome instanceof ScanConnectOutcome.Succeeded) {
+                finish();
+            } else if (outcome instanceof ScanConnectOutcome.Failed failed) {
+                YoToast.showWarning(this, getString(DeviceFailureText.message(failed.failure())));
+            }
+        });
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                leaveUnlessConnecting();
+            }
         });
         // 进页即请求一次扫描：是否可扫由 VM 判定，权限缺失时它会发 PERMISSION_REQUIRED。
         // 走 enterScan() 而不是 toggleScan()——后者是翻转语义，配置变更重建会把正在跑的扫描翻停。
@@ -112,6 +128,13 @@ public final class ScanActivity extends AppCompatActivity {
      * 发起系统权限请求并把「已授权」这一确定结果回传 VM。
      * 这里不做扫描决策：请求返回 true 只说明权限已具备，仍由 VM 决定是否开扫。
      */
+    private void leaveUnlessConnecting() {
+        if (viewModel.isConnecting()) {
+            return;
+        }
+        finish();
+    }
+
     private void requestScanPermissions() {
         if (permissionRequest.ensureGranted()) {
             viewModel.onPermissionAnswer(true);

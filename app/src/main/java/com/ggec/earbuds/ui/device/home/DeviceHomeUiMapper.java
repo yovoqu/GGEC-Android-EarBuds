@@ -1,128 +1,108 @@
 package com.ggec.earbuds.ui.device.home;
 
+import androidx.annotation.NonNull;
+
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.BatterySnapshot;
-import com.ggec.earbuds.domain.device.model.CapabilityOption;
-import com.ggec.earbuds.domain.device.model.ConnectionState;
-import com.ggec.earbuds.domain.device.model.ControlValue;
-import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
-import com.ggec.earbuds.domain.device.model.DeviceCapabilityView;
+import com.ggec.earbuds.domain.device.model.DeviceEntry;
+import com.ggec.earbuds.domain.device.model.DeviceId;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
-import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.DeviceState;
-import com.ggec.earbuds.domain.device.model.WearState;
+import com.ggec.earbuds.domain.device.model.DeviceRecord;
+import com.ggec.earbuds.domain.device.model.DeviceRoster;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceGroupLabels;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
-/** 协议快照 + 能力描述 → 设备首页。不调用项目 SDK。 */
+/**
+ * 台账 + 能力入口 → 设备页。纯映射：不碰 View、Context、存储、时钟。
+ *
+ * <p>规则：只有「已连接」的设备才给标题、副标题与能力入口；历史设备只出现在下拉里。
+ * 型号名与能力都来自 biz 目录，APP 不维护型号表，也不按能力名推断分区。</p>
+ */
 public final class DeviceHomeUiMapper {
 
-    public DeviceHomeUiState map(DeviceProfileView profile, DeviceSnapshot snapshot) {
-        if (profile == null || snapshot == null) {
-            return DeviceHomeUiState.disconnected();
+    private final DeviceCapabilityCatalog catalog;
+
+    public DeviceHomeUiMapper(@NonNull DeviceCapabilityCatalog catalog) {
+        this.catalog = Objects.requireNonNull(catalog, "catalog");
+    }
+
+    @NonNull
+    public DeviceHomeUiState map(@NonNull DeviceRoster roster,
+                                 @NonNull List<DeviceEntry> entries) {
+        DeviceRecord active = liveActive(roster);
+        List<DeviceHomeUiState.Choice> choices = new ArrayList<>(roster.devices().size());
+        for (DeviceRecord record : roster.sorted()) {
+            choices.add(choice(record, roster.activeId()));
         }
-        ConnectionState connection = snapshot.connection();
-        if (connection != ConnectionState.READY && connection != ConnectionState.CONNECTING) {
-            return DeviceHomeUiState.disconnected();
+        List<DeviceHomeUiState.Entry> cards = new ArrayList<>(entries.size());
+        for (DeviceEntry entry : entries) {
+            cards.add(new DeviceHomeUiState.Entry(entry.group(),
+                    DeviceGroupLabels.title(entry.group()),
+                    DeviceGroupLabels.icon(entry.group()),
+                    entry.capabilityCount()));
         }
-        BatterySnapshot battery = snapshot.battery();
-        String bleName = snapshot.bleName();
-        return new DeviceHomeUiState(
-                DeviceFormats.textOrUnknown(bleName.isEmpty() ? snapshot.modelId() : bleName),
-                bleName.isEmpty() ? "" : snapshot.modelId(),
-                connectionTextRes(connection),
-                true,
-                DeviceFormats.battery(battery.left()),
-                DeviceFormats.battery(battery.right()),
-                DeviceFormats.battery(battery.caseLevel()),
-                wearTextRes(snapshot.wearState()),
-                battery.caseCharging() ? R.string.device_charging_on : 0,
-                snapshot.firmware(),
-                connection == ConnectionState.READY,
-                sections(profile, snapshot.state()));
-    }
-
-    static List<DeviceHomeUiState.Section> sections(DeviceProfileView profile, DeviceState state) {
-        Map<DeviceCapabilityGroup, List<DeviceHomeUiState.Row>> grouped =
-                new EnumMap<>(DeviceCapabilityGroup.class);
-        for (DeviceCapabilityView capability : profile.capabilities()) {
-            row(capability, state).ifPresent(row ->
-                    grouped.computeIfAbsent(capability.group(), group -> new ArrayList<>()).add(row));
+        if (active == null) {
+            boolean known = !choices.isEmpty();
+            // 没有连接中的设备就没有能力入口：入口描述的是“这台设备现在能做什么”。
+            return new DeviceHomeUiState("", "", choices, List.of(),
+                    R.string.device_home_empty_title,
+                    known ? R.string.device_home_disconnected_body
+                            : R.string.device_home_empty_body);
         }
-        List<DeviceHomeUiState.Section> sections = new ArrayList<>();
-        for (DeviceCapabilityGroup group : DeviceCapabilityGroup.values()) {
-            List<DeviceHomeUiState.Row> rows = grouped.get(group);
-            if (rows == null || rows.isEmpty()) {
-                continue;
-            }
-            sections.add(new DeviceHomeUiState.Section(group, DeviceGroupLabels.title(group), rows));
+        return new DeviceHomeUiState(nameOf(active), subtitle(active), choices, cards,
+                R.string.device_home_empty_title, R.string.device_home_empty_body);
+    }
+
+    private static DeviceRecord liveActive(@NonNull DeviceRoster roster) {
+        Optional<DeviceId> activeId = roster.activeId();
+        if (activeId.isEmpty()) {
+            return null;
         }
-        return sections;
+        DeviceRecord record = roster.find(activeId.get()).orElse(null);
+        return record != null && record.live() ? record : null;
     }
 
-    private static Optional<DeviceHomeUiState.Row> row(DeviceCapabilityView capability, DeviceState state) {
-        return switch (capability.kind()) {
-            case TOGGLE -> Optional.of(new DeviceHomeUiState.Row.Toggle(
-                    capability.id(), capability.title(), toggleOf(state, capability.id())));
-            case CHOICE -> Optional.of(new DeviceHomeUiState.Row.Choice(
-                    capability.id(), capability.title(), choiceLabel(capability, state),
-                    capability.options()));
-            case GATE -> Optional.empty();
-            case ACTION, LEVEL, CURVE, LIST -> Optional.of(new DeviceHomeUiState.Row.Link(
-                    capability.id(), capability.title()));
-        };
+    @NonNull
+    private static String nameOf(@NonNull DeviceRecord record) {
+        String classic = record.identity().classicName();
+        if (!classic.isEmpty()) {
+            return classic;
+        }
+        String ble = record.identity().bleName();
+        return ble.isEmpty() ? record.displayName() : ble;
     }
 
-    private static Optional<Boolean> toggleOf(DeviceState state, String capabilityId) {
-        return state.value(capabilityId).flatMap(DeviceHomeUiMapper::asToggle);
+    @NonNull
+    private String subtitle(@NonNull DeviceRecord record) {
+        return record.id().displayAddress() + DeviceFormats.META_SEPARATOR
+                + modelName(record.id().modelId());
     }
 
-    private static Optional<Boolean> asToggle(ControlValue value) {
-        return switch (value) {
-            case ControlValue.Toggle toggle -> Optional.of(toggle.enabled());
-            case ControlValue.Level level -> Optional.empty();
-            case ControlValue.Choice choice -> Optional.empty();
-            case ControlValue.Curve curve -> Optional.empty();
-        };
+    @NonNull
+    private DeviceHomeUiState.Choice choice(@NonNull DeviceRecord record,
+                                            @NonNull Optional<DeviceId> activeId) {
+        boolean selected = activeId.map(id -> id.equals(record.id())).orElse(false);
+        return new DeviceHomeUiState.Choice(
+                record.id().key(),
+                nameOf(record),
+                record.id().displayAddress(),
+                modelName(record.id().modelId()),
+                selected && record.live());
     }
 
-    private static Optional<String> choiceLabel(DeviceCapabilityView capability, DeviceState state) {
-        return state.value(capability.id()).flatMap(value -> switch (value) {
-            case ControlValue.Choice choice -> optionTitle(capability.options(), choice.optionId());
-            case ControlValue.Toggle toggle -> Optional.empty();
-            case ControlValue.Level level -> Optional.empty();
-            case ControlValue.Curve curve -> Optional.empty();
-        });
-    }
-
-    private static Optional<String> optionTitle(List<CapabilityOption> options, String optionId) {
-        for (CapabilityOption option : options) {
-            if (option.id().equals(optionId)) {
-                return Optional.of(option.title());
+    /** 型号显示名来自 biz 设备资料；查不到就显示型号 id，不编名字。 */
+    @NonNull
+    private String modelName(@NonNull String modelId) {
+        for (DeviceProfileView profile : catalog.models()) {
+            if (profile.modelId().equals(modelId)) {
+                return profile.displayName();
             }
         }
-        return Optional.empty();
-    }
-
-    private static int connectionTextRes(ConnectionState state) {
-        return switch (state) {
-            case IDLE -> R.string.device_state_idle;
-            case CONNECTING -> R.string.device_state_connecting;
-            case READY -> R.string.device_state_ready;
-            case DISCONNECTED -> R.string.device_state_disconnected;
-        };
-    }
-
-    private static int wearTextRes(WearState wear) {
-        return switch (wear) {
-            case UNKNOWN -> R.string.device_wear_unknown;
-            case NOT_WORN -> R.string.device_wear_none;
-        };
+        return modelId;
     }
 }
