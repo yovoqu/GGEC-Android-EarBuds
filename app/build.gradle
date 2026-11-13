@@ -44,6 +44,7 @@ dependencies {
     implementation project(':lib_ai')
     implementation project(':biz_appupdate')
     implementation project(':biz_ggec_hs')
+    implementation project(':biz_ggec_record')
 
     implementation files('libs/youi_kit-1.0.0.aar')
     implementation 'androidx.appcompat:appcompat:1.8.0'
@@ -379,7 +380,10 @@ tasks.register('checkAppSdkProviderBoundary') {
                 def businessSdk = line =~ /^\s*import\s+com\.yovo\.(lib_bluetooth|lib_ai|biz_ggec_hs)\./
                 def libCommonCapability = (line =~ /^\s*import\s+com\.yovo\.lib_common\./) \
                         && !(line =~ /^\s*import\s+com\.yovo\.lib_common\.event\./)
-                if (businessSdk || libCommonCapability) {
+                // biz_ggec_record 仅允许 com.ggec.earbuds.record.** 引用公开 API。
+                def recordSdk = (line =~ /^\s*import\s+com\.yovo\.biz_ggec_record\./) \
+                        && !(rel.contains('/com/ggec/earbuds/record/'))
+                if (businessSdk || libCommonCapability || recordSdk) {
                     offenders << "${rel}:${index + 1}: ${line.trim()}"
                 }
             }
@@ -397,7 +401,7 @@ tasks.register('checkAppSdkProviderBoundary') {
         }
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                    'App 不直接依赖 lib_bluetooth。非 provider 只通过本模块端口，provider 只调用 biz_ggec_hs 公开接口:\n'
+                    'App 不直接依赖 lib_bluetooth。非 provider 只通过本模块端口；biz_ggec_hs 公开接口仅 provider；biz_ggec_record 仅 record/**:\n'
                             + offenders.join('\n'))
         }
     }

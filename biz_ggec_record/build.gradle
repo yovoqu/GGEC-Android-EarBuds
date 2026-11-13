@@ -1,0 +1,138 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.biz_ggec_record'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    // sherpa-onnx native AssetManager 需要未压缩的 .onnx。
+    androidResources {
+        noCompress 'onnx'
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation project(':lib_bluetooth')
+    implementation files('libs/sherpa-onnx-2.0.1.aar')
+    // sherpa-onnx AAR 为 Kotlin 编译产物，Java 调用需 stdlib。
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.0.20'
+    implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def bizGgecRecordRoot = project.projectDir
+
+tasks.register('checkBizGgecRecordBoundary') {
+    group = 'verification'
+    description = 'Keep Record media/ASR off lib_bluetooth internals and keep BLE calls inside the provider.'
+    doLast {
+        def offenders = []
+        def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
+
+        fileTree(bizGgecRecordRoot) {
+            include 'src/main/java/**/*.java'
+            include 'src/test/java/**/*.java'
+        }.each { file ->
+            def path = rel(file)
+            def inProvider = path.contains('/provider/lib_bluetooth/')
+            def inInternalMedia = path.contains('/internal/video/') ||
+                    path.contains('/internal/audio/') ||
+                    path.contains('/internal/asr/') ||
+                    path.contains('/internal/link/')
+            file.eachLine { line, index ->
+                if (line =~ /import\s+com\.yovo\.lib_bluetooth\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (!inProvider && line =~ /import\s+com\.yovo\.lib_bluetooth\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (inProvider && (line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.video\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.audio\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.asr\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (inInternalMedia && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.provider\./
+                        || line =~ /import\s+android\.bluetooth\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                def rootFacade = path ==~ /(?:^|\/)biz_ggec_record\/src\/main\/java\/com\/yovo\/biz_ggec_record\/YoRecord[^\/]*\.java/
+                def apiOrModel = path.contains('/biz_ggec_record/src/main/java/com/yovo/biz_ggec_record/api/')
+                        || path.contains('/biz_ggec_record/src/main/java/com/yovo/biz_ggec_record/model/')
+                def publicSurface = apiOrModel || rootFacade
+                if (publicSurface && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
+                        || line =~ /import\s+android\.bluetooth\./)) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if ((apiOrModel || rootFacade)
+                        && line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                if (rootFacade && line =~ /import\s+com\.yovo\.biz_ggec_record\.provider\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+                // 库内禁止 Activity / 布局系统控件，Surface 参数除外（允许 android.view.Surface）。
+                if (line =~ /import\s+android\.app\.Activity/
+                        || line =~ /import\s+androidx\.appcompat\.app\./
+                        || line =~ /import\s+android\.widget\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+            }
+        }
+
+        fileTree(project.rootDir) {
+            include '**/*.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'biz_ggec_record/**'
+            exclude 'bleplayer-master/**'
+        }.each { file ->
+            def path = rel(file)
+            file.eachLine { line, index ->
+                if (line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\./
+                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.provider\./) {
+                    offenders << "${path}:${index}: ${line.trim()}"
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_ggec_record 边界被打破:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkBizGgecRecordBoundary'
+}
+
+tasks.named('preBuild') {
+    dependsOn 'checkBizGgecRecordBoundary'
+}
