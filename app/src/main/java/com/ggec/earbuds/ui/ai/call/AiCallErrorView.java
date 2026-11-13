@@ -66,7 +66,7 @@ public final class AiCallErrorView extends LinearLayout {
         addView(reasonText, reasonParams);
 
         // 操作恢复按钮
-        actionButton = theme.text(AiTheme.TEXT_BODY, Color.WHITE, AiTheme.Weight.MEDIUM);
+        actionButton = theme.text(AiTheme.TEXT_BODY, AiTheme.MEDIA_WHITE, AiTheme.Weight.MEDIUM);
         actionButton.setGravity(Gravity.CENTER);
         actionButton.setPadding(theme.dp(AiTheme.SPACE_XL), theme.dp(AiTheme.SPACE_M),
                 theme.dp(AiTheme.SPACE_XL), theme.dp(AiTheme.SPACE_M));
@@ -95,18 +95,16 @@ public final class AiCallErrorView extends LinearLayout {
         }
 
         setVisibility(VISIBLE);
-        if (reasonRes != null) {
-            reasonText.setText(reasonRes);
-        } else {
-            reasonText.setText(R.string.ai_failure_network);
-        }
+        // 失败分类缺失时只说“出了点问题”，不替协议编一个具体原因（原先显示成网络失败）。
+        reasonText.setText(reasonRes != null ? reasonRes : R.string.ai_call_error_unknown);
 
-        if (action == AiCallUiState.Action.RETRY) {
-            actionButton.setText(R.string.ai_call_retry);
-        } else if (action == AiCallUiState.Action.SETTINGS) {
-            actionButton.setText(R.string.ai_call_failed_action);
-        } else {
-            actionButton.setText(R.string.ai_call_retry);
+        if (action == AiCallUiState.Action.NONE) {
+            actionButton.setVisibility(GONE);
+            return;
         }
+        actionButton.setVisibility(VISIBLE);
+        actionButton.setText(action == AiCallUiState.Action.SETTINGS
+                ? R.string.ai_call_failed_action
+                : R.string.ai_call_retry);
     }
 }

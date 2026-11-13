@@ -82,7 +82,7 @@ final class AiChatHeaderView extends LinearLayout {
         float target = visible ? 1f : 0f;
         if (rule.getAlpha() != target) {
             rule.animate().cancel();
-            rule.animate().alpha(target).setDuration(160).start();
+            rule.animate().alpha(target).setDuration(AiTheme.DURATION_M).start();
         }
     }
 }

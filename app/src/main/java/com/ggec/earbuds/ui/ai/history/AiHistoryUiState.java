@@ -1,7 +1,6 @@
 package com.ggec.earbuds.ui.ai.history;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import java.util.List;
 
@@ -17,16 +16,21 @@ record AiHistoryUiState(
         items = List.copyOf(items);
     }
 
+    /** 首帧：还没有读过列表。 */
     @NonNull
-    static AiHistoryUiState from(@Nullable Boolean loadedValue,
-                                 @Nullable Boolean failedValue,
-                                 @Nullable List<AiHistoryItemUi> itemValue) {
-        boolean loaded = Boolean.TRUE.equals(loadedValue);
-        boolean loadFailed = Boolean.TRUE.equals(failedValue);
-        List<AiHistoryItemUi> items = itemValue == null ? List.of() : itemValue;
-        boolean content = loaded && !items.isEmpty();
-        return new AiHistoryUiState(items, !loaded, content,
-                loaded && items.isEmpty() && !loadFailed,
-                loadFailed);
+    static AiHistoryUiState initial() {
+        return new AiHistoryUiState(List.of(), true, false, false, false);
+    }
+
+    /**
+     * 一次读取的终态：有行就是内容态，没行就是空态；读取失败单独标出，
+     * 空列表 + 失败时显示失败态而不是“暂无会话”。
+     */
+    @NonNull
+    static AiHistoryUiState of(@NonNull List<AiHistoryItemUi> items, boolean failed) {
+        List<AiHistoryItemUi> copied = List.copyOf(items);
+        boolean content = !copied.isEmpty();
+        return new AiHistoryUiState(copied, false, content,
+                copied.isEmpty() && !failed, failed);
     }
 }

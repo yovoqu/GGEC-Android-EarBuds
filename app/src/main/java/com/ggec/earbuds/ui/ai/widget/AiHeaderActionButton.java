@@ -130,14 +130,6 @@ public class AiHeaderActionButton extends AppCompatImageView {
         updateVisualState();
     }
 
-    /** 响应系统或页面深浅色主题切换 */
-    public void applyTheme(@NonNull AiTheme newTheme) {
-        this.theme = newTheme;
-        int pad = theme.dp(DEFAULT_PADDING_DP);
-        setPadding(pad, pad, pad, pad);
-        updateVisualState();
-    }
-
     /** 重新计算背景、边框、水波纹与图标着色 */
     private void updateVisualState() {
         GradientDrawable bg = new GradientDrawable();

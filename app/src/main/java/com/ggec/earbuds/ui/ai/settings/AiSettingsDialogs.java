@@ -11,6 +11,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoTextInput;
 import com.yohu.youi.api.feedback.YoDialog;
@@ -41,7 +42,7 @@ final class AiSettingsDialogs {
         for (int i = 0; i < platforms.size(); i++) {
             AiSettingsUiState.PlatformRow row = platforms.get(i);
             builder.addItem(i, row.current()
-                    ? row.name() + " · " + activity.getString(R.string.ai_settings_platform_current)
+                    ? row.name() + AiFormat.SEPARATOR + activity.getString(R.string.ai_settings_platform_current)
                     : row.name());
         }
         builder.addItem(MENU_ADD_PLATFORM, activity.getString(R.string.ai_settings_add_platform));
@@ -53,7 +54,7 @@ final class AiSettingsDialogs {
             }
         });
         YoMenu menu = builder.build();
-        menu.setOnDismissListener(menu::destroy);
+        components.own(menu::destroy);
         menu.show();
     }
 
@@ -78,7 +79,10 @@ final class AiSettingsDialogs {
         } else {
             dialog.setActions(cancel, save);
         }
-        dialog.show();
+        YoDialog created = dialog.build();
+        components.own(field::destroy);
+        components.own(created::destroy);
+        created.show();
     }
 
     void editVoiceUrl(@NonNull AiSettingsUiState.Voice voice, @NonNull Listener listener) {
@@ -87,7 +91,7 @@ final class AiSettingsDialogs {
                 .setPlaceholder(activity.getString(R.string.ai_settings_voice_url_hint))
                 .setMaxLength(MAX_VOICE_URL_LENGTH)
                 .build();
-        YoDialog.create(activity)
+        YoDialog created = YoDialog.create(activity)
                 .kind(YoDialog.Kind.INPUT)
                 .hosted(field)
                 .setButtonDirection(YoDialog.ButtonDirection.HORIZONTAL)
@@ -99,7 +103,10 @@ final class AiSettingsDialogs {
                         YoDialog.Action.positive(activity.getString(R.string.ai_settings_save),
                                 () -> listener.onVoiceBaseUrl(String.valueOf(field.getText())))
                 )
-                .show();
+                .build();
+        components.own(field::destroy);
+        components.own(created::destroy);
+        created.show();
     }
 
     void editPrompt(@NonNull String prompt, @NonNull Listener listener) {
@@ -111,7 +118,7 @@ final class AiSettingsDialogs {
                 .setShowErrorEnabled(true)
                 .setMultiline(true, 4, 8)
                 .build();
-        YoDialog.create(activity)
+        YoDialog created = YoDialog.create(activity)
                 .kind(YoDialog.Kind.INPUT)
                 .hosted(field)
                 .setTitle(activity.getString(R.string.ai_settings_prompt_dialog_title))
@@ -120,7 +127,10 @@ final class AiSettingsDialogs {
                         YoDialog.Action.positive(activity.getString(R.string.ai_settings_save),
                                 () -> listener.onPrompt(String.valueOf(field.getText())))
                 )
-                .show();
+                .build();
+        components.own(field::destroy);
+        components.own(created::destroy);
+        created.show();
     }
 
     void showAddPlatform(@NonNull List<AiPlatformTemplate> templates, @NonNull Listener listener) {

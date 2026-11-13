@@ -32,7 +32,31 @@ public final class LibAiPlatformCatalog implements AiPlatformCatalog {
 
     @Override
     public String normalizeBaseUrl(String raw) {
-        return YoPlatformCatalog.normalizeBaseUrl(raw);
+        return normalizeForRequest(raw);
+    }
+
+    /**
+     * 请求用的最终地址：先按平台目录归一（去尾斜杠、补协议），再补厂商自己的兼容路径。
+     *
+     * <p>厂商路径是<b>平台知识</b>，留在目录这一层；网关只拿结果去发请求，不再各自写一份
+     * "如果是 dashscope 就..."。</p>
+     */
+    static String normalizeForRequest(String raw) {
+        String normalized = YoPlatformCatalog.normalizeBaseUrl(raw == null ? "" : raw);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        String lower = normalized.toLowerCase(java.util.Locale.ROOT);
+        // DashScope 的 OpenAI 兼容接口（含 /models）挂在 /compatible-mode/v1 下。
+        if (lower.contains("dashscope") || lower.contains("aliyuncs")) {
+            if (lower.endsWith("/compatible-mode")) {
+                return normalized + "/v1";
+            }
+            if (!lower.endsWith("/compatible-mode/v1")) {
+                return normalized + "/compatible-mode/v1";
+            }
+        }
+        return normalized;
     }
 
     static AiProtocol protocol(YoProtocol protocol) {

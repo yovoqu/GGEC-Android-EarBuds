@@ -16,7 +16,6 @@ import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
-import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
@@ -25,8 +24,9 @@ import com.ggec.earbuds.domain.ai.usecase.LoadPlatformTemplates;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
-import com.ggec.earbuds.ui.OneShotLiveData;
+import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
@@ -42,7 +42,8 @@ import java.util.function.UnaryOperator;
  *
  * <p><b>视图偏好分离</b>：当前分段只存 {@code AiUiPreferences}，切换不写配置文档。</p>
  *
- * <p><b>持久化状态分离</b>：{@link #saveStatus()} 只把失败/恢复给页头，不进入 UiState。</p>
+ * <p><b>单一状态流</b>：持久化状态（保存中/失败/已恢复）与「可添加的平台模板」都并入
+ * {@link AiSettingsUiState}，页面只观察一条 LiveData；一次性提示仍走独立事件流。</p>
  */
 public final class AiSettingsViewModel extends ViewModel {
 
@@ -54,16 +55,15 @@ public final class AiSettingsViewModel extends ViewModel {
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
     private final AiUiPreferences uiPreferences;
-    private final AiCredentialStore credentials;
+    private final SaveVoiceApiKey saveVoiceKey;
     private final AiSettingsUiMapper mapper;
 
     private final MutableLiveData<AiSettingsUiState> uiState =
             new MutableLiveData<>(AiSettingsUiState.empty());
     private final OneShotLiveData<AiSettingsEvent> events = new OneShotLiveData<>();
-    private final MutableLiveData<AiSettingsPersistenceStatus> saveStatus =
-            new MutableLiveData<>(AiSettingsPersistenceStatus.SAVED);
-    private final MutableLiveData<List<AiPlatformTemplate>> templates =
-            new MutableLiveData<>(List.of());
+
+    private volatile AiSettingsPersistenceStatus persistence = AiSettingsPersistenceStatus.SAVED;
+    private volatile List<AiPlatformTemplate> templates = List.of();
 
     private volatile AiSettings latest = AiSettings.EMPTY;
     private AiInteractionMode displayMode = AiInteractionMode.defaultMode();
@@ -82,7 +82,7 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
                                @NonNull AiUiPreferences uiPreferences,
-                               @NonNull AiCredentialStore credentials,
+                               @NonNull SaveVoiceApiKey saveVoiceKey,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
         this.observeSettings = Objects.requireNonNull(observeSettings, "observeSettings");
@@ -92,7 +92,7 @@ public final class AiSettingsViewModel extends ViewModel {
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
         this.uiPreferences = Objects.requireNonNull(uiPreferences, "uiPreferences");
-        this.credentials = Objects.requireNonNull(credentials, "credentials");
+        this.saveVoiceKey = Objects.requireNonNull(saveVoiceKey, "saveVoiceKey");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -106,17 +106,6 @@ public final class AiSettingsViewModel extends ViewModel {
         return events;
     }
 
-    /** 只有"保存失败"和"已恢复"需要页头展示；正常保存不闪任何提示。 */
-    @NonNull
-    public LiveData<AiSettingsPersistenceStatus> saveStatus() {
-        return saveStatus;
-    }
-
-    @NonNull
-    public LiveData<List<AiPlatformTemplate>> templates() {
-        return templates;
-    }
-
     public void start() {
         if (started) {
             return;
@@ -126,7 +115,8 @@ public final class AiSettingsViewModel extends ViewModel {
         persistenceSubscription = observePersistence.execute(status -> {
             if (status == AiSettingsPersistenceStatus.FAILED
                     || status == AiSettingsPersistenceStatus.SAVED) {
-                saveStatus.postValue(status);
+                persistence = status;
+                publish();
             }
         });
         loadSettings.executeAsync().whenComplete((settings, failure) -> {
@@ -149,10 +139,11 @@ public final class AiSettingsViewModel extends ViewModel {
 
     private void loadTemplates() {
         try {
-            templates.postValue(loadTemplates.execute());
+            templates = loadTemplates.execute();
         } catch (RuntimeException unreadable) {
-            templates.postValue(List.of());
+            templates = List.of();
         }
+        publish();
     }
 
     /** 切分段只改视图偏好：不碰设置文档、不触发保存。 */
@@ -186,8 +177,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     public void saveVoiceApiKey(@NonNull String apiKey) {
-        credentials.putVoiceKey(latest.voice().model(), apiKey);
-        apply(AiSettingsChanges.voiceApiKey(apiKey));
+        saveVoiceKey.execute(latest.voice().model(), apiKey);
     }
 
     public void saveVoiceBaseUrl(@NonNull String baseUrl) {
@@ -257,7 +247,9 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     private void publish() {
-        AiSettingsUiState mapped = mapper.map(latest, displayMode);
+        AiSettingsUiState mapped = mapper.map(latest, displayMode, loaded)
+                .withPersistence(persistence)
+                .withTemplates(templates);
         if (fetchingVoice) {
             mapped = mapped.withFetchingVoice(true);
         }

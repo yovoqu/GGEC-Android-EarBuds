@@ -14,9 +14,6 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.ggec.earbuds.ui.ai.AiTheme;
-import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
-
-import java.util.List;
 
 /**
  * 通话页全景布局容器 (AiCallScreen)：
@@ -56,10 +53,6 @@ public final class AiCallScreen {
     private final AiCallErrorView errorView;
     private final AiCallControlsView controlsView;
 
-    private List<AiSubtitleItem> latestSubtitleItems = List.of();
-    private boolean captionsEnabled = true;
-    private AiCallUiState.Action currentAction = AiCallUiState.Action.NONE;
-
     public AiCallScreen(@NonNull AiTheme theme, @NonNull Listener listener) {
         this.theme = theme;
         Context context = theme.context;
@@ -69,13 +62,8 @@ public final class AiCallScreen {
         root.setClipToPadding(false);
 
         // 自适应深浅色背景：深色采用黑曜石夜空渐变，浅色采用清爽纯白雪夜渐变
-        boolean dark = theme.isDark();
         GradientDrawable pageBg = new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                dark
-                        ? new int[]{0xFF080C14, 0xFF0F172A, 0xFF080C14}
-                        : new int[]{theme.page, ColorUtils.blendARGB(theme.page, Color.WHITE, 0.4f), theme.page}
-        );
+                GradientDrawable.Orientation.TOP_BOTTOM, theme.callPageStops());
         root.setBackground(pageBg);
 
         // 1. 顶部导航栏 (ai_call_header)
@@ -96,13 +84,13 @@ public final class AiCallScreen {
             }
         });
         headerView.setId(View.generateViewId());
-        int initialStatusTop = getStatusBarHeight(context);
         ConstraintLayout.LayoutParams headerParams = new ConstraintLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT);
         headerParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
         headerParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
         headerParams.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID;
-        headerParams.topMargin = initialStatusTop + theme.dp(AiTheme.SPACE_S);
+        // 首帧只放基础间距；状态栏/刘海高度等 insets 派发后由监听器补齐。
+        headerParams.topMargin = theme.dp(AiTheme.SPACE_S);
         root.addView(headerView, headerParams);
 
         // 2. 底部黄金三键悬浮控制舱 (ai_call_controls)
@@ -180,7 +168,7 @@ public final class AiCallScreen {
                     WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
             Insets navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
 
-            int top = Math.max(statusInsets.top, getStatusBarHeight(context));
+            int top = statusInsets.top;
             ConstraintLayout.LayoutParams hp = (ConstraintLayout.LayoutParams) headerView.getLayoutParams();
             if (hp != null) {
                 hp.topMargin = top + theme.dp(AiTheme.SPACE_S);
@@ -198,9 +186,6 @@ public final class AiCallScreen {
     }
 
     public void render(@NonNull AiCallUiState state) {
-        this.captionsEnabled = state.captionsVisible();
-        this.currentAction = state.action();
-
         headerView.render(state);
         controlsView.render(state);
         errorView.render(state.reason(), state.action());
@@ -213,29 +198,15 @@ public final class AiCallScreen {
             case OFFLINE -> AiFluidVisualizerView.VisualPhase.OFFLINE;
         };
         visualizerView.setPhase(vPhase);
+        visualizerView.setAudioLevel(state.meter());
 
         if (state.action() != AiCallUiState.Action.NONE) {
             visualizerView.setVisibility(View.INVISIBLE);
             subtitleView.setVisibility(View.GONE);
         } else {
             visualizerView.setVisibility(View.VISIBLE);
-            subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
+            subtitleView.renderItems(state.subtitleItems(), state.captionsVisible());
         }
     }
 
-    public void setLevel(float level) {
-        visualizerView.setAudioLevel(level);
-    }
-
-    public void setSubtitleItems(@NonNull List<AiSubtitleItem> items) {
-        this.latestSubtitleItems = items;
-        if (currentAction == AiCallUiState.Action.NONE) {
-            subtitleView.renderItems(latestSubtitleItems, captionsEnabled);
-        }
-    }
-
-    private static int getStatusBarHeight(@NonNull Context context) {
-        int resId = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
-        return resId > 0 ? context.getResources().getDimensionPixelSize(resId) : 0;
-    }
 }

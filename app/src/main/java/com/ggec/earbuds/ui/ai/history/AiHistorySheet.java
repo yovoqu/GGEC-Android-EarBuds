@@ -186,7 +186,7 @@ public final class AiHistorySheet {
         }
         AiHistoryUiState state = viewModel.uiState().getValue();
         if (state == null) {
-            state = AiHistoryUiState.from(false, false, null);
+            state = AiHistoryUiState.initial();
         }
         clearRow.setVisibility(state.content() ? View.VISIBLE : View.GONE);
         stateView.bind(state);

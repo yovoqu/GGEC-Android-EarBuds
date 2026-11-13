@@ -9,6 +9,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 import com.ggec.earbuds.ui.ai.common.AiMessages;
 
 import java.util.List;
@@ -16,9 +17,10 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * 通话页完整界面渲染不可变快照 (AiCallUiState)。
+ * 通话页的完整界面状态：一帧渲染所需的全部数据（阶段、按钮、双工、输入源、电平、字幕）。
  *
- * <p>严格遵循单一数据源原则，直接从 {@link AiVoiceSnapshot} 投影得到，无需冗余 Mapper。</p>
+ * <p>页面只有这一条状态流：电平与字幕不再各开一条 LiveData，由 View 自己合并——
+ * 那会让中间态可被观察到，并且把组装工作留在视图层。</p>
  */
 public record AiCallUiState(
         @NonNull Phase phase,
@@ -34,13 +36,16 @@ public record AiCallUiState(
         boolean captionsVisible,
         @NonNull VoiceDuplex duplex,
         @Nullable AiAudioSource.Descriptor activeSource,
-        @NonNull List<AiAudioSource.Descriptor> availableSources) {
+        @NonNull List<AiAudioSource.Descriptor> availableSources,
+        float meter,
+        @NonNull List<AiSubtitleItem> subtitleItems) {
 
     public AiCallUiState {
         Objects.requireNonNull(phase, "phase");
         Objects.requireNonNull(action, "action");
         Objects.requireNonNull(duplex, "duplex");
         availableSources = List.copyOf(availableSources);
+        subtitleItems = List.copyOf(subtitleItems);
     }
 
     public enum Phase {
@@ -78,6 +83,8 @@ public record AiCallUiState(
                 true,
                 Objects.requireNonNull(duplex, "duplex"),
                 null,
+                List.of(),
+                0f,
                 List.of()
         );
     }
@@ -103,6 +110,8 @@ public record AiCallUiState(
                 true,
                 Objects.requireNonNull(duplex, "duplex"),
                 null,
+                List.of(),
+                0f,
                 List.of()
         );
     }
@@ -130,7 +139,9 @@ public record AiCallUiState(
                 true,
                 snapshot.duplex(),
                 snapshot.activeSource(),
-                snapshot.availableSources()
+                snapshot.availableSources(),
+                0f,
+                List.of()
         );
     }
 
@@ -145,35 +156,35 @@ public record AiCallUiState(
     public AiCallUiState withSpeakerOn(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 micMuted, value, ended, durationSeconds, captionsVisible, duplex,
-                activeSource, availableSources);
+                activeSource, availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withDurationSeconds(int value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 micMuted, speakerOn, ended, value, captionsVisible, duplex,
-                activeSource, availableSources);
+                activeSource, availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withCaptionsVisible(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 micMuted, speakerOn, ended, durationSeconds, value, duplex,
-                activeSource, availableSources);
+                activeSource, availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withMicMuted(boolean value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 value, speakerOn, ended, durationSeconds, captionsVisible, duplex,
-                activeSource, availableSources);
+                activeSource, availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withDuplex(@NonNull VoiceDuplex value) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 micMuted, speakerOn, ended, durationSeconds, captionsVisible, value,
-                activeSource, availableSources);
+                activeSource, availableSources, meter, subtitleItems);
     }
 
     @NonNull
@@ -182,7 +193,23 @@ public record AiCallUiState(
             @NonNull List<AiAudioSource.Descriptor> nextAvailableSources) {
         return new AiCallUiState(phase, title, reason, action, live, interruptible,
                 micMuted, speakerOn, ended, durationSeconds, captionsVisible, duplex,
-                nextActiveSource, nextAvailableSources);
+                nextActiveSource, nextAvailableSources, meter, subtitleItems);
+    }
+
+    /** 输入电平（0..1），越界值夹紧，避免视图层再判一次。 */
+    @NonNull
+    public AiCallUiState withMeter(float value) {
+        float clamped = Math.max(0f, Math.min(1f, value));
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                micMuted, speakerOn, ended, durationSeconds, captionsVisible, duplex,
+                activeSource, availableSources, clamped, subtitleItems);
+    }
+
+    @NonNull
+    public AiCallUiState withSubtitleItems(@NonNull List<AiSubtitleItem> items) {
+        return new AiCallUiState(phase, title, reason, action, live, interruptible,
+                micMuted, speakerOn, ended, durationSeconds, captionsVisible, duplex,
+                activeSource, availableSources, meter, List.copyOf(items));
     }
 
     @NonNull

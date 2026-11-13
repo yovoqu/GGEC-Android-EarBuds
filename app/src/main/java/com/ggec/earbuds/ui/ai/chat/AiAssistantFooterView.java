@@ -84,25 +84,11 @@ final class AiAssistantFooterView extends LinearLayout {
         regenerate.setVisibility(showRegenerate ? VISIBLE : GONE);
         delete.setVisibility(showDelete ? VISIBLE : GONE);
 
-        StringBuilder text = new StringBuilder();
-        if (next.elapsedMillis() > 0) {
-            text.append(AiFormat.duration(next.elapsedMillis()));
-        }
         int tps = AiFormat.tokensPerSecond(next.outputTokens(), next.elapsedMillis());
-        if (tps > 0) {
-            if (text.length() > 0) {
-                text.append(theme.context.getString(R.string.ai_footer_separator));
-            }
-            text.append(theme.context.getString(R.string.ai_value_speed, tps));
-        }
-        if (next.outputTokens() > 0) {
-            if (text.length() > 0) {
-                text.append(theme.context.getString(R.string.ai_footer_separator));
-            }
-            text.append(theme.context.getString(R.string.ai_value_tokens, next.outputTokens()));
-        }
+        String text = AiFormat.messageMeta(theme.context, next.elapsedMillis(), tps,
+                next.outputTokens());
         meta.setText(text);
-        meta.setVisibility(text.length() == 0 ? INVISIBLE : VISIBLE);
+        meta.setVisibility(text.isEmpty() ? INVISIBLE : VISIBLE);
     }
 
     @NonNull

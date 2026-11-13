@@ -73,6 +73,8 @@ public final class AiSettingsScreen {
     @Nullable private VoiceSettingsView voicePanel;
     @Nullable private AiSettingsUiState lastState;
     private boolean prewarmed;
+    /** 预热的延时装配任务：页面销毁时必须撤销，不能在已分离的视图树上继续建控件。 */
+    private final Runnable prewarmTask = this::prewarmInactivePanel;
     private boolean rendered;
 
     public AiSettingsScreen(@NonNull AppCompatActivity context, @NonNull AiTheme theme,
@@ -150,6 +152,11 @@ public final class AiSettingsScreen {
         return rendered;
     }
 
+    /** 撤销延时装配；组件释放由宿主统一的 {@link YoComponents} 负责。 */
+    void destroy() {
+        contentHost.removeCallbacks(prewarmTask);
+    }
+
     public void render(@NonNull AiSettingsUiState state) {
         if (state.loadFailed()) {
             loadingHint.setText(R.string.ai_settings_load_failed);
@@ -188,7 +195,7 @@ public final class AiSettingsScreen {
         // 首次渲染完成后再预热另一块面板：把 YoList/控件树的装配挪出用户的第一次点击路径。
         if (!prewarmed) {
             prewarmed = true;
-            contentHost.postDelayed(this::prewarmInactivePanel, 120L);
+            contentHost.postDelayed(prewarmTask, 120L);
         }
     }
 

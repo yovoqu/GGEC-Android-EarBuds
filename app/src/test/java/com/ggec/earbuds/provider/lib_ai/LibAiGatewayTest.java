@@ -86,6 +86,18 @@ public class LibAiGatewayTest {
     }
 
     @Test
+    public void vendorCompatiblePathIsPlatformKnowledgeNotGatewayKnowledge() {
+        assertEquals("https://dashscope.aliyuncs.com/compatible-mode/v1",
+                LibAiPlatformCatalog.normalizeForRequest("https://dashscope.aliyuncs.com"));
+        assertEquals("already complete stays untouched",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                LibAiPlatformCatalog.normalizeForRequest("https://dashscope.aliyuncs.com/compatible-mode/v1/"));
+        assertEquals("other hosts keep the SDK's own normalization (it strips the version suffix)",
+                "https://api.example.com",
+                LibAiPlatformCatalog.normalizeForRequest("https://api.example.com/v1/"));
+    }
+
+    @Test
     public void voiceGatewayNormalizesDashScopeBareHostToCompatibleModeV1() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[{"id":"qwen3.8-omni-flash-realtime"}]}
@@ -104,7 +116,7 @@ public class LibAiGatewayTest {
     }
 
     @Test
-    public void fetchDropsRealtimeModelsBecauseThePlatformPageIsTextOnly() throws Exception {
+    public void fetchReturnsEveryModelAndLeavesSelectionToTheDomain() throws Exception {
         server.enqueue(new MockResponse().setBody("""
                 {"object":"list","data":[
                   {"id":"gpt-4o","created":1715367049},
@@ -114,7 +126,12 @@ public class LibAiGatewayTest {
 
         List<AiModel> models = new LibAiModelGateway(pool, credentials).fetch(config(AiProtocol.CHAT_COMPLETIONS));
 
-        assertEquals(List.of("gpt-4o"), models.stream().map(AiModel::id).toList());
+        assertEquals("网关只做映射，实时模型也原样交回",
+                List.of("gpt-4o", "gpt-4o-realtime-preview"),
+                models.stream().map(AiModel::id).toList());
+        assertEquals("文本页可用模型由领域决定", List.of("gpt-4o"),
+                config(AiProtocol.CHAT_COMPLETIONS).withModels(models, 0L).chatModels()
+                        .stream().map(AiModel::id).toList());
     }
 
     @Test
@@ -132,11 +149,17 @@ public class LibAiGatewayTest {
 
         List<AiModel> models = new LibAiModelGateway(pool, credentials).fetch(config(AiProtocol.CHAT_COMPLETIONS));
 
-        assertEquals(List.of("gpt-new", "o3-mini", "gpt-old", "no-date-a", "no-date-b"),
+        assertEquals(List.of("gpt-new", "text-embedding-3-small", "o3-mini", "whisper-1",
+                        "gpt-old", "no-date-a", "no-date-b"),
                 models.stream().map(AiModel::id).toList());
+        assertEquals("对话模型是新排序里的可对话子集",
+                List.of("gpt-new", "o3-mini", "gpt-old", "no-date-a", "no-date-b"),
+                config(AiProtocol.CHAT_COMPLETIONS).withModels(models, 0L).chatModels()
+                        .stream().map(AiModel::id).toList());
         assertEquals(Integer.valueOf(128_000), models.get(0).contextWindow());
         assertTrue(models.get(0).features().contains(AiModelFeature.VISION));
-        assertTrue(models.get(1).reasoning());
+        assertTrue(models.stream().filter(model -> model.id().equals("o3-mini"))
+                .findFirst().orElseThrow().reasoning());
         assertTrue(models.stream().noneMatch(AiModel::manual));
         RecordedRequest request = server.takeRequest();
         assertEquals("/v1/models", request.getPath());

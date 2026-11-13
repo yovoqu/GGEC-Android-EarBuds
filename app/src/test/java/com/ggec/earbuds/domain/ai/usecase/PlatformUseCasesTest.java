@@ -255,15 +255,18 @@ public class PlatformUseCasesTest {
         AiCancellable handle = new RunSpeedTest(repository, gateway, clock)
                 .execute("deepseek", List.of("deepseek-chat", "deepseek-reasoner"), observer);
         gateway.listener.onStarted("deepseek-chat");
-        gateway.listener.onResult(new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 320, 700, null, null, 0));
+        gateway.listener.onResult(new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 320, 700, null, null, 0, 55));
         gateway.listener.onResult(new AiSpeedResult("deepseek-reasoner", AiSpeedResult.Status.TIMEOUT, -1, 25_000,
-                AiFailureKind.TIMEOUT, null, 0));
+                AiFailureKind.TIMEOUT, null, 0, -1));
         gateway.listener.onComplete(false);
 
         assertEquals(List.of("start:deepseek-chat", "result:deepseek-chat:9000", "result:deepseek-reasoner:9000", "done:false"),
                 observer.log);
         AiPlatformConfig stored = repository.load().platform("deepseek").orElseThrow();
         assertEquals(320, stored.speedResults().get("deepseek-chat").firstTokenMillis());
+        assertEquals("写回时不能丢掉网关给出的 outputTokens", 55,
+                stored.speedResults().get("deepseek-chat").outputTokens());
+        assertEquals(145, stored.speedResults().get("deepseek-chat").tokensPerSecond());
         assertEquals(9_000L, stored.speedResults().get("deepseek-chat").testedAtMillis());
         assertEquals(AiSpeedResult.Status.TIMEOUT, stored.speedResults().get("deepseek-reasoner").status());
         handle.cancel();
@@ -287,7 +290,7 @@ public class PlatformUseCasesTest {
         new RunSpeedTest(repository, gateway, clock).execute("deepseek", List.of("deepseek-chat"), new RecordingObserver());
 
         new RemovePlatform(repository).execute("deepseek");
-        gateway.listener.onResult(new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 1, 2, null, null, 0));
+        gateway.listener.onResult(new AiSpeedResult("deepseek-chat", AiSpeedResult.Status.OK, 1, 2, null, null, 0, -1));
 
         assertTrue(repository.load().platforms().isEmpty());
     }

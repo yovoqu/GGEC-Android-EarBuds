@@ -1,5 +1,6 @@
 package com.ggec.earbuds.ui.ai.settings;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -12,9 +13,11 @@ import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSelection;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,15 +42,26 @@ public final class AiSettingsUiMapper {
      */
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings, @NonNull AiInteractionMode mode) {
-        return new AiSettingsUiState(true, false, mode, hint(mode), platforms(settings),
-                identity(settings), voice(settings.voice()), style(settings));
+        return map(settings, mode, true);
+    }
+
+    /**
+     * @param loaded 是否已经拿到首个快照。页面在首帧之前也会用空设置投影一次（模板/持久化状态先到），
+     *               那时仍是加载态，不能标成已加载。
+     */
+    @NonNull
+    public AiSettingsUiState map(@NonNull AiSettings settings, @NonNull AiInteractionMode mode,
+                                 boolean loaded) {
+        // 持久化状态与平台模板是页面级数据，由 ViewModel 用 withPersistence/withTemplates 叠加；
+        // mapper 只把领域设置翻成界面状态，保持纯函数。
+        return new AiSettingsUiState(loaded, false, mode, hint(mode), platforms(settings),
+                identity(settings), voice(settings.voice()), style(settings),
+                AiSettingsPersistenceStatus.SAVED, List.of());
     }
 
     @NonNull
     private static AiText hint(@NonNull AiInteractionMode mode) {
-        return AiText.of(mode == AiInteractionMode.VOICE
-                ? R.string.ai_settings_mode_voice_hint
-                : R.string.ai_settings_mode_text_hint);
+        return AiSettingsUiState.modeHint(mode);
     }
 
     // ---- 平台 ----
@@ -72,28 +86,11 @@ public final class AiSettingsUiMapper {
             return AiText.of(R.string.ai_settings_platform_no_key);
         }
         String count = String.valueOf(platform.models().size());
-        String host = host(platform.baseUrl());
+        String host = AiFormat.host(platform.baseUrl());
         if (host.isEmpty()) {
             return AiText.of(R.string.ai_settings_platform_models, count);
         }
         return AiText.of(R.string.ai_settings_platform_summary, count, host);
-    }
-
-    /** 副标题里不放协议头：一段 https:// 会把地址挤到看不见，而它从来不变。 */
-    @NonNull
-    private static String host(@Nullable String baseUrl) {
-        if (baseUrl == null) {
-            return "";
-        }
-        String value = baseUrl.strip();
-        int scheme = value.indexOf("://");
-        if (scheme >= 0) {
-            value = value.substring(scheme + 3);
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
     }
 
     // ---- 文本身份卡 ----
@@ -122,7 +119,8 @@ public final class AiSettingsUiMapper {
         for (AiVoiceModel model : AiVoiceModel.values()) {
             options.add(new AiSettingsUiState.VoiceOption(model.id(), model.displayName(),
                     model == config.model(),
-                    config.configuredProviders().contains(model)));
+                    config.configuredProviders().contains(model),
+                    icon(model)));
         }
         List<AiSettingsUiState.VoiceModelOption> models =
                 new ArrayList<>(config.realtimeModels().size());
@@ -134,7 +132,16 @@ public final class AiSettingsUiMapper {
                 config.configured(), options,
                 config.effectiveBaseUrl(), !config.baseUrl().isEmpty(),
                 config.realtimeModelId(), models, false,
-                defaultDuplex.id(), duplexOptions(defaultDuplex));
+                defaultDuplex.id(), duplexOptions(defaultDuplex), icon(config.model()));
+    }
+
+    /** 服务商图标：归属映射层，视图不再按厂商 id 自己 switch。 */
+    @DrawableRes
+    private static int icon(@NonNull AiVoiceModel model) {
+        return switch (model) {
+            case CHATGPT -> R.drawable.ic_ai_provider_chatgpt;
+            case QWEN -> R.drawable.ic_ai_provider_qwen;
+        };
     }
 
     @NonNull

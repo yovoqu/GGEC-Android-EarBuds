@@ -47,6 +47,7 @@ import com.ggec.earbuds.domain.ai.usecase.RemoveModel;
 import com.ggec.earbuds.domain.ai.usecase.RemovePlatform;
 import com.ggec.earbuds.domain.ai.usecase.RunSpeedTest;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
@@ -172,7 +173,7 @@ public final class AiGraph {
                 return modelClass.cast(newChatViewModel());
             }
             if (AiCallViewModel.class.equals(modelClass)) {
-                return modelClass.cast(new AiCallViewModel(voiceSessions()));
+                return modelClass.cast(new AiCallViewModel(voiceSessions(), new MainThreadTicker()));
             }
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(
@@ -183,7 +184,7 @@ public final class AiGraph {
                         realtimeFetch,
                         new LoadPlatformTemplates(catalog),
                         new SharedPreferencesAiUiPreferences(context),
-                        credentials,
+                        new SaveVoiceApiKey(settings, credentials),
                         new AiSettingsUiMapper()));
             }
             if (AiPlatformViewModel.class.equals(modelClass)) {

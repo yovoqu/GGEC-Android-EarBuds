@@ -27,7 +27,7 @@ public final class LibAiModelGateway implements AiModelGateway {
             throw new AiFailure(AiFailureKind.AUTHENTICATION, "API key is not configured", null);
         }
         try (LibAiClientPool.Lease lease = pool.acquire(platform, apiKey)) {
-            return LibAiModels.models(lease.client().models(platform.id()).list());
+            return LibAiModels.all(lease.client().models(platform.id()).list());
         } catch (RuntimeException error) {
             throw LibAiFailures.map(error, apiKey);
         }

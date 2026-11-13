@@ -15,20 +15,12 @@ public record AiSpeedResult(
         @Nullable AiFailureKind failureKind,
         @Nullable String message,
         long testedAtMillis,
-        /** 平台回报的输出 token 数；未回报为 -1。用来算 tok/s 而不是拿总时长充数。 */
         int outputTokens) {
 
     public enum Status {
         OK,
         FAILED,
         TIMEOUT
-    }
-
-    /** 旧调用方（测试与历史数据）不关心 token 数。 */
-    public AiSpeedResult(String modelId, Status status, long firstTokenMillis, long totalMillis,
-                         @Nullable AiFailureKind failureKind, @Nullable String message,
-                         long testedAtMillis) {
-        this(modelId, status, firstTokenMillis, totalMillis, failureKind, message, testedAtMillis, -1);
     }
 
     public AiSpeedResult {

@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.navigation.YoMenu;
 
 /** 对话页菜单：页头动作与消息长按菜单。 */
@@ -26,10 +27,13 @@ final class AiChatMenus {
     }
 
     private final AppCompatActivity activity;
+    private final YoComponents components;
     private final Listener listener;
 
-    AiChatMenus(@NonNull AppCompatActivity activity, @NonNull Listener listener) {
+    AiChatMenus(@NonNull AppCompatActivity activity, @NonNull YoComponents components,
+                @NonNull Listener listener) {
         this.activity = activity;
+        this.components = components;
         this.listener = listener;
     }
 
@@ -52,11 +56,11 @@ final class AiChatMenus {
                 })
                 .build();
         menu.setOnDismissListener(() -> {
-            menu.destroy();
             if (openSettingsAfterDismiss[0]) {
                 listener.onSettings();
             }
         });
+        components.own(menu::destroy);
         menu.show();
     }
 
@@ -82,7 +86,7 @@ final class AiChatMenus {
         if (message.canDelete()) {
             menu.addDestructiveItem(ACTION_DELETE, activity.getString(R.string.ai_delete));
         }
-        menu.setOnDismissListener(menu::destroy);
+        components.own(menu::destroy);
         menu.show();
     }
 }

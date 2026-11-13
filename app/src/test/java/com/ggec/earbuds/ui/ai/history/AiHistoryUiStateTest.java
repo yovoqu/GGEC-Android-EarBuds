@@ -13,7 +13,7 @@ public class AiHistoryUiStateTest {
 
     @Test
     public void loadingIsExclusiveBeforeFirstRead() {
-        AiHistoryUiState state = AiHistoryUiState.from(false, false, List.of());
+        AiHistoryUiState state = AiHistoryUiState.initial();
 
         assertTrue(state.loading());
         assertFalse(state.content());
@@ -23,8 +23,8 @@ public class AiHistoryUiStateTest {
 
     @Test
     public void emptyAndFailedAreDistinctAfterRead() {
-        AiHistoryUiState empty = AiHistoryUiState.from(true, false, List.of());
-        AiHistoryUiState failed = AiHistoryUiState.from(true, true, List.of());
+        AiHistoryUiState empty = AiHistoryUiState.of(List.of(), false);
+        AiHistoryUiState failed = AiHistoryUiState.of(List.of(), true);
 
         assertTrue(empty.empty());
         assertFalse(empty.failed());
@@ -33,12 +33,15 @@ public class AiHistoryUiStateTest {
     }
 
     @Test
-    public void rowsProduceContentOnlyWhenLoaded() {
+    public void rowsProduceContentAndEmptyRowsDoNot() {
         List<AiHistoryItemUi> rows = List.of(new AiHistoryItemUi(
                 "id", AiHistoryText.raw("title"), null, AiHistoryText.raw("now"),
                 false, AiHistoryItemUi.Group.TODAY));
 
-        assertTrue(AiHistoryUiState.from(true, false, rows).content());
-        assertFalse(AiHistoryUiState.from(false, false, rows).content());
+        assertTrue(AiHistoryUiState.of(rows, false).content());
+        assertFalse(AiHistoryUiState.of(List.of(), false).content());
+        assertTrue("失败但仍有行时：内容态与失败标记同时成立，由 View 决定是否叠加提示",
+                AiHistoryUiState.of(rows, true).failed());
+        assertTrue(AiHistoryUiState.of(rows, true).content());
     }
 }

@@ -37,8 +37,8 @@ public final class AiCallControlsView extends LinearLayout {
     private static final float SIDE_BUTTON_SIZE = 52f;
     private static final float HERO_BUTTON_SIZE = 64f;
     private static final float TOP_RADIUS_DP = 24f;
-    @ColorInt private static final int HANGUP_RED = 0xFFEF4444;
-    @ColorInt private static final int HANGUP_RED_END = 0xFFDC2626;
+    @ColorInt private static final int HANGUP_RED = AiTheme.HANGUP_START;
+    @ColorInt private static final int HANGUP_RED_END = AiTheme.HANGUP_END;
 
     private final AiTheme theme;
 
@@ -75,7 +75,7 @@ public final class AiCallControlsView extends LinearLayout {
         int topRadiusPx = theme.dp(TOP_RADIUS_DP);
         int panelColor = theme.isDark()
                 ? ColorUtils.setAlphaComponent(theme.card, 0xF6)
-                : 0xFFFFFFFF;
+                : AiTheme.MEDIA_WHITE;
 
         GradientDrawable panelBg = new GradientDrawable();
         panelBg.setColor(panelColor);
@@ -98,7 +98,7 @@ public final class AiCallControlsView extends LinearLayout {
         });
         setClipToOutline(false);
 
-        int shadowColor = theme.isDark() ? 0xFF000000 : theme.text1;
+        int shadowColor = theme.isDark() ? AiTheme.MEDIA_BLACK : theme.text1;
         setOutlineSpotShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x60 : 0x14));
         setOutlineAmbientShadowColor(ColorUtils.setAlphaComponent(shadowColor, theme.isDark() ? 0x30 : 0x0A));
 

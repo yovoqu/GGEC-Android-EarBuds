@@ -17,6 +17,7 @@ import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.ai.common.AiFormat;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsUiState;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoSelect;
@@ -148,7 +149,7 @@ final class VoiceHeroCard {
         int selectedId = -1;
         for (int i = 0; i < voice.options().size(); i++) {
             AiSettingsUiState.VoiceOption option = voice.options().get(i);
-            providerSelect.addOption(i, option.name(), providerIcon(option.id()));
+            providerSelect.addOption(i, option.name(), option.iconRes());
             if (option.current()) {
                 selectedId = i;
             }
@@ -161,7 +162,7 @@ final class VoiceHeroCard {
         providerSelect.getView().setContentDescription(
                 context.getString(R.string.ai_settings_voice_section_provider)
                         + " " + voice.modelName());
-        addressValue.setText(VoiceCard.host(voice.baseUrl()));
+        addressValue.setText(AiFormat.host(voice.baseUrl()));
         keyValue.setText(voice.configured()
                 ? R.string.ai_settings_voice_key_set
                 : R.string.ai_settings_voice_key_empty);
@@ -169,7 +170,7 @@ final class VoiceHeroCard {
         modelValue.setText(voice.realtimeModelId().isEmpty()
                 ? context.getString(R.string.ai_settings_voice_models_empty)
                 : voice.realtimeModelId());
-        orbIcon.setImageResource(providerIcon(voice.modelId()));
+        orbIcon.setImageResource(voice.providerIconRes());
 
         if (voice.configured()) {
             status.setText(R.string.ai_settings_voice_status_ready);
@@ -180,15 +181,6 @@ final class VoiceHeroCard {
             status.setTextColor(theme.warning);
             status.setBackground(theme.rounded(theme.warningSoft, 10f));
         }
-    }
-
-    /** 服务商图标：对话/语音设置里的身份标记；未知服务商退回通用地球图标。 */
-    private static int providerIcon(@NonNull String modelId) {
-        return switch (modelId) {
-            case "chatgpt" -> R.drawable.ic_ai_provider_chatgpt;
-            case "qwen" -> R.drawable.ic_ai_provider_qwen;
-            default -> R.drawable.ic_ai_globe;
-        };
     }
 
     @NonNull

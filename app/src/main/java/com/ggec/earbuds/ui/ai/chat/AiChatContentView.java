@@ -74,7 +74,7 @@ final class AiChatContentView extends FrameLayout {
         });
         addView(emptyState, matchParent());
 
-        storageBanner = theme.text(12.5f, theme.warning, AiTheme.Weight.MEDIUM);
+        storageBanner = theme.text(AiTheme.TEXT_CAPTION_LARGE, theme.warning, AiTheme.Weight.MEDIUM);
         storageBanner.setText(R.string.ai_storage_failed);
         storageBanner.setGravity(Gravity.CENTER);
         storageBanner.setBackgroundColor(theme.warningSoft);
@@ -144,9 +144,9 @@ final class AiChatContentView extends FrameLayout {
         View button = toBottom.getView();
         if (show && button.getVisibility() != View.VISIBLE) {
             button.setVisibility(View.VISIBLE);
-            button.animate().alpha(1f).setDuration(140).start();
+            button.animate().alpha(1f).setDuration(AiTheme.DURATION_S).start();
         } else if (!show && button.getVisibility() == View.VISIBLE) {
-            button.animate().alpha(0f).setDuration(120)
+            button.animate().alpha(0f).setDuration(AiTheme.DURATION_XS)
                     .withEndAction(() -> button.setVisibility(View.GONE)).start();
         }
     }
@@ -160,7 +160,7 @@ final class AiChatContentView extends FrameLayout {
             view.animate().cancel();
             view.setVisibility(View.VISIBLE);
             if (view.getAlpha() < 1f) {
-                view.animate().alpha(1f).setDuration(140).start();
+                view.animate().alpha(1f).setDuration(AiTheme.DURATION_S).start();
             }
         } else {
             view.animate().cancel();

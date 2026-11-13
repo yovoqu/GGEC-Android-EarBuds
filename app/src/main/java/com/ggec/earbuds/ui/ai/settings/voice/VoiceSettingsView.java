@@ -87,11 +87,6 @@ public final class VoiceSettingsView {
         view.addView(tail);
     }
 
-    public VoiceSettingsView(@NonNull Context context, @NonNull AiTheme theme,
-                             @NonNull Listener listener) {
-        this(context, theme, new YoComponents(), listener);
-    }
-
     @NonNull
     public View view() {
         return view;

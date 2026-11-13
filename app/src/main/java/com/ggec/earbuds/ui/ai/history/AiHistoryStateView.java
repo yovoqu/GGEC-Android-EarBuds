@@ -53,7 +53,7 @@ final class AiHistoryStateView {
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setPadding(0, 0, 0, theme.dp(AiTheme.SPACE_S));
-        list = new AiHistoryListContent(activity, theme,
+        list = new AiHistoryListContent(activity, theme, components,
                 new AiHistoryListContent.Listener() {
                     @Override
                     public void onOpen(@NonNull AiHistoryItemUi item) {

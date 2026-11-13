@@ -9,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 import androidx.annotation.NonNull;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.data.ai.voice.ExternalPcmAudioSource;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
@@ -56,6 +57,26 @@ public class AiCallViewModelTest {
         assertEquals(0, state.durationSeconds());
         assertNull("未手动切换双工时，交由会话内部按设置默认值决策",
                 fakeSession.explicitDuplexSet);
+    }
+
+    @Test
+    public void retryStopsTheOldSessionAndStartsANewOne() {
+        viewModel.start();
+
+        viewModel.retry();
+
+        assertTrue(fakeSession.stopped);
+        assertTrue(viewModel.isStarted());
+    }
+
+    @Test
+    public void duplexTogglePublishesItsHintInsteadOfLettingTheViewChooseText() {
+        viewModel.start();
+
+        viewModel.toggleDuplex();
+
+        assertEquals(Integer.valueOf(R.string.ai_call_duplex_full_hint),
+                viewModel.toasts().getValue());
     }
 
     @Test
@@ -114,7 +135,7 @@ public class AiCallViewModelTest {
     @Test
     public void onSnapshotUpdatesSubtitlesAndAvailableSourcesInUiState() {
         viewModel.start();
-        assertEquals(List.of(), viewModel.subtitleItems().getValue());
+        assertEquals(List.of(), viewModel.uiState().getValue().subtitleItems());
 
         AiAudioSource.Descriptor mic = new AiAudioSource.Descriptor(
                 "builtin:1", AiAudioSource.Kind.BUILTIN_MIC, "手机麦", 16_000);
@@ -130,7 +151,7 @@ public class AiCallViewModelTest {
 
         fakeSession.listener.onSnapshot(snapshot);
 
-        List<AiSubtitleItem> items = viewModel.subtitleItems().getValue();
+        List<AiSubtitleItem> items = viewModel.uiState().getValue().subtitleItems();
         assertEquals(2, items.size());
         assertEquals("1", items.get(0).id());
         assertTrue(items.get(0).isUser());
@@ -146,6 +167,23 @@ public class AiCallViewModelTest {
         assertEquals(VoiceDuplex.FULL_DUPLEX, ui.duplex());
         assertEquals(ble, ui.activeSource());
         assertEquals(List.of(ble, mic), ui.availableSources());
+        assertEquals("非听取阶段电平归零，与视觉阶段一致", 0f, ui.meter(), 0.0001f);
+    }
+
+    @Test
+    public void listeningLevelAndSubtitlesTravelWithTheSameStateStream() {
+        viewModel.start();
+        AiVoiceSnapshot snapshot = new AiVoiceSnapshot(
+                AiVoiceSnapshot.State.LISTENING,
+                List.of(new AiVoiceSnapshot.Turn("1", true, "你好", true, 1000L)),
+                0.5f, null, VoiceDuplex.FULL_DUPLEX, false, null, List.of());
+
+        fakeSession.listener.onSnapshot(snapshot);
+
+        AiCallUiState ui = viewModel.uiState().getValue();
+        assertEquals(AiCallUiState.Phase.LISTENING, ui.phase());
+        assertEquals(0.5f, ui.meter(), 0.0001f);
+        assertEquals(1, ui.subtitleItems().size());
     }
 
     @Test
