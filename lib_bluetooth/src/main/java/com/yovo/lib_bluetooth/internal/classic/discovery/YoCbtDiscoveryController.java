@@ -319,7 +319,6 @@ public final class YoCbtDiscoveryController {
             YoBtLogger.d(TAG, "发现已启动：操作=" + session.operationId
                     + "，超时=" + session.config.getTimeoutMillis() + "毫秒");
         } catch (Throwable t) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "启动发现时发生异常", t);
             failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
                     "Exception during discovery initiation", t);
         }
@@ -367,8 +366,13 @@ public final class YoCbtDiscoveryController {
                 System.currentTimeMillis()));
 
         state.set(YoCbtDiscoveryState.IDLE);
-        YoBtLogger.e(TAG, "发现失败：操作=" + session.operationId
-                + "，错误码=" + errorCode + "，信息=" + message, cause);
+        String detail = "发现失败：操作=" + session.operationId
+                + "，错误码=" + errorCode + "，信息=" + message;
+        if (cause != null) {
+            BluetoothDiagnosticsBus.get().recordException(TAG, detail, cause);
+        } else {
+            YoBtLogger.e(TAG, detail);
+        }
     }
 
     private void cleanupSession(@NonNull YoCbtDiscoveryOperationContext session) {
