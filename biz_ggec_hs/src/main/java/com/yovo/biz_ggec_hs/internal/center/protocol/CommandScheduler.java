@@ -1,5 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol;
 
+import com.yovo.biz_ggec_hs.internal.center.exchange.HsTraffic;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 
 import java.util.ArrayDeque;
@@ -142,6 +143,9 @@ final class CommandScheduler {
     void submit(Command command, long requestSessionId) {
         if (command == null) {
             return;
+        }
+        if (command.traffic() != HsTraffic.REQUEST_REPLY) {
+            throw new IllegalArgumentException("命令系统只调度一发一收: " + command.getCommandId());
         }
         if (released) {
             command.abort(failure("命令调度器已释放"));

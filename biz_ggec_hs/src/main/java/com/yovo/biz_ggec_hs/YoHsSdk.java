@@ -73,6 +73,10 @@ public final class YoHsSdk {
         return graph.scan().health();
     }
 
+    /**
+     * 先确认 {@code radios.classicAddress()} 的经典音频链路，没有就先连经典，再对
+     * {@code radios.bleAddress()} 开 GATT。两边地址都来自扫描结果，这里不重算。
+     */
     public void connect(@NonNull String modelId, @NonNull HsDevice.Radios radios) {
         graph.link().connect(modelId, radios);
     }

@@ -1,7 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolValues;
 import com.yovo.biz_ggec_hs.internal.center.protocol.batterycmd.CaseChargingStatusCommand;
@@ -298,7 +298,7 @@ public final class DeviceEventRouter {
 
     private boolean handlePairedDeviceFrame(String frame) {
         try {
-            List<HsControl.Paired> devices = GetPairedDevicesCommand.parseDevices(frame);
+            List<ProtocolPaired> devices = GetPairedDevicesCommand.parseDevices(frame);
             if (devices == null) {
                 return true;
             }

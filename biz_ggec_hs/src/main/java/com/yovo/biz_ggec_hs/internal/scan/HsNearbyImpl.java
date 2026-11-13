@@ -8,9 +8,9 @@ import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.api.HsScan;
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
-import com.yovo.biz_ggec_hs.internal.center.port.ScanPace;
 import com.yovo.biz_ggec_hs.internal.center.broadcast.HsBroadcastRuntime;
 import com.yovo.biz_ggec_hs.internal.center.broadcast.HsBroadcastSession;
+import com.yovo.biz_ggec_hs.internal.center.port.HsScanFault;
 import com.yovo.biz_ggec_hs.internal.center.port.HsBleScanLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsRawAdvert;
 
@@ -73,19 +73,13 @@ public final class HsNearbyImpl {
     }
 
     public void start(HsScan.Listener observer) {
-        start(observer, ScanPace.balanced());
-    }
-
-    public void start(HsScan.Listener observer, ScanPace profile) {
         Objects.requireNonNull(observer, "observer");
-        Objects.requireNonNull(profile, "profile");
         haltRadio();
         this.observer = observer;
         this.startedAtMillis = clock.getAsLong();
         this.lastFrameAtMillis = 0L;
         this.throttled = false;
         long generation = scanSession.begin();
-        link.applyScanProfile(profile);
         applyFramePredicate();
         link.start(new ScanCallbacks(generation));
     }
@@ -188,6 +182,21 @@ public final class HsNearbyImpl {
     }
 
     /** 一次订阅的回调桥：代次失效后静默丢弃，旧会话的帧与 lost 不会串到新会话。 */
+    private static HsControl.Failure toFailure(HsScanFault fault) {
+        return switch (fault) {
+            case BLUETOOTH_DISABLED -> HsControl.Failure.BLUETOOTH_DISABLED;
+            case PERMISSION_DENIED -> HsControl.Failure.PERMISSION_DENIED;
+            case LOCATION_DISABLED -> HsControl.Failure.LOCATION_DISABLED;
+            case BLE_UNSUPPORTED -> HsControl.Failure.BLE_UNSUPPORTED;
+            case SCAN_THROTTLED -> HsControl.Failure.SCAN_THROTTLED;
+            case SCAN_START_FAILED -> HsControl.Failure.SCAN_START_FAILED;
+            case SCAN_FEATURE_UNSUPPORTED -> HsControl.Failure.SCAN_FEATURE_UNSUPPORTED;
+            case SCAN_OUT_OF_RESOURCES -> HsControl.Failure.SCAN_OUT_OF_RESOURCES;
+            case SCAN_INTERNAL_ERROR -> HsControl.Failure.SCAN_INTERNAL_ERROR;
+            case RELEASED -> HsControl.Failure.RELEASED;
+        };
+    }
+
     private final class ScanCallbacks implements HsBleScanLink.Observer {
 
         private final long generation;
@@ -237,17 +246,18 @@ public final class HsNearbyImpl {
         }
 
         @Override
-        public void onFailed(HsControl.Failure failure) {
+        public void onFailed(HsScanFault failure) {
             if (!scanSession.end(generation)) {
                 return;
             }
             ticker.cancel();
-            if (failure == HsControl.Failure.SCAN_THROTTLED) {
+            HsControl.Failure reported = toFailure(failure);
+            if (reported == HsControl.Failure.SCAN_THROTTLED) {
                 throttled = true;
             }
             HsScan.Listener current = observer;
             if (current != null) {
-                current.onFailed(failure);
+                current.onFailed(reported);
                 current.onFinished();
             }
             publish();

@@ -1,7 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol;
 
 
-import com.yovo.biz_ggec_hs.api.HsDevice;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -71,7 +70,7 @@ public class HsDeviceInfoChainTest {
             CountDownLatch firmwareSeen = new CountDownLatch(1);
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     if (!info.firmware().isEmpty()) {
                         firmwareSeen.countDown();
                     }
@@ -89,7 +88,7 @@ public class HsDeviceInfoChainTest {
             link.inbound(homeStatusFrame(TLV_FIRMWARE + FIRMWARE_TEXT_HEX));
 
             assertTrue(firmwareSeen.await(3, TimeUnit.SECONDS));
-            HsDevice.Info info = engine.deviceInfo();
+            ProtocolInfo info = engine.deviceInfo();
             assertNotNull(info);
             assertEquals(FIRMWARE_TEXT, info.firmware());
         } finally {
@@ -105,7 +104,7 @@ public class HsDeviceInfoChainTest {
             CountDownLatch colorSeen = new CountDownLatch(1);
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     colorSeen.countDown();
                 }
             });
@@ -116,12 +115,12 @@ public class HsDeviceInfoChainTest {
             link.inbound(EAR_COLOR_RESPONSE);
 
             assertTrue(colorSeen.await(3, TimeUnit.SECONDS));
-            HsDevice.Info info = engine.deviceInfo();
+            ProtocolInfo info = engine.deviceInfo();
             assertNotNull(info);
-            assertEquals(EAR_COLOR_VALUE, info.earColor());
+            assertEquals(Integer.valueOf(EAR_COLOR_VALUE), info.earColor());
             // 首页状态还没回，固件保持「未知」而不是空指针或上一台设备的值。
-            assertEquals(HsDevice.Info.UNKNOWN_FIRMWARE, info.firmware());
-            assertEquals(HsDevice.Ear.UNKNOWN, info.earInCase());
+            assertNull(info.firmware());
+            assertNull(info.earInCase());
         } finally {
             engine.release();
         }
@@ -135,7 +134,7 @@ public class HsDeviceInfoChainTest {
             CountDownLatch bothSeen = new CountDownLatch(2);
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     bothSeen.countDown();
                 }
             });
@@ -149,18 +148,18 @@ public class HsDeviceInfoChainTest {
             link.inbound(homeStatusFrame(TLV_FIRMWARE + FIRMWARE_TEXT_HEX));
             assertTrue(bothSeen.await(3, TimeUnit.SECONDS));
 
-            BlockingQueue<HsDevice.Info> replayed = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> replayed = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     replayed.add(info);
                 }
             });
 
-            HsDevice.Info info = replayed.poll(1, TimeUnit.SECONDS);
+            ProtocolInfo info = replayed.poll(1, TimeUnit.SECONDS);
             assertNotNull(info);
             assertEquals(FIRMWARE_TEXT, info.firmware());
-            assertEquals(EAR_COLOR_VALUE, info.earColor());
+            assertEquals(Integer.valueOf(EAR_COLOR_VALUE), info.earColor());
         } finally {
             engine.release();
         }
@@ -175,7 +174,7 @@ public class HsDeviceInfoChainTest {
             CountDownLatch firstSessionFirmware = new CountDownLatch(1);
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     if (!info.firmware().isEmpty()) {
                         firstSessionFirmware.countDown();
                     }
@@ -206,10 +205,10 @@ public class HsDeviceInfoChainTest {
             assertTrue(disconnected.await(3, TimeUnit.SECONDS));
 
             // 会话 B：起点必须清干净，观察者挂载时不能拿到 A 的固件 / 电量。
-            BlockingQueue<HsDevice.Info> secondSession = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> secondSession = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     secondSession.add(info);
                 }
             });
@@ -233,7 +232,7 @@ public class HsDeviceInfoChainTest {
             CountDownLatch firmwareSeen = new CountDownLatch(1);
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     if (!info.firmware().isEmpty()) {
                         firmwareSeen.countDown();
                     }
@@ -263,10 +262,10 @@ public class HsDeviceInfoChainTest {
             assertEquals(UNKNOWN_BATTERY_LEVEL, engine.batterySnapshot().getLeftLevel());
             assertEquals(UNKNOWN_BATTERY_LEVEL, engine.batterySnapshot().getRightLevel());
             assertEquals(UNKNOWN_BATTERY_LEVEL, engine.batterySnapshot().getCaseLevel());
-            BlockingQueue<HsDevice.Info> replayed = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> replayed = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     replayed.add(info);
                 }
             });
@@ -298,10 +297,10 @@ public class HsDeviceInfoChainTest {
                     waitedMs < DISPATCH_BUDGET_MS);
 
             // 队列是被颜色查询超时释放的：没有任何颜色应答，颜色值不得凭空落地。
-            BlockingQueue<HsDevice.Info> replayed = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> replayed = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     replayed.add(info);
                 }
             });
@@ -362,10 +361,10 @@ public class HsDeviceInfoChainTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         try {
-            BlockingQueue<HsDevice.Info> infos = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> infos = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     infos.add(info);
                 }
             });
@@ -375,10 +374,10 @@ public class HsDeviceInfoChainTest {
             assertTrue(link.awaitWritten(EAR_COLOR_QUERY));
 
             link.inbound(earInCaseFrame(3));
-            assertEarInCaseDelivered(infos, HsDevice.Ear.BOTH);
+            assertEarInCaseDelivered(infos, 3);
 
             link.inbound(earInCaseFrame(1));
-            assertEarInCaseDelivered(infos, HsDevice.Ear.LEFT);
+            assertEarInCaseDelivered(infos, 1);
         } finally {
             engine.release();
         }
@@ -390,10 +389,10 @@ public class HsDeviceInfoChainTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         try {
-            BlockingQueue<HsDevice.Info> infos = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> infos = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     infos.add(info);
                 }
             });
@@ -402,19 +401,19 @@ public class HsDeviceInfoChainTest {
             link.ready();
             assertTrue(link.awaitWritten(EAR_COLOR_QUERY));
             link.inbound(earInCaseFrame(3));
-            assertEarInCaseDelivered(infos, HsDevice.Ear.BOTH);
+            assertEarInCaseDelivered(infos, 3);
 
-            BlockingQueue<HsDevice.Info> replayed = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> replayed = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     replayed.add(info);
                 }
             });
 
-            HsDevice.Info info = replayed.poll(1, TimeUnit.SECONDS);
+            ProtocolInfo info = replayed.poll(1, TimeUnit.SECONDS);
             assertNotNull(info);
-            assertEquals(HsDevice.Ear.BOTH, info.earInCase());
+            assertEquals(Integer.valueOf(3), info.earInCase());
         } finally {
             engine.release();
         }
@@ -426,10 +425,10 @@ public class HsDeviceInfoChainTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         try {
-            BlockingQueue<HsDevice.Info> infos = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> infos = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     infos.add(info);
                 }
             });
@@ -445,15 +444,15 @@ public class HsDeviceInfoChainTest {
             link.ready();
             assertTrue(link.awaitWritten(EAR_COLOR_QUERY));
             link.inbound(earInCaseFrame(3));
-            assertEarInCaseDelivered(infos, HsDevice.Ear.BOTH);
+            assertEarInCaseDelivered(infos, 3);
 
             engine.disconnect();
             assertTrue(disconnected.await(3, TimeUnit.SECONDS));
 
-            BlockingQueue<HsDevice.Info> replayed = new LinkedBlockingQueue<>();
+            BlockingQueue<ProtocolInfo> replayed = new LinkedBlockingQueue<>();
             engine.setDeviceObserver(new DeviceDomainStore.Observer() {
                 @Override
-                public void onDeviceInfoChanged(HsDevice.Info info) {
+                public void onDeviceInfoChanged(ProtocolInfo info) {
                     replayed.add(info);
                 }
             });
@@ -467,20 +466,20 @@ public class HsDeviceInfoChainTest {
     /**
      * 等待一条 earInCase 为 {@code expected} 的设备信息；超时报出已收到的值。
      */
-    private static void assertEarInCaseDelivered(BlockingQueue<HsDevice.Info> infos,
-                                                 HsDevice.Ear expected)
+    private static void assertEarInCaseDelivered(BlockingQueue<ProtocolInfo> infos,
+                                                 int expected)
             throws InterruptedException {
         long deadlineMs = System.currentTimeMillis() + 3_000L;
-        List<HsDevice.Ear> seen = new ArrayList<>();
+        List<Integer> seen = new ArrayList<>();
         while (true) {
             long remainingMs = deadlineMs - System.currentTimeMillis();
-            HsDevice.Info info = remainingMs > 0
+            ProtocolInfo info = remainingMs > 0
                     ? infos.poll(remainingMs, TimeUnit.MILLISECONDS)
                     : null;
             if (info == null) {
                 fail("未收到 earInCase=" + expected + " 的设备信息，已收到 " + seen);
             }
-            if (info.earInCase() == expected) {
+            if (info.earInCase() != null && info.earInCase() == expected) {
                 return;
             }
             seen.add(info.earInCase());

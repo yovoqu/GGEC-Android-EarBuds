@@ -2,8 +2,8 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsDevice;
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 
@@ -47,9 +47,9 @@ public final class DeviceDomainStore {
 
         default void onServiceStatusChanged(Map<String, String> status) {}
 
-        default void onPairedDevicesChanged(List<HsControl.Paired> devices) {}
+        default void onPairedDevicesChanged(List<ProtocolPaired> devices) {}
 
-        default void onDeviceInfoChanged(HsDevice.Info info) {}
+        default void onDeviceInfoChanged(ProtocolInfo info) {}
     }
 
     public static final class BatterySnapshot {
@@ -137,7 +137,7 @@ public final class DeviceDomainStore {
     private Boolean beginnerModeEnabled;
     private Integer leftAndRightEarExchange;
     private Map<String, String> serviceStatus;
-    private List<HsControl.Paired> pairedDevices;
+    private List<ProtocolPaired> pairedDevices;
     private String firmware;
     private Integer earColor;
     /**
@@ -216,7 +216,7 @@ public final class DeviceDomainStore {
         }
     }
 
-    public List<HsControl.Paired> getPairedDevices() {
+    public List<ProtocolPaired> getPairedDevices() {
         synchronized (this) {
             return pairedDevices == null ? null : List.copyOf(pairedDevices);
         }
@@ -225,7 +225,7 @@ public final class DeviceDomainStore {
     /**
      * 当前已知的设备信息；固件、颜色与在仓状态都未上报时返回 null（无信息，而不是「全未知」快照）。
      */
-    public HsDevice.Info getDeviceInfo() {
+    public ProtocolInfo protocolInfo() {
         synchronized (this) {
             return deviceInfoLocked();
         }
@@ -404,7 +404,7 @@ public final class DeviceDomainStore {
 
     void setFirmware(String value) {
         String normalized = value == null || value.isEmpty() ? null : value;
-        HsDevice.Info next;
+        ProtocolInfo next;
         synchronized (this) {
             if (Objects.equals(firmware, normalized)) {
                 return;
@@ -420,7 +420,7 @@ public final class DeviceDomainStore {
             HsLog.w(TAG, "忽略无效的耳机颜色: " + value);
             return;
         }
-        HsDevice.Info next;
+        ProtocolInfo next;
         synchronized (this) {
             if (earColor != null && earColor == value) {
                 return;
@@ -432,7 +432,7 @@ public final class DeviceDomainStore {
     }
 
     void setEarInCaseStatus(int status) {
-        HsDevice.Info next;
+        ProtocolInfo next;
         synchronized (this) {
             if (earInCaseStatus != null && earInCaseStatus == status) {
                 return;
@@ -443,8 +443,8 @@ public final class DeviceDomainStore {
         notifyDeviceInfo(next);
     }
 
-    void setPairedDevices(List<HsControl.Paired> devices) {
-        List<HsControl.Paired> copy;
+    void setPairedDevices(List<ProtocolPaired> devices) {
+        List<ProtocolPaired> copy;
         synchronized (this) {
             if (devices == null) {
                 pairedDevices = null;
@@ -458,7 +458,7 @@ public final class DeviceDomainStore {
             return;
         }
         for (Observer observer : observers) {
-            List<HsControl.Paired> delivered = copy;
+            List<ProtocolPaired> delivered = copy;
             safe(() -> observer.onPairedDevicesChanged(delivered));
         }
     }
@@ -495,35 +495,18 @@ public final class DeviceDomainStore {
         }
     }
 
-    private void notifyDeviceInfo(HsDevice.Info info) {
+    private void notifyDeviceInfo(ProtocolInfo info) {
         for (Observer observer : observers) {
             safe(() -> observer.onDeviceInfoChanged(info));
         }
     }
 
     /** 调用方须持锁。三项都未知时返回 null。 */
-    private HsDevice.Info deviceInfoLocked() {
+    private ProtocolInfo deviceInfoLocked() {
         if (firmware == null && earColor == null && earInCaseStatus == null) {
             return null;
         }
-        return new HsDevice.Info(
-                firmware == null ? HsDevice.Info.UNKNOWN_FIRMWARE : firmware,
-                earColor == null ? HsDevice.Info.UNKNOWN_EAR_COLOR : earColor,
-                earInCase(earInCaseStatus));
-    }
-
-    /** 协议在仓字节（0 都不在仓 / 1 左耳 / 2 右耳 / 3 双耳）到对外枚举的唯一转换点。 */
-    private static HsDevice.Ear earInCase(Integer status) {
-        if (status == null) {
-            return HsDevice.Ear.UNKNOWN;
-        }
-        return switch (status) {
-            case 0 -> HsDevice.Ear.NONE;
-            case 1 -> HsDevice.Ear.LEFT;
-            case 2 -> HsDevice.Ear.RIGHT;
-            case 3 -> HsDevice.Ear.BOTH;
-            default -> throw new IllegalArgumentException("耳机在仓状态超出协议范围: " + status);
-        };
+        return new ProtocolInfo(firmware, earColor, earInCaseStatus);
     }
 
     private static void safe(Runnable action) {

@@ -1,5 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.center.protocol.inbound;
 
+import com.yovo.biz_ggec_hs.internal.center.exchange.HsFrameRoute;
+import com.yovo.biz_ggec_hs.internal.center.exchange.HsTraffic;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 
 import java.util.Locale;
@@ -59,9 +61,9 @@ public final class InboundFrameDemux {
         } catch (RuntimeException e) {
             HsLog.e(TAG, "入站续命失败", e);
         }
-        boolean eventIdentity = EventCatalog.contains(normalized);
+        HsFrameRoute route = HsFrameRoute.of(normalized);
         boolean eventHandled = false;
-        if (eventIdentity) {
+        if (route.traffic() == HsTraffic.DEVICE_REPORT) {
             try {
                 eventHandled = eventPort.onEvent(sessionId, normalized);
             } catch (RuntimeException e) {
@@ -69,9 +71,8 @@ public final class InboundFrameDemux {
             }
         }
 
-        boolean tryClaim = !eventIdentity || EventCatalog.allowsDual(normalized);
         boolean claimed = false;
-        if (tryClaim) {
+        if (route.commandMayClaim()) {
             try {
                 claimed = commandPort.onResponseCandidate(sessionId, normalized);
             } catch (RuntimeException e) {
@@ -79,7 +80,7 @@ public final class InboundFrameDemux {
             }
         }
 
-        if (!eventIdentity && !claimed) {
+        if (route.traffic() == HsTraffic.REQUEST_REPLY && !claimed) {
             HsLog.d(TAG, "未识别入站帧: " + normalized
                     + " eventHandled=" + eventHandled);
         }

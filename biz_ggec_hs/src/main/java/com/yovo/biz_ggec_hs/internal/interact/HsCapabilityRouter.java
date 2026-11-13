@@ -7,6 +7,10 @@ package com.yovo.biz_ggec_hs.internal.interact;
 import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.internal.center.broadcast.HsProductCatalog;
+import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
+import com.yovo.biz_ggec_hs.internal.center.catalog.HsOptionIds;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolDual;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolRecording;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommand;
@@ -76,10 +80,8 @@ import java.util.Optional;
  */
 public final class HsCapabilityRouter {
 
-    /** 声音质量的高音质选项 id。 */
-    public static final String SOUND_QUALITY_HIGH = "high_quality";
-    /** 声音质量的高续航选项 id。 */
-    public static final String SOUND_QUALITY_ENDURANCE = "high_endurance";
+    public static final String SOUND_QUALITY_HIGH = HsOptionIds.SOUND_QUALITY_HIGH;
+    public static final String SOUND_QUALITY_ENDURANCE = HsOptionIds.SOUND_QUALITY_ENDURANCE;
 
     /** 录音列表一次取页的起始页。 */
     private static final int RECORD_LIST_PAGE = 0;
@@ -90,12 +92,29 @@ public final class HsCapabilityRouter {
 
     /** 触控选择项 id：{@code <耳类型>:<操作类型>}。 */
     public static String pressOptionId(int earType, int actionType) {
-        return earType + ":" + actionType;
+        return HsOptionIds.press(earType, actionType);
     }
 
     /** 轻触选择项 id：{@code <耳侧>:<触击类型>:<功能码>}。 */
     public static String tapOptionId(int earSide, int tapType, int functionType) {
-        return earSide + ":" + tapType + ":" + functionType;
+        return HsOptionIds.tap(earSide, tapType, functionType);
+    }
+
+    /** 目录构造完后核对：门控不可写，动作必须有命令。 */
+    public static void verify(HsCatalogImpl catalog) {
+        for (HsDevice.Product product : catalog.models()) {
+            for (HsDevice.Capability capability : product.capabilities()) {
+                HsDevice.Feature feature = catalog.feature(product.modelId(), capability);
+                if (feature.kind() == HsDevice.Form.GATE && supportsWrite(capability)) {
+                    throw new IllegalStateException("GATE 能力不得有写入命令: " + capability);
+                }
+                if (feature.kind() == HsDevice.Form.ACTION
+                        && !supportsWrite(capability)
+                        && !supportsAction(capability)) {
+                    throw new IllegalStateException("ACTION 能力缺少可达命令: " + capability);
+                }
+            }
+        }
     }
 
     /** 该能力是否有写入命令（目录不变量与门控共用同一判定）。 */
@@ -278,19 +297,19 @@ public final class HsCapabilityRouter {
         }
         Object data = completion.getData();
         if (command instanceof GetDualConnectionPageCommand
-                && data instanceof HsControl.Dual dual) {
-            return Optional.of(new HsControl.Event.DualConnectionChanged(dual));
+                && data instanceof ProtocolDual dual) {
+            return Optional.of(new HsControl.Event.DualConnectionChanged(HsModels.dual(dual)));
         }
         if (command instanceof GetRecordIdListCommand && data instanceof List<?> items) {
-            List<HsControl.Recording> files = new ArrayList<>(items.size());
+            List<ProtocolRecording> files = new ArrayList<>(items.size());
             for (Object item : items) {
-                if (!(item instanceof HsControl.Recording file)) {
+                if (!(item instanceof ProtocolRecording file)) {
                     throw new IllegalArgumentException(
                             "录音列表回包混入了非录音文件项: " + item);
                 }
                 files.add(file);
             }
-            return Optional.of(new HsControl.Event.RecordFilesChanged(List.copyOf(files)));
+            return Optional.of(new HsControl.Event.RecordFilesChanged(HsModels.recordings(files)));
         }
         return Optional.empty();
     }

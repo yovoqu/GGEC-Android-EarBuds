@@ -4,7 +4,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsDevice;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
 import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
@@ -285,8 +285,8 @@ public final class HsProtocolEngine {
     }
 
     /** 当前已知的设备信息；三项都未上报时返回 null。 */
-    public HsDevice.Info deviceInfo() {
-        return events.domain().getDeviceInfo();
+    public ProtocolInfo deviceInfo() {
+        return events.domain().protocolInfo();
     }
 
     /**

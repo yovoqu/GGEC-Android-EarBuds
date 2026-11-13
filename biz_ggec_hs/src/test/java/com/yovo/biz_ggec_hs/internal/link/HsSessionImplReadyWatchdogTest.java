@@ -43,12 +43,12 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread);
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
 
-            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "E8:00:00:00:00:01", ""));
             assertTrue("尝试开始必须通知 CONNECTING",
                     observer.awaitEvent(event(HsControl.State.CONNECTING, null)));
             link.ready();
@@ -58,7 +58,7 @@ public final class HsSessionImplReadyWatchdogTest {
             assertFalse("会话已就绪，看门狗必须撤表", mainThread.isArmed());
 
             // 换目标：不先 disconnect，让引擎线程自己收尾 A 会话再派发 B 的尝试。
-            session.connect("HS02", new HsDevice.Radios(MAC_B, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC_B, "", "E8:00:00:00:00:02", ""));
             awaitEngineProcessed(engine);
 
             assertTrue("旧会话必须报一次正常收尾的断连（无失败分类）",
@@ -88,12 +88,12 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread);
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
 
-            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "E8:00:00:00:00:01", ""));
             assertTrue("尝试开始必须通知 CONNECTING",
                     observer.awaitEvent(event(HsControl.State.CONNECTING, null)));
             assertTrue("尝试进行中看门狗必须在走", mainThread.isArmed());
@@ -121,12 +121,12 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread);
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
         try {
             RecordingObserver observer = new RecordingObserver();
             session.observe(observer);
 
-            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "E8:00:00:00:00:01", ""));
             assertTrue("尝试开始必须通知 CONNECTING",
                     observer.awaitEvent(event(HsControl.State.CONNECTING, null)));
             Runnable armedTimeout = mainThread.lastScheduledTask();
@@ -159,9 +159,9 @@ public final class HsSessionImplReadyWatchdogTest {
         FakeHsCommandLink link = new FakeHsCommandLink();
         HsProtocolEngine engine = new HsProtocolEngine(link);
         FakeMainThread mainThread = new FakeMainThread();
-        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread);
+        HsSessionImpl session = new HsSessionImpl(engine, new HsCatalogImpl(), mainThread, new ReadyClassicRadio());
         try {
-            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "", ""));
+            session.connect("HS02", new HsDevice.Radios(MAC_A, "", "E8:00:00:00:00:01", ""));
             awaitEngineProcessed(engine);
             assertTrue("没有观察者时看门狗也必须在走", mainThread.isArmed());
 

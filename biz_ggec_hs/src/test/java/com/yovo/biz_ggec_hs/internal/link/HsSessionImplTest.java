@@ -12,6 +12,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.biz_ggec_hs.internal.center.protocol.FakeHsCommandLink;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.CustomEQRealtimeCommand;
@@ -83,7 +84,7 @@ public final class HsSessionImplTest {
             assertEquals("挂观察者必须立刻回放当前连接态",
                     HsControl.State.IDLE, observer.lastConnection());
 
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             assertTrue("READY 必须通知观察者",
                     observer.awaitConnection(HsControl.State.READY));
@@ -107,7 +108,7 @@ public final class HsSessionImplTest {
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
 
@@ -132,7 +133,7 @@ public final class HsSessionImplTest {
     public void writeRoutesThroughCapabilityRouterAndNormalizesSuccess() throws Exception {
         Harness harness = new Harness();
         try {
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
 
@@ -152,7 +153,7 @@ public final class HsSessionImplTest {
     public void writeOnUnsupportedCapabilityIsRejectedNotSilentlyDropped() throws Exception {
         Harness harness = new Harness();
         try {
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             awaitReady(harness);
 
@@ -184,7 +185,7 @@ public final class HsSessionImplTest {
     public void writeWithMismatchedValueKindThrows() throws Exception {
         Harness harness = new Harness();
         try {
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             awaitReady(harness);
 
@@ -202,7 +203,7 @@ public final class HsSessionImplTest {
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
             assertTrue(observer.awaitConnection(HsControl.State.READY));
@@ -229,7 +230,7 @@ public final class HsSessionImplTest {
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
 
@@ -274,7 +275,7 @@ public final class HsSessionImplTest {
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
 
@@ -305,14 +306,14 @@ public final class HsSessionImplTest {
     public void commandAbortedBySessionSwitchReportsRejected() throws Exception {
         Harness harness = new Harness();
         try {
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             answerAutoQueries(harness);
 
             RecordingCallback callback = new RecordingCallback();
             harness.session.write(HsDevice.Capability.EQ_MODE, new HsControl.Value.Choice("1"), callback);
             // 换目标：在途命令被引擎中止，回执必须是 REJECTED 而不是成功。
-            harness.session.connect("HS02", new HsDevice.Radios("66:77:88:99:AA:BB", "", "", ""));
+            harness.session.connect("HS02", new HsDevice.Radios("66:77:88:99:AA:BB", "", "E8:00:00:00:00:02", ""));
 
             assertTrue(callback.awaitResult());
             assertEquals(HsControl.Failure.REJECTED, callback.failure());
@@ -330,7 +331,7 @@ public final class HsSessionImplTest {
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
-            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
 
             assertTrue(harness.link.awaitWritten(EAR_COLOR_QUERY));
@@ -410,7 +411,7 @@ public final class HsSessionImplTest {
     public void unknownModelConnectsWithoutDeclaringCapabilities() throws Exception {
         Harness harness = new Harness();
         try {
-            harness.session.connect("HS99", new HsDevice.Radios(MAC, "", "", ""));
+            harness.session.connect("HS99", new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             awaitReady(harness);
             answerAutoQueries(harness);
@@ -436,11 +437,45 @@ public final class HsSessionImplTest {
                     () -> harness.session.connect("HS02", new HsDevice.Radios("  ", "", "", "")));
             assertThrows(IllegalArgumentException.class,
                     () -> harness.session.connect("HS02", new HsDevice.Radios(null, "", "", "")));
+            assertThrows(IllegalArgumentException.class,
+                    () -> harness.session.connect("HS02", new HsDevice.Radios(MAC, "", "", "")));
             assertThrows(NullPointerException.class,
-                    () -> harness.session.connect(null, new HsDevice.Radios(MAC, "", "", "")));
+                    () -> harness.session.connect(null, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", "")));
             assertFalse("被拒绝的连接不得进入就绪态", harness.session.isReady());
         } finally {
             harness.close();
+        }
+    }
+
+    @Test
+    public void gattOpensOnlyAfterClassicAudioIsUp() {
+        FakeHsCommandLink link = new FakeHsCommandLink();
+        HsProtocolEngine engine = new HsProtocolEngine(link);
+        HsClassicRadio.Callback[] held = new HsClassicRadio.Callback[1];
+        HsClassicRadio radio = new HsClassicRadio() {
+            @Override
+            public void open(String classicAddress, Callback callback) {
+                held[0] = callback;
+            }
+
+            @Override
+            public void cancel() {
+                held[0] = null;
+            }
+
+            @Override
+            public void release() {
+            }
+        };
+        HsSessionImpl session = new HsSessionImpl(
+                engine, new HsCatalogImpl(), new FakeMainThread(), radio);
+        try {
+            session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
+            assertNull("经典音频未就绪时不得开 GATT", link.openedAddress());
+            held[0].onReady();
+            assertEquals(MAC, link.openedAddress());
+        } finally {
+            session.close();
         }
     }
 
@@ -648,11 +683,11 @@ public final class HsSessionImplTest {
         private final FakeHsCommandLink link = new FakeHsCommandLink();
         private final HsProtocolEngine engine = new HsProtocolEngine(link);
         private final HsSessionImpl session =
-                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread());
+                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio());
 
         /** 连接 + 等 READY + 应答两条自动查询。 */
         private void connectReady(String modelId, String bleAddress) throws Exception {
-            session.connect(modelId, new HsDevice.Radios(bleAddress, "", "", ""));
+            session.connect(modelId, new HsDevice.Radios(bleAddress, "", "E8:00:00:00:00:01", ""));
             link.ready();
             awaitReady(this);
             answerAutoQueries(this);

@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd;
 
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.log.HsLog;
 
 import java.nio.charset.StandardCharsets;
@@ -21,7 +21,7 @@ import java.util.List;
  * 0x05 - 是否当前设备（1 字节，0x00=是 0x01=否）
  * 0x06 - 是否是优先设备（1 字节，0x00=是 0x01=否）
  *
- * <p>协议字节到对外枚举/布尔的转换只在本类里发生：上层与 api 里不出现这些字面量。
+ * <p>协议字节在这里收成协议枚举。对外契约由交互层再转，本类不引用 api。
  * 超出协议取值的字节按契约违约处理并抛错，不猜一个枚举值兜底。</p>
  */
 final class PairedDeviceTlvParser {
@@ -49,8 +49,8 @@ final class PairedDeviceTlvParser {
      * TLV 格式非法（头部不完整 / 数据越界 / 未以设备名开始 / 字段长度错误）时抛
      * {@link IllegalArgumentException}；合法数据按实际记录数返回。
      */
-    static List<HsControl.Paired> parseDevices(String tlvHex) {
-        List<HsControl.Paired> devices = new ArrayList<>();
+    static List<ProtocolPaired> parseDevices(String tlvHex) {
+        List<ProtocolPaired> devices = new ArrayList<>();
 
         String currentName = "";
         String currentAddress = "";
@@ -137,10 +137,10 @@ final class PairedDeviceTlvParser {
         return devices;
     }
 
-    private static HsControl.Paired device(String name, String address, int deviceType,
+    private static ProtocolPaired device(String name, String address, int deviceType,
                                          int connected, int businessType,
                                          int currentDevice, int priorityDevice) {
-        return new HsControl.Paired(
+        return new ProtocolPaired(
                 name,
                 address,
                 deviceType(deviceType),
@@ -150,24 +150,24 @@ final class PairedDeviceTlvParser {
                 priorityDevice(priorityDevice));
     }
 
-    private static HsControl.Paired.Kind deviceType(int raw) {
+    private static ProtocolPaired.Kind deviceType(int raw) {
         return switch (raw) {
-            case 0 -> HsControl.Paired.Kind.OTHER;
-            case 1 -> HsControl.Paired.Kind.PHONE;
-            case 2 -> HsControl.Paired.Kind.COMPUTER;
-            case 3 -> HsControl.Paired.Kind.PAD;
-            case 4 -> HsControl.Paired.Kind.TV;
-            case 5 -> HsControl.Paired.Kind.WEARABLE;
+            case 0 -> ProtocolPaired.Kind.OTHER;
+            case 1 -> ProtocolPaired.Kind.PHONE;
+            case 2 -> ProtocolPaired.Kind.COMPUTER;
+            case 3 -> ProtocolPaired.Kind.PAD;
+            case 4 -> ProtocolPaired.Kind.TV;
+            case 5 -> ProtocolPaired.Kind.WEARABLE;
             default -> throw new IllegalArgumentException(
                     "配对设备类型超出协议范围: 0x" + String.format("%02X", raw));
         };
     }
 
-    private static HsControl.Paired.Activity business(int raw) {
+    private static ProtocolPaired.Activity business(int raw) {
         return switch (raw) {
-            case 0 -> HsControl.Paired.Activity.IDLE;
-            case 1 -> HsControl.Paired.Activity.MUSIC;
-            case 2 -> HsControl.Paired.Activity.CALL;
+            case 0 -> ProtocolPaired.Activity.IDLE;
+            case 1 -> ProtocolPaired.Activity.MUSIC;
+            case 2 -> ProtocolPaired.Activity.CALL;
             default -> throw new IllegalArgumentException(
                     "配对设备业务类型超出协议范围: 0x" + String.format("%02X", raw));
         };

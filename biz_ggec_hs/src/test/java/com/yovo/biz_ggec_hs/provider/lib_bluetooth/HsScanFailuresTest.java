@@ -1,7 +1,7 @@
 package com.yovo.biz_ggec_hs.provider.lib_bluetooth;
 
 
-import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.port.HsScanFault;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -21,21 +21,21 @@ import java.util.Set;
 public final class HsScanFailuresTest {
 
     /** 扫描失败回调真正会发射的错误码 → 类型化扫描失败原因。 */
-    private static final Map<BleErrorCode, HsControl.Failure> MAPPED = Map.ofEntries(
-            Map.entry(BleErrorCode.BLUETOOTH_DISABLED, HsControl.Failure.BLUETOOTH_DISABLED),
-            Map.entry(BleErrorCode.PERMISSION_SCAN_DENIED, HsControl.Failure.PERMISSION_DENIED),
-            Map.entry(BleErrorCode.PERMISSION_CONNECT_DENIED, HsControl.Failure.PERMISSION_DENIED),
-            Map.entry(BleErrorCode.PERMISSION_ADVERTISE_DENIED, HsControl.Failure.PERMISSION_DENIED),
-            Map.entry(BleErrorCode.PERMISSION_LOCATION_DENIED, HsControl.Failure.PERMISSION_DENIED),
-            Map.entry(BleErrorCode.LOCATION_SERVICES_DISABLED, HsControl.Failure.LOCATION_DISABLED),
-            Map.entry(BleErrorCode.BLE_NOT_SUPPORTED, HsControl.Failure.BLE_UNSUPPORTED),
-            Map.entry(BleErrorCode.BLUETOOTH_NOT_SUPPORTED, HsControl.Failure.BLE_UNSUPPORTED),
-            Map.entry(BleErrorCode.SCAN_THROTTLED, HsControl.Failure.SCAN_THROTTLED),
-            Map.entry(BleErrorCode.SCAN_START_FAILED, HsControl.Failure.SCAN_START_FAILED),
-            Map.entry(BleErrorCode.SCAN_FEATURE_UNSUPPORTED, HsControl.Failure.SCAN_FEATURE_UNSUPPORTED),
-            Map.entry(BleErrorCode.SCAN_OUT_OF_RESOURCES, HsControl.Failure.SCAN_OUT_OF_RESOURCES),
-            Map.entry(BleErrorCode.SCAN_INTERNAL_ERROR, HsControl.Failure.SCAN_INTERNAL_ERROR),
-            Map.entry(BleErrorCode.RELEASED, HsControl.Failure.RELEASED));
+    private static final Map<BleErrorCode, HsScanFault> MAPPED = Map.ofEntries(
+            Map.entry(BleErrorCode.BLUETOOTH_DISABLED, HsScanFault.BLUETOOTH_DISABLED),
+            Map.entry(BleErrorCode.PERMISSION_SCAN_DENIED, HsScanFault.PERMISSION_DENIED),
+            Map.entry(BleErrorCode.PERMISSION_CONNECT_DENIED, HsScanFault.PERMISSION_DENIED),
+            Map.entry(BleErrorCode.PERMISSION_ADVERTISE_DENIED, HsScanFault.PERMISSION_DENIED),
+            Map.entry(BleErrorCode.PERMISSION_LOCATION_DENIED, HsScanFault.PERMISSION_DENIED),
+            Map.entry(BleErrorCode.LOCATION_SERVICES_DISABLED, HsScanFault.LOCATION_DISABLED),
+            Map.entry(BleErrorCode.BLE_NOT_SUPPORTED, HsScanFault.BLE_UNSUPPORTED),
+            Map.entry(BleErrorCode.BLUETOOTH_NOT_SUPPORTED, HsScanFault.BLE_UNSUPPORTED),
+            Map.entry(BleErrorCode.SCAN_THROTTLED, HsScanFault.SCAN_THROTTLED),
+            Map.entry(BleErrorCode.SCAN_START_FAILED, HsScanFault.SCAN_START_FAILED),
+            Map.entry(BleErrorCode.SCAN_FEATURE_UNSUPPORTED, HsScanFault.SCAN_FEATURE_UNSUPPORTED),
+            Map.entry(BleErrorCode.SCAN_OUT_OF_RESOURCES, HsScanFault.SCAN_OUT_OF_RESOURCES),
+            Map.entry(BleErrorCode.SCAN_INTERNAL_ERROR, HsScanFault.SCAN_INTERNAL_ERROR),
+            Map.entry(BleErrorCode.RELEASED, HsScanFault.RELEASED));
 
     /** 不属于扫描失败回调取值域的错误码：映射必须按契约不变量拒绝，而不是伪造扫描原因。 */
     private static final Set<BleErrorCode> OUTSIDE_SCAN_CALLBACK = EnumSet.of(
@@ -100,7 +100,7 @@ public final class HsScanFailuresTest {
 
     @Test
     public void mapsEveryScanCallbackErrorCodeToItsOwnTypedFailure() {
-        for (Map.Entry<BleErrorCode, HsControl.Failure> expected : MAPPED.entrySet()) {
+        for (Map.Entry<BleErrorCode, HsScanFault> expected : MAPPED.entrySet()) {
             assertEquals("错误码 " + expected.getKey(),
                     expected.getValue(), HsScanFailures.map(expected.getKey()));
         }

@@ -29,7 +29,7 @@ public final class HsScan {
         }
     }
 
-    /** 一台已识别的双模设备。连接 GATT 用 {@code radios.bleAddress()}，不使用经典地址。 */
+    /** 一台已识别的双模设备。地址只用 {@link HsDevice.Radios}，不要在界面侧再算一次。 */
     public record Found(String modelId, Radios radios, int rssi) {
     }
 
