@@ -63,6 +63,12 @@ public final class HsProtocolEngine {
     private volatile boolean connectFailedNotified;
     /** 已经自动查过耳机颜色的会话序号；同一会话重复 READY 不再重复下发。 */
     private volatile long earColorQueriedSession;
+    /**
+     * 会话接入策略交给引擎的两道开关。默认开着，协议测试不经过会话时仍走原探针；
+     * 会话在构造时按 {@link com.yovo.biz_ggec_hs.internal.link.HsSessionIntake} 改写。
+     */
+    private volatile boolean deviceReportsAccepted = true;
+    private volatile boolean earColorProbeEnabled = true;
 
     public HsProtocolEngine(HsCommandLink link) {
         this(link, Executors.newSingleThreadScheduledExecutor(new ProtocolThreadFactory()));
@@ -89,7 +95,7 @@ public final class HsProtocolEngine {
                 snapshot -> { },
                 new CommandPolicyRegistry());
         this.demux = new InboundFrameDemux(
-                events::onEvent,
+                (sessionId, frame) -> deviceReportsAccepted && events.onEvent(sessionId, frame),
                 scheduler::onResponseCandidate,
                 () -> { },
                 id -> id > 0L && id == sessionId);
@@ -337,7 +343,9 @@ public final class HsProtocolEngine {
         connectAttemptActive = false;
         connectFailedNotified = false;
         scheduler.setSession(sessionId, true);
-        queryEarColorOnce();
+        if (earColorProbeEnabled) {
+            queryEarColorOnce();
+        }
         HsConnectionEvents observer = connectionEvents;
         if (observer != null) {
             observer.onConnected(currentMac);
@@ -440,6 +448,15 @@ public final class HsProtocolEngine {
         if (observer != null) {
             observer.onConnectFailed(reason);
         }
+    }
+
+    /**
+     * 按会话接入策略打开或关闭主动上报与耳机颜色探针。
+     * 必须在 {@link #connect(String)} 之前调用；会话构造时设置一次。
+     */
+    public void applySessionIntake(boolean acceptDeviceReports, boolean probeEarColorOnReady) {
+        this.deviceReportsAccepted = acceptDeviceReports;
+        this.earColorProbeEnabled = probeEarColorOnReady;
     }
 
     /**

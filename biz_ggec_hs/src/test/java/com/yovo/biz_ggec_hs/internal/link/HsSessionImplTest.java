@@ -1,6 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.link;
 
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
+import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 
 
 import com.yovo.biz_ggec_hs.api.HsDevice;
@@ -76,7 +77,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void connectReadyPublishesConnectionStateAndSnapshot() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
@@ -97,6 +98,14 @@ public final class HsSessionImplTest {
                     HsDevice.Ear.UNKNOWN, snapshot.deviceInfo().earInCase());
             assertTrue("未上报过任何控制值时不出现键", snapshot.values().isEmpty());
             assertTrue(harness.session.isReady());
+            assertFalse("连接策略不得补查首页",
+                    harness.link.awaitWrittenWithin(HOME_STATUS_QUERY, 200L));
+            assertFalse("连接策略不得补查耳机颜色",
+                    harness.link.awaitWrittenWithin(EAR_COLOR_QUERY, 200L));
+            harness.link.inbound("99EC800003" + "0150" + "0250" + "0350" + "1234");
+            assertEquals("连接策略不接收主动上报",
+                    HsDevice.Battery.UNKNOWN_LEVEL,
+                    harness.session.snapshot().battery().leftLevel());
         } finally {
             harness.close();
         }
@@ -104,7 +113,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void batteryAndEarInCaseLandInSnapshot() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.deviceInfo();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
@@ -131,11 +140,11 @@ public final class HsSessionImplTest {
 
     @Test
     public void writeRoutesThroughCapabilityRouterAndNormalizesSuccess() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
-            answerAutoQueries(harness);
+            awaitReady(harness);
 
             RecordingCallback callback = new RecordingCallback();
             harness.session.write(HsDevice.Capability.EQ_MODE, new HsControl.Value.Choice("1"), callback);
@@ -151,7 +160,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void writeOnUnsupportedCapabilityIsRejectedNotSilentlyDropped() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
@@ -169,7 +178,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void writeBeforeReadyReportsNotReady() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             RecordingCallback callback = new RecordingCallback();
             harness.session.write(HsDevice.Capability.EQ_MODE, new HsControl.Value.Choice("1"), callback);
@@ -183,7 +192,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void writeWithMismatchedValueKindThrows() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
@@ -199,7 +208,7 @@ public final class HsSessionImplTest {
 
     @Test
     public void readReturnsCachedValueAndUnknownValueIsNotReady() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.deviceInfo();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
@@ -226,13 +235,13 @@ public final class HsSessionImplTest {
 
     @Test
     public void performReadPairedDevicesPublishesDualStateAndEvents() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
-            answerAutoQueries(harness);
+            awaitReady(harness);
 
             RecordingCallback callback = new RecordingCallback();
             harness.session.perform(new HsControl.Action.ReadPairedDevices(), callback);
@@ -271,13 +280,13 @@ public final class HsSessionImplTest {
 
     @Test
     public void performReadRecordListPublishesRecordFilesEvent() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
-            answerAutoQueries(harness);
+            awaitReady(harness);
 
             RecordingCallback callback = new RecordingCallback();
             harness.session.perform(new HsControl.Action.ReadRecordList(), callback);
@@ -304,11 +313,11 @@ public final class HsSessionImplTest {
 
     @Test
     public void commandAbortedBySessionSwitchReportsRejected() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
-            answerAutoQueries(harness);
+            awaitReady(harness);
 
             RecordingCallback callback = new RecordingCallback();
             harness.session.write(HsDevice.Capability.EQ_MODE, new HsControl.Value.Choice("1"), callback);
@@ -327,7 +336,7 @@ public final class HsSessionImplTest {
      */
     @Test
     public void readyQueriesAggregatedStatusOnceAndFirmwareLandsInSnapshot() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.deviceInfo();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
@@ -364,7 +373,7 @@ public final class HsSessionImplTest {
     /** 能力集合跟随连接目标机型：HS01 不声明 CUSTOM_EQ，但 EQ_MODE 照常可写。 */
     @Test
     public void hs01DoesNotDeclareCustomEq() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady("HS01", MAC);
 
@@ -390,7 +399,7 @@ public final class HsSessionImplTest {
     /** HS02 声明 CUSTOM_EQ：同一能力可写并走协议通道。 */
     @Test
     public void hs02DeclaresCustomEq() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady(HS02_MODEL, MAC);
 
@@ -409,12 +418,11 @@ public final class HsSessionImplTest {
     /** 目录未登记机型：链路照常连接，但没有任何声明能力可写。 */
     @Test
     public void unknownModelConnectsWithoutDeclaringCapabilities() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.session.connect("HS99", new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             harness.link.ready();
             awaitReady(harness);
-            answerAutoQueries(harness);
             assertTrue("未知机型仍必须建立链路", harness.session.isReady());
 
             RecordingCallback callback = new RecordingCallback();
@@ -431,7 +439,7 @@ public final class HsSessionImplTest {
     /** 连接目标的必填校验：缺地址当场抛错，不进入引擎。 */
     @Test
     public void invalidTargetIsRejected() {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             assertThrows(IllegalArgumentException.class,
                     () -> harness.session.connect("HS02", new HsDevice.Radios("  ", "", "", "")));
@@ -468,7 +476,7 @@ public final class HsSessionImplTest {
             }
         };
         HsSessionImpl session = new HsSessionImpl(
-                engine, new HsCatalogImpl(), new FakeMainThread(), radio);
+                engine, new HsCatalogImpl(), new FakeMainThread(), radio, new HsConnectionIntake());
         try {
             session.connect(HS02_MODEL, new HsDevice.Radios(MAC, "", "E8:00:00:00:00:01", ""));
             assertNull("经典音频未就绪时不得开 GATT", link.openedAddress());
@@ -482,7 +490,7 @@ public final class HsSessionImplTest {
     /** 重构前 app 已有的重置/重启入口：动作通道必须打到对应命令。 */
     @Test
     public void resetControlAndRebootReachTheirCommands() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady("HS01", MAC);
 
@@ -507,7 +515,7 @@ public final class HsSessionImplTest {
     /** 未登记机型不得下发动作：RESET_CONTROL 同样按目录判定。 */
     @Test
     public void unsupportedModelRejectsActions() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady("HS99", MAC);
             RecordingCallback reset = new RecordingCallback();
@@ -522,11 +530,12 @@ public final class HsSessionImplTest {
     /** LDAC 状态由查询回包落地：写入前读快照必须给出设备真实值。 */
     @Test
     public void ldacStateComesFromTheQueryResponse() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.deviceInfo();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
             harness.connectReady(HS02_MODEL, MAC);
+            answerAutoQueries(harness);
             assertTrue("LDAC 开关状态必须进入快照",
                     observer.awaitSnapshotWithValue(HsDevice.Capability.LDAC));
             assertEquals(new HsControl.Value.Toggle(true),
@@ -541,7 +550,7 @@ public final class HsSessionImplTest {
     /** 新手模式开关：进入/退出成功即状态，read 与快照都反映。 */
     @Test
     public void beginnerModeToggleReflectsCommandAck() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             RecordingObserver observer = new RecordingObserver();
             harness.session.observe(observer);
@@ -585,7 +594,7 @@ public final class HsSessionImplTest {
     /** 门控能力不得出现在快照控制值里：展示由 app 既有界面承担，biz 不给第二份状态。 */
     @Test
     public void gateCapabilitiesNeverAppearInSnapshotValues() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady(HS02_MODEL, MAC);
             HsDevice.Snapshot snapshot = harness.session.snapshot();
@@ -605,7 +614,7 @@ public final class HsSessionImplTest {
     /** 已配对设备列表是 HS02 的能力：HS01 上该动作必须被目录判定挡掉。 */
     @Test
     public void hs01RejectsPairedDeviceReads() throws Exception {
-        Harness harness = new Harness();
+        Harness harness = Harness.connection();
         try {
             harness.connectReady("HS01", MAC);
             RecordingCallback callback = new RecordingCallback();
@@ -678,19 +687,30 @@ public final class HsSessionImplTest {
         return event == null ? null : ((HsControl.Event.DualConnectionChanged) event).state();
     }
 
-    /** 会话 + 假链路 + 就地执行的主线程。 */
+    /** 会话 + 假链路 + 就地执行的主线程。接入策略由工厂选择。 */
     private static final class Harness {
         private final FakeHsCommandLink link = new FakeHsCommandLink();
         private final HsProtocolEngine engine = new HsProtocolEngine(link);
-        private final HsSessionImpl session =
-                new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio());
+        private final HsSessionImpl session;
 
-        /** 连接 + 等 READY + 应答两条自动查询。 */
+        private Harness(HsSessionIntake intake) {
+            this.session = new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(),
+                    new ReadyClassicRadio(), intake);
+        }
+
+        private static Harness connection() {
+            return new Harness(new HsConnectionIntake());
+        }
+
+        private static Harness deviceInfo() {
+            return new Harness(new HsDeviceInfoIntake(new HsCapabilityRouter()));
+        }
+
+        /** 连接并等到 READY。设备信息策略的补查由调用方自行应答。 */
         private void connectReady(String modelId, String bleAddress) throws Exception {
             session.connect(modelId, new HsDevice.Radios(bleAddress, "", "E8:00:00:00:00:01", ""));
             link.ready();
             awaitReady(this);
-            answerAutoQueries(this);
         }
 
         private void close() {
