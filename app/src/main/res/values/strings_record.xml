@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_app_label">GGEC Record</string>
+    <string name="record_title">实时录播</string>
+    <string name="record_status_idle">未连接设备</string>
+    <string name="record_status_scanning">正在扫描附近设备 · %1$d 台</string>
+    <string name="record_status_failed">%1$s</string>
+    <string name="record_scan">扫描</string>
+    <string name="record_stop_scan">停止</string>
+    <string name="record_disconnect">断开</string>
+    <string name="record_connect">连接</string>
+    <string name="record_device_meta">%1$s · %2$d dBm</string>
+    <string name="record_unnamed_device">未命名设备</string>
+    <string name="record_nearby_title">附近设备</string>
+    <string name="record_nearby_empty">点击「扫描」查找设备</string>
+    <string name="record_video_placeholder">连接设备后在此播放画面</string>
+    <string name="record_stats_idle">等待数据</string>
+    <string name="record_stats_format">视频 %1$.0f kbps · %2$.0f fps · 音频 %3$.0f kbps</string>
+    <string name="record_state_connecting">正在连接…</string>
+    <string name="record_state_connected">已连接，准备收流…</string>
+    <string name="record_state_ready">播放中</string>
+    <string name="record_state_disconnected">已断开</string>
+    <string name="record_codec_h264">H.264</string>
+    <string name="record_codec_h265">H.265</string>
+    <string name="record_mute">静音</string>
+    <string name="record_unmute">有声</string>
+    <string name="record_asr_on">识别关</string>
+    <string name="record_asr_off">识别开</string>
+    <string name="record_asr_model_zipformer">Zipformer</string>
+    <string name="record_asr_model_paraformer">Paraformer</string>
+    <string name="record_asr_clear">清空字幕</string>
+</resources>

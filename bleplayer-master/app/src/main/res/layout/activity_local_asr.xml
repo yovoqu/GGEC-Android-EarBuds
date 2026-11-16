@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="本地音频转写（支持 WAV、AAC/M4A、Ogg Opus；裸 PCM 使用 .pcm 扩展名）"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Spinner
+            android:id="@+id/spLocalModel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.4" />
+
+        <Spinner
+            android:id="@+id/spLocalSampleRate"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <Spinner
+            android:id="@+id/spLocalChannels"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnPickAudio"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="选择音频文件" />
+
+    <TextView
+        android:id="@+id/tvSelectedFile"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="2"
+        android:text="尚未选择文件"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnStartTranscribe"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="开始转写" />
+
+        <Button
+            android:id="@+id/btnCancelTranscribe"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false"
+            android:text="取消" />
+
+        <Button
+            android:id="@+id/btnExportTranscript"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="导出文字" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvLocalStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="6dp"
+        android:text="请选择音频"
+        android:textSize="13sp" />
+
+    <ScrollView
+        android:id="@+id/localTranscriptScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#F2F2F2"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tvLocalTranscript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="转写结果"
+            android:textIsSelectable="true"
+            android:textSize="16sp" />
+    </ScrollView>
+
+</LinearLayout>
