@@ -1,6 +1,7 @@
 package com.yovo.biz_ggec_record.provider.lib_bluetooth;
 
 import android.content.Context;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -15,15 +16,22 @@ import com.yovo.lib_bluetooth.model.ble.BleConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleConnectionState;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleFailure;
+import com.yovo.lib_bluetooth.model.ble.BleGattCharacteristicInfo;
+import com.yovo.lib_bluetooth.model.ble.BleGattDatabaseSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleGattObserver;
+import com.yovo.lib_bluetooth.model.ble.BleGattServiceInfo;
 import com.yovo.lib_bluetooth.model.ble.BleGattTarget;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationObserver;
 import com.yovo.lib_bluetooth.model.ble.BleNotificationSetupMode;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BlePhyConfig;
 import com.yovo.lib_bluetooth.model.ble.BleWriteType;
+import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,6 +43,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * 就绪后<strong>串行</strong>订阅视频 TX、音频 TX，全部完成才 {@link Listener#onReady()}。
  */
 public final class YoBleRecordLink {
+
+    private static final String TAG = "YoBleRecordLink";
 
     public static final UUID SERVICE_UUID =
             UUID.fromString("00002760-08c2-11e1-9073-0e8ac72e5450");
@@ -51,6 +61,9 @@ public final class YoBleRecordLink {
             BleGattTarget.characteristic(SERVICE_UUID, AUDIO_TX_UUID);
     private static final BleGattTarget RX =
             BleGattTarget.characteristic(SERVICE_UUID, RX_UUID);
+
+    /** Ambiq 部分固件缺 CCCD 时仍可本地开 notify；有 CCCD 时行为与 DEFAULT 一致。 */
+    private static final BleNotificationSetupMode TX_SETUP = BleNotificationSetupMode.COMPAT;
 
     private static final BleConnectionConfig CONNECTION = BleConnectionConfig.builder()
             .autoConnect(false)
@@ -97,6 +110,10 @@ public final class YoBleRecordLink {
     private boolean audioSubscribed;
     private boolean videoSubscribeAttempted;
     private boolean audioSubscribeAttempted;
+    @Nullable
+    private String videoSubscribeError;
+    @Nullable
+    private String audioSubscribeError;
     @Nullable
     private volatile Listener listener;
 
@@ -224,13 +241,50 @@ public final class YoBleRecordLink {
             }
             target = deviceId;
             videoSubscribeAttempted = true;
+            videoSubscribeError = null;
+            audioSubscribeError = null;
+        }
+        String precheck = precheckAmbiqGatt(target);
+        if (precheck != null) {
+            markNotReady(currentGeneration, precheck);
+            return;
         }
         subscribeVideo(currentGeneration, target);
     }
 
+    /**
+     * 就绪后先核对 Ambiq 服务/TX 是否在已发现 GATT 里，避免笼统的“订阅失败”。
+     *
+     * @return 失败原因；通过返回 null
+     */
+    @Nullable
+    private String precheckAmbiqGatt(@NonNull BleDeviceId target) {
+        Result<BleGattDatabaseSnapshot> result = client.getServices(target);
+        if (!result.isSuccess() || result.getValue() == null) {
+            String detail = result.getFailure() == null ? "无 GATT 快照" : result.getFailure().message();
+            Log.w(TAG, "getServices failed: " + detail);
+            return "GATT 服务未就绪: " + detail;
+        }
+        BleGattDatabaseSnapshot database = result.getValue();
+        Log.i(TAG, summarizeGatt(database));
+        BleGattServiceInfo service = database.findService(SERVICE_UUID);
+        if (service == null) {
+            return "设备 GATT 中未找到 Ambiq 服务 " + shortUuid(SERVICE_UUID)
+                    + "。已发现: " + listServiceUuids(database)
+                    + "。请确认连接的是眼镜/录像设备（广播名常含 dabaicai）";
+        }
+        boolean hasVideo = service.findCharacteristic(VIDEO_TX_UUID) != null;
+        boolean hasAudio = service.findCharacteristic(AUDIO_TX_UUID) != null;
+        if (!hasVideo && !hasAudio) {
+            return "Ambiq 服务存在，但未找到视频/音频 TX 特征。chars="
+                    + listCharacteristicUuids(service);
+        }
+        return null;
+    }
+
     private void subscribeVideo(int currentGeneration, @NonNull BleDeviceId target) {
         BleOperationHandle handle = client.subscribe(
-                target, VIDEO_TX, BleNotificationSetupMode.DEFAULT,
+                target, VIDEO_TX, TX_SETUP,
                 new NotifyWatcher(currentGeneration, true));
         synchronized (lock) {
             if (currentGeneration != generation) {
@@ -249,7 +303,7 @@ public final class YoBleRecordLink {
             audioSubscribeAttempted = true;
         }
         BleOperationHandle handle = client.subscribe(
-                target, AUDIO_TX, BleNotificationSetupMode.DEFAULT,
+                target, AUDIO_TX, TX_SETUP,
                 new NotifyWatcher(currentGeneration, false));
         synchronized (lock) {
             if (currentGeneration != generation) {
@@ -260,17 +314,24 @@ public final class YoBleRecordLink {
         }
     }
 
-    private void onSubscribeFinished(int currentGeneration, boolean videoChannel, boolean success) {
+    private void onSubscribeFinished(int currentGeneration,
+                                     boolean videoChannel,
+                                     boolean success,
+                                     @Nullable String errorDetail) {
         BleDeviceId target;
         boolean shouldSubscribeAudio = false;
         boolean shouldMarkReady = false;
         boolean shouldFail = false;
+        String failMessage = null;
         synchronized (lock) {
             if (currentGeneration != generation || released) {
                 return;
             }
             if (videoChannel) {
                 videoSubscribed = success;
+                if (!success) {
+                    videoSubscribeError = errorDetail;
+                }
                 if (!audioSubscribeAttempted) {
                     shouldSubscribeAudio = true;
                     target = deviceId;
@@ -281,9 +342,15 @@ public final class YoBleRecordLink {
                 }
             } else {
                 audioSubscribed = success;
+                if (!success) {
+                    audioSubscribeError = errorDetail;
+                }
                 target = deviceId;
                 shouldMarkReady = videoSubscribed || audioSubscribed;
                 shouldFail = !shouldMarkReady;
+            }
+            if (shouldFail) {
+                failMessage = buildSubscribeFailureMessageLocked();
             }
         }
         if (shouldSubscribeAudio && target != null) {
@@ -291,12 +358,73 @@ public final class YoBleRecordLink {
             return;
         }
         if (shouldFail) {
-            markNotReady(currentGeneration, "未找到可用的视频/音频 TX 特征或订阅失败");
+            markNotReady(currentGeneration, failMessage != null
+                    ? failMessage
+                    : "未找到可用的视频/音频 TX 特征或订阅失败");
             return;
         }
         if (shouldMarkReady) {
             markReady(currentGeneration);
         }
+    }
+
+    @NonNull
+    private String buildSubscribeFailureMessageLocked() {
+        StringBuilder sb = new StringBuilder("视频/音频 TX 订阅失败");
+        if (videoSubscribeError != null) {
+            sb.append("; video=").append(videoSubscribeError);
+        }
+        if (audioSubscribeError != null) {
+            sb.append("; audio=").append(audioSubscribeError);
+        }
+        return sb.toString();
+    }
+
+    @NonNull
+    private static String summarizeGatt(@NonNull BleGattDatabaseSnapshot database) {
+        StringBuilder sb = new StringBuilder("GATT services=");
+        sb.append(database.services().size());
+        for (BleGattServiceInfo service : database.services()) {
+            sb.append("\n  ").append(service.uuid())
+                    .append(" primary=").append(service.isPrimary())
+                    .append(" chars=");
+            List<String> chars = new ArrayList<>();
+            for (BleGattCharacteristicInfo c : service.characteristics()) {
+                chars.add(shortUuid(c.uuid()));
+            }
+            sb.append(chars);
+        }
+        return sb.toString();
+    }
+
+    @NonNull
+    private static String listServiceUuids(@NonNull BleGattDatabaseSnapshot database) {
+        List<String> ids = new ArrayList<>();
+        for (BleGattServiceInfo service : database.services()) {
+            ids.add(shortUuid(service.uuid()));
+        }
+        return ids.isEmpty() ? "(无)" : ids.toString();
+    }
+
+    @NonNull
+    private static String listCharacteristicUuids(@NonNull BleGattServiceInfo service) {
+        List<String> ids = new ArrayList<>();
+        for (BleGattCharacteristicInfo c : service.characteristics()) {
+            ids.add(shortUuid(c.uuid()));
+        }
+        return ids.isEmpty() ? "(无)" : ids.toString();
+    }
+
+    @NonNull
+    private static String shortUuid(@NonNull UUID uuid) {
+        String s = uuid.toString().toLowerCase(Locale.US);
+        if (s.startsWith("0000") && s.endsWith("-0000-1000-8000-00805f9b34fb") && s.length() >= 8) {
+            return "0x" + s.substring(4, 8);
+        }
+        if (s.length() >= 8) {
+            return s.substring(0, 8);
+        }
+        return s;
     }
 
     private void markReady(int currentGeneration) {
@@ -330,6 +458,8 @@ public final class YoBleRecordLink {
             audioSubscribed = false;
             videoSubscribeAttempted = false;
             audioSubscribeAttempted = false;
+            videoSubscribeError = null;
+            audioSubscribeError = null;
         }
         if (videoHandle != null) {
             videoHandle.cancel();
@@ -368,6 +498,8 @@ public final class YoBleRecordLink {
         audioSubscribed = false;
         videoSubscribeAttempted = false;
         audioSubscribeAttempted = false;
+        videoSubscribeError = null;
+        audioSubscribeError = null;
         Retired retired = new Retired(deviceId, connection, videoSubscription, audioSubscription);
         deviceId = null;
         connection = null;
@@ -422,7 +554,7 @@ public final class YoBleRecordLink {
 
         @Override
         public void onNotificationEnabled(@NonNull BleDeviceId deviceId, @NonNull BleGattTarget target) {
-            onSubscribeFinished(currentGeneration, videoChannel, true);
+            onSubscribeFinished(currentGeneration, videoChannel, true, null);
         }
 
         @Override
@@ -447,8 +579,10 @@ public final class YoBleRecordLink {
 
         @Override
         public void onNotificationFailed(@NonNull BleFailure failure) {
+            String detail = failure.errorCode() + ": " + failure.message();
+            Log.w(TAG, (videoChannel ? "video" : "audio") + " TX subscribe failed: " + detail);
             // 缺特征时仍尝试另一路；两路都失败才整体失败。
-            onSubscribeFinished(currentGeneration, videoChannel, false);
+            onSubscribeFinished(currentGeneration, videoChannel, false, detail);
         }
     }
 
