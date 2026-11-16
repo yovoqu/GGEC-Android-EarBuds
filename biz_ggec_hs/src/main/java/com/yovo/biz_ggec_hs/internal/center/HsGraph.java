@@ -10,10 +10,14 @@ import com.yovo.biz_ggec_hs.internal.link.HsSessionImpl;
 import com.yovo.biz_ggec_hs.internal.center.link.HsClassicConnect;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.link.HsMainDelay;
+import com.yovo.biz_ggec_hs.internal.record.HsRecordManager;
+import com.yovo.biz_ggec_hs.internal.record.HsRecordPathResolver;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.HsNearbyScanner;
+import com.yovo.biz_ggec_hs.provider.lib_bluetooth.YoBleAudioDataLink;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.YoBleCommandLink;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.YoClassicRadio;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
+import com.yovo.biz_ggec_hs.provider.lib_ggec_opus.YoOpusCodecProvider;
 
 /**
  * 组合根：把 provider 的链路适配、中层协议引擎、上层会话/扫描与设备目录装在一起。
@@ -27,25 +31,33 @@ public final class HsGraph {
     private final HsNearbyImpl nearby;
     private final HsSessionImpl session;
     private final HsCatalogImpl catalog;
+    private final HsRecordManager recordManager;
 
-    private HsGraph(HsNearbyImpl nearby, HsSessionImpl session, HsCatalogImpl catalog) {
+    private HsGraph(HsNearbyImpl nearby, HsSessionImpl session, HsCatalogImpl catalog,
+                    HsRecordManager recordManager) {
         this.nearby = nearby;
         this.session = session;
         this.catalog = catalog;
+        this.recordManager = recordManager;
     }
 
     public static HsGraph open(Context context) {
         HsLog.ensureInitialized(context);
         YoBleCommandLink link = YoBleCommandLink.open(context);
+        YoBleAudioDataLink audioLink = new YoBleAudioDataLink(link.bleClient());
         HsProtocolEngine engine = new HsProtocolEngine(link);
         HsCatalogImpl catalog = new HsCatalogImpl();
         HsCapabilityRouter.verify(catalog);
+        HsRecordPathResolver pathResolver = new HsRecordPathResolver(context);
+        HsRecordManager recordManager = new HsRecordManager(engine, audioLink, pathResolver,
+                new YoOpusCodecProvider());
         return new HsGraph(
                 HsNearbyImpl.open(new HsNearbyScanner(link.bleClient()), catalog),
                 new HsSessionImpl(engine, catalog, new HsClassicConnect(
                         YoClassicRadio.open(context), new HsMainDelay()),
-                        new HsConnectionIntake()),
-                catalog);
+                        new HsConnectionIntake(), audioLink),
+                catalog,
+                recordManager);
     }
 
     public HsNearbyImpl scan() {
@@ -60,9 +72,14 @@ public final class HsGraph {
         return catalog;
     }
 
+    public HsRecordManager record() {
+        return recordManager;
+    }
+
     /** 先停扫描再释放链路：扫描句柄与连接句柄共用同一条 BLE 客户端。 */
     public void close() {
         nearby.stop();
         session.close();
+        recordManager.release();
     }
 }

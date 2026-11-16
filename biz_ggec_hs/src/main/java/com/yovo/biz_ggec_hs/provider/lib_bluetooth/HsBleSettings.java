@@ -22,6 +22,14 @@ public final class HsBleSettings {
     public static final UUID NOTIFY_UUID =
             UUID.fromString("65786365-6c70-6f69-6e74-2e636f820105");
 
+    /** 音频流专用通道 UUID（与固件 Opus dump 一致） */
+    public static final UUID AUDIO_SERVICE_UUID =
+            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820000");
+    public static final UUID AUDIO_NOTIFY_UUID =
+            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820003");
+    public static final UUID AUDIO_WRITE_UUID =
+            UUID.fromString("65786365-6c70-6f69-6e74-2e636f820004");
+
     public static final BleWriteType WRITE_TYPE = BleWriteType.WITHOUT_RESPONSE;
     public static final BleNotificationSetupMode NOTIFY_MODE = BleNotificationSetupMode.DEFAULT;
     public static final BleConnectionConfig CONNECTION = BleConnectionConfig.builder().build();
