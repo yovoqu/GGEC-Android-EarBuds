@@ -58,6 +58,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".ui.device.record.RecordActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <!-- Record 独立入口：单独 taskAffinity，避免点图标时复用主壳任务栈而打开 MainActivity。 -->
         <activity
             android:name=".record.ui.RecordMainActivity"
