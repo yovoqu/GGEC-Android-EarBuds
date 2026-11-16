@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.DeviceLinkPort;
+import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.yovo.biz_ggec_hs.YoHsSdk;
 
 import java.util.Objects;
@@ -24,16 +25,18 @@ public final class HsDeviceProviders {
     private final YoHsSdk sdk;
     private final HsDeviceLinkAdapter link;
     private final HsCapabilityCatalogAdapter catalog;
+    private final HsRecordAdapter record;
 
-    private HsDeviceProviders(@NonNull YoHsSdk sdk) {
+    private HsDeviceProviders(@NonNull YoHsSdk sdk, @NonNull Context context) {
         this.sdk = Objects.requireNonNull(sdk, "sdk");
         this.link = new HsDeviceLinkAdapter(sdk);
         this.catalog = new HsCapabilityCatalogAdapter(sdk);
+        this.record = new HsRecordAdapter(sdk);
     }
 
     @NonNull
     public static HsDeviceProviders open(@NonNull Context context) {
-        return new HsDeviceProviders(YoHsSdk.open(context));
+        return new HsDeviceProviders(YoHsSdk.open(context), context);
     }
 
     @NonNull
@@ -44,6 +47,11 @@ public final class HsDeviceProviders {
     @NonNull
     public DeviceCapabilityCatalog deviceCatalog() {
         return catalog;
+    }
+
+    @NonNull
+    public RecordPort recordPort() {
+        return record;
     }
 
     public void close() {
