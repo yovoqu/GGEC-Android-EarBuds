@@ -13,10 +13,10 @@ import com.ggec.earbuds.ui.ai.chat.AiChatPage;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFailureText;
-import com.ggec.earbuds.ui.device.roster.DeviceRosterDialogs;
 import com.ggec.earbuds.ui.device.roster.DeviceRosterEvent;
 import com.ggec.earbuds.ui.device.home.DeviceHomePage;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
+import com.ggec.earbuds.ui.device.record.RecordActivity;
 import com.ggec.earbuds.ui.device.scan.ScanActivity;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsActivity;
 import com.yohu.youi.api.feedback.YoToast;
@@ -26,7 +26,7 @@ import com.yohu.youi.api.navigation.YoTabs;
  * 应用外壳视图：设备 / AI / 我的三个页签。
  *
  * <p>只装配与展示，不持有业务状态：设备页签的状态在
- * {@link DeviceRosterViewModel}，AI 页的状态在 {@link AiChatViewModel}。</p>
+ * {@link DeviceHomeViewModel}，AI 页的状态在 {@link AiChatViewModel}。</p>
  */
 final class ShellScreen {
 
@@ -163,6 +163,10 @@ final class ShellScreen {
 
         @Override
         public void onOpenEntry(@NonNull DeviceCapabilityGroup group) {
+            if (group == DeviceCapabilityGroup.RECORD) {
+                activity.startActivity(RecordActivity.intent(activity));
+                return;
+            }
             activity.startActivity(DeviceSettingsActivity.intent(activity, group));
         }
 

@@ -13,6 +13,7 @@ import com.ggec.earbuds.data.device.roster.DeviceRosterRepositoryImpl;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
+import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
 import com.ggec.earbuds.domain.device.session.DeviceSession;
 import com.ggec.earbuds.domain.device.usecase.CloseDevice;
@@ -20,12 +21,12 @@ import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.OpenDevice;
-import com.ggec.earbuds.domain.device.usecase.RenameDevice;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
 import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
 import com.ggec.earbuds.domain.device.usecase.SyncActiveDevice;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
+import com.ggec.earbuds.platform.device.AndroidPcmPlayback;
 import com.ggec.earbuds.provider.biz_ggec_hs.HsDeviceProviders;
 import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
@@ -33,6 +34,7 @@ import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermission;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermissionRequest;
 import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
+import com.ggec.earbuds.ui.device.record.RecordViewModel;
 import com.ggec.earbuds.ui.device.scan.ScanViewModel;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiMapper;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
@@ -63,9 +65,9 @@ public final class DeviceGraph {
     private final ObserveDeviceRoster observeRoster;
     private final OpenDevice openDevice;
     private final CloseDevice closeDevice;
-    private final RenameDevice renameDevice;
     private final ForgetDevice forgetDevice;
     private final ScanPermissionPort scanPermission;
+    private final RecordPort recordPort;
     private final DeviceHomeUiMapper homeMapper;
     private final ListDeviceEntries listEntries;
     private final DeviceSettingsUiMapper settingsMapper =
@@ -82,7 +84,6 @@ public final class DeviceGraph {
         this.observeRoster = new ObserveDeviceRoster(roster, session, clock);
         this.openDevice = new OpenDevice(session);
         this.closeDevice = new CloseDevice(session);
-        this.renameDevice = new RenameDevice(roster);
         this.forgetDevice = new ForgetDevice(roster, session);
         this.observeDevice = new ObserveDevice(session);
         this.catalog = providers.deviceCatalog();
@@ -92,20 +93,27 @@ public final class DeviceGraph {
         this.writeControl = new WriteDeviceControl(providers.deviceLink());
         this.runAction = new RunDeviceAction(providers.deviceLink());
         this.scanPermission = new BluetoothScanPermission(app);
+        this.recordPort = providers.recordPort();
         new SyncActiveDevice(roster, session, clock).start();
     }
 
     @NonNull
     public ViewModelProvider.Factory homeFactory() {
         return new Factory<>(DeviceHomeViewModel.class,
-                () -> new DeviceHomeViewModel(observeRoster, listEntries, openDevice,
-                        renameDevice, forgetDevice, homeMapper));
+                () -> new DeviceHomeViewModel(observeRoster, listEntries, openDevice, homeMapper));
     }
 
     @NonNull
     public ViewModelProvider.Factory scanFactory() {
         return new Factory<>(ScanViewModel.class,
                 () -> new ScanViewModel(scanDevices, openDevice, catalog, scanPermission));
+    }
+
+    @NonNull
+    public ViewModelProvider.Factory recordFactory() {
+        return new Factory<>(RecordViewModel.class,
+                () -> new RecordViewModel(recordPort, observeDevice,
+                        new AndroidPcmPlayback(), new MainThreadTicker()));
     }
 
     @NonNull
