@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="record_bg">#FF0E1116</color>
+    <color name="record_panel">#FF171B22</color>
+    <color name="record_panel_stroke">#FF2A313C</color>
+    <color name="record_text_primary">#FFF2F4F7</color>
+    <color name="record_text_secondary">#FF9AA3AF</color>
+    <color name="record_accent">#FF3DDC97</color>
+    <color name="record_accent_soft">#1F3DDC97</color>
+    <color name="record_danger">#FFFF6B6B</color>
+    <color name="record_chip">#FF222833</color>
+    <color name="record_overlay">#990E1116</color>
+    <color name="record_video_placeholder">#FF0A0C10</color>
+</resources>
