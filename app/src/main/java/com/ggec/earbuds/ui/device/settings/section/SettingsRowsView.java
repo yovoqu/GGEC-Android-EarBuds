@@ -8,14 +8,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.CapabilityOption;
-import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.ui.device.CurveEditorSeed;
 import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.TogglePresentation;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
@@ -44,7 +42,7 @@ public final class SettingsRowsView implements SettingsSectionView {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
+    private final SettingsInteractionListener listener;
     private final SettingsChrome chrome;
     private final LinearLayout content;
     private final List<Runnable> releases = new ArrayList<>();
@@ -64,10 +62,10 @@ public final class SettingsRowsView implements SettingsSectionView {
     private DeviceSettingsUiState lastState;
 
     public SettingsRowsView(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                            @NonNull DeviceSettingsViewModel viewModel) {
+                            @NonNull SettingsInteractionListener listener) {
         this.activity = activity;
         this.theme = theme;
-        this.viewModel = viewModel;
+        this.listener = listener;
         this.chrome = new SettingsChrome(activity, theme);
         this.content = SettingsChrome.vertical(activity);
     }
@@ -174,7 +172,7 @@ public final class SettingsRowsView implements SettingsSectionView {
             pendingBuilder.addItem(ListPrefixSpec.none(), text,
                     ListSuffixSpec.switch_(presentation.position(), next -> {
                         pendingToggles.put(row.capabilityId(), next);
-                        viewModel.write(row.capabilityId(), new ControlValue.Toggle(next));
+                        listener.onToggle(row.capabilityId(), next);
                     }));
             return;
         }
@@ -274,8 +272,7 @@ public final class SettingsRowsView implements SettingsSectionView {
                     if (id < 0 || id >= options.size()) {
                         return;
                     }
-                    viewModel.write(row.capabilityId(),
-                            new ControlValue.Choice(options.get(id).id()));
+                    listener.onChoice(row.capabilityId(), options.get(id).id());
                 })
                 .build();
         components.own(menu::destroy);
@@ -292,7 +289,7 @@ public final class SettingsRowsView implements SettingsSectionView {
             @Override
             public void onSaved(@NonNull List<Integer> edited) {
                 curveDrafts.put(row.capabilityId(), edited);
-                viewModel.write(row.capabilityId(), new ControlValue.Curve(edited));
+                listener.onCurve(row.capabilityId(), edited);
             }
 
             @Override
@@ -308,7 +305,7 @@ public final class SettingsRowsView implements SettingsSectionView {
                               @NonNull DeviceSettingsUiState state) {
         switch (row) {
             case DeviceSettingRow.Level level -> {
-                SliderCardView card = new SliderCardView(activity, theme, viewModel,
+                SliderCardView card = new SliderCardView(activity, theme, listener,
                         level.capabilityId());
                 releases.add(card::destroy);
                 outcomeSinks.add(card);
@@ -316,7 +313,7 @@ public final class SettingsRowsView implements SettingsSectionView {
                 chrome.addCard(content, card.view());
             }
             case DeviceSettingRow.Action action -> {
-                ActionCardView card = new ActionCardView(activity, theme, viewModel,
+                ActionCardView card = new ActionCardView(activity, theme, listener,
                         state.recordFiles());
                 releases.add(card::destroy);
                 card.bind(action, state.interactive());
@@ -325,13 +322,13 @@ public final class SettingsRowsView implements SettingsSectionView {
             case DeviceSettingRow.CapabilityList list -> {
                 switch (list.kind()) {
                     case DUAL_CONNECTION -> {
-                        DualConnectionCard card = new DualConnectionCard(activity, theme, viewModel);
+                        DualConnectionCard card = new DualConnectionCard(activity, theme, listener);
                         releases.add(card::destroy);
                         card.bind(list.title(), state, state.interactive());
                         chrome.addCard(content, card.view());
                     }
                     case RECORD_FILES -> {
-                        RecordFilesCard card = new RecordFilesCard(activity, theme, viewModel);
+                        RecordFilesCard card = new RecordFilesCard(activity, theme, listener);
                         releases.add(card::destroy);
                         card.bind(list.title(), state, state.interactive());
                         chrome.addCard(content, card.view());

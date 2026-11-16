@@ -24,7 +24,10 @@ import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.yovo.lib_common.event.OneShotLiveData;
+
+import java.util.List;
 
 /**
  * 设置页状态机：订阅快照、从能力目录取描述、把界面的类型化意图交给用例。
@@ -33,7 +36,7 @@ import com.yovo.lib_common.event.OneShotLiveData;
  * {@link RunDeviceAction}（{@code DevicePort.perform}）。本类不拼协议字节、不推导值域、
  * 不吞失败：失败分类经 {@link #failures()} 交给宿主播文案。</p>
  */
-public final class DeviceSettingsViewModel extends ViewModel {
+public final class DeviceSettingsViewModel extends ViewModel implements SettingsInteractionListener {
 
     private final DeviceCapabilityGroup group;
     private final DeviceCapabilityCatalog catalog;
@@ -108,6 +111,123 @@ public final class DeviceSettingsViewModel extends ViewModel {
             return;
         }
         runAction.execute(action, result -> onResult(null, result));
+    }
+
+    @Override
+    public void onToggle(@NonNull String capabilityId, boolean enabled) {
+        write(capabilityId, new ControlValue.Toggle(enabled));
+    }
+
+    @Override
+    public void onChoice(@NonNull String capabilityId, @NonNull String optionId) {
+        write(capabilityId, new ControlValue.Choice(optionId));
+    }
+
+    @Override
+    public void onLevel(@NonNull String capabilityId, int level) {
+        write(capabilityId, new ControlValue.Level(level));
+    }
+
+    @Override
+    public void onCurve(@NonNull String capabilityId, @NonNull List<Integer> points) {
+        write(capabilityId, new ControlValue.Curve(points));
+    }
+
+    @Override
+    public void onAction(@NonNull DeviceSettingRow.ActionKind kind) {
+        switch (kind) {
+            case REBOOT -> onReboot();
+            case CLEAR_PAIRING -> onClearPairing();
+            case RESET_CONTROL -> onResetControl();
+            case DEVICE_MANAGEMENT -> onForgetActive();
+            default -> {
+            }
+        }
+    }
+
+    @Override
+    public void onFindEarLeft() {
+        run(new DeviceAction.FindEar(DeviceAction.FindEar.Side.LEFT));
+    }
+
+    @Override
+    public void onFindEarRight() {
+        run(new DeviceAction.FindEar(DeviceAction.FindEar.Side.RIGHT));
+    }
+
+    @Override
+    public void onStopFindAlert() {
+        run(new DeviceAction.StopFindAlert());
+    }
+
+    @Override
+    public void onRename(@NonNull String newName) {
+        run(new DeviceAction.Rename(newName));
+    }
+
+    @Override
+    public void onReboot() {
+        run(new DeviceAction.Reboot());
+    }
+
+    @Override
+    public void onClearPairing() {
+        run(new DeviceAction.ClearPairing());
+    }
+
+    @Override
+    public void onResetControl() {
+        run(new DeviceAction.ResetControl());
+    }
+
+    @Override
+    public void onStartRecordLocal() {
+        run(new DeviceAction.StartRecord(DeviceAction.RecordMode.LOCAL));
+    }
+
+    @Override
+    public void onStopRecordLocal() {
+        run(new DeviceAction.StopRecord(DeviceAction.RecordMode.LOCAL));
+    }
+
+    @Override
+    public void onStartRecordStream() {
+        run(new DeviceAction.StartRecord(DeviceAction.RecordMode.STREAM));
+    }
+
+    @Override
+    public void onStopRecordStream() {
+        run(new DeviceAction.StopRecord(DeviceAction.RecordMode.STREAM));
+    }
+
+    @Override
+    public void onFileTransfer(@NonNull String fileId) {
+        run(new DeviceAction.TransferRecord(fileId, true));
+    }
+
+    @Override
+    public void onForgetActive() {
+        forgetActive();
+    }
+
+    @Override
+    public void onConnectPairedDevice(@NonNull String address) {
+        run(new DeviceAction.ConnectPairedDevice(address));
+    }
+
+    @Override
+    public void onDisconnectPairedDevice(@NonNull String address) {
+        run(new DeviceAction.DisconnectPairedDevice(address));
+    }
+
+    @Override
+    public void onSetPriorityPairedDevice(@NonNull String address) {
+        run(new DeviceAction.SetPriorityPairedDevice(address));
+    }
+
+    @Override
+    public void onForgetPairedDevice(@NonNull String address) {
+        run(new DeviceAction.ForgetPairedDevice(address));
     }
 
     /** 设备管理：忘记设备（先断开活动会话、再从台账移除）；成功后由宿主关闭本页。 */

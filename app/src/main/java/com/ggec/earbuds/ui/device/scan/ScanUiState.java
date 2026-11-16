@@ -1,5 +1,12 @@
 package com.ggec.earbuds.ui.device.scan;
 
+import android.content.Context;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
+
+import com.ggec.earbuds.R;
+
 import java.util.List;
 
 /** 扫描页界面状态：区分初始未搜索、搜索中、已搜索无结果及筛选后无匹配态。 */
@@ -10,7 +17,13 @@ public record ScanUiState(
         List<ScanFilterOption> filterOptions,
         List<ScanItem> results,
         int totalDiscoveredCount,
-        ScanConnectPhase connectPhase
+        ScanConnectPhase connectPhase,
+        String connectingAddress,
+        @StringRes int emptyTitleRes,
+        @StringRes int emptyBodyRes,
+        @StringRes int statusTextRes,
+        int statusCount,
+        @StringRes int actionTextRes
 ) {
 
     public ScanUiState {
@@ -20,6 +33,39 @@ public record ScanUiState(
         results = results == null ? List.of() : List.copyOf(results);
         totalDiscoveredCount = Math.max(0, totalDiscoveredCount);
         connectPhase = connectPhase == null ? ScanConnectPhase.IDLE : connectPhase;
+        connectingAddress = connectingAddress == null ? "" : connectingAddress;
+        if (emptyTitleRes == 0) {
+            emptyTitleRes = ScanUiMapper.emptyTitleRes(scanning, hasScanned, totalDiscoveredCount);
+        }
+        if (emptyBodyRes == 0) {
+            emptyBodyRes = ScanUiMapper.emptyBodyRes(scanning, hasScanned, totalDiscoveredCount);
+        }
+        if (statusTextRes == 0) {
+            statusTextRes = ScanUiMapper.statusTextRes(scanning);
+        }
+        if (actionTextRes == 0) {
+            actionTextRes = ScanUiMapper.actionTextRes(scanning);
+        }
+    }
+
+    public ScanUiState(boolean scanning, boolean hasScanned, String selectedFilterModelId,
+                       List<ScanFilterOption> filterOptions, List<ScanItem> results,
+                       int totalDiscoveredCount, ScanConnectPhase connectPhase,
+                       String connectingAddress) {
+        this(scanning, hasScanned, selectedFilterModelId, filterOptions, results,
+                totalDiscoveredCount, connectPhase, connectingAddress,
+                ScanUiMapper.emptyTitleRes(scanning, hasScanned, totalDiscoveredCount),
+                ScanUiMapper.emptyBodyRes(scanning, hasScanned, totalDiscoveredCount),
+                ScanUiMapper.statusTextRes(scanning),
+                scanning ? 0 : (results != null ? results.size() : 0),
+                ScanUiMapper.actionTextRes(scanning));
+    }
+
+    public ScanUiState(boolean scanning, boolean hasScanned, String selectedFilterModelId,
+                       List<ScanFilterOption> filterOptions, List<ScanItem> results,
+                       int totalDiscoveredCount, ScanConnectPhase connectPhase) {
+        this(scanning, hasScanned, selectedFilterModelId, filterOptions, results,
+                totalDiscoveredCount, connectPhase, "");
     }
 
     public static ScanUiState idle() {
@@ -30,12 +76,28 @@ public record ScanUiState(
                 defaultFilterOptions(),
                 List.of(),
                 0,
-                ScanConnectPhase.IDLE);
+                ScanConnectPhase.IDLE,
+                "",
+                R.string.device_scan_idle_title,
+                R.string.device_scan_idle_body,
+                ScanUiMapper.statusTextRes(false),
+                0,
+                R.string.device_scan_start);
     }
 
     public static List<ScanFilterOption> defaultFilterOptions() {
         // 型号筛选项的唯一来源是领域目录（DeviceCapabilityCatalog.models() → ViewModel.filterOptions）；
         // 初始态不硬编码任何机型，避免与目录形成第二份真源而漂移。
         return List.of(new ScanFilterOption(ScanFilterOption.ALL_MODELS, ""));
+    }
+
+    @NonNull
+    public String resolveStatus(@NonNull Context context) {
+        if (statusTextRes == 0) {
+            return "";
+        }
+        return statusCount > 0
+                ? context.getString(statusTextRes, statusCount)
+                : context.getString(statusTextRes);
     }
 }

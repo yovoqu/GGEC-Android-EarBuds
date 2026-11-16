@@ -16,6 +16,8 @@ import com.ggec.earbuds.ui.device.DeviceFailureText;
 import com.ggec.earbuds.wiring.AppContainer;
 import com.yohu.youi.api.feedback.YoToast;
 
+import java.util.List;
+
 /**
  * 二级设置页宿主：一页对应一个能力分组（{@link DeviceCapabilityGroup}）。
  * 写入失败只把分类翻成文案提示，不在页面里吞掉。
@@ -41,7 +43,7 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
         DeviceCapabilityGroup group = group();
         viewModel = new ViewModelProvider(this, container().device().settingsFactory(group))
                 .get(DeviceSettingsViewModel.class);
-        screen = new DeviceSettingsScreen(this, viewModel, this::finish);
+        screen = new DeviceSettingsScreen(this, new SettingsListener());
         setContentView(screen.view());
         viewModel.uiState().observe(this, state -> {
             if (state != null) {
@@ -87,5 +89,103 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
             throw new IllegalStateException("AppContainer is not installed");
         }
         return container;
+    }
+
+    private final class SettingsListener implements DeviceSettingsScreen.Listener {
+
+        @Override
+        public void onBack() {
+            finish();
+        }
+
+        @Override
+        public void onToggle(@NonNull String capabilityId, boolean enabled) {
+            viewModel.onToggle(capabilityId, enabled);
+        }
+
+        @Override
+        public void onChoice(@NonNull String capabilityId, @NonNull String optionId) {
+            viewModel.onChoice(capabilityId, optionId);
+        }
+
+        @Override
+        public void onLevel(@NonNull String capabilityId, int level) {
+            viewModel.onLevel(capabilityId, level);
+        }
+
+        @Override
+        public void onCurve(@NonNull String capabilityId, @NonNull List<Integer> points) {
+            viewModel.onCurve(capabilityId, points);
+        }
+
+        @Override
+        public void onAction(@NonNull DeviceSettingRow.ActionKind kind) {
+            viewModel.onAction(kind);
+        }
+
+        @Override
+        public void onFindEarLeft() {
+            viewModel.onFindEarLeft();
+        }
+
+        @Override
+        public void onFindEarRight() {
+            viewModel.onFindEarRight();
+        }
+
+        @Override
+        public void onStopFindAlert() {
+            viewModel.onStopFindAlert();
+        }
+
+        @Override
+        public void onRename(@NonNull String newName) {
+            viewModel.onRename(newName);
+        }
+
+        @Override
+        public void onStartRecordLocal() {
+            viewModel.onStartRecordLocal();
+        }
+
+        @Override
+        public void onStopRecordLocal() {
+            viewModel.onStopRecordLocal();
+        }
+
+        @Override
+        public void onStartRecordStream() {
+            viewModel.onStartRecordStream();
+        }
+
+        @Override
+        public void onStopRecordStream() {
+            viewModel.onStopRecordStream();
+        }
+
+        @Override
+        public void onFileTransfer(@NonNull String fileId) {
+            viewModel.onFileTransfer(fileId);
+        }
+
+        @Override
+        public void onConnectPairedDevice(@NonNull String address) {
+            viewModel.onConnectPairedDevice(address);
+        }
+
+        @Override
+        public void onDisconnectPairedDevice(@NonNull String address) {
+            viewModel.onDisconnectPairedDevice(address);
+        }
+
+        @Override
+        public void onSetPriorityPairedDevice(@NonNull String address) {
+            viewModel.onSetPriorityPairedDevice(address);
+        }
+
+        @Override
+        public void onForgetPairedDevice(@NonNull String address) {
+            viewModel.onForgetPairedDevice(address);
+        }
     }
 }
