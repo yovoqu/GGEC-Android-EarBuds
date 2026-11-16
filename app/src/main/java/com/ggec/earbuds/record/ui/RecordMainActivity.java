@@ -21,7 +21,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.provider.lib_common.PermissionProvider;
+import com.ggec.earbuds.provider.lib_common.permission.PermissionProvider;
 import com.ggec.earbuds.record.wiring.RecordGraph;
 import com.google.android.material.button.MaterialButton;
 import com.yovo.biz_ggec_record.api.RecordConnectionObserver;
