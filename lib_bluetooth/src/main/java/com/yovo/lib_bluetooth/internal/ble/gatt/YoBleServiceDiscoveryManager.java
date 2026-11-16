@@ -99,18 +99,31 @@ public final class YoBleServiceDiscoveryManager {
         context.runtime().checkStateThread();
         activeOpId = null;
         if (status != 0) {
-            finish(YoBleErrorMapper.fromGattStatus(status, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
-                    context.deviceId(), null, "discoverServices"));
+            // 必须 complete 队列槽，否则 DISCOVER_SERVICES 会占着 inFlight 直到超时+宽限（约 15s），
+            // 后续 MTU / CCCD / 订阅全部被堵住。
+            context.operationQueue().complete(
+                    OpKind.DISCOVER_SERVICES,
+                    null,
+                    null,
+                    YoBleErrorMapper.fromGattStatus(status, BleErrorCode.SERVICE_DISCOVERY_FAILED, MODULE,
+                            context.deviceId(), null, "discoverServices"));
             return;
         }
         YoBleGattTransport transport = context.transport();
         if (transport == null) {
-            finish(YoBleErrorMapper.failure(BleErrorCode.CONNECTION_NOT_READY, MODULE, "transport closed", context.deviceId()));
+            context.operationQueue().complete(
+                    OpKind.DISCOVER_SERVICES,
+                    null,
+                    null,
+                    YoBleErrorMapper.failure(
+                            BleErrorCode.CONNECTION_NOT_READY, MODULE, "transport closed", context.deviceId()));
             return;
         }
         BleGattDatabaseSnapshot database = transport.captureDatabaseSnapshot(context.nowMillis());
         context.onDatabaseUpdated(database);
         context.snapshotStore().recordGattDatabase(database);
+        // 先释放队列槽，再跑可能继续入队的副作用（Service Changed 订阅、MTU 等）。
+        context.operationQueue().complete(OpKind.DISCOVER_SERVICES, null, database, null);
         subscribeServiceChanged(database);
         context.notifyConnectionObservers(observer -> observer.onServicesDiscovered(context.deviceId(), database));
         finishSuccess(database);
