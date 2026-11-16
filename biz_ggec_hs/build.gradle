@@ -36,6 +36,7 @@ android {
 dependencies {
     implementation project(':lib_bluetooth')
     implementation project(':lib_common')
+    implementation project(':lib_ggec_opus')
     implementation 'androidx.annotation:annotation:1.9.1'
     testImplementation 'junit:junit:4.13.2'
 }
@@ -81,6 +82,7 @@ tasks.register('checkBizGgecHsBoundary') {
                     || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/center/catalog/')
             def inBtProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/lib_bluetooth/')
             def inLogProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/lib_common/log/')
+            def inOpusProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/lib_ggec_opus/')
             def inProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/')
             def inMain = relative.startsWith('/src/main/java/')
             def logSeam = 'com.yovo.biz_ggec_hs.provider.lib_common.log.'
@@ -132,8 +134,20 @@ tasks.register('checkBizGgecHsBoundary') {
                         offenders << "${location}: 日志缝只委托 lib_common.log -> ${target}"
                     }
                 }
-                if (inProvider && !inBtProvider && !inLogProvider) {
-                    offenders << "${location}: provider 只允许 lib_bluetooth 与 lib_common/log -> ${target}"
+                if (inProvider && !inBtProvider && !inLogProvider && !inOpusProvider) {
+                    offenders << "${location}: provider 只允许 lib_bluetooth、lib_common/log 与 lib_ggec_opus -> ${target}"
+                }
+                if (inOpusProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.')
+                            || (target.startsWith('com.yovo.lib_ggec_opus.') && !target.startsWith('com.yovo.lib_ggec_opus.internal.'))
+                            || target.startsWith('com.yovo.biz_ggec_hs.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider/lib_ggec_opus 只能依赖 lib_ggec_opus 公共契约与内部端口 -> ${target}"
+                    }
+                }
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_ggec_opus.')) {
+                    offenders << "${location}: 只有 provider 可以 import lib_ggec_opus -> ${target}"
                 }
                 if (inMain && !inLogProvider && target.startsWith('com.yovo.lib_common.')) {
                     offenders << "${location}: 只有日志缝可以 import lib_common -> ${target}"

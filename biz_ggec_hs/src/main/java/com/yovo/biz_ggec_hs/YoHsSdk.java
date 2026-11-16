@@ -7,6 +7,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.api.HsDevice;
+import com.yovo.biz_ggec_hs.api.HsRecordApi;
 import com.yovo.biz_ggec_hs.api.HsScan;
 import com.yovo.biz_ggec_hs.internal.center.HsGraph;
 
@@ -125,5 +126,10 @@ public final class YoHsSdk {
 
     public void perform(@NonNull HsControl.Action action, @NonNull HsControl.Callback callback) {
         graph.link().perform(action, callback);
+    }
+
+    @NonNull
+    public HsRecordApi record() {
+        return graph.record();
     }
 }

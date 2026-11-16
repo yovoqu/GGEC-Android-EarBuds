@@ -13,6 +13,7 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
 import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolPaired;
 import com.yovo.biz_ggec_hs.internal.interact.HsModels;
 import com.yovo.biz_ggec_hs.internal.center.catalog.HsCatalogImpl;
+import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
@@ -72,11 +73,18 @@ public final class HsSessionImpl {
     /** 当前连接代次。经典回调迟到时不得再去开 GATT。 */
     private final AtomicInteger connectGeneration = new AtomicInteger();
     private final ConnectionEvents connectionEvents = new ConnectionEvents();
+    private final HsAudioDataLink audioDataLink;
 
     public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, HsClassicRadio classicRadio,
                          HsSessionIntake intake) {
         this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())),
-                classicRadio, intake);
+                classicRadio, intake, null);
+    }
+
+    public HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, HsClassicRadio classicRadio,
+                         HsSessionIntake intake, HsAudioDataLink audioDataLink) {
+        this(engine, catalog, new HandlerMainThread(new Handler(Looper.getMainLooper())),
+                classicRadio, intake, audioDataLink);
     }
 
     /**
@@ -85,12 +93,18 @@ public final class HsSessionImpl {
      */
     HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, MainThread mainThread,
                   HsClassicRadio classicRadio, HsSessionIntake intake) {
+        this(engine, catalog, mainThread, classicRadio, intake, null);
+    }
+
+    HsSessionImpl(HsProtocolEngine engine, HsCatalogImpl catalog, MainThread mainThread,
+                  HsClassicRadio classicRadio, HsSessionIntake intake, HsAudioDataLink audioDataLink) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.classicRadio = Objects.requireNonNull(classicRadio, "classicRadio");
         this.domain = engine.domain();
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.intake = Objects.requireNonNull(intake, "intake");
         this.mainThread = Objects.requireNonNull(mainThread, "mainThread");
+        this.audioDataLink = audioDataLink;
         engine.applySessionIntake(intake.acceptDeviceReports(), intake.probeEarColorOnReady());
         this.readyTimeout = new HsConnectReadyTimeout(
                 mainThread, CONNECT_READY_TIMEOUT_MILLIS, engine::onConnectAttemptTimedOut);
@@ -111,6 +125,9 @@ public final class HsSessionImpl {
         connectedRadios = radios;
         sessionCapabilities = capabilitiesOf(connectedModelId);
         readyIntakeSent = false;
+        if (audioDataLink != null) {
+            audioDataLink.bindDevice(null);
+        }
         dual = null;
         recordings = List.of();
         readyTimeout.cancel();
@@ -122,6 +139,9 @@ public final class HsSessionImpl {
             public void onReady() {
                 if (current != connectGeneration.get()) {
                     return;
+                }
+                if (audioDataLink != null) {
+                    audioDataLink.bindDevice(bleAddress);
                 }
                 engine.connect(bleAddress);
             }
@@ -173,6 +193,9 @@ public final class HsSessionImpl {
         dual = null;
         recordings = List.of();
         readyIntakeSent = false;
+        if (audioDataLink != null) {
+            audioDataLink.bindDevice(null);
+        }
     }
 
     public boolean isReady() {
