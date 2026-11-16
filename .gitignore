@@ -61,7 +61,10 @@ google-services.json
 /app/doc/rewrite-drafts/
 /app/doc/*prompt*.md
 
-# 运行期崩溃转储与回放日志：统一归档到仓库外的 YoAgentLogs/<repo>/，仓库内即使残留也不入库。
+# 日志存放口径：所有 *.log 一律写到仓库外的 YoAgentLogs/<repo>/<YYYYMMDD>/<category>/，
+# category 取 crash / gradle / device；仓库内（含根目录、build/、.scratch/）不留日志。
+# 被 docs/ 引用的验证证据用 .txt/.png 放进 docs/architecture/<phase>/device-evidence/。
+# 下面几条是兜底：即使仓库内又残留，也不入库。
 hs_err_pid*.log
 replay_pid*.log
 *.hprof
