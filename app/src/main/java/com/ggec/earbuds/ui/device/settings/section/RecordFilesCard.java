@@ -9,12 +9,10 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
@@ -25,13 +23,13 @@ import java.util.List;
 
 /**
  * 录音文件列表组件：文件来自快照投影 {@code recordFiles}（未上报为空列表）。
- * 点一条即发起该文件的传输，动作是类型化的 {@link DeviceAction.TransferRecord}。
+ * 点一条即通过回调发起该文件的传输意图。
  */
 final class RecordFilesCard {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
+    private final SettingsInteractionListener listener;
     private final List<Runnable> releases = new ArrayList<>();
 
     private final LinearLayout view;
@@ -39,10 +37,10 @@ final class RecordFilesCard {
     private final LinearLayout listHost;
 
     RecordFilesCard(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                    @NonNull DeviceSettingsViewModel viewModel) {
+                    @NonNull SettingsInteractionListener listener) {
         this.activity = activity;
         this.theme = theme;
-        this.viewModel = viewModel;
+        this.listener = listener;
 
         view = new LinearLayout(activity);
         view.setOrientation(LinearLayout.VERTICAL);
@@ -84,7 +82,7 @@ final class RecordFilesCard {
         if (interactive) {
             list.setOnItemClickListener(index -> {
                 if (index >= 0 && index < rows.size()) {
-                    viewModel.run(new DeviceAction.TransferRecord(rows.get(index).fileId(), true));
+                    listener.onFileTransfer(rows.get(index).fileId());
                 }
             });
         }

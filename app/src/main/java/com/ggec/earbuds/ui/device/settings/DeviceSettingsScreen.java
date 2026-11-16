@@ -18,6 +18,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
+import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.ggec.earbuds.ui.device.settings.section.SettingsRowsView;
 import com.yohu.youi.api.platform.YoSystemBar;
 
@@ -27,13 +28,12 @@ import com.yohu.youi.api.platform.YoSystemBar;
  */
 public final class DeviceSettingsScreen {
 
-    public interface Listener {
+    public interface Listener extends SettingsInteractionListener {
         void onBack();
     }
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
 
     private final LinearLayout root;
     private final TextView title;
@@ -43,10 +43,8 @@ public final class DeviceSettingsScreen {
     private final SettingsRowsView rows;
 
     public DeviceSettingsScreen(@NonNull AppCompatActivity activity,
-                                @NonNull DeviceSettingsViewModel viewModel,
                                 @NonNull Listener listener) {
         this.activity = activity;
-        this.viewModel = viewModel;
         this.theme = DeviceTheme.of(activity);
 
         root = new LinearLayout(activity);
@@ -54,7 +52,6 @@ public final class DeviceSettingsScreen {
         root.setBackgroundColor(theme.page);
 
         title = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
-        title.setText(viewModel.group().name());
         root.addView(buildHeader(listener), matchWrap());
 
         FrameLayout host = new FrameLayout(activity);
@@ -85,7 +82,7 @@ public final class DeviceSettingsScreen {
         });
         ViewCompat.requestApplyInsets(root);
 
-        rows = new SettingsRowsView(activity, theme, viewModel);
+        rows = new SettingsRowsView(activity, theme, listener);
         content.addView(rows.view(), matchWrap());
     }
 

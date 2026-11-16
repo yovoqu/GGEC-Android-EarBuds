@@ -11,12 +11,10 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.LevelPresentation;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.yohu.youi.api.callback.OnProgressChangeListener;
 import com.yohu.youi.api.controls.YoSlider;
 
@@ -34,7 +32,7 @@ final class SliderCardView implements ControlOutcomeSink {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
+    private final SettingsInteractionListener listener;
     private final String capabilityId;
 
     private final LinearLayout view;
@@ -47,10 +45,10 @@ final class SliderCardView implements ControlOutcomeSink {
     private int dragValue;
 
     SliderCardView(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                   @NonNull DeviceSettingsViewModel viewModel, @NonNull String capabilityId) {
+                   @NonNull SettingsInteractionListener listener, @NonNull String capabilityId) {
         this.activity = activity;
         this.theme = theme;
-        this.viewModel = viewModel;
+        this.listener = listener;
         this.capabilityId = capabilityId;
 
         view = new LinearLayout(activity);
@@ -111,7 +109,7 @@ final class SliderCardView implements ControlOutcomeSink {
                             return;
                         }
                         unconfirmed = OptionalInt.of(dragValue);
-                        viewModel.write(capabilityId, new ControlValue.Level(dragValue));
+                        listener.onLevel(capabilityId, dragValue);
                     }
                 })
                 .build();

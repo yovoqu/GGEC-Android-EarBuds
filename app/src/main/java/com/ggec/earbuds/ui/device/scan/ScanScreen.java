@@ -44,6 +44,7 @@ public final class ScanScreen {
 
     /** RSSI-only 局部刷新载荷：仅信号强度变化时走轻量 bindRssi，避免整卡重绑。 */
     private static final Object PAYLOAD_RSSI = new Object();
+    private static final Object PAYLOAD_CONNECTING = new Object();
 
     private static final DiffUtil.ItemCallback<ScanItem> ITEM_DIFF = new DiffUtil.ItemCallback<>() {
         @Override
@@ -60,12 +61,18 @@ public final class ScanScreen {
         @Nullable
         @Override
         public Object getChangePayload(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
-            // BLE 名称或 BLE 地址变化需要完整重绑；只有 RSSI 变化时局部刷新副标题。
+            // BLE 名称或 BLE 地址变化需要完整重绑；只有连接状态或 RSSI 变化时局部刷新。
             if (!oldItem.bleName().equals(newItem.bleName())
                     || !oldItem.bleAddress().equalsIgnoreCase(newItem.bleAddress())) {
                 return null;
             }
-            return PAYLOAD_RSSI;
+            if (oldItem.connecting() != newItem.connecting()) {
+                return PAYLOAD_CONNECTING;
+            }
+            if (oldItem.rssi() != newItem.rssi()) {
+                return PAYLOAD_RSSI;
+            }
+            return null;
         }
     };
 
@@ -83,14 +90,13 @@ public final class ScanScreen {
     private final TextView emptyBody;
     private final YoButton action;
     private final YoSelect filterSelect;
-    private final ScanConnectDialog connectDialog;
 
     private List<ScanFilterOption> renderedOptions = List.of();
     private String lastOptionsSignature = "";
     private String lastSelectedModelId = "";
     private boolean updatingFilter;
-    @Nullable
-    private Boolean lastScanning;
+    @StringRes
+    private int lastActionTextRes;
     @StringRes
     private int lastEmptyTitleRes;
     @StringRes
@@ -100,7 +106,6 @@ public final class ScanScreen {
         this.activity = activity;
         this.theme = DeviceTheme.of(activity);
         this.listener = listener;
-        this.connectDialog = new ScanConnectDialog(activity);
 
         root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -149,7 +154,9 @@ public final class ScanScreen {
 
         action = YoButton.create(activity).build();
         components.own(action::destroy);
-        action.setText(activity.getString(R.string.device_scan_start));
+        ScanUiState idle = ScanUiState.idle();
+        action.setText(activity.getString(idle.actionTextRes()));
+        lastActionTextRes = idle.actionTextRes();
         action.setOnClickListener(v -> listener.onScan());
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, theme.dp(DeviceTheme.PRIMARY_ACTION_HEIGHT));
@@ -164,8 +171,8 @@ public final class ScanScreen {
         });
         ViewCompat.requestApplyInsets(root);
 
-        bindFilter(ScanUiState.idle());
-        renderEmptyState(false, false, 0);
+        bindFilter(idle);
+        renderEmptyState(idle.emptyTitleRes(), idle.emptyBodyRes());
     }
 
     @NonNull
@@ -174,19 +181,19 @@ public final class ScanScreen {
     }
 
     public void destroy() {
-        connectDialog.destroy();
         recyclerView.setAdapter(null);
         components.close();
     }
 
     public void render(@NonNull ScanUiState state) {
-        connectDialog.render(state.connectPhase() == ScanConnectPhase.CONNECTING);
+        boolean connecting = state.connectPhase() == ScanConnectPhase.CONNECTING;
+        adapter.setConnecting(connecting);
+        action.setEnabled(!connecting);
         bindFilter(state);
-        boolean scanning = state.scanning();
-        if (lastScanning == null || lastScanning != scanning) {
-            lastScanning = scanning;
-            action.setText(activity.getString(scanning
-                    ? R.string.device_scan_stop : R.string.device_scan_start));
+        int actionRes = state.actionTextRes();
+        if (lastActionTextRes != actionRes) {
+            lastActionTextRes = actionRes;
+            action.setText(activity.getString(actionRes));
         }
         List<ScanItem> results = state.results();
         if (results.isEmpty()) {
@@ -202,16 +209,14 @@ public final class ScanScreen {
             if (emptyState.getVisibility() != View.VISIBLE) {
                 emptyState.setVisibility(View.VISIBLE);
             }
-            renderEmptyState(scanning, state.hasScanned(), state.totalDiscoveredCount());
+            renderEmptyState(state.emptyTitleRes(), state.emptyBodyRes());
             return;
         }
 
         if (status.getVisibility() != View.VISIBLE) {
             status.setVisibility(View.VISIBLE);
         }
-        String nextStatus = scanning
-                ? activity.getString(R.string.device_scan_searching)
-                : activity.getString(R.string.device_scan_found_count, results.size());
+        String nextStatus = state.resolveStatus(activity);
         if (!nextStatus.contentEquals(status.getText())) {
             status.setText(nextStatus);
         }
@@ -320,22 +325,7 @@ public final class ScanScreen {
         return options.isEmpty() ? -1 : 0;
     }
 
-    private void renderEmptyState(boolean scanning, boolean hasScanned, int totalDiscoveredCount) {
-        int titleRes;
-        int bodyRes;
-        if (totalDiscoveredCount > 0) {
-            titleRes = R.string.device_scan_filter_empty_title;
-            bodyRes = R.string.device_scan_filter_empty_body;
-        } else if (scanning) {
-            titleRes = R.string.device_scan_searching;
-            bodyRes = R.string.device_scan_searching_hint;
-        } else if (!hasScanned) {
-            titleRes = R.string.device_scan_idle_title;
-            bodyRes = R.string.device_scan_idle_body;
-        } else {
-            titleRes = R.string.device_scan_empty_title;
-            bodyRes = R.string.device_scan_empty_body;
-        }
+    private void renderEmptyState(@StringRes int titleRes, @StringRes int bodyRes) {
         if (titleRes != lastEmptyTitleRes) {
             lastEmptyTitleRes = titleRes;
             emptyHeading.setText(titleRes);
@@ -382,14 +372,24 @@ public final class ScanScreen {
 
     private final class ScanDeviceAdapter extends ListAdapter<ScanItem, ScanDeviceViewHolder> {
 
+        private boolean connecting;
+
         private ScanDeviceAdapter() {
             super(ITEM_DIFF);
+        }
+
+        void setConnecting(boolean connecting) {
+            if (this.connecting != connecting) {
+                this.connecting = connecting;
+                notifyItemRangeChanged(0, getItemCount(), PAYLOAD_CONNECTING);
+            }
         }
 
         @NonNull
         @Override
         public ScanDeviceViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             ScanDeviceCard card = new ScanDeviceCard(activity, theme, listener::onConnect);
+            components.own(card::destroy);
             RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             params.leftMargin = theme.dp(DeviceTheme.LIST_EDGE);
@@ -401,15 +401,21 @@ public final class ScanScreen {
 
         @Override
         public void onBindViewHolder(@NonNull ScanDeviceViewHolder holder, int position) {
-            holder.card.bind(getItem(position));
+            holder.card.bind(getItem(position), connecting);
         }
 
         @Override
         public void onBindViewHolder(@NonNull ScanDeviceViewHolder holder, int position,
                                      @NonNull List<Object> payloads) {
-            if (!payloads.isEmpty() && payloads.contains(PAYLOAD_RSSI)) {
-                holder.card.bindRssi(getItem(position));
-                return;
+            if (!payloads.isEmpty()) {
+                if (payloads.contains(PAYLOAD_CONNECTING)) {
+                    holder.card.bindConnecting(getItem(position), connecting);
+                    return;
+                }
+                if (payloads.contains(PAYLOAD_RSSI)) {
+                    holder.card.bindRssi(getItem(position));
+                    return;
+                }
             }
             super.onBindViewHolder(holder, position, payloads);
         }

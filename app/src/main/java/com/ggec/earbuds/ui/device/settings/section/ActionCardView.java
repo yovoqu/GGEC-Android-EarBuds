@@ -10,11 +10,9 @@ import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.controls.YoTextInput;
 import com.yohu.youi.api.feedback.YoDialog;
@@ -26,15 +24,14 @@ import java.util.List;
  * 动作行组件：一个能力 = 一组按钮。
  *
  * <p>按钮与动作的对应关系由 {@link DeviceSettingRow.ActionKind} 决定（能力 id → kind 的路由在
- * {@code SettingsSectionFactory}，本类不再判断 id）。动作本身是类型化的
- * {@link DeviceAction}，界面不拼协议字节。需要二次确认或输入的动作（重启、清除配对、改名）
- * 走对话框。</p>
+ * {@code SettingsSectionFactory}，本类不再判断 id）。通过回调派发意图，界面不拼协议字节、
+ * 不构造领域动作模型。需要二次确认或输入的动作（重启、清除配对、改名）走对话框。</p>
  */
 final class ActionCardView {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
+    private final SettingsInteractionListener listener;
     private final List<RecordFileView> recordFiles;
     private final List<Runnable> releases = new ArrayList<>();
 
@@ -43,11 +40,11 @@ final class ActionCardView {
     private final LinearLayout buttons;
 
     ActionCardView(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                   @NonNull DeviceSettingsViewModel viewModel,
+                   @NonNull SettingsInteractionListener listener,
                    @NonNull List<RecordFileView> recordFiles) {
         this.activity = activity;
         this.theme = theme;
-        this.viewModel = viewModel;
+        this.listener = listener;
         this.recordFiles = recordFiles;
 
         view = new LinearLayout(activity);
@@ -82,11 +79,12 @@ final class ActionCardView {
             case REBOOT -> bindReboot(interactive);
             case CLEAR_PAIRING -> bindClearPairing(interactive);
             case RESET_CONTROL -> bindResetControl(interactive);
-            case RECORD_LOCAL -> bindRecord(DeviceAction.RecordMode.LOCAL, interactive,
-                    R.string.device_row_record_start, R.string.device_row_record_stop);
-            case RECORD_STREAM -> bindRecord(DeviceAction.RecordMode.STREAM, interactive,
-                    R.string.device_action_record_stream_start,
-                    R.string.device_action_record_stream_stop);
+            case RECORD_LOCAL -> bindRecord(interactive,
+                    R.string.device_row_record_start, listener::onStartRecordLocal,
+                    R.string.device_row_record_stop, listener::onStopRecordLocal);
+            case RECORD_STREAM -> bindRecord(interactive,
+                    R.string.device_action_record_stream_start, listener::onStartRecordStream,
+                    R.string.device_action_record_stream_stop, listener::onStopRecordStream);
             case RECORD_TRANSFER -> bindTransfer(interactive);
             case DEVICE_MANAGEMENT -> bindDeviceManagement(interactive);
         }
@@ -97,12 +95,9 @@ final class ActionCardView {
     }
 
     private void bindFindEar(boolean interactive) {
-        addButton(R.string.device_row_find_left, interactive, false,
-                () -> viewModel.run(new DeviceAction.FindEar(DeviceAction.FindEar.Side.LEFT)));
-        addButton(R.string.device_row_find_right, interactive, false,
-                () -> viewModel.run(new DeviceAction.FindEar(DeviceAction.FindEar.Side.RIGHT)));
-        addButton(R.string.device_row_find_stop, interactive, false,
-                () -> viewModel.run(new DeviceAction.StopFindAlert()));
+        addButton(R.string.device_row_find_left, interactive, false, listener::onFindEarLeft);
+        addButton(R.string.device_row_find_right, interactive, false, listener::onFindEarRight);
+        addButton(R.string.device_row_find_stop, interactive, false, listener::onStopFindAlert);
     }
 
     private void bindRename(boolean interactive) {
@@ -111,35 +106,33 @@ final class ActionCardView {
 
     private void bindReboot(boolean interactive) {
         addButton(R.string.device_action_reboot, interactive, false,
-                () -> confirm(R.string.device_action_reboot_confirm,
-                        () -> viewModel.run(new DeviceAction.Reboot())));
+                () -> confirm(R.string.device_action_reboot_confirm, listener::onReboot));
     }
 
     private void bindClearPairing(boolean interactive) {
         addButton(R.string.device_row_clear_pairing, interactive, true,
                 () -> confirm(R.string.device_action_clear_pairing_confirm,
-                        () -> viewModel.run(new DeviceAction.ClearPairing())));
+                        listener::onClearPairing));
     }
 
     private void bindResetControl(boolean interactive) {
         addButton(R.string.device_action_reset_control, interactive, false,
                 () -> confirm(R.string.device_action_reset_control_confirm,
-                        () -> viewModel.run(new DeviceAction.ResetControl())));
+                        listener::onResetControl));
     }
 
-    private void bindRecord(DeviceAction.RecordMode mode, boolean interactive,
-                            @StringRes int startLabel, @StringRes int stopLabel) {
-        addButton(startLabel, interactive, false,
-                () -> viewModel.run(new DeviceAction.StartRecord(mode)));
-        addButton(stopLabel, interactive, false,
-                () -> viewModel.run(new DeviceAction.StopRecord(mode)));
+    private void bindRecord(boolean interactive,
+                            @StringRes int startLabel, @NonNull Runnable onStart,
+                            @StringRes int stopLabel, @NonNull Runnable onStop) {
+        addButton(startLabel, interactive, false, onStart);
+        addButton(stopLabel, interactive, false, onStop);
     }
 
     private void bindTransfer(boolean interactive) {
         boolean hasFile = !recordFiles.isEmpty();
         addButton(R.string.device_row_record_sync, interactive && hasFile, false, () -> {
             RecordFileView newest = recordFiles.get(0);
-            viewModel.run(new DeviceAction.TransferRecord(newest.fileId(), true));
+            listener.onFileTransfer(newest.fileId());
         });
     }
 
@@ -151,7 +144,7 @@ final class ActionCardView {
      */
     private void bindDeviceManagement(boolean interactive) {
         addButton(R.string.device_forget, interactive, true, () -> confirm(
-                R.string.device_forget_confirm, viewModel::forgetActive));
+                R.string.device_forget_confirm, listener::onForgetActive));
     }
 
     private void addButton(@StringRes int labelRes, boolean enabled, boolean destructive,
@@ -202,7 +195,7 @@ final class ActionCardView {
                                 () -> {
                                     String name = String.valueOf(field.getText()).trim();
                                     if (!name.isEmpty()) {
-                                        viewModel.run(new DeviceAction.Rename(name));
+                                        listener.onRename(name);
                                     }
                                 }))
                 .show();

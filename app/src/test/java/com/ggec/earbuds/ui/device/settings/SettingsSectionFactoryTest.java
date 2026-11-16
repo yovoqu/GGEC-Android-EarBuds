@@ -160,24 +160,6 @@ public final class SettingsSectionFactoryTest {
     }
 
     @Test
-    public void buildFollowsGroupOrderAndSkipsEmptyGroups() {
-        DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
-                DeviceProfileFixtures.capability("GAME_MODE", "游戏模式",
-                        DeviceCapabilityGroup.FUNCTION, DeviceCapabilityKind.TOGGLE),
-                DeviceProfileFixtures.capability("EQ_MODE", "均衡器",
-                        DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.CHOICE,
-                        DeviceProfileFixtures.option("MUSIC", "音乐")),
-                DeviceProfileFixtures.capability("CLEAR_PAIRING", "清除配对",
-                        DeviceCapabilityGroup.ABOUT, DeviceCapabilityKind.ACTION));
-
-        List<SettingsSectionFactory.Section> sections =
-                factory.build(profile, new DeviceState(Map.of()));
-
-        assertEquals(List.of(DeviceCapabilityGroup.MUSIC, DeviceCapabilityGroup.FUNCTION,
-                DeviceCapabilityGroup.ABOUT), groups(sections));
-    }
-
-    @Test
     public void rowsContainOnlyTheRequestedGroup() {
         DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
                 DeviceProfileFixtures.capability("EQ_MODE", "均衡器",
@@ -341,9 +323,5 @@ public final class SettingsSectionFactoryTest {
                 DeviceCapabilityGroup.MUSIC);
 
         assertTrue(((DeviceSettingRow.Choice) rows.get(0)).value().isEmpty());
-    }
-
-    private static List<DeviceCapabilityGroup> groups(List<SettingsSectionFactory.Section> sections) {
-        return sections.stream().map(SettingsSectionFactory.Section::group).toList();
     }
 }

@@ -46,6 +46,7 @@ public final class ScanViewModel extends ViewModel {
     private long scanToken;
     private int connectEpoch;
     private ScanConnectPhase connectPhase = ScanConnectPhase.IDLE;
+    private String connectingBleAddress = "";
     private String selectedFilterModelId = ScanFilterOption.ALL_MODELS;
 
     public ScanViewModel(@NonNull ScanDevices scanDevices,
@@ -57,9 +58,9 @@ public final class ScanViewModel extends ViewModel {
         this.catalog = catalog;
         this.scanPermission = scanPermission;
         this.filterOptions = buildFilterOptions(catalog);
-        this.uiState = new MutableLiveData<>(new ScanUiState(
-                false, false, selectedFilterModelId, this.filterOptions, List.of(), 0,
-                ScanConnectPhase.IDLE));
+        this.uiState = new MutableLiveData<>(ScanUiMapper.mapState(
+                false, false, selectedFilterModelId, this.filterOptions, List.of(),
+                ScanConnectPhase.IDLE, ""));
     }
 
     @NonNull
@@ -174,10 +175,14 @@ public final class ScanViewModel extends ViewModel {
         final int epoch;
         ScanUiState connecting;
         synchronized (lock) {
+            if (connectPhase == ScanConnectPhase.CONNECTING) {
+                return;
+            }
             scanToken++;
             scanning = false;
             epoch = ++connectEpoch;
             connectPhase = ScanConnectPhase.CONNECTING;
+            connectingBleAddress = item.bleAddress();
             connecting = buildStateLocked();
         }
         scanDevices.stop();
@@ -199,6 +204,7 @@ public final class ScanViewModel extends ViewModel {
                 return;
             }
             connectPhase = ScanConnectPhase.IDLE;
+            connectingBleAddress = "";
             next = buildStateLocked();
         }
         publish(next);
@@ -221,6 +227,7 @@ public final class ScanViewModel extends ViewModel {
             scanning = false;
             connectEpoch++;
             connectPhase = ScanConnectPhase.IDLE;
+            connectingBleAddress = "";
         }
         scanDevices.stop();
         super.onCleared();
@@ -285,14 +292,14 @@ public final class ScanViewModel extends ViewModel {
 
     @NonNull
     private ScanUiState buildStateLocked() {
-        return new ScanUiState(
+        return ScanUiMapper.mapState(
                 scanning,
                 hasScanned,
                 selectedFilterModelId,
                 filterOptions,
-                ScanUiMapper.map(visible),
-                visible.size(),
-                connectPhase);
+                visible,
+                connectPhase,
+                connectingBleAddress);
     }
 
     /** 一律 postValue：状态可能从扫描回调线程来，ViewModel 不判断自己在哪个线程上。 */

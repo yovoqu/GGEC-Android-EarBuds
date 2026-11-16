@@ -9,14 +9,12 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DualConnectionView;
 import com.ggec.earbuds.domain.device.model.PairedDeviceView;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.device.settings.PairedDeviceLabels;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
@@ -38,7 +36,7 @@ final class DualConnectionCard {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
-    private final DeviceSettingsViewModel viewModel;
+    private final SettingsInteractionListener listener;
     /** 绑定周期内创建的控件：每次 bind 重建。 */
     private final List<Runnable> releases = new ArrayList<>();
     /** 页面周期内创建、必须活到页面销毁的弹层（选项菜单）。 */
@@ -50,10 +48,10 @@ final class DualConnectionCard {
     private final LinearLayout listHost;
 
     DualConnectionCard(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                       @NonNull DeviceSettingsViewModel viewModel) {
+                       @NonNull SettingsInteractionListener listener) {
         this.activity = activity;
         this.theme = theme;
-        this.viewModel = viewModel;
+        this.listener = listener;
 
         view = new LinearLayout(activity);
         view.setOrientation(LinearLayout.VERTICAL);
@@ -141,15 +139,15 @@ final class DualConnectionCard {
         labels.add(device.connected()
                 ? R.string.device_paired_disconnect : R.string.device_paired_connect);
         actions.add(device.connected()
-                ? () -> viewModel.run(new DeviceAction.DisconnectPairedDevice(device.address()))
-                : () -> viewModel.run(new DeviceAction.ConnectPairedDevice(device.address())));
+                ? () -> listener.onDisconnectPairedDevice(device.address())
+                : () -> listener.onConnectPairedDevice(device.address()));
         if (!device.priority()) {
             labels.add(R.string.device_paired_set_priority);
             actions.add(() ->
-                    viewModel.run(new DeviceAction.SetPriorityPairedDevice(device.address())));
+                    listener.onSetPriorityPairedDevice(device.address()));
         }
         labels.add(R.string.device_paired_forget);
-        actions.add(() -> viewModel.run(new DeviceAction.ForgetPairedDevice(device.address())));
+        actions.add(() -> listener.onForgetPairedDevice(device.address()));
 
         String[] items = new String[labels.size()];
         for (int index = 0; index < labels.size(); index++) {

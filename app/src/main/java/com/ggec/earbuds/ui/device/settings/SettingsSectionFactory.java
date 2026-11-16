@@ -11,7 +11,6 @@ import com.ggec.earbuds.domain.device.model.DeviceCapabilityView;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceState;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
-import com.ggec.earbuds.ui.device.DeviceGroupLabels;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,14 +28,6 @@ import java.util.OptionalInt;
  */
 public final class SettingsSectionFactory {
 
-    /** 一个分区的行：分区按 {@link DeviceCapabilityGroup} 声明顺序输出，行保持描述符声明顺序。 */
-    public record Section(DeviceCapabilityGroup group, int titleRes, List<DeviceSettingRow> rows) {
-
-        public Section {
-            rows = rows == null ? List.of() : List.copyOf(rows);
-        }
-    }
-
     /**
      * 「关于设备」末尾的 APP 级设备管理行：重命名别名、忘记设备。
      *
@@ -46,18 +37,6 @@ public final class SettingsSectionFactory {
     public DeviceSettingRow deviceManagementRow() {
         return new DeviceSettingRow.Action(DeviceCapabilityIds.DEVICE_MANAGEMENT, "",
                 DeviceSettingRow.ActionKind.DEVICE_MANAGEMENT);
-    }
-
-    @NonNull
-    public List<Section> build(@NonNull DeviceProfileView profile, @NonNull DeviceState state) {
-        List<Section> sections = new ArrayList<>();
-        for (DeviceCapabilityGroup group : DeviceCapabilityGroup.values()) {
-            List<DeviceSettingRow> rows = rows(profile, state, group);
-            if (!rows.isEmpty()) {
-                sections.add(new Section(group, DeviceGroupLabels.title(group), rows));
-            }
-        }
-        return sections;
     }
 
     /** 单个分区的行：按描述符声明顺序，跳过契约违约项（LEVEL 缺 range）与被聚合的其它分区。 */

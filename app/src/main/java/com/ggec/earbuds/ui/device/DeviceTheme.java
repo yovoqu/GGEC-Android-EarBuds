@@ -66,6 +66,7 @@ public final class DeviceTheme {
     public static final float SCAN_ICON_BOX = 40f;
     public static final float SCAN_ICON = 20f;
     public static final float SCAN_CHEVRON = 16f;
+    public static final float SCAN_INDICATOR_SIZE = 32f;
     public static final float SCAN_SUBTITLE_GAP = 2f;
     public static final float PRIMARY_ACTION_HEIGHT = 48f;
 
