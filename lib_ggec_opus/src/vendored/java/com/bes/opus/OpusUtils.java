@@ -104,13 +104,6 @@ public class OpusUtils {
         ByteBuffer bb = ByteBuffer.allocate(4);
         bb.putInt(i);
         return bb.array();
-        // 手动实现的版本（已注释）：
-        // byte[] bytes = new byte[4];
-        // bytes[0] = (byte) (i>>24);
-        // bytes[1] = (byte) ((i>>16)&0xFF);
-        // bytes[2] = (byte) ((i>>8)&0xFF);
-        // bytes[3] = (byte) (i&0xFF);
-        // return bytes;
     }
 
     /**
@@ -125,12 +118,7 @@ public class OpusUtils {
         }
         ByteBuffer bb = ByteBuffer.wrap(b);
         return bb.asIntBuffer().get();
-        // 手动实现的版本（已注释）：
-        // return (((int)b[0])<<24) | (((int)b[1])<<16)
-        //         | (((int)b[2])<< 8) |  ((int)b[3]);
     }
-
-
 
     /**
      * 将短整型数组转换为字节数组
@@ -207,13 +195,7 @@ public class OpusUtils {
      * @return true=大端序，false=小端序
      */
     public static boolean testCPU() {
-        if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
-            // System.out.println("is big endian");
-            return true;
-        } else {
-            // System.out.println("is little endian");
-            return false;
-        }
+        return ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
     }
 
     /**
