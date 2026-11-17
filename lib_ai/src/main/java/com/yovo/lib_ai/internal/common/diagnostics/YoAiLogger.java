@@ -33,10 +33,11 @@ public final class YoAiLogger {
     }
 
     /**
-     * SDK 入口兜底初始化 YoLog（幂等）：未初始化才用安全默认配置初始化一次，绝不重复初始化。
+     * 宿主必须先用真实配置初始化 YoLog；本方法只做「未初始化即失败」的前置断言，
+     * 不再用安全默认配置兜底（兜底会永久占用真实配置）。
      */
-    public static void ensureInitialized(@NonNull Context context) {
-        YoLogBootstrap.ensureInitialized(context);
+    public static void requireInitialized() {
+        YoLogBootstrap.requireInitialized();
     }
 
     public static void v(@NonNull String tag, @NonNull String message) {
