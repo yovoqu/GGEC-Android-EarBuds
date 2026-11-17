@@ -11,6 +11,7 @@ import com.yovo.biz_ggec_hs.api.SyncProgressListener;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioCodecProviderPort;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
+import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.GetRecordIdListCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.DeleteRecordFileCommand;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
 /**
  * 录音 API 统一实现类。
@@ -32,13 +34,23 @@ public final class HsRecordManager implements HsRecordApi {
     private final HsRecordPathResolver pathResolver;
     private final HsStreamRecordSession streamSession;
     private final HsDeviceRecordSyncSession syncSession;
+    private final BiConsumer<Command, CommandCompletion> completionSink;
 
     public HsRecordManager(@NonNull HsProtocolEngine engine,
                            @NonNull HsAudioDataLink audioLink,
                            @NonNull HsRecordPathResolver pathResolver,
                            @NonNull HsAudioCodecProviderPort codecProvider) {
+        this(engine, audioLink, pathResolver, codecProvider, null);
+    }
+
+    public HsRecordManager(@NonNull HsProtocolEngine engine,
+                           @NonNull HsAudioDataLink audioLink,
+                           @NonNull HsRecordPathResolver pathResolver,
+                           @NonNull HsAudioCodecProviderPort codecProvider,
+                           @Nullable BiConsumer<Command, CommandCompletion> completionSink) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.pathResolver = Objects.requireNonNull(pathResolver, "pathResolver");
+        this.completionSink = completionSink;
         this.streamSession = new HsStreamRecordSession(engine, audioLink, pathResolver, codecProvider);
         this.syncSession = new HsDeviceRecordSyncSession(engine, audioLink, pathResolver, codecProvider);
     }
@@ -83,6 +95,9 @@ public final class HsRecordManager implements HsRecordApi {
     public void refreshDeviceRecords(@NonNull HsControl.Callback callback) {
         // 请求获取第 0 页，最多 12 个文件
         engine.submit(new GetRecordIdListCommand(0, 12), (cmd, completion) -> {
+            if (completionSink != null) {
+                completionSink.accept(cmd, completion);
+            }
             boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
             callback.onResult(success
                     ? new HsControl.Outcome.Ok<>(null)

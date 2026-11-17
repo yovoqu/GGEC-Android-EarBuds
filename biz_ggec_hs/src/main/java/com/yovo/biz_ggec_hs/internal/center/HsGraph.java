@@ -49,13 +49,14 @@ public final class HsGraph {
         HsCatalogImpl catalog = new HsCatalogImpl();
         HsCapabilityRouter.verify(catalog);
         HsRecordPathResolver pathResolver = new HsRecordPathResolver(context);
+        HsSessionImpl session = new HsSessionImpl(engine, catalog, new HsClassicConnect(
+                YoClassicRadio.open(context), new HsMainDelay()),
+                new HsConnectionIntake(), audioLink);
         HsRecordManager recordManager = new HsRecordManager(engine, audioLink, pathResolver,
-                new YoOpusCodecProvider());
+                new YoOpusCodecProvider(), session::applyCompletion);
         return new HsGraph(
                 HsNearbyImpl.open(new HsNearbyScanner(link.bleClient()), catalog),
-                new HsSessionImpl(engine, catalog, new HsClassicConnect(
-                        YoClassicRadio.open(context), new HsMainDelay()),
-                        new HsConnectionIntake(), audioLink),
+                session,
                 catalog,
                 recordManager);
     }
