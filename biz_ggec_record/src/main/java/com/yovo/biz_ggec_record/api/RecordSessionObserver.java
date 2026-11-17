@@ -18,4 +18,15 @@ public interface RecordSessionObserver {
 
     default void onSessionError(@NonNull String message) {
     }
+
+    /** @param path 绝对路径 */
+    default void onRecordingStarted(@NonNull String path) {
+    }
+
+    /** @param path 绝对路径 */
+    default void onRecordingFinished(@NonNull String path, long bytes, long durationMs) {
+    }
+
+    default void onRecordingFailed(@NonNull String message) {
+    }
 }

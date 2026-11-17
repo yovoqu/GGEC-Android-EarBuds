@@ -15,6 +15,7 @@ import com.yovo.biz_ggec_record.api.YoRecordClient;
 import com.yovo.biz_ggec_record.internal.asr.AsrStatus;
 import com.yovo.biz_ggec_record.internal.asr.SpeechRecognizer;
 import com.yovo.biz_ggec_record.internal.audio.AudioStreamDecoder;
+import com.yovo.biz_ggec_record.internal.mux.AvRecorder;
 import com.yovo.biz_ggec_record.internal.video.VideoStreamDecoder;
 import com.yovo.biz_ggec_record.model.RecordAsrModel;
 import com.yovo.biz_ggec_record.model.RecordAudioCodec;
@@ -24,19 +25,22 @@ import com.yovo.biz_ggec_record.model.RecordSubtitleEvent;
 import com.yovo.biz_ggec_record.model.RecordVideoCodec;
 import com.yovo.biz_ggec_record.provider.lib_bluetooth.YoBleRecordLink;
 
+import java.io.File;
 import java.util.Objects;
 
 /**
- * Record 会话实现。Phase 4：连接后硬解播放 + 端侧 ASR 字幕。
+ * Record 会话实现：连接后硬解播放 + 端侧 ASR + 旁路 MP4 录制。
  */
 public final class YoRecordClientImpl implements YoRecordClient {
 
     private static final long STATS_INTERVAL_MS = 1_000L;
 
+    private final Context appContext;
     private final YoBleRecordLink link;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final VideoStreamDecoder videoDecoder = new VideoStreamDecoder();
     private final AudioStreamDecoder audioDecoder = new AudioStreamDecoder();
+    private final AvRecorder avRecorder = new AvRecorder();
     private final SpeechRecognizer speechRecognizer;
     private final Object pipelineLock = new Object();
 
@@ -94,8 +98,10 @@ public final class YoRecordClientImpl implements YoRecordClient {
     };
 
     public YoRecordClientImpl(@NonNull Context context, @NonNull YoBleRecordLink link) {
+        Context app = context.getApplicationContext();
+        this.appContext = app != null ? app : context;
         this.link = Objects.requireNonNull(link, "link");
-        this.speechRecognizer = new SpeechRecognizer(context);
+        this.speechRecognizer = new SpeechRecognizer(this.appContext);
         videoDecoder.setListener(new VideoStreamDecoder.Listener() {
             @Override
             public void onDecoderError(@NonNull String message) {
@@ -117,6 +123,33 @@ public final class YoRecordClientImpl implements YoRecordClient {
             @Override
             public void onAudioError(@NonNull String message) {
                 notifySessionError(message);
+            }
+        });
+        avRecorder.setListener(new AvRecorder.Listener() {
+            @Override
+            public void onStarted(@NonNull File file) {
+                RecordSessionObserver session = sessionObserver;
+                if (session != null) {
+                    String path = file.getAbsolutePath();
+                    mainHandler.post(() -> session.onRecordingStarted(path));
+                }
+            }
+
+            @Override
+            public void onFinished(@NonNull File file, long bytes, long durationMs) {
+                RecordSessionObserver session = sessionObserver;
+                if (session != null) {
+                    String path = file.getAbsolutePath();
+                    mainHandler.post(() -> session.onRecordingFinished(path, bytes, durationMs));
+                }
+            }
+
+            @Override
+            public void onFailed(@NonNull String message) {
+                RecordSessionObserver session = sessionObserver;
+                if (session != null) {
+                    mainHandler.post(() -> session.onRecordingFailed(message));
+                }
             }
         });
         speechRecognizer.setListener(new SpeechRecognizer.Listener() {
@@ -159,6 +192,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
 
             @Override
             public void onDisconnected() {
+                stopRecordingQuietly();
                 stopPipelines();
                 mainHandler.removeCallbacks(statsTicker);
                 setState(RecordConnectionState.DISCONNECTED);
@@ -166,6 +200,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
 
             @Override
             public void onFailed(@NonNull String message) {
+                stopRecordingQuietly();
                 stopPipelines();
                 mainHandler.removeCallbacks(statsTicker);
                 setState(RecordConnectionState.DISCONNECTED);
@@ -179,11 +214,17 @@ public final class YoRecordClientImpl implements YoRecordClient {
             @Override
             public void onVideoBytes(@NonNull byte[] payload) {
                 videoDecoder.enqueue(payload);
+                if (avRecorder.isRecording()) {
+                    avRecorder.feedVideo(payload);
+                }
             }
 
             @Override
             public void onAudioBytes(@NonNull byte[] payload) {
                 audioDecoder.enqueue(payload);
+                if (avRecorder.isRecording()) {
+                    avRecorder.feedAudio(payload);
+                }
             }
         });
     }
@@ -198,6 +239,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
     @Override
     public void disconnect() {
         mainHandler.removeCallbacks(statsTicker);
+        stopRecordingQuietly();
         stopPipelines();
         link.disconnect();
         setState(RecordConnectionState.DISCONNECTED);
@@ -206,6 +248,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
     @Override
     public void close() {
         mainHandler.removeCallbacks(statsTicker);
+        stopRecordingQuietly();
         stopPipelines();
         connectionObserver = null;
         sessionObserver = null;
@@ -243,6 +286,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
 
     @Override
     public void setVideoCodec(@NonNull RecordVideoCodec codec) {
+        stopRecordingQuietly();
         synchronized (pipelineLock) {
             this.videoCodec = Objects.requireNonNull(codec, "codec");
             if (state == RecordConnectionState.READY) {
@@ -253,6 +297,7 @@ public final class YoRecordClientImpl implements YoRecordClient {
 
     @Override
     public void setAudioConfig(@NonNull RecordAudioCodec codec, int sampleRateHz, int channelCount) {
+        stopRecordingQuietly();
         synchronized (pipelineLock) {
             this.audioCodec = Objects.requireNonNull(codec, "codec");
             this.sampleRateHz = sampleRateHz;
@@ -296,6 +341,66 @@ public final class YoRecordClientImpl implements YoRecordClient {
     @Override
     public void sendText(@NonNull String text) {
         link.writeRxText(Objects.requireNonNull(text, "text"));
+    }
+
+    @Override
+    public void startRecording() {
+        File dir = appContext.getExternalFilesDir(null);
+        if (dir == null) {
+            dir = appContext.getFilesDir();
+        }
+        File out = new File(new File(dir, "record"),
+                "ble_av_" + System.currentTimeMillis() + ".mp4");
+        startRecording(out.getAbsolutePath());
+    }
+
+    @Override
+    public void startRecording(@NonNull String absolutePath) {
+        Objects.requireNonNull(absolutePath, "absolutePath");
+        if (absolutePath.isEmpty()) {
+            notifyRecordingFailed("录制路径无效");
+            return;
+        }
+        if (state != RecordConnectionState.READY) {
+            notifyRecordingFailed("设备未就绪，无法开始录制");
+            return;
+        }
+        if (avRecorder.isRecording()) {
+            notifyRecordingFailed("已在录制中");
+            return;
+        }
+        RecordVideoCodec video;
+        synchronized (pipelineLock) {
+            video = videoCodec;
+        }
+        // 录制封装与预览解码配置解耦：P0 固定尝试 AAC-ADTS 进 MP4。
+        avRecorder.start(new File(absolutePath), AvRecorder.Config.of(video, RecordAudioCodec.AAC));
+    }
+
+    @Override
+    public void stopRecording() {
+        if (!avRecorder.isRecording()) {
+            return;
+        }
+        avRecorder.stop();
+    }
+
+    @Override
+    public boolean isRecording() {
+        return avRecorder.isRecording();
+    }
+
+    private void stopRecordingQuietly() {
+        if (avRecorder.isRecording()) {
+            avRecorder.stop();
+        }
+    }
+
+    private void notifyRecordingFailed(@NonNull String message) {
+        RecordSessionObserver session = sessionObserver;
+        if (session != null) {
+            mainHandler.post(() -> session.onRecordingFailed(message));
+        }
     }
 
     private void startPipelinesLocked() {
