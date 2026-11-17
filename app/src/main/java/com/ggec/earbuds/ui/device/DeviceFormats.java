@@ -45,4 +45,15 @@ public final class DeviceFormats {
         }
         return String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0));
     }
+
+    /**
+     * 录音时长展示：{@code HH:MM:SS}。录音页面（录制计时与文件时长）的唯一实现。
+     */
+    public static String duration(long durationMs) {
+        long seconds = durationMs / 1000L;
+        long hours = seconds / 3600L;
+        long minutes = (seconds % 3600L) / 60L;
+        long rest = seconds % 60L;
+        return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, rest);
+    }
 }

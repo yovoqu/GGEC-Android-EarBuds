@@ -1,7 +1,5 @@
 package com.yovo.biz_ggec_hs.provider.lib_common.log;
 
-import android.content.Context;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -11,13 +9,11 @@ import com.yovo.lib_common.log.YoLogBootstrap;
 /**
  * HS 模块唯一日志门面，同时是 {@code lib_common.log} 的 Provider 接入点。
  *
- * <p>模块内所有日志点统一调用本类；本类直接委托 {@code lib_common} 的 {@link YoLog}
- * （Logcat + 文件落盘：异步、滚动、保留、降级），不经端口/适配器等中间层。
- * 本模块只有 {@code provider/lib_common/log} 允许依赖 {@code com.yovo.lib_common.log}，
- * 其余包只使用本门面，日志级别与落盘策略由 {@code lib_common.log} 统一控制。</p>
+ * <p>本类只做一行转发：日志级别、落盘、滚动与降级全部由 {@code lib_common.log} 决定，
+ * 模块内不复制任何日志实现。</p>
  *
- * <p>{@code lib_common.log} 的公开 API 不止一个文件（{@code YoLog}、{@code YoLogBootstrap}），
- * 因此本门面放在独立子目录，而不是平铺在 {@code provider/lib_common}。</p>
+ * <p>初始化不是本类的职责：宿主必须在使用 SDK 前调用 {@code YoLogBootstrap.initOnce(...)}，
+ * 这里只做断言，不做默认配置兜底（兜底会把宿主配置改写成 logcat-only）。</p>
  */
 public final class HsLog {
 
@@ -25,15 +21,12 @@ public final class HsLog {
     }
 
     /**
-     * SDK 入口兜底初始化 YoLog（幂等）：App 未初始化时用安全默认配置初始化一次；
-     * 已初始化则 no-op，绝不重复初始化。
+     * 断言宿主已完成日志初始化。
+     *
+     * @throws IllegalStateException 日志尚未初始化
      */
-    public static void ensureInitialized(@NonNull Context context) {
-        YoLogBootstrap.ensureInitialized(context);
-    }
-
-    public static void v(@NonNull String tag, @NonNull String message) {
-        YoLog.v(tag, message);
+    public static void requireInitialized() {
+        YoLogBootstrap.requireInitialized();
     }
 
     public static void d(@NonNull String tag, @NonNull String message) {

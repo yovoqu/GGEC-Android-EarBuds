@@ -3,15 +3,11 @@ package com.yovo.biz_appupdate.internal.di;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
-import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelProvider;
 
 import com.yovo.biz_appupdate.internal.model.AppUpdateConfig;
-import com.yovo.biz_appupdate.internal.model.DownloadDirSpec;
 import com.yovo.biz_appupdate.internal.contract.ApkStoragePort;
 import com.yovo.biz_appupdate.internal.contract.ApkVerifier;
 import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;
-import com.yovo.biz_appupdate.internal.contract.DownloadDirPermissionPort;
 import com.yovo.biz_appupdate.internal.contract.DownloadProvider;
 import com.yovo.biz_appupdate.internal.contract.InstallPermissionPort;
 import com.yovo.biz_appupdate.internal.contract.InstallProvider;
@@ -21,7 +17,6 @@ import com.yovo.biz_appupdate.internal.contract.UpdateCheckProvider;
 import com.yovo.biz_appupdate.internal.contract.UpdateMetaStore;
 import com.yovo.biz_appupdate.internal.contract.UpdatePolicy;
 import com.yovo.biz_appupdate.internal.contract.VersionProvider;
-import com.yovo.biz_appupdate.internal.contract.SafTreeStorePort;
 import com.yovo.biz_appupdate.internal.engine.AppUpdateEngine;
 import com.yovo.biz_appupdate.internal.engine.SplashGate;
 import com.yovo.biz_appupdate.internal.infrastructure.local.ApkStorage;
@@ -36,7 +31,6 @@ import com.yovo.biz_appupdate.internal.infrastructure.platform.android.AndroidNe
 import com.yovo.biz_appupdate.internal.infrastructure.platform.android.AndroidVersionProvider;
 import com.yovo.biz_appupdate.provider.lib_common.YoDownloadResumerProvider;
 import com.yovo.biz_appupdate.internal.infrastructure.platform.pgy.PgyUpdateCheckProvider;
-import com.yovo.biz_appupdate.internal.ui.UpdateViewModel;
 import com.yovo.biz_appupdate.internal.interactor.CheckUpdateAction;
 import com.yovo.biz_appupdate.internal.interactor.DownloadUpdateAction;
 import com.yovo.biz_appupdate.internal.interactor.IgnoreVersionAction;
@@ -55,28 +49,23 @@ public final class AppUpdateGraph {
 
     private final AppUpdateConfig config;
     private final ApkStorage apkStorage;
-    private final SafTreeStorePort safTreeStore;
     private final LaunchPromptBridge launchPromptBridge;
-    private final DownloadDirAccessPort downloadDirAccess;
     private final InstallPermissionPort installPermission;
-    private final DownloadDirPermissionPort downloadDirPermission;
     private final AppUpdateEngine engine;
 
     private AppUpdateGraph(@NonNull Context context, @NonNull AppUpdateConfig config) {
         this.config = config;
         Context app = context.getApplicationContext();
-        YoUpdateLogger.ensureInitialized(app);
+        YoUpdateLogger.requireInitialized();
 
         YoPermissionProvider permissionProvider = new YoPermissionProvider(app);
         FileManagerProvider fileManagerProvider = new FileManagerProvider(app);
-        safTreeStore = fileManagerProvider;
         apkStorage = new ApkStorage(app, config.downloadDir(), config.apkNamingSpec(),
                 new AndroidApkMetaReader(app), fileManagerProvider);
         launchPromptBridge = new SplashIntentBridge();
-        downloadDirAccess = new DownloadDirAccessAdapter(
+        DownloadDirAccessPort downloadDirAccess = new DownloadDirAccessAdapter(
                 app, config.downloadDir(), permissionProvider, fileManagerProvider);
         installPermission = permissionProvider;
-        downloadDirPermission = permissionProvider;
 
         UpdatePolicy policy = new UpdatePolicy(
                 config.downloadUrl(),
@@ -105,7 +94,7 @@ public final class AppUpdateGraph {
                 new ResolveLaunchUpdateAction(
                         checkProvider, versionProvider, metaStore,
                         apkStorage, policy, networkPolicy,
-                        promptProvider, downloadResumer, downloadDirAccess);
+                        promptProvider, downloadResumer);
         MarkPromptAction markPromptAction = new MarkPromptAction(promptProvider);
         IgnoreVersionAction ignoreVersionAction = new IgnoreVersionAction(promptProvider);
         DownloadUpdateAction downloadUpdateAction =
@@ -125,10 +114,7 @@ public final class AppUpdateGraph {
                 versionProvider,
                 resolveLaunchUpdateAction,
                 launchPromptBridge,
-                downloadDirAccess,
-                installPermission,
-                safTreeStore,
-                config.downloadDir().type() == DownloadDirSpec.Type.SAF);
+                installPermission);
     }
 
     @NonNull
@@ -148,18 +134,8 @@ public final class AppUpdateGraph {
     }
 
     @NonNull
-    public SafTreeStorePort safTreeStorePort() {
-        return safTreeStore;
-    }
-
-    @NonNull
     public LaunchPromptBridge launchPromptBridge() {
         return launchPromptBridge;
-    }
-
-    @NonNull
-    public DownloadDirAccessPort downloadDirAccess() {
-        return downloadDirAccess;
     }
 
     @NonNull
@@ -168,27 +144,7 @@ public final class AppUpdateGraph {
     }
 
     @NonNull
-    public DownloadDirPermissionPort downloadDirPermission() {
-        return downloadDirPermission;
-    }
-
-    @NonNull
     public AppUpdateEngine engine() {
         return engine;
-    }
-
-    @NonNull
-    public ViewModelProvider.Factory viewModelFactory() {
-        return new ViewModelProvider.Factory() {
-            @NonNull
-            @Override
-            @SuppressWarnings("unchecked")
-            public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
-                if (modelClass.isAssignableFrom(UpdateViewModel.class)) {
-                    return (T) new UpdateViewModel(engine);
-                }
-                throw new IllegalArgumentException("Unknown ViewModel: " + modelClass.getName());
-            }
-        };
     }
 }

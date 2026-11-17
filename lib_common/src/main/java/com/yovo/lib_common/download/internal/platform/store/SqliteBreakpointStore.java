@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_common.download.YoDownload;
 import com.yovo.lib_common.download.model.BlockInfo;
 import com.yovo.lib_common.download.model.BreakpointInfo;
+import com.yovo.lib_common.log.YoLog;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -29,6 +30,8 @@ import java.util.Map;
  * @description 基于 SQLite 的断点存储实现。
  */
 public final class SqliteBreakpointStore implements BreakpointStore {
+
+    private static final String TAG = "SqliteBreakpointStore";
 
     private final BreakpointSQLiteHelper helper;
 
@@ -211,19 +214,20 @@ public final class SqliteBreakpointStore implements BreakpointStore {
     }
 
     @NonNull
-    private static String headersToJson(@NonNull Map<String, String> headers) {
+    private String headersToJson(@NonNull Map<String, String> headers) {
         JSONObject json = new JSONObject();
         for (Map.Entry<String, String> entry : headers.entrySet()) {
             try {
                 json.put(entry.getKey(), entry.getValue());
-            } catch (JSONException ignored) {
+            } catch (JSONException e) {
+                YoLog.w(TAG, "请求头序列化失败: " + entry.getKey(), e);
             }
         }
         return json.toString();
     }
 
     @NonNull
-    private static Map<String, String> headersFromJson(@Nullable String raw) {
+    private Map<String, String> headersFromJson(@Nullable String raw) {
         if (raw == null || raw.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -235,7 +239,8 @@ public final class SqliteBreakpointStore implements BreakpointStore {
                 String key = keys.next();
                 headers.put(key, json.optString(key));
             }
-        } catch (JSONException ignored) {
+        } catch (JSONException e) {
+            YoLog.w(TAG, "请求头反序列化失败，按空请求头解读: " + raw, e);
         }
         return headers;
     }

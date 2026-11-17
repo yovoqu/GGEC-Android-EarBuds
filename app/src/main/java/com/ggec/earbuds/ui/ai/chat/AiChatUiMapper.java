@@ -68,7 +68,6 @@ public final class AiChatUiMapper {
                 streaming,
                 notice,
                 failure == null ? null : failure.kind(),
-                failure == null ? "" : failure.detail(),
                 message.modelLabel() == null ? "" : message.modelLabel(),
                 message.elapsedMillis(),
                 message.usage() == null ? 0 : message.usage().outputTokens(),

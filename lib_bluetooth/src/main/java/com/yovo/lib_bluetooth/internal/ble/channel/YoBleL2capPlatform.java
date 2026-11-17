@@ -11,10 +11,12 @@ import java.util.function.Consumer;
 
 /**
  * BLE L2CAP CoC Socket 平台适配端口，封装 Android API 29+ 系统通道能力。
+ *
+ * <p>客户端通道与服务端监听端都是 {@link Closeable}：取消/释放路径统一按 {@code close()} 收口。</p>
  */
 public interface YoBleL2capPlatform {
 
-    interface SocketConnection {
+    interface SocketConnection extends Closeable {
         @NonNull
         BleDeviceId remoteDeviceId();
 
@@ -22,15 +24,17 @@ public interface YoBleL2capPlatform {
 
         void write(@NonNull byte[] data) throws IOException;
 
+        @Override
         void close() throws IOException;
     }
 
-    interface ListeningSocket {
+    interface ListeningSocket extends Closeable {
         int psm();
 
         @NonNull
         SocketConnection accept() throws IOException;
 
+        @Override
         void close() throws IOException;
     }
 

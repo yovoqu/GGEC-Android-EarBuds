@@ -23,7 +23,7 @@ import com.yovo.biz_ggec_hs.provider.lib_ggec_opus.YoOpusCodecProvider;
  * 组合根：把 provider 的链路适配、中层协议引擎、上层会话/扫描与设备目录装在一起。
  *
  * <p>这是模块里唯一构造 {@code provider/lib_bluetooth} 适配、并调用
- * {@code HsLog.ensureInitialized} 的地方。日志调用点直接用 {@code HsLog}。
+ * {@code HsLog.requireInitialized} 的地方。日志调用点直接用 {@code HsLog}。
  * 对外只经过 {@code YoHsSdk}。</p>
  */
 public final class HsGraph {
@@ -42,20 +42,21 @@ public final class HsGraph {
     }
 
     public static HsGraph open(Context context) {
-        HsLog.ensureInitialized(context);
+        HsLog.requireInitialized();
         YoBleCommandLink link = YoBleCommandLink.open(context);
         YoBleAudioDataLink audioLink = new YoBleAudioDataLink(link.bleClient());
         HsProtocolEngine engine = new HsProtocolEngine(link);
         HsCatalogImpl catalog = new HsCatalogImpl();
         HsCapabilityRouter.verify(catalog);
         HsRecordPathResolver pathResolver = new HsRecordPathResolver(context);
+        HsSessionImpl session = new HsSessionImpl(engine, catalog, new HsClassicConnect(
+                YoClassicRadio.open(context), new HsMainDelay()),
+                new HsConnectionIntake(), audioLink);
         HsRecordManager recordManager = new HsRecordManager(engine, audioLink, pathResolver,
-                new YoOpusCodecProvider());
+                new YoOpusCodecProvider(), session::applyCompletion);
         return new HsGraph(
                 HsNearbyImpl.open(new HsNearbyScanner(link.bleClient()), catalog),
-                new HsSessionImpl(engine, catalog, new HsClassicConnect(
-                        YoClassicRadio.open(context), new HsMainDelay()),
-                        new HsConnectionIntake(), audioLink),
+                session,
                 catalog,
                 recordManager);
     }

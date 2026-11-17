@@ -73,10 +73,6 @@ public final class SplashIntentBridge implements LaunchPromptBridge {
             removeUpdateExtras(intent);
             return LaunchDecision.selectLocalApks(Collections.emptyList());
         }
-        if (action == LaunchDecision.Action.NEED_DOWNLOAD_DIR) {
-            removeUpdateExtras(intent);
-            return LaunchDecision.needDownloadDir();
-        }
 
         String version = intent.getStringExtra(EXTRA_VERSION);
         if (TextUtils.isEmpty(version)) {
@@ -93,7 +89,10 @@ public final class SplashIntentBridge implements LaunchPromptBridge {
                 intent.getStringExtra(EXTRA_URL) != null
                         ? intent.getStringExtra(EXTRA_URL)
                         : "",
-                intent.getBooleanExtra(EXTRA_FORCE, false));
+                intent.getBooleanExtra(EXTRA_FORCE, false),
+                "",
+                "",
+                0L);
         removeUpdateExtras(intent);
 
         if (action == LaunchDecision.Action.INSTALL_DIRECT) {

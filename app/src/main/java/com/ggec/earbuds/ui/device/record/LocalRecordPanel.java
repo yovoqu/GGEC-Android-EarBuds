@@ -10,20 +10,26 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
+import com.ggec.earbuds.domain.device.model.RecordMode;
+import com.ggec.earbuds.domain.device.record.RecordState;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.feedback.YoDialog;
 
 import java.util.List;
-import java.util.Locale;
+import java.util.Optional;
 
 /**
- * 耳机本地录音视图面板：提供耳机硬件录音控制看板、存储文件标题栏右侧刷新、文件同步与删除。
+ * 耳机本地录音视图面板：录音看板、刷新入口、同步进度卡片、耳机内文件列表。
+ *
+ * <p>本类只渲染 {@link RecordUiState}：录音阶段、同步阶段都是状态里的枚举，
+ * 不存在「刷新中」这类视图自持标志位；按钮可写性只看 {@link RecordUiState#canRecord}。</p>
  */
 public final class LocalRecordPanel {
 
@@ -195,40 +201,52 @@ public final class LocalRecordPanel {
     }
 
     public void render(@NonNull RecordUiState state) {
-        // 更新耳机录音看板状态与计时
-        boolean isRecording = state.isDeviceRecording();
-        if (isRecording) {
-            timerText.setText(formatDuration(state.deviceRecordDurationMs()));
-            statusHintText.setText(R.string.earbuds_record_device_recording_hint);
-            recordActionButton.setText(activity.getString(R.string.earbuds_record_device_stop));
+        renderBoard(state);
+        renderSyncCard(state);
+        renderDeviceFiles(state);
+    }
+
+    private void renderBoard(@NonNull RecordUiState state) {
+        RecordState.DeviceRecordPhase phase = state.deviceRecordPhase();
+        boolean active = state.deviceRecordActive();
+        boolean busy = phase == RecordState.DeviceRecordPhase.STARTING
+                || phase == RecordState.DeviceRecordPhase.STOPPING;
+
+        timerText.setText(phase == RecordState.DeviceRecordPhase.ACTIVE
+                ? DeviceFormats.duration(state.deviceRecordDurationMs())
+                : activity.getString(R.string.earbuds_record_stream_timer_default));
+        statusHintText.setText(hintRes(state));
+        recordActionButton.setText(activity.getString(active
+                ? R.string.earbuds_record_device_stop
+                : R.string.earbuds_record_device_start));
+        recordActionButton.setEnabled(state.canRecord(RecordMode.LOCAL) && !busy);
+        if (active) {
             recordActionButton.setOnClickListener(v -> listener.onStopDeviceRecord());
-        } else {
-            timerText.setText(R.string.earbuds_record_stream_timer_default);
-            statusHintText.setText(R.string.earbuds_record_device_idle_hint);
-            recordActionButton.setText(activity.getString(R.string.earbuds_record_device_start));
-            recordActionButton.setOnClickListener(v -> listener.onStartDeviceRecord());
+            return;
         }
+        recordActionButton.setOnClickListener(v -> listener.onStartDeviceRecord());
+    }
 
-        // 刷新按钮状态
-        boolean isRefreshing = state.isRefreshingDevice();
-        refreshLabel.setText(isRefreshing ? "刷新中…" : activity.getString(R.string.earbuds_record_device_refresh));
-        refreshActionLayout.setEnabled(!isRefreshing);
-
-        // 同步进度卡片
-        if (state.isSyncing()) {
-            syncProgressCard.setVisibility(View.VISIBLE);
-            syncTitleText.setText("正在传输: " + (state.syncingFileId() != null ? state.syncingFileId() : ""));
-            syncProgressBar.setProgress(state.syncProgressPercent());
-            String transferred = DeviceFormats.size(state.syncTransferredBytes());
-            String total = DeviceFormats.size(state.syncTotalBytes());
-            syncPercentText.setText(state.syncProgressPercent() + "% (" + transferred + " / " + total + ")");
-        } else {
+    private void renderSyncCard(@NonNull RecordUiState state) {
+        if (!state.syncing()) {
             syncProgressCard.setVisibility(View.GONE);
+            return;
         }
+        syncProgressCard.setVisibility(View.VISIBLE);
+        syncTitleText.setText(activity.getString(R.string.earbuds_record_sync_transferring,
+                displayNameOf(state, state.syncingFileId())));
+        syncProgressBar.setProgress(state.syncPercent());
+        syncPercentText.setText(activity.getString(R.string.earbuds_record_sync_progress,
+                state.syncPercent(),
+                DeviceFormats.size(state.syncTransferredBytes()),
+                DeviceFormats.size(state.syncTotalBytes())));
+    }
 
-        // 耳机文件列表
+    private void renderDeviceFiles(@NonNull RecordUiState state) {
         List<RecordFileView> files = state.deviceFiles();
-        deviceFilesTitleText.setText(activity.getString(R.string.earbuds_record_device_files_title) + " (" + files.size() + ")");
+        deviceFilesTitleText.setText(activity.getString(R.string.earbuds_record_files_title_count,
+                activity.getString(R.string.earbuds_record_device_files_title), files.size()));
+        refreshActionLayout.setEnabled(state.canRecord(RecordMode.LOCAL));
         filesContainer.removeAllViews();
 
         if (files.isEmpty()) {
@@ -245,8 +263,37 @@ public final class LocalRecordPanel {
         }
     }
 
+    @StringRes
+    private int hintRes(@NonNull RecordUiState state) {
+        if (!state.canRecord(RecordMode.LOCAL)) {
+            return R.string.earbuds_record_hint_unavailable;
+        }
+        return switch (state.deviceRecordPhase()) {
+            case IDLE -> R.string.earbuds_record_device_idle_hint;
+            case STARTING -> R.string.earbuds_record_device_starting_hint;
+            case ACTIVE -> R.string.earbuds_record_device_recording_hint;
+            case STOPPING -> R.string.earbuds_record_device_stopping_hint;
+        };
+    }
+
+    /** 同步中的文件 id → 展示名：优先用设备上报的文件名，未上报时退回 id 本身。 */
+    @NonNull
+    private String displayNameOf(@NonNull RecordUiState state, @NonNull Optional<String> fileId) {
+        if (fileId.isEmpty()) {
+            return "";
+        }
+        String id = fileId.get();
+        for (RecordFileView file : state.deviceFiles()) {
+            if (file.fileId().equals(id)) {
+                return file.name();
+            }
+        }
+        return id;
+    }
+
     private View buildDeviceFileItemView(@NonNull RecordFileView file, @NonNull RecordUiState state) {
-        boolean isThisSyncing = state.isSyncing() && file.fileId().equals(state.syncingFileId());
+        boolean isThisSyncing = state.syncing()
+                && state.syncingFileId().equals(Optional.of(file.fileId()));
 
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.HORIZONTAL);
@@ -256,7 +303,7 @@ public final class LocalRecordPanel {
         card.setBackground(theme.roundedStroke(theme.card, DeviceTheme.RADIUS_ROW,
                 theme.cardStroke, 1f));
 
-        // 左侧波形文件图标容器
+        // 左侧波纹文件图标容器
         LinearLayout iconBox = new LinearLayout(activity);
         iconBox.setGravity(Gravity.CENTER);
         iconBox.setBackground(theme.rounded(theme.fill, 20f));
@@ -283,9 +330,10 @@ public final class LocalRecordPanel {
         infoLayout.addView(nameText, wrapContent());
 
         TextView metaText = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        String durationStr = formatDuration(file.durationSeconds() * 1000L);
-        String sizeStr = DeviceFormats.size(file.sizeBytes());
-        metaText.setText("ID: " + file.fileId() + "  ·  " + durationStr + "  ·  " + sizeStr);
+        metaText.setText(String.join(DeviceFormats.META_SEPARATOR,
+                activity.getString(R.string.earbuds_record_file_id, file.fileId()),
+                DeviceFormats.duration(file.durationSeconds() * 1000L),
+                DeviceFormats.size(file.sizeBytes())));
         LinearLayout.LayoutParams metaParams = wrapContent();
         metaParams.topMargin = theme.dp(DeviceTheme.SPACE_XS);
         infoLayout.addView(metaText, metaParams);
@@ -295,9 +343,12 @@ public final class LocalRecordPanel {
                 .setSize(YoButton.Size.SMALL)
                 .build();
         if (isThisSyncing) {
-            syncBtn.setText(activity.getString(R.string.earbuds_record_device_syncing, state.syncProgressPercent()));
+            syncBtn.setText(activity.getString(R.string.earbuds_record_device_syncing,
+                    state.syncPercent()));
+            syncBtn.setEnabled(false);
         } else {
             syncBtn.setText(activity.getString(R.string.earbuds_record_device_sync));
+            syncBtn.setEnabled(state.canRecord(RecordMode.LOCAL));
             syncBtn.setOnClickListener(v -> listener.onSyncDeviceRecord(file.fileId()));
         }
         card.addView(syncBtn.getView(), wrapContent());
@@ -328,17 +379,6 @@ public final class LocalRecordPanel {
                                 () -> listener.onDeleteDeviceRecord(fileId))
                 )
                 .show();
-    }
-
-    private String formatDuration(long durationMs) {
-        long seconds = durationMs / 1000;
-        long h = seconds / 3600;
-        long m = (seconds % 3600) / 60;
-        long s = seconds % 60;
-        if (h > 0) {
-            return String.format(Locale.getDefault(), "%02d:%02d:%02d", h, m, s);
-        }
-        return String.format(Locale.getDefault(), "%02d:%02d:%02d", 0, m, s);
     }
 
     private LinearLayout.LayoutParams matchWrap() {

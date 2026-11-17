@@ -107,7 +107,7 @@ public final class SyncActiveDeviceTest {
     }
 
     private static DeviceTarget target(DeviceId id) {
-        return new DeviceTarget(id, new DeviceIdentity(id.modelId(), id.bleAddress(), id.modelId()));
+        return new DeviceTarget(id, new DeviceIdentity(id.modelId(), id.address(), id.modelId()));
     }
 
     private static DeviceRecord archived(DeviceId id) {

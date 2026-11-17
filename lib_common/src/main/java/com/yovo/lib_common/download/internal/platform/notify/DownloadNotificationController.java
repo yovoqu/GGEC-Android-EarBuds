@@ -19,6 +19,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * {@link YoDownload.Notification} 内部实现。
+ *
+ * <p>通知渠道与「任务 → 通知 id」映射都是本实例的状态；进程唯一实例由
+ * {@link #get()} 暴露的常量持有，不再使用静态可变字段。</p>
  */
 public final class DownloadNotificationController implements YoDownload.Notification {
 
@@ -28,9 +31,12 @@ public final class DownloadNotificationController implements YoDownload.Notifica
             new DownloadNotificationController();
 
     private static final String CHANNEL_ID = "app_download";
-    private static volatile String activeChannelId = CHANNEL_ID;
+
     private static final AtomicInteger ID_SEQUENCE = new AtomicInteger(0x1000);
-    private static final Map<String, Integer> NOTIFICATION_IDS = new ConcurrentHashMap<>();
+
+    private final Map<String, Integer> notificationIds = new ConcurrentHashMap<>();
+
+    private String activeChannelId = CHANNEL_ID;
 
     private DownloadNotificationController() {
     }
@@ -85,23 +91,23 @@ public final class DownloadNotificationController implements YoDownload.Notifica
 
     @Override
     public void cancel(@NonNull Context context, @NonNull String taskId) {
-        Integer id = NOTIFICATION_IDS.remove(taskId);
+        Integer id = notificationIds.remove(taskId);
         if (id != null) {
             NotificationManagerCompat.from(context.getApplicationContext()).cancel(id);
         }
     }
 
     @SuppressLint("MissingPermission")
-    private static void show(@NonNull Context context,
-                             @NonNull String taskId,
-                             @NonNull String title,
-                             int percent) {
+    private void show(@NonNull Context context,
+                      @NonNull String taskId,
+                      @NonNull String title,
+                      int percent) {
         Context app = context.getApplicationContext();
         // POST_NOTIFICATIONS 由宿主声明；未授权时静默跳过，避免无意义通知。
         if (!NotificationManagerCompat.from(app).areNotificationsEnabled()) {
             return;
         }
-        int id = NOTIFICATION_IDS.computeIfAbsent(
+        int id = notificationIds.computeIfAbsent(
                 taskId, key -> ID_SEQUENCE.incrementAndGet());
         NotificationCompat.Builder builder =
                 new NotificationCompat.Builder(app, activeChannelId)

@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.peripheral;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
@@ -192,7 +193,7 @@ public final class YoBlePeripheralManager implements YoReleasable {
             runtime.callback(() -> observer.onAdvertisingFailed(f));
             return;
         }
-        if (!config.legacyMode() && capabilityInspector.sdkInt() < 26) {
+        if (!config.legacyMode() && !AndroidPlatform.supportsExtendedAdvertising()) {
             BleFailure f = YoBleErrorMapper.failure(
                     BleErrorCode.UNSUPPORTED_OPERATION, MODULE,
                     "Extended AdvertisingSet requires Android 8.0 (API 26+)");
@@ -282,7 +283,9 @@ public final class YoBlePeripheralManager implements YoReleasable {
         if (wasOpened) {
             try {
                 platform.stopAdvertising();
-            } catch (Throwable ignored) {
+            } catch (RuntimeException stopFailure) {
+                // 平台侧已清空 advertiser 引用，本地状态归零不受影响；失败进时间线留证。
+                timeline.record(MODULE, "stopAdvertising failed: " + stopFailure);
             }
             if (wasActive) {
                 timeline.record(MODULE, "advertising stopped");
@@ -952,7 +955,9 @@ public final class YoBlePeripheralManager implements YoReleasable {
         if (wasOpened) {
             try {
                 platform.stopGattServer();
-            } catch (Throwable ignored) {
+            } catch (RuntimeException stopFailure) {
+                // 平台侧已置空 gattServer 引用，本地服务表已清空；失败进时间线留证。
+                timeline.record(MODULE, "stopGattServer failed: " + stopFailure);
             }
             if (wasRunning) {
                 timeline.record(MODULE, "GATT server stopped");

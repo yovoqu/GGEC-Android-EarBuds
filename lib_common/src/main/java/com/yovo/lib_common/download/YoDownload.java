@@ -5,7 +5,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_common.download.internal.core.DownloadCore;
+import com.yovo.lib_common.download.internal.core.DownloadInstallation;
 import com.yovo.lib_common.download.internal.impl.DownloadConfigImpl;
 import com.yovo.lib_common.download.internal.impl.DownloadRequestImpl;
 import com.yovo.lib_common.download.internal.platform.notify.DownloadNotificationController;
@@ -17,15 +17,19 @@ import java.util.Map;
 /**
  * 下载域唯一对外静态门面。
  *
- * <p>所有静态方法只负责一行委托，业务实现统一在 {@code download.internal}。</p>
+ * <p>所有静态方法只负责一行委托，业务实现统一在 {@code download.internal}。
+ * 门面持有唯一的 {@link DownloadInstallation}，安装中的引擎实例是该持有者的字段，
+ * 不存在静态可写实例。</p>
  */
 public final class YoDownload {
+
+    private static final DownloadInstallation INSTALLATION = new DownloadInstallation();
 
     private YoDownload() {
     }
 
     public static void init(@NonNull Context context, @Nullable Config config) {
-        DownloadCore.install(context, config != null ? config : Config.defaults(context));
+        INSTALLATION.install(context, config != null ? config : Config.defaults(context));
     }
 
     /**
@@ -33,56 +37,53 @@ public final class YoDownload {
      * 需要重新使用时再次调用 {@link #init}。
      */
     public static void shutdown() {
-        DownloadCore core = DownloadCore.peek();
-        if (core != null) {
-            core.shutdown();
-        }
+        INSTALLATION.shutdown();
     }
 
     @NonNull
     public static Task enqueue(@NonNull Request request, @Nullable Listener listener) {
-        return DownloadCore.get().enqueue(request, listener);
+        return INSTALLATION.require().enqueue(request, listener);
     }
 
     @NonNull
     public static List<Task> enqueue(@NonNull List<Request> requests,
                                      @Nullable Listener listener) {
-        return DownloadCore.get().enqueue(requests, listener);
+        return INSTALLATION.require().enqueue(requests, listener);
     }
 
     public static boolean pause(@NonNull String taskId) {
-        return DownloadCore.get().pause(taskId);
+        return INSTALLATION.require().pause(taskId);
     }
 
     public static boolean resume(@NonNull String taskId, @Nullable Listener listener) {
-        return DownloadCore.get().resume(taskId, listener);
+        return INSTALLATION.require().resume(taskId, listener);
     }
 
     public static boolean cancel(@NonNull String taskId) {
-        return DownloadCore.get().cancel(taskId);
+        return INSTALLATION.require().cancel(taskId);
     }
 
     public static boolean remove(@NonNull String taskId, boolean deleteFile) {
-        return DownloadCore.get().remove(taskId, deleteFile);
+        return INSTALLATION.require().remove(taskId, deleteFile);
     }
 
     @Nullable
     public static Task query(@NonNull String taskId) {
-        return DownloadCore.get().query(taskId);
+        return INSTALLATION.require().query(taskId);
     }
 
     @NonNull
     public static List<Task> queryAll() {
-        return DownloadCore.get().queryAll();
+        return INSTALLATION.require().queryAll();
     }
 
     @NonNull
     public static List<Task> queryByState(@NonNull State state) {
-        return DownloadCore.get().queryByState(state);
+        return INSTALLATION.require().queryByState(state);
     }
 
     public static void setMonitor(@Nullable Monitor monitor) {
-        DownloadCore.get().setMonitor(monitor);
+        INSTALLATION.require().setMonitor(monitor);
     }
 
     @NonNull

@@ -12,6 +12,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiFinishReason;
 import com.ggec.earbuds.domain.ai.model.AiGenerationDefaults;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiMessage;
 import com.ggec.earbuds.domain.ai.model.AiMessageStatus;
 import com.ggec.earbuds.domain.ai.model.AiUsage;
@@ -202,7 +203,6 @@ public class AiChatSessionTest {
         assertEquals(AiMessageStatus.ERROR, failed.status());
         assertEquals("Hel", failed.text());
         assertEquals(AiFailureKind.NETWORK, failed.failure().kind());
-        assertEquals("connection reset", failed.failure().detail());
         assertFalse(session.state().generating());
         assertEquals(AiMessageStatus.ERROR, savedAssistant().status());
     }
@@ -266,7 +266,8 @@ public class AiChatSessionTest {
 
     @Test
     public void theSystemPromptIsTheOnlyPreferenceLeftInTheRequest() {
-        settings.update(s -> s.withPreferences(new AiChatPreferences("sys", true)));
+        settings.update(s -> s.withPreferences(
+                new AiChatPreferences("sys", true, AiInteractionMode.TEXT)));
         session.start();
         session.send("q");
 

@@ -30,13 +30,12 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 下载域内部编排核心，持有默认实例。
+ * 下载域内部编排核心：一次 {@code install} 拥有的配置、调度器与回调分发都是本实例的状态，
+ * 由装配持有者 {@link DownloadInstallation} 负责创建与替换；本类不再暴露静态可写实例。
  */
 public final class DownloadCore implements StatusStore {
 
     private static final String TAG = "DownloadCore";
-
-    private static volatile DownloadCore instance;
 
     private final DownloadConfigImpl config;
     private final CallbackDispatcher callbacks;
@@ -53,37 +52,22 @@ public final class DownloadCore implements StatusStore {
         config.breakpointStore().onInit();
     }
 
-    public static synchronized void install(@NonNull Context context,
-                                            @NonNull YoDownload.Config config) {
-        DownloadCore previous = instance;
-        if (previous != null) {
-            previous.shutdown();
-        }
+    /**
+     * 按外部配置构造实例；装配持有者负责替换旧实例并调用旧实例的 {@link #shutdown()}。
+     */
+    @NonNull
+    static DownloadCore create(@NonNull Context context, @NonNull YoDownload.Config config) {
         DownloadConfigImpl internal = config instanceof DownloadConfigImpl
                 ? (DownloadConfigImpl) config
                 : DownloadConfigImpl.from(context, config);
-        instance = new DownloadCore(internal);
+        DownloadCore core = new DownloadCore(internal);
         YoLog.i(TAG, "下载引擎已安装");
-    }
-
-    @NonNull
-    public static DownloadCore get() {
-        DownloadCore local = instance;
-        if (local == null) {
-            throw new IllegalStateException("YoDownload is not initialized. Call YoDownload.init() first.");
-        }
-        return local;
-    }
-
-    /** 供测试/诊断使用的非抛异常访问。 */
-    @Nullable
-    public static DownloadCore peek() {
-        return instance;
+        return core;
     }
 
     /**
      * 关停引擎：取消全部任务、停止工作线程并释放数据库连接。
-     * 关停后可通过 {@link #install} 重新初始化。
+     * 关停由装配持有者发起，并负责把本实例从其字段中摘除。
      */
     public synchronized void shutdown() {
         dispatcher.shutdown();
@@ -100,7 +84,6 @@ public final class DownloadCore implements StatusStore {
             }
         }
         config.breakpointStore().close();
-        instance = null;
         YoLog.i(TAG, "下载引擎已关闭");
     }
 

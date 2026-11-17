@@ -5,10 +5,13 @@ package com.ggec.earbuds.data.ai.store;
  */
 public interface SecretCipher {
 
+    /**
+     * @throws SecretCipherException 密钥库不可用（例如系统密钥被清除）
+     */
     String encrypt(String plain);
 
     /**
-     * 密文损坏、或保管密钥已经失效时抛 {@link AiStorageException}。
+     * @throws SecretCipherException 密文损坏，或保管的密钥已经失效
      */
     String decrypt(String encoded);
 }

@@ -186,7 +186,7 @@ public final class AiCallHeaderView extends RelativeLayout {
             case LISTENING -> theme.callPalette(AiTheme.CallPhase.LISTENING).colorC();
             case SPEAKING, CONNECTING -> theme.brand;
             case THINKING -> theme.callPalette(AiTheme.CallPhase.THINKING).colorB();
-            case OFFLINE -> theme.text3;
+            case OFFLINE, PERMISSION_DENIED -> theme.text3;
         };
         if (dotColor != lastDotColor) {
             lastDotColor = dotColor;

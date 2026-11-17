@@ -19,12 +19,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *     <li>promote 失败 / 派发异常 / 超时 → {@code onStartFailed}；</li>
  *     <li>stop/release 会取消未完成的等待，避免幽灵超时回调。</li>
  * </ul>
+ *
+ * <p>本类没有静态单例，也没有静态可变等待表：等待表是实例字段，
+ * 唯一实例由 {@link com.yovo.lib_common.system.keepalive.internal.core.KeepAliveCore} 持有，
+ * 并向下构造注入客户端与服务端委托。</p>
  */
 public final class KeepAliveAckRegistry {
 
     private static final long DEFAULT_TIMEOUT_MS = 5_000L;
-
-    private static final KeepAliveAckRegistry INSTANCE = new KeepAliveAckRegistry();
 
     public interface Listener {
         void onAck(@NonNull String sessionId, boolean success, @Nullable String detail);
@@ -33,12 +35,7 @@ public final class KeepAliveAckRegistry {
     private final Map<String, Pending> pending = new ConcurrentHashMap<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    private KeepAliveAckRegistry() {
-    }
-
-    @NonNull
-    public static KeepAliveAckRegistry get() {
-        return INSTANCE;
+    public KeepAliveAckRegistry() {
     }
 
     /**

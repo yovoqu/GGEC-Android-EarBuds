@@ -16,7 +16,6 @@ import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.ggec.earbuds.ui.device.settings.section.SettingsRowsView;
@@ -103,11 +102,6 @@ public final class DeviceSettingsScreen {
 
     public void destroy() {
         rows.destroy();
-    }
-
-    /** 写入落地结果：失败时让开关回到「未上报」呈现，不假装成功。 */
-    public void onControlOutcome(@NonNull DeviceControlOutcome outcome) {
-        rows.onControlOutcome(outcome);
     }
 
     private ScrollView buildEmptyState() {

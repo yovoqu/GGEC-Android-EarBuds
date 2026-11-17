@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- APP 更新包的 FileProvider 路径白名单：只暴露应用私有外部目录（biz_appupdate 的
+     DownloadDir.appPrivate 落在 getExternalFilesDir(null)/<name>），安装时按 Uri 授权读。 -->
+<paths>
+    <external-files-path name="app_update" path="." />
+</paths>

@@ -10,6 +10,7 @@ import com.ggec.earbuds.domain.device.model.DeviceCapabilityKind;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityView;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceState;
+import com.ggec.earbuds.ui.device.CurveEditorSeed;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 
 import java.util.ArrayList;
@@ -57,7 +58,8 @@ public final class SettingsSectionFactory {
      * 七种 kind（{@code TOGGLE/LEVEL/CHOICE/CURVE/ACTION/LIST/GATE}）全部显式处理，没有兜底分支。
      *
      * <p>{@code GATE} 只用于功能门控（{@code DeviceProfileView.supports(id)}），不生成任何通用行；
-     * {@code LEVEL} 缺 range 时为空（目录不变量被违反，不渲染）。</p>
+     * {@code LEVEL} 缺 range、{@code CURVE} 缺频段表或增益值域时为空（目录不变量被违反，不渲染，
+     * 也不给编辑器猜默认值）。</p>
      */
     private static Optional<DeviceSettingRow> row(DeviceCapabilityView capability, DeviceState state) {
         return switch (capability.kind()) {
@@ -67,7 +69,7 @@ public final class SettingsSectionFactory {
                     capability.id(), capability.title(), choiceLabel(capability, state),
                     capability.options()));
             case LEVEL -> capability.range().map(range -> levelRow(capability, range, state));
-            case CURVE -> Optional.of(curveRow(capability, state));
+            case CURVE -> curveRow(capability, state);
             case ACTION -> Optional.of(actionRow(capability));
             case LIST -> Optional.of(listRow(capability));
             case GATE -> Optional.empty();
@@ -80,13 +82,22 @@ public final class SettingsSectionFactory {
                 levelOf(state, capability.id()));
     }
 
-    /** CURVE 只对自定义 EQ 有专门编辑器；其它曲线能力没有对应组件，显式标为未支持。 */
-    private static DeviceSettingRow curveRow(DeviceCapabilityView capability, DeviceState state) {
+    /**
+     * CURVE 只对自定义 EQ 有专门编辑器；其它曲线能力没有对应组件，显式标为未支持。
+     *
+     * <p>描述符缺频段 {@code options} 或增益 {@code range} 时整行不生成：编辑器无从渲染段数与取值域，
+     * 也不允许 APP 自己补一份默认。</p>
+     */
+    private static Optional<DeviceSettingRow> curveRow(DeviceCapabilityView capability,
+                                                       DeviceState state) {
         if (!DeviceCapabilityIds.CUSTOM_EQ.equals(capability.id())) {
-            return new DeviceSettingRow.Unsupported(capability.id(), capability.title());
+            return Optional.of(new DeviceSettingRow.Unsupported(capability.id(), capability.title()));
         }
-        return new DeviceSettingRow.Curve(capability.id(), capability.title(),
-                curveOf(state, capability.id()));
+        if (!CurveEditorSeed.editable(capability.options(), capability.range())) {
+            return Optional.empty();
+        }
+        return Optional.of(new DeviceSettingRow.Curve(capability.id(), capability.title(),
+                capability.options(), capability.range(), curveOf(state, capability.id())));
     }
 
     private static DeviceSettingRow actionRow(DeviceCapabilityView capability) {

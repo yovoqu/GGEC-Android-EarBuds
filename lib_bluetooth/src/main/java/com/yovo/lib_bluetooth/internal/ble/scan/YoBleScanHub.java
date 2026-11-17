@@ -53,7 +53,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 收到旧会话的终态会让业务侧扫描会话把刚开的新会话收掉。</p>
  *
  * <p><b>迁移归属：</b>停扫与补偿启动都不在 {@link BleOperationHandle} 的取消调用栈上执行：
- * {@code detach} 只在 GATE 内登记待办，由 {@link #TRANSITIONS} 单线程在锁外推进。句柄监视器上
+ * {@code detach} 只在 GATE 内登记待办，由 {@link #transitions} 单线程在锁外推进。句柄监视器上
  * 既没有引擎调用也没有业务回调，两个订阅在 {@code onScanFailed} 里互 cancel 时不会形成监视器级
  * 锁序环。</p>
  */
@@ -90,22 +90,22 @@ public final class YoBleScanHub {
     }
 
     private static final String TAG = "YoBleScanHub";
-    private static final Object GATE = new Object();
-    private static final AtomicLong SUBSCRIPTION_SEQ = new AtomicLong();
+    private final Object GATE = new Object();
+    private final AtomicLong SUBSCRIPTION_SEQ = new AtomicLong();
 
     /**
      * 会话迁移线程：停扫与补偿重启从这里发出，绝不在订阅句柄的取消调用栈上调用引擎，
      * 因此句柄监视器不会与业务回调、也不会与另一个句柄的监视器形成锁序环。
      * 进程内只有这一个扫描器，所以这一个守护线程随进程常驻（库内没有它的所有者可关闭它）。
      */
-    private static final ExecutorService TRANSITIONS = Executors.newSingleThreadExecutor(runnable -> {
+    private final ExecutorService transitions = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "YoBleScanHub-transition");
         thread.setDaemon(true);
         return thread;
     });
 
-    @Nullable
-    private static YoBleScanHub current;
+    /** 会话归属：释放后置为真，迟到的终态据此被吸收。 */
+    private boolean released;
 
     @NonNull
     private final Engine engine;
@@ -119,7 +119,13 @@ public final class YoBleScanHub {
     private long failedEpoch;
 
     private YoBleScanHub(@NonNull Engine engine) {
-        this.engine = engine;
+        this.engine = Objects.requireNonNull(engine, "engine");
+    }
+
+    /** 为一个引擎创建扫描器：实例由装配图持有并释放，不存在进程级静态实例。 */
+    @NonNull
+    public static YoBleScanHub forEngine(@NonNull Engine engine) {
+        return new YoBleScanHub(engine);
     }
 
     /**
@@ -130,34 +136,22 @@ public final class YoBleScanHub {
      * 只替换帧级过滤器，不触达引擎。</p>
      */
     @NonNull
-    public static BleScanSubscription subscribe(@NonNull Engine engine,
-                                               @NonNull BleScanObserver observer) {
-        Objects.requireNonNull(engine, "engine");
+    public BleScanSubscription subscribe(@NonNull BleScanObserver observer) {
         Objects.requireNonNull(observer, "observer");
         SubscriptionBinding binding = new SubscriptionBinding();
         YoBleScanSubscription subscription = new YoBleScanSubscription(
                 "ble-scan-subscription-" + SUBSCRIPTION_SEQ.incrementAndGet(), observer, binding);
         binding.subscription = subscription;
-        YoBleScanHub hub;
         long epoch;
-        Engine retiredEngine = null;
         synchronized (GATE) {
-            if (current != null && current.engine != engine) {
-                // 旧 hub 绑定的是已被替换/释放的引擎：在锁内决定退役，出锁后再停旧引擎。
-                retiredEngine = current.retireLocked();
+            if (released) {
+                throw new IllegalStateException("YoBleScanHub already released");
             }
-            if (current == null) {
-                current = new YoBleScanHub(engine);
-            }
-            hub = current;
-            binding.hub = hub;
-            epoch = hub.attach(subscription);
-        }
-        if (retiredEngine != null) {
-            retiredEngine.stop();
+            binding.hub = this;
+            epoch = attach(subscription);
         }
         if (epoch != 0L) {
-            hub.startClaim(epoch);
+            startClaim(epoch);
         }
         return subscription;
     }
@@ -188,36 +182,33 @@ public final class YoBleScanHub {
      * 此处不再调用 {@link Engine#stop()}，避免与控制器释放路径重复停扫；若此刻仍有在途启动，
      * 它的二次确认会看到归属已失效并补齐停扫。
      */
-    public static void release(@NonNull Engine engine) {
-        Objects.requireNonNull(engine, "engine");
+    public void release() {
         synchronized (GATE) {
-            if (current == null || current.engine != engine) {
+            if (released) {
                 return;
             }
-            current.subscribers.clear();
-            current.engineState = EngineState.STOPPED;
-            current = null;
+            released = true;
+            subscribers.clear();
+            engineState = EngineState.STOPPED;
         }
+        transitions.shutdownNow();
     }
 
     /** 测试用：丢掉进程内扫描器，避免用例互相粘连。 */
     @VisibleForTesting
-    static void resetForTest() {
+    void resetForTest() {
         synchronized (GATE) {
-            if (current == null) {
-                return;
-            }
-            current.subscribers.clear();
-            current.engineState = EngineState.STOPPED;
-            current = null;
+            subscribers.clear();
+            engineState = EngineState.STOPPED;
+            released = false;
         }
     }
 
     /** 测试用：当前 hub 的引擎是否处于 RUNNING（观察失败后自动恢复的分支）。 */
     @VisibleForTesting
-    static boolean isEngineRunningForTest() {
+    boolean isEngineRunningForTest() {
         synchronized (GATE) {
-            return current != null && current.engineState == EngineState.RUNNING;
+            return !released && engineState == EngineState.RUNNING;
         }
     }
 
@@ -227,9 +218,9 @@ public final class YoBleScanHub {
      */
     @VisibleForTesting
     @NonNull
-    static CountDownLatch submitTransitionBarrierForTest() {
+    CountDownLatch submitTransitionBarrierForTest() {
         CountDownLatch barrier = new CountDownLatch(1);
-        TRANSITIONS.execute(barrier::countDown);
+        transitions.execute(barrier::countDown);
         return barrier;
     }
 
@@ -342,7 +333,7 @@ public final class YoBleScanHub {
         }
     }
 
-    /** 停扫窗口的推进：停引擎，然后按真实会话状态决定是否补偿启动（运行在 {@link #TRANSITIONS}）。 */
+    /** 停扫窗口的推进：停引擎，然后按真实会话状态决定是否补偿启动（运行在 {@link #transitions}）。 */
     private void stopThenResume(long registeredEpoch) {
         long resumedEpoch = finishStopAndMaybeResume(registeredEpoch);
         if (resumedEpoch != 0L) {
@@ -352,7 +343,7 @@ public final class YoBleScanHub {
 
     /**
      * 退订。只登记待办：本方法在订阅句柄的监视器里被调用，因此既不调引擎也不分发业务回调，
-     * 停扫与可能的补偿启动交给 {@link #TRANSITIONS} 在锁外推进。
+     * 停扫与可能的补偿启动交给 {@link #transitions} 在锁外推进。
      */
     private void detach(@NonNull YoBleScanSubscription subscription) {
         long registeredEpoch;
@@ -369,28 +360,12 @@ public final class YoBleScanHub {
             registeredEpoch = startEpoch;
         }
         // 最后一个订阅者离开必须停扫：引擎停止还要放弃适配器恢复现场（见 YoBleScanController）。
-        TRANSITIONS.execute(() -> stopThenResume(registeredEpoch));
-    }
-
-    /**
-     * 丢弃本 hub 的会话归属（调用方持有 GATE）。
-     *
-     * @return 需要在本锁之外停止的引擎；无活动会话时返回 {@code null}
-     */
-    @Nullable
-    private Engine retireLocked() {
-        if (current == this) {
-            current = null;
-        }
-        subscribers.clear();
-        boolean live = engineState == EngineState.STARTING || engineState == EngineState.RUNNING;
-        engineState = live ? EngineState.STOPPING : EngineState.STOPPED;
-        return live ? engine : null;
+        transitions.execute(() -> stopThenResume(registeredEpoch));
     }
 
     /** 当前 hub 是否仍是进程内扫描器的归属者（调用方持有 {@link #GATE}）。 */
     private boolean holdsOwnership() {
-        return current == this;
+        return !released;
     }
 
     /**

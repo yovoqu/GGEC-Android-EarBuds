@@ -3,6 +3,8 @@ package com.ggec.earbuds.domain.ai.model;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.Optional;
+
 /**
  * 语音交流模式可选的模型。
  *
@@ -59,22 +61,22 @@ public enum AiVoiceModel {
         return realtimeModel;
     }
 
-    /** 新装或旧文档读不出选择时的起点：ChatGPT 的实时接口最通用。 */
+    /** 新装应用的起点：ChatGPT 的实时接口最通用。这是产品默认值的单点定义，不是解析兜底。 */
     @NonNull
     public static AiVoiceModel defaultModel() {
         return CHATGPT;
     }
 
-    @Nullable
-    public static AiVoiceModel fromId(@Nullable String id) {
+    /** 持久化值是 {@link #id()}；解析不出来就是空的，由解码方按文档损坏处理。 */
+    public static Optional<AiVoiceModel> fromId(@Nullable String id) {
         if (id == null) {
-            return null;
+            return Optional.empty();
         }
         for (AiVoiceModel model : values()) {
-            if (model.id.equalsIgnoreCase(id) || model.name().equalsIgnoreCase(id)) {
-                return model;
+            if (model.id.equals(id)) {
+                return Optional.of(model);
             }
         }
-        return null;
+        return Optional.empty();
     }
 }

@@ -123,8 +123,6 @@ public final class HomePageStatusV12SecCommand extends Command {
         if (usageRemind == null) {
             throw new IllegalArgumentException("84_1 布尔值无效: " + valueHex.substring(2, 4));
         }
-        // 兼容旧首页键：84 取音量保护位
-        result.put("84", result.get("84_0"));
     }
 
     private static void parseKeyEvent(String valueHex, Map<String, String> result) {

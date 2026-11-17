@@ -1,0 +1,3 @@
+-keep class com.yovo.biz_ggec_wy.YoWySdk { public *; }
+-keep class com.yovo.biz_ggec_wy.api.** { public *; }
+-keep interface com.yovo.biz_ggec_wy.api.** { *; }

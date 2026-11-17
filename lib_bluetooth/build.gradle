@@ -31,8 +31,6 @@ android {
 
 dependencies {
     implementation project(':lib_common')
-    implementation 'androidx.appcompat:appcompat:1.8.0'
-    implementation 'com.google.android.material:material:1.14.0'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
@@ -40,20 +38,22 @@ dependencies {
 
 // ── 结构性边界门禁 ────────────────────────────────────────────────────────────
 // 权威规则见 docs/architecture/2026-11-refactor/design.md §1.2 / §8。
-// 判定只用目录事实（provider/**、api/**、model/**、internal/**、根包），
+// 判定只用目录事实（provider/**、api/**、model/**、internal/**、spi/**、根包），
 // 不含任何类名、文件名或路径白名单；边界错了修边界，不放宽门禁。
 
 def LIB_BT_ROOT = 'src/main/java/com/yovo/lib_bluetooth'
+/** 依赖接入层：唯一允许 import 被依赖模块（lib_common）的位置。 */
 def PROVIDER_ROOT = "${LIB_BT_ROOT}/provider"
+/** SPI 层：provider 与 internal 共同依赖的契约（端口 + 枚举 + 日志接口）。 */
+def SPI_ROOT = "${LIB_BT_ROOT}/spi"
 def API_ROOT = "${LIB_BT_ROOT}/api"
 def MODEL_ROOT = "${LIB_BT_ROOT}/model"
-
-/** 模块唯一对外门面，位于根包；根包不允许出现第二个文件。 */
-def ROOT_PACKAGE_FACADE = 'YoBluetoothSDK.java'
+/** 版本适配的唯一事实源。 */
+def PLATFORM_ADAPTER = "${LIB_BT_ROOT}/internal/platform/AndroidPlatform.java"
 
 tasks.register('checkLibBluetoothBoundary') {
     group = 'verification'
-    description = '结构性边界：lib_common 只在 provider/** 接入；api/model 不引用 provider/internal；provider 无静态可写状态与安装入口；根包只放唯一门面。'
+    description = '结构性边界：依赖单点接入、SPI 单向、根包唯一门面、api/model 不含平台类型、版本适配单点、无静态装配态与兼容层命名。'
     doLast {
         def offenders = []
         fileTree(project.projectDir) {
@@ -61,6 +61,7 @@ tasks.register('checkLibBluetoothBoundary') {
         }.each { file ->
             String rel = project.relativePath(file).replace('\\', '/')
             boolean inProvider = rel.startsWith("${PROVIDER_ROOT}/")
+            boolean inSpi = rel.startsWith("${SPI_ROOT}/")
             boolean inApi = rel.startsWith("${API_ROOT}/")
             boolean inModel = rel.startsWith("${MODEL_ROOT}/")
             file.text.eachLine { line, index ->
@@ -77,7 +78,50 @@ tasks.register('checkLibBluetoothBoundary') {
                     if ((inApi || inModel) && (touchesProvider || touchesInternal)) {
                         offenders << "${at}: api/model 引用实现层 → ${trimmed}"
                     }
+                    // R2b 契约层不碰平台类型：api/model 只描述机制，不暴露 android.bluetooth
+                    if ((inApi || inModel) && trimmed ==~ /import\s+android\.bluetooth\..*;/) {
+                        offenders << "${at}: api/model 不得引用 android.bluetooth → ${trimmed}"
+                    }
+                    // R2c SPI 单向：provider 只依赖 spi 与被依赖模块的公开 API，不得反向点名实现层
+                    boolean touchesSpi = trimmed ==~ /import\s+com\.yovo\.lib_bluetooth\.spi\..*;/
+                    boolean touchesModelApi = trimmed ==~ /import\s+com\.yovo\.lib_bluetooth\.(api|model)\..*;/
+                    boolean touchesOwnPackage = trimmed ==~ /import\s+com\.yovo\.lib_bluetooth\.provider\..*;/
+                    if (inProvider && !(touchesSpi || touchesModelApi || touchesOwnPackage
+                            || trimmed ==~ /import\s+com\.yovo\.lib_common\..*;/
+                            || trimmed ==~ /import\s+(android|androidx|java)\..*;/)) {
+                        offenders << "${at}: provider 只允许依赖 spi、model/api、被依赖模块与平台标准库 → ${trimmed}"
+                    }
                     return
+                }
+                if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+                    return
+                }
+                // R3 版本适配单点：运行时版本分支只允许在 AndroidPlatform
+                if (trimmed.contains('Build.VERSION.SDK_INT') && !rel.endsWith('/internal/platform/AndroidPlatform.java')) {
+                    offenders << "${at}: Build.VERSION.SDK_INT 只允许出现在 ${PLATFORM_ADAPTER} → ${trimmed}"
+                }
+                // R3 版本常量只作为 lint 静态声明使用（注解参数），不得参与运行时判断
+                if (trimmed.contains('Build.VERSION_CODES') && !rel.endsWith('/internal/platform/AndroidPlatform.java')
+                        && !trimmed.startsWith('@RequiresApi(')
+                        && !trimmed.startsWith('@ChecksSdkIntAtLeast(')) {
+                    offenders << "${at}: Build.VERSION_CODES 只允许出现在 @RequiresApi/@ChecksSdkIntAtLeast 注解 → ${trimmed}"
+                }
+                // R3 无静态装配态：禁止 static volatile
+                if (trimmed ==~ /.*\bstatic\b\s+volatile\b.*/) {
+                    offenders << "${at}: 禁止 static volatile（进程级可变装配态）→ ${trimmed}"
+                }
+                // R3 无静态装配态：禁止静态集合字段（可变共享状态）
+                if (trimmed ==~ /.*\bstatic\b.*\b(Map|List|Set|Collection|HashMap|ArrayList|LinkedHashMap|LinkedList|CopyOnWriteArrayList|ConcurrentHashMap|HashSet|LinkedHashSet|ArrayDeque|EnumSet)\b.*=.*/
+                        && !trimmed.contains('(')) {
+                    offenders << "${at}: 禁止静态集合字段（共享可变状态）→ ${trimmed}"
+                }
+                // R3 无线程阻塞：库内不得忙等
+                if (trimmed ==~ /.*\bThread\s*\.\s*sleep\s*\(.*/) {
+                    offenders << "${at}: 禁止 Thread.sleep（库内不得阻塞等待）→ ${trimmed}"
+                }
+                // R3 无静默吞异常：catch 参数不得命名为 ignored
+                if (trimmed ==~ /.*catch\s*\([^)]*\bignored\b[^)]*\).*/) {
+                    offenders << "${at}: 禁止 catch(… ignored)（异常必须进诊断通道或转成失败）→ ${trimmed}"
                 }
                 if (!inProvider) {
                     return
@@ -92,12 +136,19 @@ tasks.register('checkLibBluetoothBoundary') {
                     offenders << "${at}: provider 不得声明安装入口 → ${trimmed}"
                 }
             }
+            // R4 无兼容层命名：类型名不得出现 compat/legacy/shim/bridge
+            String fileName = file.name
+            if (fileName ==~ /[A-Za-z0-9_]*(Compat|compat|Legacy|legacy|Shim|shim|Bridge|bridge)[A-Za-z0-9_]*\.java/
+                    && !rel.startsWith("${PROVIDER_ROOT}/")) {
+                offenders << "${rel}: 类型名不得带兼容层语义（compat/legacy/shim/bridge），边界错了修边界"
+            }
         }
+        // R5 根包唯一门面：根包 .java 数量必须为 1，且不再按文件名白名单判定
         def rootFiles = fileTree("${project.projectDir}/${LIB_BT_ROOT}") {
             include '*.java'
         }.files*.name.sort()
-        if (rootFiles != [ROOT_PACKAGE_FACADE]) {
-            offenders << "根包只允许 ${ROOT_PACKAGE_FACADE}，当前: ${rootFiles.join(', ')}"
+        if (rootFiles.size() != 1) {
+            offenders << "根包只允许唯一门面：当前 ${rootFiles.size()} 个 → ${rootFiles.join(', ')}"
         }
         if (!offenders.isEmpty()) {
             throw new GradleException('lib_bluetooth 边界门禁未通过：\n' + offenders.join('\n'))
@@ -192,6 +243,11 @@ tasks.register('checkNoStrayLogging') {
             throw new GradleException('Stray logging detected:\n' + offenders.join('\n'))
         }
     }
+}
+
+// 门禁必须挡在构建最前面：preBuild 之前就被违反结构约束的改动挡住，避免"先编译过、再补边界"。
+tasks.named('preBuild') {
+    dependsOn 'checkLibBluetoothBoundary'
 }
 
 tasks.named('check') {

@@ -23,26 +23,30 @@ public final class SpecialAccessLifecycleObserver implements LifecycleEventObser
     private final Activity activity;
     private final List<Permission> permissions;
     private final PermissionCore.SpecialAccessCallback callback;
+    private final PermissionCore core;
     private boolean called;
 
     private SpecialAccessLifecycleObserver(
             @NonNull Activity activity,
             @NonNull List<Permission> permissions,
-            @NonNull PermissionCore.SpecialAccessCallback callback) {
+            @NonNull PermissionCore.SpecialAccessCallback callback,
+            @NonNull PermissionCore core) {
         this.activity = activity;
         this.permissions = permissions;
         this.callback = callback;
+        this.core = core;
     }
 
     public static void observe(@NonNull Activity activity,
                                @NonNull List<Permission> permissions,
-                               @NonNull PermissionCore.SpecialAccessCallback callback) {
+                               @NonNull PermissionCore.SpecialAccessCallback callback,
+                               @NonNull PermissionCore core) {
         if (!(activity instanceof LifecycleOwner)) {
             throw new IllegalArgumentException(
                     "requestSpecialAccess 需要 LifecycleOwner Activity");
         }
         SpecialAccessLifecycleObserver observer =
-                new SpecialAccessLifecycleObserver(activity, permissions, callback);
+                new SpecialAccessLifecycleObserver(activity, permissions, callback, core);
         ((LifecycleOwner) activity).getLifecycle().addObserver(observer);
     }
 
@@ -58,11 +62,10 @@ public final class SpecialAccessLifecycleObserver implements LifecycleEventObser
             return;
         }
         called = true;
-        PermissionCore manager = PermissionCore.with(activity);
         List<Permission> denied = new ArrayList<>();
         boolean allGranted = true;
         for (Permission permission : permissions) {
-            if (manager.check(permission) != PermissionStatus.GRANTED) {
+            if (core.check(activity, permission) != PermissionStatus.GRANTED) {
                 denied.add(permission);
                 allGranted = false;
             }

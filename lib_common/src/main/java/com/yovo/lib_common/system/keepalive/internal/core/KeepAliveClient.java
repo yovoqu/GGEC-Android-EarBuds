@@ -9,19 +9,19 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveConfig;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveNotificationSpec;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveResult;
-import com.yovo.lib_common.system.keepalive.model.KeepAliveSession;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveStartResult;
-import com.yovo.lib_common.system.keepalive.model.KeepAliveStopHandler;
 import com.yovo.lib_common.system.keepalive.YoKeepAlive;
-import com.yovo.lib_common.system.keepalive.internal.compat.ForegroundServiceCompat;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveLogger;
 import com.yovo.lib_common.system.keepalive.internal.KeepAlivePreconditionChecker;
 import com.yovo.lib_common.system.keepalive.internal.ack.KeepAliveAckRegistry;
+import com.yovo.lib_common.system.keepalive.internal.service.ForegroundServiceStarter;
 import com.yovo.lib_common.system.keepalive.internal.service.KeepAliveIntentFactory;
 import com.yovo.lib_common.system.keepalive.model.WakeLockPolicy;
 import com.yovo.lib_common.system.keepalive.internal.power.PartialWakeLockController;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveSessionRegistry;
 
+/**
+ * 单会话客户端。会话表与回执表由 {@link KeepAliveCore} 构造注入，本类不再访问任何静态入口。
+ */
 public final class KeepAliveClient implements YoKeepAlive.Client {
 
     private static final String TAG = "SystemKeepAlive";
@@ -29,14 +29,20 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
     @NonNull private final Context appContext;
     @NonNull private final KeepAliveConfig config;
     @NonNull private final KeepAliveLogger logger;
+    @NonNull private final KeepAliveSessionRegistry sessions;
+    @NonNull private final KeepAliveAckRegistry acks;
     @Nullable private KeepAliveSessionImpl session;
 
     public KeepAliveClient(@NonNull Context context,
                            @NonNull KeepAliveConfig config,
-                           @NonNull KeepAliveLogger logger) {
+                           @NonNull KeepAliveLogger logger,
+                           @NonNull KeepAliveSessionRegistry sessions,
+                           @NonNull KeepAliveAckRegistry acks) {
         this.appContext = context.getApplicationContext();
         this.config = config;
         this.logger = logger;
+        this.sessions = sessions;
+        this.acks = acks;
     }
 
     @NonNull
@@ -45,6 +51,7 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
     }
 
     @NonNull
+    @Override
     public KeepAliveStartResult start(@NonNull KeepAliveNotificationSpec spec,
                                       @Nullable YoKeepAlive.StartCallback callback) {
         if (session != null && session.isActive()) {
@@ -71,16 +78,15 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
                 return new KeepAliveStartResult(softPrecondition, null);
             }
         }
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().register(config, spec);
-        session = new KeepAliveSessionImpl(config, this);
+        sessions.register(config, spec);
+        session = new KeepAliveSessionImpl(config, this, sessions);
         if (callback != null) {
-            KeepAliveAckRegistry.get().await(config.sessionId(),
+            acks.await(config.sessionId(),
                     (sessionId, success, detail) -> {
                         if (success) {
                             callback.onForegroundStarted(sessionId);
                         } else {
-                            KeepAliveSessionRegistry.get().remove(config.sessionId());
+                            sessions.remove(config.sessionId());
                             if (session != null) {
                                 session.markInactive();
                             }
@@ -92,13 +98,12 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
                     });
         }
         try {
-            ForegroundServiceCompat.startKeepAliveService(
+            ForegroundServiceStarter.start(
                     appContext, KeepAliveIntentFactory.createStart(appContext, config));
             return new KeepAliveStartResult(KeepAliveResult.of(KeepAliveResult.Code.SUCCESS), session);
         } catch (Throwable error) {
-            KeepAliveAckRegistry.get().complete(
-                    config.sessionId(), false, error.getMessage());
-            KeepAliveSessionRegistry.get().remove(config.sessionId());
+            acks.complete(config.sessionId(), false, error.getMessage());
+            sessions.remove(config.sessionId());
             session = null;
             logger.error(TAG, "start keep alive failed", error);
             return new KeepAliveStartResult(
@@ -150,9 +155,8 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
 
     @NonNull
     public KeepAliveResult stop() {
-        KeepAliveAckRegistry.get().cancel(config.sessionId());
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().remove(config.sessionId());
+        acks.cancel(config.sessionId());
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.remove(config.sessionId());
         if (entry != null) {
             entry.setActive(false);
             releaseWakeLock(entry);
@@ -178,9 +182,8 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
     }
 
     public void release() {
-        KeepAliveAckRegistry.get().cancel(config.sessionId());
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().remove(config.sessionId());
+        acks.cancel(config.sessionId());
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.remove(config.sessionId());
         if (entry != null) {
             entry.setActive(false);
             releaseWakeLock(entry);
@@ -191,14 +194,16 @@ public final class KeepAliveClient implements YoKeepAlive.Client {
         }
         try {
             appContext.stopService(new Intent(appContext, config.serviceClass()));
-        } catch (Throwable ignored) {
+        } catch (RuntimeException stopFailure) {
+            // release() 是本地状态清空后的尽力收尾：进程内会话与唤醒锁已释放，
+            // 停止服务失败（权限/Intent 非法/服务已不存在）只记录，不改变已释放事实。
+            logger.warn(TAG, "release 阶段停止前台服务失败", stopFailure);
         }
     }
 
     @Nullable
     private KeepAliveSessionRegistry.SessionEntry requireActiveEntry() {
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().get(config.sessionId());
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.get(config.sessionId());
         if (entry == null || !entry.isActive()) {
             return null;
         }

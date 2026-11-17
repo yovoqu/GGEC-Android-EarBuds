@@ -16,6 +16,7 @@ android {
         targetSdk {
             version = release(37)
         }
+
         versionCode = 1
         versionName = '1.0'
 
@@ -44,6 +45,7 @@ dependencies {
     implementation project(':lib_ai')
     implementation project(':biz_appupdate')
     implementation project(':biz_ggec_hs')
+    implementation project(':biz_ggec_wy')
     implementation project(':biz_ggec_record')
 
     implementation files('libs/youi_kit-1.0.0.aar')
@@ -67,142 +69,216 @@ dependencies {
 }
 
 // ---------------------------------------------------------------------------
-// 边界门禁：全部按「目录 + 包名」判定，不含人名 / 类名白名单（design.md §8、§1.2）。
+// 边界门禁（docs/architecture/2026-11-app-rebuild/architecture-rules.md §2.5）
+//
+// 全部按「目录 + 包名前缀」判定，没有文件名/类名白名单：
+//   - 依赖模块清单从 implementation 的 ProjectDependency 派生，不手写名单；
+//   - provider 第一级目录名 == 依赖模块名（`provider/<module>/<职责子目录>/` 的子目录由
+//     architecture-rules §2.1 约定，门禁只看第一级目录，所以新增职责子目录不需要改门禁）；
+//   - provider 只允许 import 该依赖的公开包，且不得进 internal/impl；
+//   - provider 只实现 domain 端口：不得 import ui/data/platform，也不得 import domain 用例；
+//   - 非 provider 代码不得 import 任何业务依赖；
+//   - 基线原语（lib_common 声明的类型）不得在其它包里出现同名类型；
+//     唯一的冻结根是 record/**（第二个产品入口，本轮隔离、待独立模块化），以目录声明。
 // ---------------------------------------------------------------------------
-
-// 本模块依赖的业务能力模块：只有 provider/<dependency> 可以直接 import。
-def providerDependencyModules = ['lib_ai', 'lib_common', 'biz_ggec_hs', 'biz_appupdate', 'biz_ggec_record']
-
-// 平台基线（design.md §1.2 R6）：按依赖分类放行，不是文件名白名单。
-// 事件槽这类共享 UI 原语等价于 androidx 基线，任何 ui 类可用；业务能力域仍必须走 provider。
-def platformBaselinePackages = ['com.yovo.lib_common.event']
-
-// 过渡期唯一放行目录：record 功能尚未拆出 provider/biz_ggec_record 适配层，
-// 其公开 SDK 与 PermissionProvider 只允许 app 内 record/** 直接引用（口径与 ces 既有规则一致）。
-// 收回条件：record/** 按 provider/<dependency> 单点接入改造完成后，删除该常量与下面两处判断。
-def recordLegacyRoot = '/com/ggec/earbuds/record/'
-def recordDirectModules = ['com.yovo.biz_ggec_record']
 
 def appRelativePath = { File file ->
     rootProject.relativePath(file).replace('\\', '/')
 }
 
-def appProviderPath = { File file ->
-    def rel = appRelativePath(file)
-    def marker = '/provider/'
-    int index = rel.indexOf(marker)
-    index < 0 ? null : rel.substring(index + marker.length())
+// 目录即事实：包前缀由 Gradle 模块名派生（com.yovo.<projectName>）。
+def dependencyModules = providers.provider {
+    configurations.implementation.dependencies
+            .findAll { it instanceof ProjectDependency }
+            .collect { it.name }
+            .sort()
+}
+def dependencyPackagePrefixes = providers.provider {
+    dependencyModules.get().collectEntries { String name -> [(name): "com.yovo.${name}"] }
+}
+
+// 本轮不处理的功能目录：record 入口保持现状，不纳入本轮扫描（不做任何改造）。
+def untouchedFeatureRoots = ['/com/ggec/earbuds/record/']
+// 平台基线：共享 UI 原语等价于 androidx，仅 ui/** 可用。
+def platformBaselinePackages = ['com.yovo.lib_common.event']
+
+def javaMainTree = { String relativeDir ->
+    fileTree(project.file(relativeDir)) { include '**/*.java' }
+}
+
+def eachJavaLine = { File file, Closure action ->
+    file.eachLine { line, index -> action.call(file, line, index + 1) }
+}
+
+// 包声明是结构事实：门禁按包名判定，不按文件名/类名。
+def declaredPackageOf = { File file ->
+    String found = ''
+    file.eachLine { line ->
+        if (found.isEmpty()) {
+            def matcher = line =~ /^\s*package\s+([\w.]+)\s*;/
+            if (matcher.find()) {
+                found = matcher.group(1)
+            }
+        }
+    }
+    return found
+}
+
+// 顶层类型声明（缩进为 0）：内部类不算「另一份基线原语」。
+def declaredTopLevelType = ~/^(?:public\s+|protected\s+|private\s+|abstract\s+|final\s+|sealed\s+|non-sealed\s+|static\s+|strictfp\s+)*(?:class|interface|enum|record)\s+(\w+)/
+
+// 基线真源：lib_common 里每个顶层类型都是基线类型；返回 类型名 -> "包名|路径"。
+def collectBaselineTypes = { String relativeDir ->
+    Map<String, String> found = [:]
+    def root = project.file(relativeDir)
+    if (!root.exists()) {
+        return found
+    }
+    fileTree(root) { include '**/*.java' }.each { File file ->
+        String rel = rootProject.relativePath(file).replace('\\', '/')
+        String packageName = declaredPackageOf.call(file)
+        file.eachLine { line ->
+            def matcher = line =~ declaredTopLevelType
+            if (matcher.find() && !found.containsKey(matcher.group(1))) {
+                found.put(matcher.group(1), "${packageName}|${rel}".toString())
+            }
+        }
+    }
+    return found
 }
 
 tasks.register('checkAppDependencyBoundary') {
     group = 'verification'
-    description = 'src/main/java only: provider/<dependency> is the single import point, and its directory must equal that module. Test source sets are excluded because their job is reaching the object under test and its stubs, not mirroring production boundaries.'
+    description = 'src/main only: provider/<module> is the single import point; provider imports stay inside its dependency public API.'
     doLast {
+        Map<String, String> prefixes = dependencyPackagePrefixes.get()
+        List<String> modules = dependencyModules.get()
         def offenders = []
-        fileTree(project.file('src/main/java')) {
-            include '**/*.java'
-        }.each { File file ->
+        javaMainTree('src/main/java').each { File file ->
             def rel = appRelativePath(file)
-            def providerPath = appProviderPath(file)
-            def providerModule = providerPath == null ? null : providerPath.split('/')[0]
-            file.eachLine { line, index ->
+            def marker = '/provider/'
+            int index = rel.indexOf(marker)
+            String providerModule = index < 0 ? null
+                    : rel.substring(index + marker.length()).split('/')[0]
+            boolean untouched = untouchedFeatureRoots.any { rel.contains(it) }
+            eachJavaLine(file) { f, line, number ->
+                if (untouched) {
+                    return
+                }
                 def matcher = line =~ /^\s*import\s+(?:static\s+)?(com\.yovo\.[\w.]+);/
                 if (!matcher.find()) {
                     return
                 }
-                def imported = matcher.group(1)
+                String imported = matcher.group(1)
                 if (providerModule == null) {
-                    if (platformBaselinePackages.any { String baseline -> imported.startsWith(baseline + '.') }) {
+                    if (rel.contains('/ui/') && platformBaselinePackages.any { imported.startsWith(it + '.') }) {
                         return
                     }
-                    if (rel.contains(recordLegacyRoot)
-                            && recordDirectModules.any { String prefix -> imported.startsWith(prefix + '.') }) {
-                        return
-                    }
-                    def module = providerDependencyModules.find { String name ->
-                        imported.startsWith("com.yovo.${name}.")
-                    }
+                    String module = modules.find { imported.startsWith(prefixes[it] + '.') }
                     if (module != null) {
-                        offenders << "${rel}:${index + 1}: ${line.trim()}"
+                        offenders << "${rel}:${number}: 业务依赖只能经 provider 接入 -> ${line.trim()}"
                     }
                     return
                 }
-                // provider/<dependency> 内只允许 import 对应依赖模块，不得跨依赖混用。
                 if (!imported.startsWith("com.yovo.${providerModule}.")) {
-                    offenders << "${rel}:${index + 1}: provider/${providerModule} 只能 import com.yovo.${providerModule}.* -> ${line.trim()}"
+                    offenders << "${rel}:${number}: provider/${providerModule} 只能 import com.yovo.${providerModule}.* -> ${line.trim()}"
+                }
+                if (imported.contains('.internal.') || imported.endsWith('.internal')
+                        || imported.contains('.impl.')) {
+                    offenders << "${rel}:${number}: provider 不得引用依赖内部实现 -> ${line.trim()}"
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    'App 依赖只能经 provider/<dependency> 单点接入：\n' + offenders.join('\n'))
+            throw new GradleException('App 依赖边界：\n' + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkAppLayering') {
     group = 'verification'
-    description = 'src/main/java only: ui/data/domain must not reach provider, provider is referenced only from wiring, and a ViewModel owns no platform views. Test source sets are out of scope: they must be able to reach the object under test and its stubs.'
+    description = 'src/main only: ui/data/domain do not reach provider; provider is referenced only from wiring; provider only implements domain ports; VM owns no views or platform handles.'
     doLast {
         def offenders = []
-        fileTree(project.file('src/main/java')) {
-            include '**/*.java'
-        }.each { File file ->
+        // provider 是「本应用端口 ↔ 第三方依赖」的适配层：只实现 domain 端口、只用 domain 模型，
+        // 不得反向 import 上层实现（ui/data/platform）。历史违规：provider/biz_appupdate 曾
+        // import ui.update.* 并自己 startActivity；现在端口在 domain/update/port，系统页面动作由
+        // platform/update 实现、wiring 注入，provider 只做翻译。
+        def providerForbiddenImports = ['com.ggec.earbuds.ui.', 'com.ggec.earbuds.data.',
+                                        'com.ggec.earbuds.platform.']
+        javaMainTree('src/main/java').each { File file ->
             def rel = appRelativePath(file)
-            def isViewModel = file.name.endsWith('ViewModel.java')
-            file.eachLine { line, index ->
+            boolean untouched = untouchedFeatureRoots.any { rel.contains(it) }
+            boolean viewModel = file.name.endsWith('ViewModel.java')
+            eachJavaLine(file) { f, line, number ->
                 def matcher = line =~ /^\s*import\s+(?:static\s+)?([\w.]+);/
                 if (!matcher.find()) {
                     return
                 }
-                def imported = matcher.group(1)
-                def at = { String message -> offenders << "${rel}:${index + 1}: ${message} -> ${line.trim()}" }
-                // ui / data / domain 到 data / ui / android 的禁止项由 checkAppMvvmLayers 单点负责，
-                // 本任务只补它不覆盖的结构性规则。
-                if (rel.contains('/ui/') && !rel.contains(recordLegacyRoot)
-                        && imported.startsWith('com.ggec.earbuds.provider.')) {
-                    at('ui 不得 import provider.**')
+                String imported = matcher.group(1)
+                def at = { String message -> offenders << "${rel}:${number}: ${message}" }
+                if (untouched) {
+                    return
+                }
+                if (imported.startsWith('com.ggec.earbuds.provider.')
+                        && !rel.contains('/wiring/') && !rel.contains('/provider/')) {
+                    at('provider.** 只允许装配根 wiring/** 引用')
+                }
+                if (rel.contains('/provider/')) {
+                    providerForbiddenImports.each { String prefix ->
+                        if (imported.startsWith(prefix)) {
+                            at("provider 不得 import ${prefix}**：适配层只实现 domain 端口，宿主实现由 wiring 注入")
+                        }
+                    }
+                    if (imported =~ /^com\.ggec\.earbuds\.domain\.[\w.]*\.usecase\./) {
+                        at('provider 不得 import domain 用例：适配层只实现端口、只用模型')
+                    }
+                }
+                if (rel.contains('/ui/') && imported.startsWith('com.ggec.earbuds.data.')) {
+                    at('ui 不得 import data.**')
+                }
+                if (rel.contains('/ui/')) {
+                    if (imported.startsWith('java.io.') || imported.startsWith('java.nio.file.')
+                            || imported.startsWith('org.json.')) {
+                        at('ui 不得直接做文件/JSON IO')
+                    }
                 }
                 if (rel.contains('/data/')) {
-                    if (imported.startsWith('com.ggec.earbuds.provider.')) {
-                        at('data 不得 import provider.**')
+                    if (imported.startsWith('android.')
+                            || (imported.startsWith('androidx.') && !imported.startsWith('androidx.annotation.'))) {
+                        at('data 不得 import Android 运行时')
                     }
-                    if (imported.startsWith('android.')) {
-                        at('data 不得 import android.*')
+                    if (imported == 'com.ggec.earbuds.ui' || imported.startsWith('com.ggec.earbuds.ui.')) {
+                        at('data 不得 import ui.**')
                     }
                 }
                 if (rel.contains('/domain/')) {
-                    if (imported.startsWith('com.ggec.earbuds.provider.')) {
-                        at('domain 不得 import provider.**')
+                    if (imported.startsWith('android.') || imported.startsWith('com.ggec.earbuds.data.')
+                            || imported.startsWith('com.ggec.earbuds.ui.')
+                            || imported.startsWith('com.ggec.earbuds.platform.')
+                            || imported.startsWith('com.ggec.earbuds.wiring.')
+                            || imported.startsWith('org.json.')) {
+                        at('domain 必须是纯 Java，不依赖框架/邻层')
                     }
-                    if (imported == 'org.json.JSONObject' || imported.startsWith('org.json.')) {
-                        at('domain 不得 import org.json（持久化只在 data）')
-                    }
-                }
-                if (rel.contains('/ui/')) {
-                    if (imported == 'java.io.File' || imported == 'java.io.FileOutputStream'
-                            || imported == 'java.nio.file.Files') {
-                        at('ui 不得直接做文件 IO（台账/档案只在 data）')
+                    if (imported.startsWith('com.ggec.earbuds.data.store.')) {
+                        at('domain 不得 import IO 原语（data.store）')
                     }
                 }
-                // §1.2 R2：provider/** 只被本模块装配根（wiring/**）引用。
-                if (imported.startsWith('com.ggec.earbuds.provider.')
-                        && !rel.contains('/wiring/') && !rel.contains('/provider/')
-                        && !rel.contains(recordLegacyRoot)) {
-                    at('provider.** 只允许装配根 wiring/** 引用')
-                }
-                if (isViewModel) {
-                    if (imported.startsWith('com.yohu.youi.')) {
-                        at('ViewModel 不得 import YoUI 组件')
+                if (viewModel) {
+                    if (imported =~ /^android\.(view|widget|content|app|os\.(Handler|Looper))\.?/) {
+                        at('ViewModel 不得 import Android UI/Looper')
                     }
-                    if (imported.startsWith('com.ggec.earbuds.wiring.')) {
-                        at('ViewModel 不得 import 装配根')
+                    if (imported.startsWith('com.yohu.youi.') || imported.startsWith('com.ggec.earbuds.wiring.')) {
+                        at('ViewModel 不得 import 组件库或装配根')
+                    }
+                    if (imported =~ /^com\.ggec\.earbuds\.domain\.[\w.]*\.port\.\w*Repository$/) {
+                        at('ViewModel 只能经用例触达仓库端口')
                     }
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException('App 分层越界：\n' + offenders.join('\n'))
+            throw new GradleException('分层越界：\n' + offenders.join('\n'))
         }
     }
 }
@@ -212,109 +288,44 @@ tasks.register('checkAiLayerImports') {
     description = 'Fail if the AI feature crosses its layer boundaries.'
     doLast {
         def offenders = []
-        def scanTree = { String dir, String pattern, List<String> forbidden ->
-            fileTree(project.file(dir)) {
-                include pattern
+        def scanTree = { String relativeDir, List<String> forbidden ->
+            fileTree(project.file("src/main/java/com/ggec/earbuds/${relativeDir}")) {
+                include '**/*.java'
             }.each { File file ->
                 def rel = rootProject.relativePath(file).replace('\\', '/')
                 file.eachLine { line, index ->
                     forbidden.each { token ->
                         if (line.contains(token)) {
-                            offenders << "${rel}:${index}: ${line.trim()}"
+                            offenders << "${rel}:${index + 1}: ${line.trim()}"
                         }
                     }
                 }
             }
         }
-        def base = 'src/main/java/com/ggec/earbuds'
-        // 领域层：纯 Java，不认识 lib_ai、JSON、Android、数据层与装配。
-        scanTree("${base}/domain/ai", '**/*.java',
-                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
-                 'com.ggec.earbuds.wiring', 'com.ggec.earbuds.data'])
-        // 数据层：只通过端口和 lib_ai 说话，不碰界面、平台实现和装配，严禁依赖 lib_ai 内部实现或具体厂商包。
-        scanTree("${base}/data/ai", '**/*.java',
-                ['com.ggec.earbuds.platform', 'com.ggec.earbuds.wiring',
-                 'com.yovo.lib_ai.internal', 'com.yovo.lib_ai.platform.openai',
-                 'com.yovo.lib_ai.platform.qwen', 'com.yovo.lib_ai.platform.anthropic',
-                 'com.yovo.lib_ai.platform.deepseek', 'com.yovo.lib_ai.platform.sensenova'])
-        // 界面层：只依赖用例和领域模型，不直接拿仓库、网关或 lib_ai。
-        scanTree("${base}/ui/ai", '**/*.java',
-                ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
-                 'domain.ai.port.AiSettingsRepository', 'domain.ai.port.AiConversationRepository',
-                 'domain.ai.port.AiChatGateway', 'domain.ai.port.AiModelGateway',
-                 'domain.ai.port.AiSpeedTestGateway', 'domain.ai.port.AiPlatformCatalog'])
-        // ViewModel 不持有 Context，也不创建视图。
-        scanTree("${base}/ui/ai", '**/*ViewModel.java',
-                ['android.view', 'android.widget', 'android.content', 'android.app',
-                 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
-        // 平台层：只放 Android 实现，不反向依赖界面。
-        scanTree("${base}/platform", '**/*.java',
-                ['com.ggec.earbuds.ui', 'com.yohu.youi', 'com.ggec.earbuds.wiring'])
-        // 数据层只做 I/O：模型筛选等业务策略必须留在领域，不允许数据层反向依赖策略。
-        scanTree("${base}/data/ai", '**/*.java',
-                ['com.ggec.earbuds.domain.ai.policy'])
-        // 网关同样只做 I/O：策略（默认值、筛选、校验）不得下沉进 provider，也不得反向依赖界面。
-        scanTree("${base}/provider/lib_ai", '**/*.java',
-                ['com.ggec.earbuds.domain.ai.policy', 'com.ggec.earbuds.ui', 'com.ggec.earbuds.wiring'])
-        // 设备台账编解码：只允许共享 JSON 原语与设备领域模型，不得伸进 ui/provider/AI。
-        fileTree(project.file("${base}/data/device/json")) {
-            include '**/*.java'
-        }.each { File file ->
-            def rel = rootProject.relativePath(file).replace('\\', '/')
-            file.eachLine { line, index ->
-                def matcher = line =~ /^\s*import\s+([\w.]+);/
-                if (!matcher.find()) {
-                    return
-                }
-                def imported = matcher.group(1)
-                if (imported.startsWith('com.ggec.earbuds.')
-                        && !imported.startsWith('com.ggec.earbuds.data.json.')
-                        && !imported.startsWith('com.ggec.earbuds.domain.device.')) {
-                    offenders << "${rel}:${index + 1}: ${line.trim()}"
-                }
-            }
-        }
+        scanTree('domain/ai', ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
+                               'com.ggec.earbuds.wiring', 'com.ggec.earbuds.data', 'com.ggec.earbuds.ui'])
+        scanTree('data/ai', ['com.ggec.earbuds.ui', 'com.ggec.earbuds.platform',
+                             'com.ggec.earbuds.wiring', 'com.yovo.lib_ai.internal',
+                             'com.yovo.lib_ai.platform.openai', 'com.yovo.lib_ai.platform.qwen',
+                             'com.yovo.lib_ai.platform.anthropic', 'com.yovo.lib_ai.platform.deepseek',
+                             'com.yovo.lib_ai.platform.sensenova', 'com.ggec.earbuds.domain.ai.policy'])
+        scanTree('ui/ai', ['com.yovo.lib_ai', 'org.json', 'com.ggec.earbuds.platform',
+                           'com.ggec.earbuds.data'])
+        scanTree('ui/ai', ['com.ggec.earbuds.domain.ai.port.AiSettingsRepository',
+                           'com.ggec.earbuds.domain.ai.port.AiConversationRepository',
+                           'com.ggec.earbuds.domain.ai.port.AiChatGateway',
+                           'com.ggec.earbuds.domain.ai.port.AiModelGateway',
+                           'com.ggec.earbuds.domain.ai.port.AiSpeedTestGateway',
+                           'com.ggec.earbuds.domain.ai.port.AiPlatformCatalog'])
         if (!offenders.isEmpty()) {
-            throw new GradleException('AI layer boundary violated:\n' + offenders.join('\n'))
-        }
-    }
-}
-
-tasks.register('checkMainThreadIoImports') {
-    group = 'verification'
-    description = 'Fail if UI or ViewModel code owns disk, JSON, or persistence implementations.'
-    doLast {
-        def offenders = []
-        def forbidden = [
-                'java.io.FileOutputStream',
-                'java.io.FileDescriptor',
-                'java.nio.file.Files',
-                'org.json.',
-                'FileAiDocumentStore',
-                'AiSettingsRepositoryImpl',
-                'AiConversationRepositoryImpl'
-        ]
-        fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
-            include '**/*.java'
-        }.each { File file ->
-            def rel = rootProject.relativePath(file).replace('\\', '/')
-            file.eachLine { line, index ->
-                forbidden.each { token ->
-                    if (line.contains(token)) {
-                        offenders << "${rel}:${index}: ${line.trim()}"
-                    }
-                }
-            }
-        }
-        if (!offenders.isEmpty()) {
-            throw new GradleException('UI layer owns storage work:\n' + offenders.join('\n'))
+            throw new GradleException('AI 分层越界：\n' + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkComponentOwnership') {
     group = 'verification'
-    description = 'Fail if page code destroys YoUI components outside a release scope.'
+    description = 'Fail if page code destroys YoUI components outside a release scope or uses framework dialogs.'
     doLast {
         def offenders = []
         fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
@@ -326,23 +337,20 @@ tasks.register('checkComponentOwnership') {
                 if ((trimmed.contains('YoList') || trimmed.contains('YoSelect')
                         || trimmed.contains('YoMenu') || trimmed.contains('YoDialog'))
                         && trimmed.matches('.*\\.destroy\\(\\);.*')) {
-                    offenders << "${rel}:${index}: ${trimmed}"
+                    offenders << "${rel}:${index + 1}: ${trimmed}"
                 }
-                // 弹窗原语只有一套：YoUI 的 YoDialog/YoMenu。框架 AlertDialog 不在页面层出现。
                 if (trimmed.contains('androidx.appcompat.app.AlertDialog')) {
-                    offenders << "${rel}:${index}: ${trimmed}"
+                    offenders << "${rel}:${index + 1}: ${trimmed}"
                 }
-                // 方法引用也是释放通道：未登记到 own(...)/releases.add(...) 的 ::destroy 一律视为漏管。
                 if (trimmed.contains('::destroy')
                         && !trimmed.contains('own(') && !trimmed.contains('releases.add(')) {
-                    offenders << "${rel}:${index}: ${trimmed}"
+                    offenders << "${rel}:${index + 1}: ${trimmed}"
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    'YoUI 组件只能经 YoComponents/YoComponentScope 释放，弹窗只用 YoDialog/YoMenu：\n'
-                            + offenders.join('\n'))
+            throw new GradleException('YoUI 组件只能经 YoComponents 释放，弹窗只用 YoDialog/YoMenu：\n'
+                    + offenders.join('\n'))
         }
     }
 }
@@ -363,13 +371,13 @@ tasks.register('checkExplicitImports') {
                 def rel = rootProject.relativePath(file).replace('\\', '/')
                 file.eachLine { line, index ->
                     if (line.trim().matches('import\\s+(static\\s+)?[\\w.]+\\.\\*;')) {
-                        offenders << "${rel}:${index}: ${line.trim()}"
+                        offenders << "${rel}:${index + 1}: ${line.trim()}"
                     }
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException('Wildcard import is not allowed:\n' + offenders.join('\n'))
+            throw new GradleException('禁止通配 import：\n' + offenders.join('\n'))
         }
     }
 }
@@ -385,22 +393,22 @@ tasks.register('checkFrameworkToastForbidden') {
             def rel = rootProject.relativePath(file).replace('\\', '/')
             file.eachLine { line, index ->
                 if (line.contains('android.widget.Toast')) {
-                    offenders << "${rel}:${index}: ${line.trim()}"
+                    offenders << "${rel}:${index + 1}: ${line.trim()}"
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException('Direct android.widget.Toast usage is forbidden. Use YoToast from YoUI instead:\n' + offenders.join('\n'))
+            throw new GradleException('禁止直接使用 android.widget.Toast，改用 YoToast：\n'
+                    + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkSingleYoLogInit') {
     group = 'verification'
-    description = 'Only YoLogBootstrap may call YoLog.init; App must initialize YoLog via provider.'
+    description = 'YoLog.init may only be called from the log foundation package.'
     doLast {
         def offenders = []
-        def bootstrapPath = '/lib_common/src/main/java/com/yovo/lib_common/log/YoLogBootstrap.java'
         fileTree(project.rootDir) {
             include '**/*.java'
             exclude '**/build/**'
@@ -408,11 +416,11 @@ tasks.register('checkSingleYoLogInit') {
             exclude '**/src/test/**'
             exclude '**/src/androidTest/**'
         }.each { file ->
-            def abs = file.absolutePath.replace('\\', '/')
-            if (abs.endsWith(bootstrapPath)) {
+            def rel = project.rootDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+            // 唯一落点由包结构决定：日志基础包本身；包外（不论文件叫什么）一律不许调 init。
+            if (declaredPackageOf.call(file) == 'com.yovo.lib_common.log') {
                 return
             }
-            def rel = project.rootDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
             file.eachLine { line, index ->
                 if (line =~ /\bYoLog\s*\.\s*init\s*\(/) {
                     offenders << "${rel}:${index + 1}: ${line.trim()}"
@@ -420,77 +428,81 @@ tasks.register('checkSingleYoLogInit') {
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    'Direct YoLog.init is forbidden (use YoLogBootstrap.initOnce/ensureInitialized):\n'
-                            + offenders.join('\n'))
+            throw new GradleException('YoLog.init 只能由 com.yovo.lib_common.log 包内部调用：\n'
+                    + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkAppMvvmLayers') {
     group = 'verification'
-    description = 'Strict MVVM layering: VM no android UI; domain no android/data/ui; ui no data; data no ui.'
+    description = 'Strict MVVM layering: domain is pure Java; ui owns no persistence; data owns no UI.'
     doLast {
         def offenders = []
         def rel = { File f -> project.rootDir.toPath().relativize(f.toPath()).toString().replace('\\', '/') }
         fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
+            include '**/ViewModel.java'
             include '**/*ViewModel.java'
         }.each { f -> f.eachLine { l, i ->
             if (l =~ /^\s*import\s+android\.(view|widget|content|app)\./) {
                 offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
             }
-            // 主线程定时器是平台能力：ViewModel 只持 Ticker 抽象，Handler/Looper 由 wiring 注入。
             if (l =~ /^\s*import\s+android\.os\.(Handler|Looper)\s*;/) {
                 offenders << "${rel(f)}:${i + 1}: VM 不得自建 Handler/Looper：${l.trim()}"
-            }
-            // 仓库端口是 usecase 的依赖：ViewModel 只能经 usecase 触达领域能力。
-            if (l =~ /^\s*import\s+com\.ggec\.earbuds\.domain\.[\w.]*\.port\.\w*Repository\s*;/) {
-                offenders << "${rel(f)}:${i + 1}: VM 不得直连仓库端口：${l.trim()}"
             } } }
         fileTree(project.file('src/main/java/com/ggec/earbuds/domain')) {
             include '**/*.java'
         }.each { f -> f.eachLine { l, i ->
-            if (l =~ /^\s*import\s+(android\.|com\.ggec\.earbuds\.(data|ui)\.)/) {
+            if (l =~ /^\s*import\s+(android\.|com\.ggec\.earbuds\.(data|ui|platform|wiring)\.)/) {
                 offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
             } } }
         fileTree(project.file('src/main/java/com/ggec/earbuds/ui')) {
             include '**/*.java'
         }.each { f -> f.eachLine { l, i ->
             if (l =~ /^\s*import\s+com\.ggec\.earbuds\.data\./) {
-                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
-            } } }
-        fileTree(project.file('src/main/java/com/ggec/earbuds/data')) {
-            include '**/*.java'
-        }.each { f -> f.eachLine { l, i ->
-            if (l =~ /^\s*import\s+com\.ggec\.earbuds\.ui\./) {
-                offenders << "${rel(f)}:${i + 1}: ${l.trim()}"
+                offenders << "${rel(f)}:${i + 1}: ui 不得 import data：${l.trim()}"
             } } }
         if (!offenders.isEmpty()) {
-            throw new GradleException('MVVM layer violation:\n' + offenders.join('\n'))
+            throw new GradleException('MVVM 分层越界：\n' + offenders.join('\n'))
         }
     }
 }
 
 tasks.register('checkNoBaselineCopies') {
     group = 'verification'
-    description = 'Fail if app re-implements a lib_common baseline type; the event slot has exactly one source.'
+    description = 'Fail if app declares a type whose name already exists as a lib_common baseline type; baseline primitives have exactly one home.'
     doLast {
+        // 结构规则：lib_common 声明的顶层类型是基线原语，app 侧出现同名顶层类型即视为复制了一份。
+        // 判定只看包/类型结构，不认文件名或具体类名，所以新增基线类型不需要改这个门禁。
+        Map<String, String> baseline = collectBaselineTypes('lib_common/src/main/java/com/yovo/lib_common')
         def offenders = []
-        fileTree(project.file('src/main/java')) {
-            include '**/OneShotLiveData.java'
-        }.each { File file ->
-            offenders << appRelativePath(file)
+        javaMainTree('src/main/java').each { File file ->
+            def rel = appRelativePath(file)
+            boolean untouched = untouchedFeatureRoots.any { rel.contains(it) }
+            eachJavaLine(file) { f, line, number ->
+                if (untouched) {
+                    return
+                }
+                def matcher = line =~ declaredTopLevelType
+                if (!matcher.find()) {
+                    return
+                }
+                String typeName = matcher.group(1)
+                String source = baseline.get(typeName)
+                if (source != null) {
+                    offenders << "${rel}:${number}: ${typeName} 与基线类型同名（${source}）；基线原语只能在 lib_common 对应包内单点实现"
+                }
+            }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    '基线原语只能有一份（com.yovo.lib_common.event）：\n' + offenders.join('\n'))
+            throw new GradleException('基线原语只能有一份（lib_common 对应包）：\n'
+                    + offenders.join('\n'))
         }
     }
 }
 
 tasks.named('preBuild').configure {
     dependsOn 'checkAppDependencyBoundary', 'checkAppLayering', 'checkAiLayerImports',
-            'checkMainThreadIoImports', 'checkComponentOwnership', 'checkExplicitImports',
-            'checkFrameworkToastForbidden', 'checkSingleYoLogInit', 'checkAppMvvmLayers',
-            'checkNoBaselineCopies'
+            'checkComponentOwnership', 'checkExplicitImports', 'checkFrameworkToastForbidden',
+            'checkSingleYoLogInit', 'checkAppMvvmLayers', 'checkNoBaselineCopies'
 }

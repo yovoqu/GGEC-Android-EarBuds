@@ -3,6 +3,8 @@ package com.yovo.lib_bluetooth.internal.common.state;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -20,6 +22,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @param <S> 状态枚举类型
  */
 public final class YoStateMachine<S extends Enum<S>> {
+
+    private static final String TAG = "YoStateMachine";
 
     private final S initialState;
     private final Map<S, Set<S>> allowedTransitions;
@@ -134,10 +138,7 @@ public final class YoStateMachine<S extends Enum<S>> {
         List<Runnable> exits = exitActions.get(state);
         if (exits != null) {
             for (Runnable action : exits) {
-                try {
-                    action.run();
-                } catch (Throwable ignored) {
-                }
+                runAction(action, "exit", state, next);
             }
         }
 
@@ -150,10 +151,7 @@ public final class YoStateMachine<S extends Enum<S>> {
         List<Runnable> entries = entryActions.get(next);
         if (entries != null) {
             for (Runnable action : entries) {
-                try {
-                    action.run();
-                } catch (Throwable ignored) {
-                }
+                runAction(action, "entry", from, next);
             }
         }
 
@@ -162,13 +160,15 @@ public final class YoStateMachine<S extends Enum<S>> {
         for (YoStateObserver<S> observer : observers) {
             try {
                 observer.onStateChanged(from, next, event);
-            } catch (Throwable ignored) {
+            } catch (RuntimeException observerFailure) {
+                YoBtLogger.w(TAG, "state observer failed on " + from + "->" + next, observerFailure);
             }
         }
         for (YoStateTransitionListener<S> listener : transitionListeners) {
             try {
                 listener.onTransition(completed, event);
-            } catch (Throwable ignored) {
+            } catch (RuntimeException listenerFailure) {
+                YoBtLogger.w(TAG, "transition listener failed on " + from + "->" + next, listenerFailure);
             }
         }
 
@@ -193,10 +193,7 @@ public final class YoStateMachine<S extends Enum<S>> {
         List<Runnable> exits = exitActions.get(state);
         if (exits != null) {
             for (Runnable action : exits) {
-                try {
-                    action.run();
-                } catch (Throwable ignored) {
-                }
+                runAction(action, "exit", state, next);
             }
         }
 
@@ -208,21 +205,34 @@ public final class YoStateMachine<S extends Enum<S>> {
         List<Runnable> entries = entryActions.get(next);
         if (entries != null) {
             for (Runnable action : entries) {
-                try {
-                    action.run();
-                } catch (Throwable ignored) {
-                }
+                runAction(action, "entry", from, next);
             }
         }
 
         for (YoStateObserver<S> observer : observers) {
             try {
                 observer.onStateChanged(from, next, null);
-            } catch (Throwable ignored) {
+            } catch (RuntimeException observerFailure) {
+                YoBtLogger.w(TAG, "forced state observer failed on " + from + "->" + next, observerFailure);
             }
         }
 
         return state;
+    }
+
+    /**
+     * 执行迁移动作：动作失败不能让状态机停在两态之间（状态字段已迁移），但必须留证，
+     * 不能静默丢弃。动作是 {@link Runnable}，只能抛未检查异常，{@link Error} 不在此拦截。
+     */
+    private void runAction(@NonNull Runnable action,
+                           @NonNull String phase,
+                           @NonNull S from,
+                           @NonNull S to) {
+        try {
+            action.run();
+        } catch (RuntimeException actionFailure) {
+            YoBtLogger.w(TAG, phase + " action failed on " + from + "->" + to, actionFailure);
+        }
     }
 
     // ── Observer management ──────────────────────────────────────
@@ -336,28 +346,28 @@ public final class YoStateMachine<S extends Enum<S>> {
         }
     }
 
-    // ── Copy helpers ─────────────────────────────────────────────
+    // ── Copy helpers（实例方法：构造期把 Builder 的可变结构复制成本实例的不可变快照）────
 
-    private static <S extends Enum<S>> Map<S, Set<S>> copyAllowedMap(Map<S, Set<S>> source) {
-        Map<S, Set<S>> copy = new EnumMap<>(source);
-        for (Map.Entry<S, Set<S>> entry : copy.entrySet()) {
+    private <T extends Enum<T>> Map<T, Set<T>> copyAllowedMap(Map<T, Set<T>> source) {
+        Map<T, Set<T>> copy = new EnumMap<>(source);
+        for (Map.Entry<T, Set<T>> entry : copy.entrySet()) {
             entry.setValue(EnumSet.copyOf(entry.getValue()));
         }
         return copy;
     }
 
-    private static <S extends Enum<S>> Map<S, List<Runnable>> copyActionMap(Map<S, List<Runnable>> source) {
-        Map<S, List<Runnable>> copy = new EnumMap<>(source);
-        for (Map.Entry<S, List<Runnable>> entry : copy.entrySet()) {
+    private <T extends Enum<T>> Map<T, List<Runnable>> copyActionMap(Map<T, List<Runnable>> source) {
+        Map<T, List<Runnable>> copy = new EnumMap<>(source);
+        for (Map.Entry<T, List<Runnable>> entry : copy.entrySet()) {
             entry.setValue(new ArrayList<>(entry.getValue()));
         }
         return copy;
     }
 
-    private static <S extends Enum<S>> Map<YoStateTransition<S>, List<YoStateGuard>> copyGuardMap(
-            Map<YoStateTransition<S>, List<YoStateGuard>> source) {
-        Map<YoStateTransition<S>, List<YoStateGuard>> copy = new java.util.HashMap<>();
-        for (Map.Entry<YoStateTransition<S>, List<YoStateGuard>> entry : source.entrySet()) {
+    private <T extends Enum<T>> Map<YoStateTransition<T>, List<YoStateGuard>> copyGuardMap(
+            Map<YoStateTransition<T>, List<YoStateGuard>> source) {
+        Map<YoStateTransition<T>, List<YoStateGuard>> copy = new java.util.HashMap<>();
+        for (Map.Entry<YoStateTransition<T>, List<YoStateGuard>> entry : source.entrySet()) {
             copy.put(entry.getKey(), new ArrayList<>(entry.getValue()));
         }
         return copy;

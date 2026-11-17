@@ -9,162 +9,178 @@ import com.yovo.lib_common.log.internal.core.LogCore;
 import com.yovo.lib_common.log.model.FileLogStatus;
 import com.yovo.lib_common.log.model.InitResult;
 import com.yovo.lib_common.log.model.LogConfig;
-import com.yovo.lib_common.log.model.LogContext;
 import com.yovo.lib_common.log.model.LogLevel;
 
 import java.util.function.Supplier;
 
 /**
  * 库内唯一通用日志门面：Logcat 打印 + 文件落盘（异步、滚动、保留、降级）。
+ *
+ * <p>门面持有唯一的 {@link LogCore} 实例，日志管线/配置/崩溃 flush 安装状态与上下文存储
+ * 都属于该实例，不再散落为静态可写字段。</p>
  */
 public final class YoLog {
+
+    private static final LogCore CORE = new LogCore();
 
     private YoLog() {
     }
 
     @NonNull
     public static InitResult init(@NonNull Context context, @NonNull LogConfig config) {
-        return LogCore.init(context, config);
+        return CORE.init(context, config);
+    }
+
+    /**
+     * 只初始化一次：已初始化则返回 {@code false}，不重建日志管线。
+     */
+    public static boolean initOnce(@NonNull Context context, @NonNull LogConfig config) {
+        return CORE.initOnce(context, config);
+    }
+
+    @Nullable
+    public static InitResult lastResult() {
+        return CORE.lastResult();
     }
 
     public static boolean isInitialized() {
-        return LogCore.isInitialized();
+        return CORE.isInitialized();
     }
 
     public static boolean isLoggable(@NonNull LogLevel level) {
-        return LogCore.isLoggable(level);
+        return CORE.isLoggable(level);
     }
 
     // ---- 基础 API ----
 
     public static void v(@NonNull String message) {
-        LogCore.v(message);
+        CORE.v(message);
     }
 
     public static void v(@NonNull String tag, @NonNull String message) {
-        LogCore.v(tag, message);
+        CORE.v(tag, message);
     }
 
     public static void d(@NonNull String message) {
-        LogCore.d(message);
+        CORE.d(message);
     }
 
     public static void d(@NonNull String tag, @NonNull String message) {
-        LogCore.d(tag, message);
+        CORE.d(tag, message);
     }
 
     public static void i(@NonNull String message) {
-        LogCore.i(message);
+        CORE.i(message);
     }
 
     public static void i(@NonNull String tag, @NonNull String message) {
-        LogCore.i(tag, message);
+        CORE.i(tag, message);
     }
 
     public static void w(@NonNull String message) {
-        LogCore.w(message);
+        CORE.w(message);
     }
 
     public static void w(@NonNull String tag, @NonNull String message) {
-        LogCore.w(tag, message);
+        CORE.w(tag, message);
     }
 
     public static void w(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        LogCore.w(tag, message, throwable);
+        CORE.w(tag, message, throwable);
     }
 
     public static void v(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        LogCore.v(tag, message, throwable);
+        CORE.v(tag, message, throwable);
     }
 
     public static void d(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        LogCore.d(tag, message, throwable);
+        CORE.d(tag, message, throwable);
     }
 
     public static void i(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        LogCore.i(tag, message, throwable);
+        CORE.i(tag, message, throwable);
     }
 
     public static void w(@NonNull String tag, @NonNull String format,
                          @NonNull Object... args) {
-        LogCore.w(tag, format, args);
+        CORE.w(tag, format, args);
     }
 
     public static void e(@NonNull String message) {
-        LogCore.e(message);
+        CORE.e(message);
     }
 
     public static void e(@NonNull String tag, @NonNull String message) {
-        LogCore.e(tag, message);
+        CORE.e(tag, message);
     }
 
     public static void e(@NonNull String tag, @NonNull String message,
                          @Nullable Throwable throwable) {
-        LogCore.e(tag, message, throwable);
+        CORE.e(tag, message, throwable);
     }
 
     public static void e(@NonNull String tag, @NonNull String format,
                          @NonNull Object... args) {
-        LogCore.e(tag, format, args);
+        CORE.e(tag, format, args);
     }
 
     public static void v(@NonNull String tag, @NonNull String format,
                          @NonNull Object... args) {
-        LogCore.v(tag, format, args);
+        CORE.v(tag, format, args);
     }
 
     public static void d(@NonNull String tag, @NonNull String format,
                          @NonNull Object... args) {
-        LogCore.d(tag, format, args);
+        CORE.d(tag, format, args);
     }
 
     public static void i(@NonNull String tag, @NonNull String format,
                          @NonNull Object... args) {
-        LogCore.i(tag, format, args);
+        CORE.i(tag, format, args);
     }
 
     // ---- 懒求值 ----
 
     public static void d(@NonNull String tag, @NonNull Supplier<String> message) {
-        LogCore.d(tag, message);
+        CORE.d(tag, message);
     }
 
     public static void e(@NonNull String tag,
                          @NonNull Supplier<String> message,
                          @Nullable Throwable throwable) {
-        LogCore.e(tag, message, throwable);
+        CORE.e(tag, message, throwable);
     }
 
     // ---- 状态与生命周期 ----
 
     @NonNull
     public static FileLogStatus fileStatus() {
-        return LogCore.fileStatus();
+        return CORE.fileStatus();
     }
 
     public static void flush() {
-        LogCore.flush();
+        CORE.flush();
     }
 
     public static void shutdown() {
-        LogCore.shutdown();
+        CORE.shutdown();
     }
 
     // ---- LogContext（类 MDC）----
 
     public static void putContext(@NonNull String key, @NonNull String value) {
-        LogContext.put(key, value);
+        CORE.putContext(key, value);
     }
 
     public static void removeContext(@NonNull String key) {
-        LogContext.remove(key);
+        CORE.removeContext(key);
     }
 
     public static void clearContext() {
-        LogContext.clear();
+        CORE.clearContext();
     }
 }

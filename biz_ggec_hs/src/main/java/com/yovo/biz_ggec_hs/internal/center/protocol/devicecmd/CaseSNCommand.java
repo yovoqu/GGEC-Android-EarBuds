@@ -92,7 +92,7 @@ public class CaseSNCommand extends Command {
             HsLog.e(TAG, "解析版本号失败", e);
 
             // 通知命令失败，yobackdata为null
-            return completed(ResultCode.FAILED, null, "版本号数据解析错误: " + e.getMessage());
+            return completed(ResultCode.FAILED, null, "版本号数据解析错误");
         }
     }
 

@@ -7,22 +7,24 @@ import com.bes.opus.OpusDecoder;
 import com.yovo.lib_ggec_opus.api.YoOpusDecoder;
 
 /**
- * Opus 解码器实现类，封装底层 JNI 句柄生命周期。
+ * Opus 解码器实现类（包内可见：对外只经 {@link CodecFactory} 构造），封装底层 JNI 句柄生命周期。
+ *
+ * <p>句柄在构造期建立、在 {@link #release()} 销毁；构造失败与重复销毁由
+ * {@link OpusDecoder} 抛 {@link IllegalStateException}，本类不做兜底。</p>
  */
-public final class YoOpusDecoderImpl implements YoOpusDecoder {
+final class YoOpusDecoderImpl implements YoOpusDecoder {
 
     private final OpusDecoder decoder;
-    private volatile boolean released = false;
+    private boolean released = false;
 
-    public YoOpusDecoderImpl() {
-        OpusDecoder.init();
+    YoOpusDecoderImpl() {
         this.decoder = new OpusDecoder();
     }
 
     @Nullable
     @Override
     public synchronized byte[] decode(@NonNull byte[] opusPacket) {
-        if (released || opusPacket.length == 0) {
+        if (released) {
             return null;
         }
         return decoder.decode(opusPacket);
@@ -34,9 +36,6 @@ public final class YoOpusDecoderImpl implements YoOpusDecoder {
             return;
         }
         released = true;
-        try {
-            decoder.descory();
-        } catch (Throwable ignored) {
-        }
+        decoder.destroy();
     }
 }

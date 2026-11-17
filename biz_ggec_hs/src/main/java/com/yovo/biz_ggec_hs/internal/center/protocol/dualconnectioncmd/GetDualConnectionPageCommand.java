@@ -78,7 +78,7 @@ public class GetDualConnectionPageCommand extends Command {
             return completed(ResultCode.SUCCESS, state, "双连接页聚合查询成功");
         } catch (RuntimeException e) {
             HsLog.e(TAG, "解析双连接页聚合数据失败", e);
-            return completed(ResultCode.FAILED, null, "解析失败: " + e.getMessage());
+            return completed(ResultCode.FAILED, null, "双连接页聚合数据解析失败");
         }
     }
 

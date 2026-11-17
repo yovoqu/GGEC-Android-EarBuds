@@ -68,8 +68,8 @@ public record AiMessage(
         return with(text, reasoning, AiMessageStatus.COMPLETE, null, finish, elapsed, tokens);
     }
 
-    public AiMessage fail(AiFailureKind kind, String detail, long elapsed) {
-        return with(text, reasoning, AiMessageStatus.ERROR, new AiMessageFailure(kind, detail),
+    public AiMessage fail(AiFailureKind kind, long elapsed) {
+        return with(text, reasoning, AiMessageStatus.ERROR, new AiMessageFailure(kind),
                 finishReason, elapsed, usage);
     }
 

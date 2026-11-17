@@ -36,16 +36,15 @@ public final class YoCbtRuntime {
     private final YoDispatcher callbackDispatcher;
     private final YoTaskScheduler scheduler;
     private final BluetoothEventBus eventBus = new BluetoothEventBus();
+    /** 诊断总线：由客户端装配点构造并注入，本运行时只持有，不自行创建。 */
+    private final BluetoothDiagnosticsBus diagnostics;
 
     // 在首次执行时捕获单线程 state 执行器线程，用于线程检查
     private final AtomicReference<Thread> stateThreadRef = new AtomicReference<>(null);
     private final AtomicReference<Thread> callbackThreadRef = new AtomicReference<>(null);
 
-    public YoCbtRuntime() {
-        this(YoCbtRuntimeConfig.builder().build());
-    }
-
-    public YoCbtRuntime(@NonNull YoCbtRuntimeConfig config) {
+    public YoCbtRuntime(@NonNull YoCbtRuntimeConfig config,
+                        @NonNull BluetoothDiagnosticsBus diagnostics) {
         this.callbackOnMainThread = config.isCallbackOnMainThread();
         this.stateThreadName = config.getStateThreadName();
         this.shutdownTimeoutSeconds = config.getShutdownTimeoutSeconds();
@@ -63,6 +62,7 @@ public final class YoCbtRuntime {
             });
         }
         this.scheduler = YoExecutors.scheduler(schedulerExecutor);
+        this.diagnostics = diagnostics;
         stateExecutor.execute(() -> stateThreadRef.set(Thread.currentThread()));
     }
 
@@ -111,7 +111,7 @@ public final class YoCbtRuntime {
 
     @NonNull
     public BluetoothDiagnosticsBus diagnostics() {
-        return BluetoothDiagnosticsBus.get();
+        return diagnostics;
     }
 
     // ── 生命周期 ────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ public final class YoCbtRuntime {
                 YoBtLogger.d(TAG, name + " 执行器已正常终止");
             }
         } catch (InterruptedException e) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "等待 " + name + " 执行器关闭时被中断", e);
+            diagnostics.recordException(TAG, "等待 " + name + " 执行器关闭时被中断", e);
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }

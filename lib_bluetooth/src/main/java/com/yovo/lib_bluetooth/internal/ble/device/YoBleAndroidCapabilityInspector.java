@@ -10,7 +10,7 @@ import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothCapabilityChecker;
-import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
+import com.yovo.lib_bluetooth.spi.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 
@@ -94,10 +94,5 @@ public final class YoBleAndroidCapabilityInspector implements YoBleCapabilityIns
         }
         return lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
                 || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
-    }
-
-    @Override
-    public int sdkInt() {
-        return AndroidPlatform.level();
     }
 }

@@ -317,19 +317,21 @@ public final class HsSessionImpl {
      * 命令回包里除「成功/失败」以外的结果落地：双连接页与录音列表由事件端口给出。
      * 判定只看回包形状，不按命令类型分支。
      */
-    private void applyCompletion(Command command, CommandCompletion completion) {
-        Optional<HsControl.Event> event = router.deviceEvent(command, completion);
-        if (event.isEmpty()) {
-            return;
-        }
-        HsControl.Event applied = event.get();
-        if (applied instanceof HsControl.Event.DualConnectionChanged changed) {
-            dual = changed.state();
-        } else if (applied instanceof HsControl.Event.RecordFilesChanged changed) {
-            recordings = changed.files();
-        }
-        dispatchEvent(applied);
-        dispatchSnapshot();
+    public void applyCompletion(Command command, CommandCompletion completion) {
+        mainThread.post(() -> {
+            Optional<HsControl.Event> event = router.deviceEvent(command, completion);
+            if (event.isEmpty()) {
+                return;
+            }
+            HsControl.Event applied = event.get();
+            if (applied instanceof HsControl.Event.DualConnectionChanged changed) {
+                dual = changed.state();
+            } else if (applied instanceof HsControl.Event.RecordFilesChanged changed) {
+                recordings = changed.files();
+            }
+            dispatchEvent(applied);
+            dispatchSnapshot();
+        });
     }
 
     private void postResult(HsControl.Callback callback, HsControl.Outcome<Void> result) {

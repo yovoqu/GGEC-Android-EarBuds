@@ -1,0 +1,92 @@
+package com.ggec.earbuds.provider.lib_ai.chat;
+
+import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
+import com.ggec.earbuds.domain.ai.model.AiSpeedResult;
+import com.ggec.earbuds.domain.ai.port.AiCancellable;
+import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
+import com.ggec.earbuds.domain.ai.port.AiSpeedTestGateway;
+import com.ggec.earbuds.domain.ai.port.AiSpeedTestListener;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiClientPool;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiFailures;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiPlatformCatalog;
+import com.yovo.lib_ai.api.YoAiCall;
+import com.yovo.lib_ai.probe.YoProbeListener;
+import com.yovo.lib_ai.probe.YoProbePlan;
+import com.yovo.lib_ai.probe.YoProbeResult;
+import com.yovo.lib_ai.probe.YoProbeSummary;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * 测速交给 lib_ai 的探针：它不重试、按完成顺序回调，应用只负责把结果翻译成领域类型，
+ * 并保证租约在探针结束（含被取消）时归还。
+ */
+public final class LibAiSpeedTestGateway implements AiSpeedTestGateway {
+
+    static final int CONCURRENCY = 3;
+    static final long TIMEOUT_MILLIS = 25_000L;
+
+    private final LibAiClientPool pool;
+    private final AiCredentialStore credentials;
+
+    public LibAiSpeedTestGateway(LibAiClientPool pool, AiCredentialStore credentials) {
+        this.pool = Objects.requireNonNull(pool, "pool");
+        this.credentials = Objects.requireNonNull(credentials, "credentials");
+    }
+
+    @Override
+    public AiCancellable run(AiPlatformConfig platform, List<String> modelIds, AiSpeedTestListener listener) {
+        String apiKey = credentials.platformKey(platform.id());
+        if (apiKey == null) {
+            throw new AiFailure(AiFailureKind.AUTHENTICATION, "API key is not configured", null);
+        }
+        LibAiClientPool.Lease lease = null;
+        try {
+            lease = pool.acquire(platform, apiKey);
+            LibAiClientPool.Lease held = lease;
+            YoProbePlan plan = YoProbePlan.builder()
+                    .protocol(LibAiPlatformCatalog.protocol(platform.protocol()))
+                    .models(modelIds)
+                    .concurrency(CONCURRENCY)
+                    .timeoutMillis(TIMEOUT_MILLIS)
+                    .build();
+            YoAiCall call = lease.client().latencyProbe(platform.id()).run(plan, new YoProbeListener() {
+                @Override
+                public void onStarted(String model) {
+                    listener.onStarted(model);
+                }
+
+                @Override
+                public void onResult(YoProbeResult result) {
+                    listener.onResult(toResult(result));
+                }
+
+                @Override
+                public void onComplete(YoProbeSummary summary) {
+                    held.close();
+                    listener.onComplete(summary.cancelled());
+                }
+            });
+            return call::cancel;
+        } catch (RuntimeException error) {
+            if (lease != null) {
+                lease.close();
+            }
+            throw LibAiFailures.map(error, apiKey);
+        }
+    }
+
+    static AiSpeedResult toResult(YoProbeResult result) {
+        AiSpeedResult.Status status = switch (result.status()) {
+            case OK -> AiSpeedResult.Status.OK;
+            case FAILED -> AiSpeedResult.Status.FAILED;
+            case TIMEOUT -> AiSpeedResult.Status.TIMEOUT;
+        };
+        AiFailureKind kind = result.errorKind() == null ? null : LibAiFailures.kind(result.errorKind());
+        return new AiSpeedResult(result.model(), status, result.firstTokenMillis(), result.totalMillis(),
+                kind, result.message(), 0L, result.outputTokens());
+    }
+}

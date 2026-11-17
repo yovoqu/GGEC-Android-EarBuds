@@ -8,37 +8,58 @@ import com.yovo.biz_ggec_hs.api.HsRecordApi;
 import com.yovo.biz_ggec_hs.api.StreamRecordConfig;
 import com.yovo.biz_ggec_hs.api.StreamRecordListener;
 import com.yovo.biz_ggec_hs.api.SyncProgressListener;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioCodecProviderPort;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
+import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.GetRecordIdListCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.DeleteRecordFileCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StartLocalRecordCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StopLocalRecordCommand;
+import com.yovo.biz_ggec_hs.internal.link.HsFailureMapper;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
+import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
 /**
  * 录音 API 统一实现类。
+ *
+ * <p>命令完成码到对外失败的翻译只走 {@link HsFailureMapper}：本类不保留任何
+ * 「成功/失败 → 失败枚举」的本地判断。</p>
  */
 public final class HsRecordManager implements HsRecordApi {
+
+    private static final String TAG = "HsRecordManager";
+
+    /** 设备文件 ID 契约违约：显式失败，绝不下发 0 号下标。 */
+    private static final String ERROR_INVALID_FILE_ID = "设备录音文件 ID 非法";
 
     private final HsProtocolEngine engine;
     private final HsRecordPathResolver pathResolver;
     private final HsStreamRecordSession streamSession;
     private final HsDeviceRecordSyncSession syncSession;
+    private final BiConsumer<Command, CommandCompletion> completionSink;
 
     public HsRecordManager(@NonNull HsProtocolEngine engine,
                            @NonNull HsAudioDataLink audioLink,
                            @NonNull HsRecordPathResolver pathResolver,
-                           @NonNull HsAudioCodecProviderPort codecProvider) {
+                           @NonNull AudioCodecProviderPort codecProvider) {
+        this(engine, audioLink, pathResolver, codecProvider, null);
+    }
+
+    public HsRecordManager(@NonNull HsProtocolEngine engine,
+                           @NonNull HsAudioDataLink audioLink,
+                           @NonNull HsRecordPathResolver pathResolver,
+                           @NonNull AudioCodecProviderPort codecProvider,
+                           @Nullable BiConsumer<Command, CommandCompletion> completionSink) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.pathResolver = Objects.requireNonNull(pathResolver, "pathResolver");
+        this.completionSink = completionSink;
         this.streamSession = new HsStreamRecordSession(engine, audioLink, pathResolver, codecProvider);
         this.syncSession = new HsDeviceRecordSyncSession(engine, audioLink, pathResolver, codecProvider);
     }
@@ -61,32 +82,24 @@ public final class HsRecordManager implements HsRecordApi {
 
     @Override
     public void startDeviceRecord(@NonNull HsControl.Callback callback) {
-        engine.submit(new StartLocalRecordCommand(), (cmd, completion) -> {
-            boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
-            callback.onResult(success
-                    ? new HsControl.Outcome.Ok<>(null)
-                    : new HsControl.Outcome.Err<>(HsControl.Failure.TIMEOUT));
-        });
+        engine.submit(new StartLocalRecordCommand(), (cmd, completion) ->
+                callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 
     @Override
     public void stopDeviceRecord(@NonNull HsControl.Callback callback) {
-        engine.submit(new StopLocalRecordCommand(), (cmd, completion) -> {
-            boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
-            callback.onResult(success
-                    ? new HsControl.Outcome.Ok<>(null)
-                    : new HsControl.Outcome.Err<>(HsControl.Failure.TIMEOUT));
-        });
+        engine.submit(new StopLocalRecordCommand(), (cmd, completion) ->
+                callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 
     @Override
     public void refreshDeviceRecords(@NonNull HsControl.Callback callback) {
         // 请求获取第 0 页，最多 12 个文件
         engine.submit(new GetRecordIdListCommand(0, 12), (cmd, completion) -> {
-            boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
-            callback.onResult(success
-                    ? new HsControl.Outcome.Ok<>(null)
-                    : new HsControl.Outcome.Err<>(HsControl.Failure.TIMEOUT));
+            if (completionSink != null) {
+                completionSink.accept(cmd, completion);
+            }
+            callback.onResult(HsFailureMapper.writeResult(completion));
         });
     }
 
@@ -103,17 +116,14 @@ public final class HsRecordManager implements HsRecordApi {
 
     @Override
     public void deleteDeviceRecord(@NonNull String fileId, @NonNull HsControl.Callback callback) {
-        int index = 0;
-        try {
-            index = Integer.parseInt(fileId);
-        } catch (NumberFormatException ignored) {
+        Integer index = HsRecordFileId.indexOf(fileId);
+        if (index == null) {
+            HsLog.e(TAG, "拒绝删除非法设备文件 ID: " + fileId);
+            callback.onResult(new HsControl.Outcome.Err<>(HsControl.Failure.REJECTED));
+            return;
         }
-        engine.submit(new DeleteRecordFileCommand(new int[]{index}), (cmd, completion) -> {
-            boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
-            callback.onResult(success
-                    ? new HsControl.Outcome.Ok<>(null)
-                    : new HsControl.Outcome.Err<>(HsControl.Failure.TIMEOUT));
-        });
+        engine.submit(new DeleteRecordFileCommand(new int[]{index}), (cmd, completion) ->
+                callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 
     @NonNull

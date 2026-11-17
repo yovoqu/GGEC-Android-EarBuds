@@ -1,5 +1,7 @@
 package com.ggec.earbuds.domain.ai.model;
 
+import java.util.Optional;
+
 public enum AiFailureKind {
     NO_PLATFORM,
     NO_MODEL,
@@ -26,6 +28,7 @@ public enum AiFailureKind {
     /** 平台里没有具备该能力的模型（例如要求看图，但当前平台只支持文本）。 */
     UNSUPPORTED_CAPABILITY,
     PROTOCOL,
+    /** 文档或密钥读不出来、写不进去。 */
     STORAGE,
     UNKNOWN;
 
@@ -33,13 +36,16 @@ public enum AiFailureKind {
         return this == RATE_LIMITED || this == SERVER || this == OVERLOADED || this == NETWORK || this == TIMEOUT;
     }
 
-    public static AiFailureKind fromName(String name) {
+    /** 持久化值是枚举名；解析不出来就是空的，由解码方按文档损坏处理，不折成 {@link #UNKNOWN}。 */
+    public static Optional<AiFailureKind> fromName(String name) {
+        if (name == null) {
+            return Optional.empty();
+        }
         for (AiFailureKind kind : values()) {
             if (kind.name().equals(name)) {
-                return kind;
+                return Optional.of(kind);
             }
         }
-        return UNKNOWN;
+        return Optional.empty();
     }
 }
-

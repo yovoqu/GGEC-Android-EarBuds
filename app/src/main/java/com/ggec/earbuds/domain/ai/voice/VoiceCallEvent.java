@@ -90,6 +90,15 @@ public sealed interface VoiceCallEvent {
         }
     }
 
+    /**
+     * THINKING 等不到服务端回答的超时。
+     *
+     * <p>这不是服务端事件：由 actor 的定时调度器在本轮进入 THINKING 时排期、离开时撤销，
+     * 因此它只在同一个 THINKING 之内有效，不会跨轮误伤。</p>
+     */
+    record Timeout() implements VoiceCallEvent {
+    }
+
     /** 用户主动插话。 */
     record Interrupt() implements VoiceCallEvent {
     }

@@ -5,6 +5,9 @@ import androidx.annotation.Nullable;
 
 /**
  * 最近一次远程更新检查的元信息（含首次发现时间），用于与本地 APK 修改时间对比。
+ *
+ * <p>本类型只记录「已经发现的更新」：是否存在更新由持有方（{@code meta != null}）表达，
+ * 不再提供恒真的判定方法。</p>
  */
 public final class UpdateMeta {
 
@@ -43,18 +46,6 @@ public final class UpdateMeta {
         this.sizeBytes = sizeBytes;
         this.discoveredAtMillis = discoveredAtMillis;
         this.downloadedApk = downloadedApk;
-    }
-
-    /** 兼容旧构造（无完整性字段）。 */
-    public UpdateMeta(@NonNull String version,
-                      int versionCode,
-                      @NonNull String description,
-                      @NonNull String downloadUrl,
-                      boolean forceUpdate,
-                      long discoveredAtMillis,
-                      @Nullable DownloadedApk downloadedApk) {
-        this(version, versionCode, description, downloadUrl, forceUpdate,
-                "", "", 0L, discoveredAtMillis, downloadedApk);
     }
 
     @NonNull
@@ -101,10 +92,6 @@ public final class UpdateMeta {
     @Nullable
     public DownloadedApk downloadedApk() {
         return downloadedApk;
-    }
-
-    public boolean hasNewVersion() {
-        return true;
     }
 
     @NonNull

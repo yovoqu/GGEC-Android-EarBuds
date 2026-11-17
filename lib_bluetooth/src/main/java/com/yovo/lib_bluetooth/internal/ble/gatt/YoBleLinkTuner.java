@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.gatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.CompletionHandler;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.OpKind;
@@ -87,7 +88,7 @@ public final class YoBleLinkTuner {
                                               @NonNull BlePhy rx,
                                               @NonNull BlePhyOptions options,
                                               @NonNull BleValueObserver<BlePhyConfig> observer) {
-        if (context.capabilityInspector().sdkInt() < 26) {
+        if (!AndroidPlatform.supportsGattPhyControl()) {
             String opId = "ble-phy-unsupported";
             observer.onFailed(YoBleErrorMapper.failure(
                     BleErrorCode.UNSUPPORTED_OPERATION, MODULE, "PHY requires API 26", context.deviceId()));
@@ -98,7 +99,7 @@ public final class YoBleLinkTuner {
             if (transport == null || !transport.setPreferredPhy(tx, rx, options)) {
                 return StartResult.failed(rejected("setPreferredPhy"));
             }
-            if (context.capabilityInspector().sdkInt() == 33) {
+            if (AndroidPlatform.requiresPhyReadAfterSetPreferred()) {
                 phyFallback = context.runtime().stateDelayed(() -> {
                     YoBleGattTransport current = context.transport();
                     if (current != null) {

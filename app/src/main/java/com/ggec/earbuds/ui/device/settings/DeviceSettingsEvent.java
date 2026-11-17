@@ -1,20 +1,35 @@
 package com.ggec.earbuds.ui.device.settings;
 
+import androidx.annotation.NonNull;
+
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+
+import java.util.Objects;
 
 /** 设置页的一次性事件：与 UiState 分开，旋转不重放。 */
 public sealed interface DeviceSettingsEvent {
 
-    /** 写入/动作失败分类，宿主翻成文案。 */
-    record Failure(DeviceFailure failure) implements DeviceSettingsEvent {
+    /** 写入 / 动作失败分类，宿主翻成文案。 */
+    record Failure(@NonNull DeviceFailure failure) implements DeviceSettingsEvent {
+
+        public Failure {
+            Objects.requireNonNull(failure, "failure");
+        }
     }
 
-    /** 某个能力 id 的写入落地结果（成功/失败），用于让开关回到真实呈现。 */
-    record ControlOutcome(DeviceControlOutcome outcome) implements DeviceSettingsEvent {
+    /**
+     * 行级通道无法表达的动作：该 {@code kind} 需要载荷（名称、开始或结束、目标文件），
+     * 必须由行内控件带着载荷发起。显式上报，不静默丢弃。
+     */
+    record ActionUnsupported(@NonNull DeviceSettingRow.ActionKind kind)
+            implements DeviceSettingsEvent {
+
+        public ActionUnsupported {
+            Objects.requireNonNull(kind, "kind");
+        }
     }
 
-    /** 台账里已经没有这台设备（改名/忘记时目标消失）。 */
+    /** 台账里已经没有这台设备（改名 / 忘记时目标消失）。 */
     record RosterMissing() implements DeviceSettingsEvent {
     }
 

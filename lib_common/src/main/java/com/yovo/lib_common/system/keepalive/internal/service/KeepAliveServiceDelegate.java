@@ -9,31 +9,47 @@ import androidx.core.app.NotificationCompat;
 
 import com.yovo.lib_common.system.keepalive.model.KeepAliveConfig;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveNotificationSpec;
-import com.yovo.lib_common.system.keepalive.internal.compat.ForegroundServiceCompat;
 import com.yovo.lib_common.system.keepalive.internal.ack.KeepAliveAckRegistry;
+import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveCore;
+import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveSessionRegistry;
 import com.yovo.lib_common.system.keepalive.internal.notification.KeepAliveNotificationBuilder;
 import com.yovo.lib_common.system.keepalive.model.WakeLockPolicy;
 import com.yovo.lib_common.system.keepalive.internal.power.PartialWakeLockController;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveSessionRegistry;
 import com.yovo.lib_common.log.YoLog;
 
+/**
+ * 前台 Service 侧委托：会话表与回执表由 {@link KeepAliveCore} 构造注入，不访问静态入口。
+ */
 public final class KeepAliveServiceDelegate {
 
     private final Service service;
     private final Context appContext;
+    @NonNull private final KeepAliveSessionRegistry sessions;
+    @NonNull private final KeepAliveAckRegistry acks;
 
-    public KeepAliveServiceDelegate(@NonNull Service service) {
+    public KeepAliveServiceDelegate(@NonNull Service service, @NonNull KeepAliveCore core) {
         this.service = service;
         this.appContext = service.getApplicationContext();
+        this.sessions = core.sessions();
+        this.acks = core.acks();
     }
 
-    public void promote(@NonNull String sessionId) {
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().get(sessionId);
+    /**
+     * 按会话 id 提升前台服务；会话不存在或已失效时返回 {@code false}。
+     *
+     * <p>{@code spec} 非空时先写回会话的最新通知内容，再按最新内容 promote。</p>
+     */
+    public boolean promote(@NonNull String sessionId,
+                           @Nullable KeepAliveNotificationSpec spec) {
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.get(sessionId);
         if (entry == null) {
-            return;
+            return false;
+        }
+        if (spec != null) {
+            entry.updateSpec(spec);
         }
         promote(entry);
+        return true;
     }
 
     public void promote(@NonNull KeepAliveSessionRegistry.SessionEntry entry) {
@@ -42,19 +58,18 @@ public final class KeepAliveServiceDelegate {
         try {
             NotificationCompat.Builder builder =
                     KeepAliveNotificationBuilder.build(appContext, config, spec);
-            ForegroundServiceCompat.promoteToForeground(
+            ForegroundServicePromoter.promote(
                     service,
                     config.notificationId(),
                     builder,
                     config.fgsType());
             syncWakeLock(entry, shouldHoldWakeLock(config, true));
-            KeepAliveAckRegistry.get().complete(config.sessionId(), true, null);
+            acks.complete(config.sessionId(), true, null);
         } catch (RuntimeException e) {
             // 前台服务类型/通知配置与系统约束不匹配时，绝不能把异常抛回 onStartCommand 崩溃。
             // 将会话标记为失效并停止服务，客户端通过 findSession() 感知状态丢失。
             YoLog.e("KeepAliveServiceDelegate", "提升到前台失败", e);
-            KeepAliveAckRegistry.get().complete(
-                    config.sessionId(), false, e.getMessage());
+            acks.complete(config.sessionId(), false, e.getMessage());
             entry.setActive(false);
             releaseWakeLock(entry);
             service.stopSelf();
@@ -62,8 +77,7 @@ public final class KeepAliveServiceDelegate {
     }
 
     public void syncWakeLock(@NonNull String sessionId, boolean shouldHold) {
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().get(sessionId);
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.get(sessionId);
         if (entry == null) {
             return;
         }
@@ -98,14 +112,13 @@ public final class KeepAliveServiceDelegate {
     }
 
     public void stop(@NonNull String sessionId) {
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().remove(sessionId);
+        KeepAliveSessionRegistry.SessionEntry entry = sessions.remove(sessionId);
         if (entry != null) {
             entry.setActive(false);
             releaseWakeLock(entry);
             entry.throttle().reset();
         }
-        ForegroundServiceCompat.stopForeground(service);
+        ForegroundServicePromoter.stop(service);
         service.stopSelf();
     }
 

@@ -95,7 +95,7 @@ public final class LaunchUpdateDecisionResolverTest {
         LocalApk local = new LocalApk(file, DISCOVERED_AT - 10_000, null);
         UpdateMeta meta = new UpdateMeta(
                 remote.version(), remote.versionCode(), "", remote.downloadUrl(), false,
-                DISCOVERED_AT,
+                "", "", 0L, DISCOVERED_AT,
                 new DownloadedApk(file.getAbsolutePath(), "1.5.0", 150, DISCOVERED_AT + 5000));
 
         LaunchDecision decision =
@@ -109,7 +109,7 @@ public final class LaunchUpdateDecisionResolverTest {
         LocalApk local = local("Auto_Tools_unknown.apk", DISCOVERED_AT + 60_000, null);
         UpdateMeta meta = new UpdateMeta(
                 remote.version(), remote.versionCode(), "", remote.downloadUrl(), false,
-                DISCOVERED_AT, null);
+                "", "", 0L, DISCOVERED_AT, null);
 
         LaunchDecision decision =
                 LaunchUpdateDecisionResolver.resolve(remote, meta, local, true);
@@ -142,7 +142,7 @@ public final class LaunchUpdateDecisionResolverTest {
         LocalApk local = local("Auto_Tools_1.5.0.apk", DISCOVERED_AT - 10_000, "1.5.0");
         UpdateMeta meta = new UpdateMeta(
                 remote.version(), remote.versionCode(), "", remote.downloadUrl(), false,
-                DISCOVERED_AT, null);
+                "", "", 0L, DISCOVERED_AT, null);
 
         LaunchDecision decision =
                 LaunchUpdateDecisionResolver.resolve(meta.toRemoteUpdate(), meta, local, true);

@@ -45,7 +45,7 @@ public final class RefreshRateDiagnosticsCollector {
 
         RefreshRateSystemModeSnapshot currentModeSnapshot = null;
         Display display = RefreshRateDisplayResolver.resolveDisplay(activity);
-        if (display != null && RefreshRateSdk.supportsDisplayModes()) {
+        if (display != null) {
             Display.Mode current = display.getMode();
             if (current != null) {
                 currentModeSnapshot = toSystemSnapshot(current);

@@ -27,7 +27,7 @@ public class KeepAliveAckRegistryTest {
 
     @Test
     public void complete_deliversSuccess() {
-        KeepAliveAckRegistry registry = KeepAliveAckRegistry.get();
+        KeepAliveAckRegistry registry = new KeepAliveAckRegistry();
         List<String> events = new ArrayList<>();
         registry.await("s1", (sessionId, success, detail) ->
                 events.add(sessionId + ":" + success));
@@ -39,7 +39,7 @@ public class KeepAliveAckRegistryTest {
 
     @Test
     public void timeout_deliversFailure() {
-        KeepAliveAckRegistry registry = KeepAliveAckRegistry.get();
+        KeepAliveAckRegistry registry = new KeepAliveAckRegistry();
         List<String> events = new ArrayList<>();
         registry.await("s2", (sessionId, success, detail) ->
                 events.add(sessionId + ":" + success + ":" + detail), 50L);
@@ -51,7 +51,7 @@ public class KeepAliveAckRegistryTest {
 
     @Test
     public void cancel_suppressesCallback() {
-        KeepAliveAckRegistry registry = KeepAliveAckRegistry.get();
+        KeepAliveAckRegistry registry = new KeepAliveAckRegistry();
         List<String> events = new ArrayList<>();
         registry.await("s3", (sessionId, success, detail) ->
                 events.add(sessionId + ":" + success), 50L);

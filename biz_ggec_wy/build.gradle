@@ -1,0 +1,194 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.biz_ggec_wy'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation project(':lib_bluetooth')
+    implementation project(':lib_common')
+    api project(':lib_ggec_audio')
+    implementation project(':lib_ggec_opus')
+    implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def bizGgecWyRoot = project.projectDir
+
+/**
+ * 缁撴瀯鎬ц竟鐣岄棬绂侊細鍙湅鐩綍涓?import 褰掑睘锛屾病鏈変换浣曠被鍚?鍖呭悕鐧藉悕鍗曘€?
+ *
+ * 瑙勫垯锛?
+ *  - api/ 鍙厑璁?java.*銆乤ndroidx.annotation 涓?api 鑷韩锛堝绾﹀眰闆跺疄鐜般€侀浂渚濊禆锛夈€?
+ *  - api/銆乮nternal/ 绂佹 lib_bluetooth 涓?android.bluetooth锛堣摑鐗欐爤鍙湁 provider 鑳界锛夈€?
+ *  - 闈?provider 鐩綍涓€寰嬬姝?import lib_bluetooth銆?
+ *  - provider/lib_bluetooth 鏄爤閫傞厤灞傦細绂佹鍙嶅悜鐐瑰悕涓婂眰涓庤閰嶏紝涔熶笉寰?import lib_common銆?
+ *  - provider/lib_common/log 鏄敮涓€鏃ュ織缂濓細鍙鎵?lib_common.log銆?
+ *  - 涓眰涓庝笂灞傚彲浠ヨ皟鐢ㄦ棩蹇楃紳锛屼絾涓嶅緱 import provider/lib_bluetooth銆?
+ *  - 闈炴棩蹇楃紳鐩綍绂佹 import lib_common锛屼篃绂佹 android.util.Log銆?
+ *  - 鍏朵粬妯″潡鐨勭敓浜ф簮闆嗭紙src/main/java锛夌姝?import 鏈ā鍧?internal/ 涓?provider/銆?
+ */
+tasks.register('checkBizGgecWyBoundary') {
+    group = 'verification'
+    description = 'Structural layering gate for biz_ggec_wy: production boundary covers src/main only; test source sets may reach internals for projection checks.'
+    doLast {
+        def offenders = []
+        def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
+
+        fileTree(bizGgecWyRoot) {
+            include 'src/main/java/**/*.java'
+            include 'src/test/java/**/*.java'
+        }.each { file ->
+            def path = rel(file)
+            def relative = path.substring(path.indexOf('/src/'))
+            def inApi = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/api/')
+            def inInternal = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/')
+            def inUpper = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/scan/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/link/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/record/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/center/catalog/')
+            def inBtProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_bluetooth/')
+            def inLogProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_common/log/')
+            def inOpusProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_ggec_opus/')
+            def inProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/')
+            def inMain = relative.startsWith('/src/main/java/')
+            def logSeam = 'com.yovo.biz_ggec_wy.provider.lib_common.log.'
+
+            file.eachLine { line, index ->
+                def location = "${path}:${index}"
+                if (inMain && !inLogProvider && (line =~ /\bYoLog\s*\./)) {
+                    offenders << "${location}: 鏃ュ織缂濅箣澶栫洿鎺ヨ皟鐢?YoLog"
+                }
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
+                }
+                def target = imported.group(1)
+                if (inApi) {
+                    // api 灞傚彧鍏佽 java / androidx.annotation / api 鑷韩锛屼互鍙婂叡浜?L1 褰曢煶濂戠害
+                    // 锛圫treamRecordConfig / StreamRecordListener 鐨勫敮涓€瀹炵幇鍦?lib_ggec_audio锛夈€?
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.annotation.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.api.')
+                            || target.startsWith('com.yovo.lib_ggec_audio.record.')
+                    if (!allowed) {
+                        offenders << "${location}: api 鍙兘渚濊禆 java/androidx.annotation/api 鑷韩/鍏变韩褰曢煶濂戠害 -> ${target}"
+                    }
+                }
+                if ((inApi || inInternal) && (target.startsWith('com.yovo.lib_bluetooth.')
+                        || target.startsWith('android.bluetooth.'))) {
+                    offenders << "${location}: api/internal 涓嶅緱瑙︾钃濈墮鏍?-> ${target}"
+                }
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_bluetooth.')) {
+                    offenders << "${location}: 鍙湁 provider 鍙互 import lib_bluetooth -> ${target}"
+                }
+                if (inBtProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('android.')
+                            || target.startsWith('androidx.')
+                            || target.startsWith('com.yovo.lib_bluetooth.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.api.')
+                            || target.startsWith(logSeam)
+                            || target.startsWith('com.yovo.biz_ggec_wy.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider/lib_bluetooth 涓嶅緱渚濊禆鍗忚/涓婂眰/瑁呴厤/lib_common -> ${target}"
+                    }
+                }
+                if (inLogProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('android.')
+                            || target.startsWith('androidx.')
+                            || target.startsWith('com.yovo.lib_common.log.')
+                    if (!allowed) {
+                        offenders << "${location}: 鏃ュ織缂濆彧濮旀墭 lib_common.log -> ${target}"
+                    }
+                }
+                if (inProvider && !inBtProvider && !inLogProvider && !inOpusProvider
+                        && !target.startsWith(logSeam)) {
+                    offenders << "${location}: provider 鍙厑璁?lib_bluetooth銆乴ib_common/log 涓?lib_ggec_opus -> ${target}"
+                }
+                if (inOpusProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.')
+                            || (target.startsWith('com.yovo.lib_ggec_opus.') && !target.startsWith('com.yovo.lib_ggec_opus.internal.'))
+                            || target.startsWith('com.yovo.lib_ggec_audio.record.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider/lib_ggec_opus 鍙兘渚濊禆 lib_ggec_opus 鍏叡濂戠害銆佸叡浜綍闊冲绾︿笌鍐呴儴绔彛 -> ${target}"
+                    }
+                }
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_ggec_opus.')) {
+                    offenders << "${location}: 鍙湁 provider 鍙互 import lib_ggec_opus -> ${target}"
+                }
+                if (inMain && !inLogProvider && target.startsWith('com.yovo.lib_common.')) {
+                    offenders << "${location}: 鍙湁鏃ュ織缂濆彲浠?import lib_common -> ${target}"
+                }
+                if (inMain && line.trim().contains('import android.util.Log')) {
+                    offenders << "${location}: 绂佹 android.util.Log锛屾棩蹇楀彧缁?WyLog"
+                }
+                def touchesOtherProvider = target.startsWith('com.yovo.biz_ggec_wy.provider.')
+                        && !target.startsWith(logSeam)
+                if (inUpper && touchesOtherProvider) {
+                    offenders << "${location}: 鎵弿/杩炴帴/浜や簰/鐩綍涓嶅緱鐩存帴 import 钃濈墮閫傞厤 -> ${target}"
+                }
+            }
+        }
+
+        fileTree(project.rootDir) {
+            include '**/src/main/java/**/*.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'biz_ggec_wy/**'
+        }.each { file ->
+            def path = rel(file)
+            file.eachLine { line, index ->
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
+                }
+                def target = imported.group(1)
+                if (target.startsWith('com.yovo.biz_ggec_wy.internal.')
+                        || target.startsWith('com.yovo.biz_ggec_wy.provider.')) {
+                    offenders << "${path}:${index}: 澶栭儴妯″潡鐨?src/main 涓嶅緱 import 鏈ā鍧楀唴閮ㄥ疄鐜?-> ${target}"
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_ggec_wy 杈圭晫琚墦鐮?\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkBizGgecWyBoundary'
+}

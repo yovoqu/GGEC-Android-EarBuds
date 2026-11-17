@@ -6,25 +6,24 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.lifecycle.ViewModelProvider;
-import androidx.lifecycle.ViewModelStoreOwner;
 
 import com.yovo.biz_appupdate.YoAppUpdate;
+import com.yovo.biz_appupdate.api.UpdateUiPort;
+import com.yovo.biz_appupdate.api.UpdateUiSession;
 import com.yovo.biz_appupdate.internal.di.AppUpdateGraph;
-import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 import com.yovo.biz_appupdate.internal.engine.SplashGate;
-import com.yovo.biz_appupdate.internal.model.DownloadDirSpec;
-import com.yovo.biz_appupdate.internal.ui.UpdateUiController;
-import com.yovo.biz_appupdate.internal.ui.UpdateViewModel;
+import com.yovo.biz_appupdate.internal.presenter.UpdateUiPresenter;
+import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 
 /**
- * YoAppUpdate 门面的内部委托核心。
+ * YoAppUpdate 门面的内部委托核心：一个门面实例 = 一张依赖图。
+ *
+ * <p>没有静态可写状态、没有 {@code get()} 单例：装配根持有一个 {@link YoAppUpdate}，
+ * 它就持有这一个核心。</p>
  */
 public final class YoAppUpdateCore {
 
     private static final String TAG = "YoAppUpdateCore";
-
-    private static volatile YoAppUpdateCore instance;
 
     private final AppUpdateGraph graph;
 
@@ -32,24 +31,16 @@ public final class YoAppUpdateCore {
         this.graph = graph;
     }
 
-    public static void install(@NonNull Context context,
-                               @NonNull YoAppUpdate.Config config) {
-        instance = new YoAppUpdateCore(
-                AppUpdateGraph.create(context, ContractMapper.toInternalConfig(config)));
-        YoUpdateLogger.i(TAG, "YoAppUpdate 初始化完成：下载目录类型="
-                + instance.graph.config().downloadDir().type()
-                + "，自动安装=" + instance.graph.config().autoInstallOnLaunch()
-                + "，仅 WiFi=" + instance.graph.config().wifiOnly()
-                + "，存储策略=" + instance.graph.config().storagePolicy());
-    }
-
     @NonNull
-    public static YoAppUpdateCore get() {
-        YoAppUpdateCore local = instance;
-        if (local == null) {
-            throw new IllegalStateException("YoAppUpdate.init() must be called first");
-        }
-        return local;
+    public static YoAppUpdateCore create(@NonNull Context context,
+                                         @NonNull YoAppUpdate.Config config) {
+        AppUpdateGraph graph = AppUpdateGraph.create(context, ContractMapper.toInternalConfig(config));
+        YoUpdateLogger.i(TAG, "YoAppUpdate 装配完成：下载目录类型="
+                + graph.config().downloadDir().type()
+                + "，自动安装=" + graph.config().autoInstallOnLaunch()
+                + "，仅 WiFi=" + graph.config().wifiOnly()
+                + "，存储策略=" + graph.config().storagePolicy());
+        return new YoAppUpdateCore(graph);
     }
 
     @NonNull
@@ -63,23 +54,7 @@ public final class YoAppUpdateCore {
 
     public void attachLaunchPrompt(@NonNull Intent intent,
                                    @NonNull YoAppUpdate.LaunchPrompt prompt) {
-        graph.engine().attachSplashIntent(
-                intent, ContractMapper.toLaunchDecision(prompt));
-    }
-
-    public boolean requestDownloadDirPermissionIfNeeded(@NonNull Activity activity) {
-        if (graph.downloadDirAccess().isAccessible()) {
-            YoUpdateLogger.d(TAG, "下载目录已可访问，无需请求权限");
-            return true;
-        }
-        if (graph.config().downloadDir().type() == DownloadDirSpec.Type.SAF) {
-            YoUpdateLogger.d(TAG, "SAF 下载目录，不请求存储权限");
-            return true;
-        }
-        boolean requested = graph.downloadDirPermission().requestIfNeeded(
-                activity, graph.config().downloadDir().type());
-        YoUpdateLogger.d(TAG, "请求下载目录权限结果=" + requested);
-        return requested;
+        graph.engine().attachSplashIntent(intent, ContractMapper.toLaunchDecision(prompt));
     }
 
     public boolean requestInstallUnknownSources(@NonNull Activity activity) {
@@ -102,61 +77,16 @@ public final class YoAppUpdateCore {
         return graph.engine().versionCode();
     }
 
+    /**
+     * 每次挂载一个新的呈现器：状态全在引擎与呈现器里，宿主解绑就丢弃，不做跨 Activity 的隐式单例。
+     */
     @NonNull
-    public YoAppUpdate.UpdateUiSession attachUpdateUi(
-            @NonNull Activity activity,
-            @Nullable Intent launchIntent,
-            @NonNull YoAppUpdate.UpdateUiHost host) {
-        UpdateViewModel viewModel = createViewModel(activity);
-        viewModel.attach(launchIntent);
-        UpdateUiController controller =
-                new UpdateUiController(activity, viewModel, host);
+    public UpdateUiSession attachUpdateUi(@NonNull Context context,
+                                          @Nullable Intent launchIntent,
+                                          @NonNull UpdateUiPort port) {
+        UpdateUiPresenter presenter = new UpdateUiPresenter(graph.engine());
+        presenter.attach(context, launchIntent, port);
         YoUpdateLogger.d(TAG, "更新 UI 已挂载");
-        return new YoAppUpdate.UpdateUiSession() {
-            @Override
-            public void checkUpdate() {
-                controller.checkUpdate();
-            }
-
-            @Override
-            public void detach() {
-                controller.detach();
-            }
-
-            @Override
-            public void onSafTreeResult(boolean granted) {
-                controller.onSafTreeResult(granted);
-            }
-
-            @Override
-            public void onDownloadDirPermissionResult(boolean granted) {
-                controller.onDownloadDirPermissionResult(granted);
-            }
-
-            @Override
-            public void onDownloadDirPermissionResume() {
-                controller.onDownloadDirPermissionResume();
-            }
-
-            @Override
-            public void onDownloadDirPermissionPermanentlyDenied() {
-                controller.onDownloadDirPermissionPermanentlyDenied();
-            }
-
-            @Override
-            public void onInstallPermissionResult() {
-                controller.onInstallPermissionResult();
-            }
-        };
-    }
-
-    @NonNull
-    private UpdateViewModel createViewModel(@NonNull Activity activity) {
-        if (activity instanceof ViewModelStoreOwner) {
-            return new ViewModelProvider(
-                    (ViewModelStoreOwner) activity, graph.viewModelFactory())
-                    .get(UpdateViewModel.class);
-        }
-        return new UpdateViewModel(graph.engine());
+        return presenter;
     }
 }

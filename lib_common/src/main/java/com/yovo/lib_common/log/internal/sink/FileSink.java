@@ -155,7 +155,10 @@ public final class FileSink implements LogSink {
         if (local != null) {
             try {
                 local.flush();
-            } catch (IOException ignored) {
+            } catch (IOException flushFailure) {
+                // 冲刷失败说明底层句柄已不可用：按 IO 分类降级，后续写入不再尝试。
+                degrade(FileLogReason.IO_ERROR,
+                        "flush failed: " + flushFailure.getMessage());
             }
         }
     }
@@ -326,13 +329,21 @@ public final class FileSink implements LogSink {
                 false);
     }
 
+    /**
+     * 关闭当前流并把失败按 IO 分类上报。
+     *
+     * <p>先把字段置空再关闭：{@link #degrade} 内部会再次调用本方法，
+     * 置空保证不会递归降级。关闭失败时文件句柄已经不可信，直接降级为 logcat-only。</p>
+     */
     private void closeStream() {
         OutputStream local = stream;
         stream = null;
         if (local != null) {
             try {
                 local.close();
-            } catch (IOException ignored) {
+            } catch (IOException closeFailure) {
+                degrade(FileLogReason.IO_ERROR,
+                        "close failed: " + closeFailure.getMessage());
             }
         }
     }

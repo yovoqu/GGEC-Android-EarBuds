@@ -105,8 +105,10 @@ public final class HsApiContractTest {
     public void descriptorCarriesOptionalRange() {
         HsDevice.Feature level = new HsDevice.Feature(HsDevice.Capability.BATTERY,
                 "电量", HsDevice.Group.ABOUT, HsDevice.Form.LEVEL, List.of(),
-                Optional.of(new HsDevice.Range(0, 100, 1)));
-        assertEquals(Optional.of(new HsDevice.Range(0, 100, 1)), level.range());
+                Optional.of(HsDevice.Range.of(0, 100, 1)));
+        assertEquals(Optional.of(HsDevice.Range.of(0, 100, 1)), level.range());
+        assertTrue("Range.of 是「没有中立档」的显式构造，不补默认值",
+                level.range().orElseThrow().neutral().isEmpty());
 
         HsDevice.Feature toggle = new HsDevice.Feature(HsDevice.Capability.GAME_MODE,
                 "游戏模式", HsDevice.Group.CONTROL, HsDevice.Form.TOGGLE, List.of(),

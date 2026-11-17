@@ -19,10 +19,12 @@ public final class YoCbtReleaseCoordinator {
     private static final String TAG = "YoCbtReleaseCoordinator";
 
     private final LinkedHashMap<String, YoReleasable> components;
+    private final BluetoothDiagnosticsBus diagnostics;
     private boolean released;
 
-    public YoCbtReleaseCoordinator() {
+    public YoCbtReleaseCoordinator(@NonNull BluetoothDiagnosticsBus diagnostics) {
         this.components = new LinkedHashMap<>();
+        this.diagnostics = diagnostics;
         this.released = false;
     }
 
@@ -68,7 +70,7 @@ public final class YoCbtReleaseCoordinator {
                     YoBtLogger.d(TAG, "正在释放组件: " + name);
                     component.release();
                 } catch (Throwable t) {
-                    BluetoothDiagnosticsBus.get().recordException(TAG, "释放组件 '" + name + "' 出错", t);
+                    diagnostics.recordException(TAG, "释放组件 '" + name + "' 出错", t);
                 }
             }
         }

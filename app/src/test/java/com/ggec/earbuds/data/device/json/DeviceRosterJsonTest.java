@@ -2,9 +2,10 @@ package com.ggec.earbuds.data.device.json;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import com.ggec.earbuds.data.store.DocumentFormatException;
 import com.ggec.earbuds.domain.device.model.BatterySnapshot;
 import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceFacts;
@@ -15,66 +16,81 @@ import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.model.DeviceState;
 import com.ggec.earbuds.domain.device.model.DeviceStatus;
 import com.ggec.earbuds.domain.device.model.WearState;
+import com.ggec.earbuds.testing.ai.MemoryDocumentStore;
 
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 public final class DeviceRosterJsonTest {
 
-    @Rule
-    public final TemporaryFolder folder = new TemporaryFolder();
+    private static final String DOCUMENT = "devices/roster.json";
+    private static final String QUARANTINED = DOCUMENT + ".bad";
 
-    private final DeviceRosterJson json = new DeviceRosterJson();
+    private final MemoryDocumentStore documents = new MemoryDocumentStore();
+    private final DeviceRosterJson json = new DeviceRosterJson(documents, DOCUMENT);
 
     @Test
-    public void roundTripKeepsIdentityFactsAndCapabilityValues() throws IOException {
-        File file = new File(folder.getRoot(), "roster.json");
+    public void roundTripKeepsIdentityFactsAndCapabilityValues() {
         DeviceRoster roster = new DeviceRoster(List.of(record()), Optional.of(record().id()));
 
-        json.write(file, roster);
+        json.write(roster);
 
-        assertEquals(roster, json.read(file));
+        assertEquals(roster, json.read().orElseThrow());
     }
 
     @Test
-    public void missingFileReadsAsEmptyRoster() throws IOException {
-        assertEquals(DeviceRoster.empty(), json.read(new File(folder.getRoot(), "absent.json")));
+    public void missingDocumentReadsAsNothing() {
+        assertTrue(json.read().isEmpty());
     }
 
     @Test
-    public void brokenJsonIsReportedNotSwallowed() throws IOException {
-        File file = folder.newFile("broken.json");
-        Files.write(file.toPath(), "not-json".getBytes(StandardCharsets.UTF_8));
+    public void brokenJsonIsReportedAndQuarantinedWithItsBytes() {
+        documents.documents.put(DOCUMENT, "not-json");
 
-        assertThrows(IOException.class, () -> json.read(file));
+        try {
+            json.read();
+            fail("a broken roster must not be read as an empty one");
+        } catch (DocumentFormatException expected) {
+            assertEquals("not-json", documents.documents.get(QUARANTINED));
+            assertFalse("原文挪到 .bad 后原文件不再占位", documents.documents.containsKey(DOCUMENT));
+        }
     }
 
     @Test
-    public void unknownVersionIsReported() throws IOException {
-        File file = folder.newFile("v2.json");
-        Files.write(file.toPath(), "{\"version\":2,\"devices\":[]}".getBytes(StandardCharsets.UTF_8));
+    public void unknownVersionIsReportedAsFormatFailure() {
+        documents.documents.put(DOCUMENT, "{\"version\":2,\"devices\":[]}");
 
-        assertThrows(IOException.class, () -> json.read(file));
+        try {
+            json.read();
+            fail("an unsupported roster version must not be accepted");
+        } catch (DocumentFormatException expected) {
+            assertEquals("version", expected.field());
+        }
     }
 
     @Test
-    public void quarantineKeepsEvidenceNextToTheRoster() throws IOException {
-        File file = folder.newFile("roster.json");
-        Files.write(file.toPath(), "garbage".getBytes(StandardCharsets.UTF_8));
+    public void theActivePointerUsesTheDeviceKey() {
+        json.write(new DeviceRoster(List.of(record()), Optional.of(record().id())));
 
-        assertTrue(json.quarantine(file));
+        assertTrue(documents.documents.get(DOCUMENT).contains("\"active\":\"HS01@AA:BB:CC:DD:EE:FF\""));
+        assertEquals(Optional.of(record().id()), json.read().orElseThrow().activeId());
+    }
 
-        assertFalse(file.exists());
-        assertTrue(new File(folder.getRoot(), "roster.json.bad").exists());
+    @Test
+    public void aMissingRequiredFactIsCorrupt() {
+        json.write(DeviceRoster.empty().upsert(record()));
+        String text = documents.documents.get(DOCUMENT).replace("\"wear\":\"NOT_WORN\",", "");
+
+        documents.documents.put(DOCUMENT, text);
+        try {
+            json.read();
+            fail("a roster without the wear state must be rejected");
+        } catch (DocumentFormatException expected) {
+            assertEquals("wear", expected.field());
+        }
     }
 
     private static DeviceRecord record() {

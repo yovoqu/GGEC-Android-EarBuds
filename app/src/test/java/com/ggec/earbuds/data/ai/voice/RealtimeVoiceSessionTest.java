@@ -19,12 +19,16 @@ import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.FakeRealtimeLink;
 import com.ggec.earbuds.testing.ai.ManualClock;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
+import com.ggec.earbuds.testing.ai.QueueExecutor;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * 实时语音全链路集成单测：连上 → 开麦/重采样或直通 → 源热切换/断线回退 → 下行文字/音频 → 打断(Truncate) → 挂断。
@@ -51,15 +55,28 @@ public class RealtimeVoiceSessionTest {
 
     private RealtimeVoiceSession session;
 
+    /** 定时器由装配根注入；测试自己建一条并在每条用例后关掉。 */
+    private ScheduledExecutorService timer;
+
     @Before
     public void setUp() {
         catalog.withSource(builtinMic);
+        timer = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "ai-voice-timer-test");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    @After
+    public void tearDown() {
+        timer.shutdownNow();
     }
 
     private void newSession(VoiceDuplex duplex) {
         session = new RealtimeVoiceSession(settings,
                 new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
-                catalog, playback, link, clock, Runnable::run, duplex);
+                catalog, playback, link, clock, Runnable::run, timer, duplex);
     }
 
     @Test
@@ -426,7 +443,7 @@ public class RealtimeVoiceSessionTest {
 
         new RealtimeVoiceSession(noKey, new FakeCredentialStore(),
                 catalog, new FakeAudioPlayback(), untouched,
-                clock, Runnable::run, VoiceDuplex.HALF_DUPLEX)
+                clock, Runnable::run, timer, VoiceDuplex.HALF_DUPLEX)
                 .start(events::add);
 
         AiVoiceSnapshot last = events.get(events.size() - 1);
@@ -446,7 +463,7 @@ public class RealtimeVoiceSessionTest {
         new RealtimeVoiceSession(gpt, new FakeCredentialStore()
                 .withVoiceKey(AiVoiceModel.CHATGPT, "sk-gpt"),
                 catalog, new FakeAudioPlayback(), other,
-                clock, Runnable::run, VoiceDuplex.HALF_DUPLEX)
+                clock, Runnable::run, timer, VoiceDuplex.HALF_DUPLEX)
                 .start(events::add);
 
         assertEquals(AiVoiceModel.CHATGPT.baseUrl(), other.lastConfig.baseUrl());
@@ -476,7 +493,7 @@ public class RealtimeVoiceSessionTest {
                                 .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
         session = new RealtimeVoiceSession(fullDefaultRepo,
                 new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
-                catalog, playback, link, clock, Runnable::run);
+                catalog, playback, link, clock, Runnable::run, timer);
 
         session.start(snapshots::add);
         assertEquals("开场连接阶段即采用设置页的默认模式", VoiceDuplex.FULL_DUPLEX, last().duplex());
@@ -496,7 +513,7 @@ public class RealtimeVoiceSessionTest {
     public void preOpenedSetDuplexIsPreservedAcrossOpened() {
         session = new RealtimeVoiceSession(settings,
                 new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
-                catalog, playback, link, clock, Runnable::run);
+                catalog, playback, link, clock, Runnable::run, timer);
 
         session.start(snapshots::add);
         assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());
@@ -538,6 +555,128 @@ public class RealtimeVoiceSessionTest {
         assertEquals(AiVoiceSnapshot.State.LISTENING, last().state());
         assertEquals(1, playback.flushes);
         assertEquals(1, link.cancels);
+    }
+
+    @Test
+    public void thinkingTimeoutReturnsToListeningAndCancelsGeneration() throws Exception {
+        QueueExecutor actor = new QueueExecutor();
+        session = new RealtimeVoiceSession(settings,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                catalog, playback, link, clock, actor, timer, VoiceDuplex.HALF_DUPLEX, 40L);
+        session.start(snapshots::add);
+        actor.drain();
+        link.opened();
+        actor.drain();
+        link.text("我在想");
+        actor.drain();
+        assertEquals(AiVoiceSnapshot.State.THINKING, last().state());
+
+        // 服务端一直不回答：超时由本类调度器投递，测试只在队列上等它入队。
+        awaitEnqueued(actor, 2_000);
+        actor.drain();
+
+        assertEquals("等不到回答要回到聆听，不能卡死在 THINKING",
+                AiVoiceSnapshot.State.LISTENING, last().state());
+        assertEquals("超时要让服务端停止生成", 1, link.cancels);
+        assertEquals("超时要丢掉还没断句的上行", 1, link.clears);
+        assertNotNull(last().failure());
+        assertEquals(AiFailureKind.TIMEOUT, last().failure().kind());
+        assertTrue("超时事件要留在轨迹里",
+                session.trace().entries().stream().anyMatch(entry -> "Timeout".equals(entry.event())));
+        assertTrue("正常处理掉的超时不是遥测失败", session.trace().failures().isEmpty());
+
+        builtinMic.emit(FakeAudioSource.pcm(FRAME_BYTES));
+        assertEquals("超时后必须重新开麦", 1, link.appended.size());
+    }
+
+    @Test
+    public void thinkingTimeoutIsCancelledOnceTheAnswerArrives() throws Exception {
+        QueueExecutor actor = new QueueExecutor();
+        session = new RealtimeVoiceSession(settings,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                catalog, playback, link, clock, actor, timer, VoiceDuplex.HALF_DUPLEX, 150L);
+        session.start(snapshots::add);
+        actor.drain();
+        link.opened();
+        actor.drain();
+        link.text("马上就好");
+        actor.drain();
+        assertEquals(AiVoiceSnapshot.State.THINKING, last().state());
+
+        link.responseDone();
+        actor.drain();
+        assertEquals(AiVoiceSnapshot.State.LISTENING, last().state());
+
+        Thread.sleep(350);
+        assertEquals("回答已经到齐，过期的超时定时不许再投递", 0, actor.pending());
+        assertEquals(AiVoiceSnapshot.State.LISTENING, last().state());
+        assertEquals(0, link.cancels);
+    }
+
+    @Test
+    public void effectFailureIsReQueuedAndTheRestOfTheBatchIsDropped() {
+        QueueExecutor actor = new QueueExecutor();
+        // 目录为空：Opened 之后的 StartUplink 必然失败，用来演练 effect 批次里的失败收口。
+        session = new RealtimeVoiceSession(settings,
+                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
+                new FakeAudioSourceCatalog(), playback, link, clock, actor, timer,
+                VoiceDuplex.HALF_DUPLEX);
+
+        session.start(snapshots::add);
+        actor.drain();
+        assertEquals(AiVoiceSnapshot.State.CONNECTING, last().state());
+
+        link.opened();
+        assertEquals(1, actor.pending());
+        actor.runNext();
+
+        assertEquals("失败事件必须重新入队，不能在 effect 循环里就地重入", 1, actor.pending());
+        assertEquals("本批剩余的 SET_UPLINK/PUBLISH 已被丢弃，此刻不该有新快照",
+                AiVoiceSnapshot.State.CONNECTING, last().state());
+        assertEquals(1, session.trace().failures().size());
+        assertEquals("StartUplink", session.trace().failures().get(0).site());
+        assertEquals(AiFailureKind.UNKNOWN, session.trace().failures().get(0).failure().kind());
+
+        actor.runNext();
+        assertEquals(AiVoiceSnapshot.State.FAILED, last().state());
+        assertEquals("一处失败只允许发布一次 FAILED", 1, countState(AiVoiceSnapshot.State.FAILED));
+        assertEquals("失败批次里的 LISTENING 快照必须被丢弃",
+                0, countState(AiVoiceSnapshot.State.LISTENING));
+        assertEquals("失败后要关掉长连接", 1, link.closes);        assertEquals("没有输入源就不该开播放", 0, playback.starts);
+    }
+
+    @Test
+    public void restartAfterEndedIsRefusedByTheExplicitTerminalState() {
+        newSession(VoiceDuplex.HALF_DUPLEX);
+        session.start(snapshots::add);
+        link.opened();
+        session.stop();
+        assertEquals(AiVoiceSnapshot.State.ENDED, last().state());
+        int afterStop = snapshots.size();
+
+        session.start(snapshots::add);
+
+        assertEquals("挂断后不许再开链路：终态由显式状态判定", 1, link.opens);
+        assertEquals("挂断后不再发布任何快照", afterStop, snapshots.size());
+        assertEquals(AiVoiceSnapshot.State.ENDED, last().state());
+    }
+
+    private static void awaitEnqueued(QueueExecutor actor, long timeoutMs) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (actor.pending() == 0 && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertTrue("超时事件应由本类调度器投递", actor.pending() > 0);
+    }
+
+    private int countState(AiVoiceSnapshot.State state) {
+        int total = 0;
+        for (AiVoiceSnapshot snapshot : snapshots) {
+            if (snapshot.state() == state) {
+                total++;
+            }
+        }
+        return total;
     }
 
     private AiVoiceSnapshot last() {

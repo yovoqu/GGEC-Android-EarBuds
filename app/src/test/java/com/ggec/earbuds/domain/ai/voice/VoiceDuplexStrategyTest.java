@@ -2,11 +2,12 @@ package com.ggec.earbuds.domain.ai.voice;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+
+import java.util.Optional;
 
 /**
  * 验证全双工 / 半双工从标识到行为策略的解耦关系：
@@ -18,16 +19,18 @@ import org.junit.Test;
 public class VoiceDuplexStrategyTest {
 
     @Test
-    public void defaultModeAndIdRoundTripWorkCleanly() {
+    public void defaultModeAndIdParsingAreExact() {
         assertEquals(VoiceDuplex.HALF_DUPLEX, VoiceDuplex.defaultMode());
         assertEquals("full_duplex", VoiceDuplex.FULL_DUPLEX.id());
         assertEquals("half_duplex", VoiceDuplex.HALF_DUPLEX.id());
 
-        assertEquals(VoiceDuplex.FULL_DUPLEX, VoiceDuplex.fromId("full_duplex"));
-        assertEquals(VoiceDuplex.FULL_DUPLEX, VoiceDuplex.fromId("FULL_DUPLEX"));
-        assertEquals(VoiceDuplex.HALF_DUPLEX, VoiceDuplex.fromId(" half_duplex "));
-        assertNull(VoiceDuplex.fromId(null));
-        assertNull(VoiceDuplex.fromId("unknown"));
+        assertEquals(Optional.of(VoiceDuplex.FULL_DUPLEX), VoiceDuplex.fromId("full_duplex"));
+        assertEquals(Optional.of(VoiceDuplex.HALF_DUPLEX), VoiceDuplex.fromId("half_duplex"));
+        assertEquals("只认持久化 id，不认枚举名", Optional.empty(),
+                VoiceDuplex.fromId("FULL_DUPLEX"));
+        assertEquals("不做 trim 猜测", Optional.empty(), VoiceDuplex.fromId(" half_duplex "));
+        assertEquals(Optional.empty(), VoiceDuplex.fromId(null));
+        assertEquals(Optional.empty(), VoiceDuplex.fromId("unknown"));
     }
 
     @Test

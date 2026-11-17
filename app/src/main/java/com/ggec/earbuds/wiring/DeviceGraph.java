@@ -2,36 +2,34 @@ package com.ggec.earbuds.wiring;
 
 import android.app.Activity;
 import android.content.Context;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
-import com.ggec.earbuds.data.device.json.DeviceRosterJson;
 import com.ggec.earbuds.data.device.roster.DeviceRosterRepositoryImpl;
+import com.ggec.earbuds.data.store.FileDocumentStore;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
 import com.ggec.earbuds.domain.device.session.DeviceSession;
-import com.ggec.earbuds.domain.device.usecase.CloseDevice;
 import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
+import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.OpenDevice;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
-import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ScanDevices;
 import com.ggec.earbuds.domain.device.usecase.SyncActiveDevice;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.platform.device.AndroidPcmPlayback;
-import com.ggec.earbuds.provider.biz_ggec_hs.HsDeviceProviders;
-import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
-import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermission;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermissionRequest;
+import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
 import com.ggec.earbuds.ui.device.record.RecordViewModel;
@@ -39,32 +37,44 @@ import com.ggec.earbuds.ui.device.scan.ScanViewModel;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiMapper;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.device.settings.SettingsSectionFactory;
+import com.ggec.earbuds.wiring.device.DeviceCatalog;
+import com.ggec.earbuds.wiring.device.DeviceEndpoint;
+import com.ggec.earbuds.wiring.device.DeviceEndpoints;
+import com.ggec.earbuds.wiring.device.DeviceGateway;
+import com.ggec.earbuds.wiring.device.HsDeviceEndpoint;
+import com.ggec.earbuds.wiring.device.WyDeviceEndpoint;
 
 import java.io.File;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.LongSupplier;
 
 /**
- * 设备功能装配根：唯一知道设备端口、台账仓库与用例实现的地方。
+ * 设备功能装配根：唯一知道设备端点、台账仓库与用例实现的地方。
  *
- * <p>一条 BLE 客户端 → 一条链路端口 → 一个活动会话；台账在
- * {@link DeviceRosterRepositoryImpl} 里，落盘走注入的串行执行器。本类只持有领域端口与用例，
- * 不出现任何 SDK 类型。</p>
+ * <p>结构只有一套：<b>端点</b>（每 SDK 一个，按传输区分）→ <b>网关</b>（机型路由 + 扫描合并 +
+ * 录音路由，同时实现 {@code DeviceLinkPort} 与 {@code RecordPort}）→ <b>会话</b>（显式状态机）
+ * → <b>用例</b>。机型到端点的索引、合并目录都由 {@link DeviceEndpoints} 在建图时定下，
+ * 本类不出现任何机型字面量，也没有「活跃驱动」这类并行状态。</p>
+ *
+ * <p>释放顺序固定：先关会话（发唯一一次 DISCONNECTED 并停止跟踪），再关网关（解订阅、
+ * 关各端点 SDK），最后停台账同步。</p>
  */
 public final class DeviceGraph {
 
-    private final HsDeviceProviders providers;
-    private final DeviceRosterRepository roster;
+    private final DeviceEndpoints endpoints;
+    private final DeviceGateway gateway;
     private final DeviceSession session;
+    private final SyncActiveDevice syncActiveDevice;
     private final DeviceCapabilityCatalog catalog;
+    private final DeviceRosterRepository roster;
     private final ScanDevices scanDevices;
     private final WriteDeviceControl writeControl;
     private final RunDeviceAction runAction;
     private final ObserveDevice observeDevice;
     private final ObserveDeviceRoster observeRoster;
     private final OpenDevice openDevice;
-    private final CloseDevice closeDevice;
     private final ForgetDevice forgetDevice;
     private final ScanPermissionPort scanPermission;
     private final RecordPort recordPort;
@@ -76,25 +86,35 @@ public final class DeviceGraph {
     public DeviceGraph(@NonNull Context appContext, @NonNull Executor storeExecutor,
                        @NonNull LongSupplier clock) {
         Context app = appContext.getApplicationContext();
-        this.providers = HsDeviceProviders.open(app);
+        this.endpoints = new DeviceEndpoints(List.<DeviceEndpoint>of(
+                new HsDeviceEndpoint(app), new WyDeviceEndpoint(app)));
+        this.gateway = new DeviceGateway(endpoints);
+        this.catalog = new DeviceCatalog(endpoints.models());
+        this.recordPort = gateway;
+
         this.roster = new DeviceRosterRepositoryImpl(
-                new File(app.getFilesDir(), "devices/roster.json"), new DeviceRosterJson(),
+                new FileDocumentStore(new File(app.getFilesDir(), "devices")), "roster.json",
                 Objects.requireNonNull(storeExecutor, "storeExecutor"));
-        this.session = new DeviceSession(providers.deviceLink());
+        this.session = new DeviceSession(gateway);
+        this.syncActiveDevice = new SyncActiveDevice(roster, session, clock);
         this.observeRoster = new ObserveDeviceRoster(roster, session, clock);
         this.openDevice = new OpenDevice(session);
-        this.closeDevice = new CloseDevice(session);
         this.forgetDevice = new ForgetDevice(roster, session);
         this.observeDevice = new ObserveDevice(session);
-        this.catalog = providers.deviceCatalog();
         this.homeMapper = new DeviceHomeUiMapper(catalog);
         this.listEntries = new ListDeviceEntries(catalog);
-        this.scanDevices = new ScanDevices(providers.deviceLink());
-        this.writeControl = new WriteDeviceControl(providers.deviceLink());
-        this.runAction = new RunDeviceAction(providers.deviceLink());
+        this.scanDevices = new ScanDevices(gateway);
+        this.writeControl = new WriteDeviceControl(gateway);
+        this.runAction = new RunDeviceAction(gateway);
         this.scanPermission = new BluetoothScanPermission(app);
-        this.recordPort = providers.recordPort();
-        new SyncActiveDevice(roster, session, clock).start();
+    }
+
+    /**
+     * 启动活动会话的台账跟踪。由装配根在建成后显式调用一次：构造期不自行订阅，
+     * 因此 {@link #release()} 的停止一定与这次启动成对，且重复调用为幂等 no-op。
+     */
+    public void start() {
+        syncActiveDevice.start();
     }
 
     @NonNull
@@ -113,7 +133,8 @@ public final class DeviceGraph {
     public ViewModelProvider.Factory recordFactory() {
         return new Factory<>(RecordViewModel.class,
                 () -> new RecordViewModel(recordPort, observeDevice,
-                        new AndroidPcmPlayback(), new MainThreadTicker()));
+                        new AndroidPcmPlayback(), new MainThreadTicker(),
+                        SystemClock::elapsedRealtime));
     }
 
     @NonNull
@@ -133,9 +154,11 @@ public final class DeviceGraph {
         return new BluetoothScanPermissionRequest(host);
     }
 
-    /** 释放设备子图持有的底层 BLE/协议资源（停止扫描、关闭会话、释放 BLE 客户端）。 */
+    /** 释放设备子图：会话 → 网关（端点 SDK）→ 台账同步。 */
     public void release() {
-        providers.close();
+        session.close();
+        gateway.close();
+        syncActiveDevice.stop();
     }
 
     private interface Builder<T extends ViewModel> {

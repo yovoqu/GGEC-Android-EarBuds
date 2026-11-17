@@ -33,6 +33,16 @@ android {
         }
     }
 
+    /**
+     * vendored 第三方源码单独一棵源码树：`src/vendored/java`（包名保持 com.bes.opus，
+     * 因为 JNI 符号名由包名 + 类名决定）。见 src/vendored/README.md。
+     */
+    sourceSets {
+        main {
+            java.srcDirs += 'src/vendored/java'
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
@@ -53,4 +63,137 @@ android {
 dependencies {
     implementation 'androidx.annotation:annotation:1.9.1'
     testImplementation 'junit:junit:4.13.2'
+}
+
+/**
+ * 结构性门禁（无类名/文件名白名单，只按包结构与源码树判定）：
+ *
+ * <ol>
+ *   <li><b>公开面只有 {@code YoOpusSdk} 与 {@code api/**}</b>：{@code src/main/java} 的
+ *       顶层 public 类型只能出现在模块根包（唯一门面）或 {@code api/}；</li>
+ *   <li>{@code internal/**} 每个包最多一个 public 顶层类型（对外构造入口），其余包内可见；</li>
+ *   <li>{@code api/**} 不得 import {@code internal/**}，也不得 import vendored 的 {@code com.bes.opus}；</li>
+ *   <li>vendored 树（{@code src/vendored/java}）不得 import {@code internal/**}，只允许依赖 {@code api/**}；</li>
+ *   <li>{@code com.bes.opus} 不得出现在本模块 vendored 树之外（含其它模块）；</li>
+ *   <li>{@code src/main/java} 下不得出现 {@code com/bes} 目录（vendored 只有一个入口）。</li>
+ * </ol>
+ */
+tasks.register('checkLibGgecOpusBoundary') {
+    group = 'verification'
+    description = 'Structural public-surface / vendored-source gate for lib_ggec_opus.'
+    doLast {
+        def javaRoot = new File(project.projectDir, 'src/main/java').toPath()
+        def vendoredRoot = new File(project.projectDir, 'src/vendored/java').toPath()
+        def rootDepthDir = 'com/yovo/lib_ggec_opus'
+        def apiDir = "${rootDepthDir}/api"
+        def internalDir = "${rootDepthDir}/internal"
+        def publicTypePattern =
+                ~/^public\s+(?:(?:final|abstract|sealed|non-sealed)\s+)*(?:class|interface|enum|record)\b/
+        def importPattern = ~/^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/
+        def offenders = []
+
+        def relToJavaRoot = { File file ->
+            javaRoot.relativize(file.toPath()).toString().replace('\\', '/')
+        }
+        def isUnder = { String dir, String prefix ->
+            dir == prefix || dir.startsWith(prefix + '/')
+        }
+
+        // 1) 公开面：顶层 public 类型只能落在模块根包或 api/；internal/ 每包最多一个。
+        def publicByDir = [:]
+        fileTree(dir: javaRoot.toFile(), include: '**/*.java').each { file ->
+            def path = 'src/main/java/' + relToJavaRoot(file)
+            def dirKey = file.parentFile.absolutePath
+            file.eachLine { line, index ->
+                if (line =~ publicTypePattern) {
+                    if (!publicByDir.containsKey(dirKey)) {
+                        publicByDir[dirKey] = []
+                    }
+                    publicByDir[dirKey] << "${path}:${index + 1}"
+                }
+            }
+        }
+        publicByDir.each { dir, declarations ->
+            def relDir = javaRoot.relativize(new File(dir).toPath()).toString().replace('\\', '/')
+            def isRootPackage = relDir == rootDepthDir
+            def isApi = isUnder(relDir, apiDir)
+            def isInternal = isUnder(relDir, internalDir)
+            if (!isRootPackage && !isApi && !isInternal) {
+                offenders << "公开面只能位于模块根包或 api/**：" + declarations.join(', ')
+            }
+            if (isInternal && declarations.size() > 1) {
+                offenders << "internal/** 每个包最多一个 public 顶层类型：" + declarations.join(', ')
+            }
+            if (isRootPackage && declarations.size() > 1) {
+                offenders << "模块根包只允许唯一门面 public 类型：" + declarations.join(', ')
+            }
+        }
+
+        // 2) api/** 不得依赖实现（internal / vendored）
+        fileTree(dir: javaRoot.resolve(apiDir).toFile(), include: '**/*.java').each { file ->
+            file.eachLine { line, index ->
+                def matcher = (line =~ importPattern)
+                if (!matcher) {
+                    return
+                }
+                def target = matcher.group(1)
+                if (target.startsWith('com.yovo.lib_ggec_opus.internal.')
+                        || target == 'com.yovo.lib_ggec_opus.internal'
+                        || target.startsWith('com.bes.opus')) {
+                    offenders << "${project.relativePath(file)}:${index + 1}: "
+                            + "api/** 不得依赖实现（internal / vendored）-> ${target}"
+                }
+            }
+        }
+
+        // 3) vendored 树不得依赖 internal，也只允许依赖 api/**
+        fileTree(dir: vendoredRoot.toFile(), include: '**/*.java').each { file ->
+            file.eachLine { line, index ->
+                def matcher = (line =~ importPattern)
+                if (!matcher) {
+                    return
+                }
+                def target = matcher.group(1)
+                if (target.startsWith('com.yovo.lib_ggec_opus.internal.')
+                        || target == 'com.yovo.lib_ggec_opus.internal') {
+                    offenders << "${project.relativePath(file)}:${index + 1}: "
+                            + "vendored 不得依赖 internal -> ${target}"
+                } else if (target.startsWith('com.yovo.')
+                        && !target.startsWith('com.yovo.lib_ggec_opus.api.')) {
+                    offenders << "${project.relativePath(file)}:${index + 1}: "
+                            + "vendored 只允许依赖 api/** -> ${target}"
+                }
+            }
+        }
+
+        // 4) vendored 只有一个入口：src/main/java 下不得出现 com/bes
+        if (javaRoot.resolve('com/bes').toFile().exists()) {
+            offenders << 'vendored 源码必须在 src/vendored/java，不得回流 src/main/java：com/bes'
+        }
+
+        // 5) 模块外（含其它模块）不得引用 com.bes.opus
+        fileTree(project.rootDir) {
+            include '**/*.java'
+            include '**/*.kt'
+            exclude '**/build/**'
+            exclude '**/.cxx/**'
+            exclude '**/.gradle/**'
+            exclude 'lib_ggec_opus/**'
+        }.each { file ->
+            file.text.eachLine { line, index ->
+                if (line =~ /com\.bes\.opus/) {
+                    offenders << "${project.relativePath(file)}:${index + 1}: "
+                            + 'com.bes.opus 是 lib_ggec_opus 内部 vendored 实现，禁止外引'
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('lib_ggec_opus 边界被打破：\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkLibGgecOpusBoundary'
 }

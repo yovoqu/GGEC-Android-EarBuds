@@ -4,6 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.device.model.CapabilityOption;
+import com.ggec.earbuds.domain.device.model.ControlRange;
 import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityKind;
@@ -15,13 +17,41 @@ import com.ggec.earbuds.ui.device.DeviceProfileFixtures;
 
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
 
 /** 描述符 → 行：分组顺序、kind → 行类型、能力缺失不渲染、未知能力 id 可见不崩。 */
 public final class SettingsSectionFactoryTest {
 
     private final SettingsSectionFactory factory = new SettingsSectionFactory();
+
+    /** 描述符频段表：测试输入，只声明段数与标签，不是产品的频段表。 */
+    private static List<CapabilityOption> bands(int count) {
+        List<CapabilityOption> options = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            options.add(new CapabilityOption("BAND_" + index, "band " + index));
+        }
+        return List.copyOf(options);
+    }
+
+    /** 可编辑的曲线描述符：频段表与增益值域都由描述符给出。 */
+    private static DeviceCapabilityView curve(String id, String title, DeviceCapabilityGroup group,
+                                              int bandCount, int min, int max, int step) {
+        return new DeviceCapabilityView(id, title, group, DeviceCapabilityKind.CURVE,
+                bands(bandCount), Optional.of(ControlRange.of(min, max, step)));
+    }
+
+    /** 声明了中立档的曲线描述符：中立档只声明在描述符里。 */
+    private static DeviceCapabilityView curveWithNeutral(String id, String title,
+                                                        DeviceCapabilityGroup group, int bandCount,
+                                                        int min, int max, int step, int neutral) {
+        return new DeviceCapabilityView(id, title, group, DeviceCapabilityKind.CURVE,
+                bands(bandCount), Optional.of(new ControlRange(min, max, step,
+                        OptionalInt.of(neutral))));
+    }
 
     @Test
     public void setOnlyTogglesAlwaysProduceRowsEvenWithoutReportedValues() {
@@ -108,16 +138,49 @@ public final class SettingsSectionFactoryTest {
 
     @Test
     public void curveRowExistsWithoutReportedPoints() {
-        // 值未上报不等于行不可用：曲线入口必须照常生成（编辑器自带初值）。
+        // 值未上报不等于行不可用：编辑器初值由描述符派生（段数与值域都在描述符里）。
         DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
-                DeviceProfileFixtures.capability(DeviceCapabilityIds.CUSTOM_EQ, "自定义均衡器",
-                        DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.CURVE));
+                curve(DeviceCapabilityIds.CUSTOM_EQ, "自定义均衡器",
+                        DeviceCapabilityGroup.MUSIC, 7, 2, 20, 2));
 
-        DeviceSettingRow.Curve curve = (DeviceSettingRow.Curve)
+        DeviceSettingRow.Curve curveRow = (DeviceSettingRow.Curve)
                 factory.rows(profile, new DeviceState(Map.of()), DeviceCapabilityGroup.MUSIC).get(0);
 
-        assertEquals(DeviceCapabilityIds.CUSTOM_EQ, curve.capabilityId());
-        assertTrue(curve.points().isEmpty());
+        assertEquals(DeviceCapabilityIds.CUSTOM_EQ, curveRow.capabilityId());
+        assertTrue(curveRow.points().isEmpty());
+        assertEquals("频段表照抄描述符", bands(7), curveRow.options());
+        assertEquals("增益值域照抄描述符", Optional.of(ControlRange.of(2, 20, 2)),
+                curveRow.range());
+        assertTrue("描述符没声明中立档时行里也没有", curveRow.range().orElseThrow().neutral().isEmpty());
+    }
+
+    @Test
+    public void curveRowKeepsTheDescriptorNeutral() {
+        // 中立档是描述符的事实：行如实携带它，界面据此生成平直曲线，而不是自己推中点。
+        DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
+                curveWithNeutral(DeviceCapabilityIds.CUSTOM_EQ, "自定义均衡器",
+                        DeviceCapabilityGroup.MUSIC, 5, 0, 24, 1, 12));
+
+        DeviceSettingRow.Curve curveRow = (DeviceSettingRow.Curve)
+                factory.rows(profile, new DeviceState(Map.of()), DeviceCapabilityGroup.MUSIC).get(0);
+
+        assertEquals(OptionalInt.of(12), curveRow.range().orElseThrow().neutral());
+    }
+
+    @Test
+    public void curveWithoutDescriptorOptionsOrRangeIsNotRendered() {
+        // 目录不变量被违反（CURVE 必须带频段 options 与 range）：不生成行，不猜默认。
+        DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
+                DeviceProfileFixtures.capability(DeviceCapabilityIds.CUSTOM_EQ, "自定义均衡器",
+                        DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.CURVE),
+                DeviceProfileFixtures.capability("LDAC", "LDAC",
+                        DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.TOGGLE));
+
+        List<DeviceSettingRow> rows =
+                factory.rows(profile, new DeviceState(Map.of()), DeviceCapabilityGroup.MUSIC);
+
+        assertEquals(1, rows.size());
+        assertEquals("LDAC", ((DeviceSettingRow.Toggle) rows.get(0)).capabilityId());
     }
 
     @Test
@@ -184,8 +247,8 @@ public final class SettingsSectionFactoryTest {
                         DeviceProfileFixtures.option("MUSIC", "音乐")),
                 DeviceProfileFixtures.level("VOLUME_REMIND", "音量提醒",
                         DeviceCapabilityGroup.FUNCTION, 0, 10, 1),
-                DeviceProfileFixtures.capability("CUSTOM_EQ", "自定义均衡器",
-                        DeviceCapabilityGroup.FUNCTION, DeviceCapabilityKind.CURVE),
+                curve("CUSTOM_EQ", "自定义均衡器",
+                        DeviceCapabilityGroup.FUNCTION, 6, 4, 16, 2),
                 DeviceProfileFixtures.capability("FIND_EAR", "查找耳机",
                         DeviceCapabilityGroup.FUNCTION, DeviceCapabilityKind.ACTION),
                 DeviceProfileFixtures.capability("RECORD_LIST", "录音列表",
@@ -209,8 +272,8 @@ public final class SettingsSectionFactoryTest {
                         DeviceCapabilityGroup.FUNCTION, DeviceCapabilityKind.ACTION),
                 DeviceProfileFixtures.capability("RECORD_LIST", "录音列表",
                         DeviceCapabilityGroup.RECORD, DeviceCapabilityKind.LIST),
-                DeviceProfileFixtures.capability("CUSTOM_EQ", "自定义均衡器",
-                        DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.CURVE));
+                curve("CUSTOM_EQ", "自定义均衡器",
+                        DeviceCapabilityGroup.MUSIC, 5, 1, 9, 1));
 
         DeviceState state = new DeviceState(Map.of());
 
@@ -273,8 +336,8 @@ public final class SettingsSectionFactoryTest {
                         DeviceProfileFixtures.option("MOVIE", "电影")),
                 DeviceProfileFixtures.level("VOLUME_REMIND", "音量提醒",
                         DeviceCapabilityGroup.FUNCTION, 0, 10, 1),
-                DeviceProfileFixtures.capability("CUSTOM_EQ", "自定义均衡器",
-                        DeviceCapabilityGroup.FUNCTION, DeviceCapabilityKind.CURVE));
+                curve("CUSTOM_EQ", "自定义均衡器",
+                        DeviceCapabilityGroup.FUNCTION, 3, 2, 14, 2));
 
         DeviceState state = new DeviceState(Map.of(
                 "GAME_MODE", new ControlValue.Toggle(true),

@@ -3,6 +3,8 @@ package com.ggec.earbuds.domain.ai.voice;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.Optional;
+
 /**
  * 通话的双工通信方式（纯粹的模式标识与持久化键值，不包含具体调度实现）。
  *
@@ -37,25 +39,23 @@ public enum VoiceDuplex {
         return id;
     }
 
-    /** 缺省双工模式：以半双工为安全起点，避免外放回声在首次使用时引发自触发。 */
+    /** 新装应用的缺省双工：半双工是安全起点，避免外放回声在首次使用时引发自触发。 */
     @NonNull
     public static VoiceDuplex defaultMode() {
         return HALF_DUPLEX;
     }
 
-    /** 从序列化字符串解析；空值或未知值返回 null，由调用方按需回退到 {@link #defaultMode()}。 */
-    @Nullable
-    public static VoiceDuplex fromId(@Nullable String id) {
+    /** 持久化值是 {@link #id()}；解析不出来就是空的，由解码方按文档损坏处理。 */
+    public static Optional<VoiceDuplex> fromId(@Nullable String id) {
         if (id == null) {
-            return null;
+            return Optional.empty();
         }
-        String clean = id.strip();
         for (VoiceDuplex mode : values()) {
-            if (mode.id.equalsIgnoreCase(clean) || mode.name().equalsIgnoreCase(clean)) {
-                return mode;
+            if (mode.id.equals(id)) {
+                return Optional.of(mode);
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     /** 返回该模式对应的独立运行期行为策略。 */

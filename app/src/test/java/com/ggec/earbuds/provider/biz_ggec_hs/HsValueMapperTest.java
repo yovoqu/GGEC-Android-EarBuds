@@ -1,6 +1,7 @@
 package com.ggec.earbuds.provider.biz_ggec_hs;
 
 
+import com.ggec.earbuds.provider.biz_ggec_hs.value.HsValueMapper;
 import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.api.HsControl;
 import static org.junit.Assert.assertEquals;
@@ -24,6 +25,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /** 映射穷尽性：每个 biz 取值都有确定落点，新增取值时这里必须跟着改。 */
 public final class HsValueMapperTest {
@@ -109,11 +111,28 @@ public final class HsValueMapperTest {
     public void levelDescriptorKeepsDeclaredRange() {
         HsDevice.Feature raw = new HsDevice.Feature(
                 HsDevice.Capability.VOLUME_REMIND, "音量", HsDevice.Group.FUNCTION, HsDevice.Form.LEVEL,
-                List.of(), Optional.of(new HsDevice.Range(0, 10, 1)));
+                List.of(), Optional.of(HsDevice.Range.of(0, 10, 1)));
 
         DeviceCapabilityView view = HsValueMapper.toCapabilityView(raw);
 
-        assertEquals(Optional.of(new ControlRange(0, 10, 1)), view.range());
+        assertEquals(Optional.of(ControlRange.of(0, 10, 1)), view.range());
+        assertTrue("描述符没声明中立档，映射结果同样没有",
+                view.range().orElseThrow().neutral().isEmpty());
+    }
+
+    @Test
+    public void curveDescriptorMapsTheDeclaredNeutral() {
+        // 中立档是 biz 描述符的事实，APP 只做无损投影：不重算，也不拿 min 顶替。
+        HsDevice.Feature raw = new HsDevice.Feature(
+                HsDevice.Capability.CUSTOM_EQ, "自定义均衡器", HsDevice.Group.MUSIC, HsDevice.Form.CURVE,
+                List.of(new HsDevice.Option("0", "60Hz")),
+                Optional.of(new HsDevice.Range(0, 24, 1, OptionalInt.of(12))));
+
+        DeviceCapabilityView view = HsValueMapper.toCapabilityView(raw);
+
+        assertEquals(OptionalInt.of(12), view.range().orElseThrow().neutral());
+        assertEquals(0, view.range().orElseThrow().min());
+        assertEquals(24, view.range().orElseThrow().max());
     }
 
     @Test

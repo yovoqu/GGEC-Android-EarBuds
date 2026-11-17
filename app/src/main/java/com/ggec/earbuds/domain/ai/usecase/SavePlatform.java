@@ -10,18 +10,19 @@ import com.ggec.earbuds.domain.ai.model.AiValidationError;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
 import com.ggec.earbuds.domain.ai.policy.AiBaseUrlPolicy;
-import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiIdGenerator;
 import com.ggec.earbuds.domain.ai.port.AiPlatformCatalog;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 新增或修改一个平台的连接信息。内置平台一类只有一个实例，自定义平台每次新增都生成新实例。
  * 换了主机地址会清掉旧的模型缓存，换密钥不会。
+ *
+ * <p>密钥与配置一次提交：{@link AiSettingsRepository#savePlatform} 在同一个提交点写密文和
+ * 设置文档，失败时两者都不落。本用例不再自己碰凭证库，也不再规定"先密钥后设置"的顺序。</p>
  */
 public final class SavePlatform {
 
@@ -44,21 +45,18 @@ public final class SavePlatform {
     private final AiApiKeyPolicy keyPolicy;
     private final AiBaseUrlPolicy urlPolicy;
     private final AiIdGenerator ids;
-    private final AiCredentialStore credentials;
 
     public SavePlatform(
             AiSettingsRepository repository,
             AiPlatformCatalog catalog,
             AiApiKeyPolicy keyPolicy,
             AiBaseUrlPolicy urlPolicy,
-            AiIdGenerator ids,
-            AiCredentialStore credentials) {
+            AiIdGenerator ids) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.keyPolicy = Objects.requireNonNull(keyPolicy, "keyPolicy");
         this.urlPolicy = Objects.requireNonNull(urlPolicy, "urlPolicy");
         this.ids = Objects.requireNonNull(ids, "ids");
-        this.credentials = Objects.requireNonNull(credentials, "credentials");
     }
 
     public AiPlatformConfig execute(Command command) {
@@ -73,18 +71,11 @@ public final class SavePlatform {
         String name = displayName(template, command.name());
         AiSettings existing = repository.load();
         String platformId = resolveId(command, template, existing);
-        // 密钥先进凭证库；配置对象只记录"已配置"这个事实。
-        credentials.putPlatformKey(platformId, key);
-        boolean configured = !key.isBlank();
-        AtomicReference<AiPlatformConfig> saved = new AtomicReference<>();
-        repository.update(settings -> {
-            AiPlatformConfig base = settings.platform(platformId)
-                    .orElseGet(() -> AiPlatformConfig.create(platformId, template.id(), name, protocol));
-            AiPlatformConfig updated = base.withConnection(name, configured, baseUrl, protocol);
-            saved.set(updated);
-            return settings.withPlatform(updated);
-        });
-        return saved.get();
+        AiPlatformConfig base = existing.platform(platformId)
+                .orElseGet(() -> AiPlatformConfig.create(platformId, template.id(), name, protocol));
+        AiPlatformConfig target = base.withConnection(name, !key.isBlank(), baseUrl, protocol);
+        // 仓库按密钥的真实写入结果重算 configured；这里给的只是"本次提交想达到的值"。
+        return repository.savePlatform(target, key);
     }
 
     private String resolveId(Command command, AiPlatformTemplate template, AiSettings existing) {

@@ -12,6 +12,8 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleScanAdvertiseStatus;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntimeConfig;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
@@ -39,10 +41,29 @@ import java.util.function.LongSupplier;
  * 覆盖审计 BLE-01 / BLE-02 / BLE-05。
  */
 public final class YoBleScanControllerTest {
+    /** 姣忎釜寮曟搸涓€涓壂鎻忓櫒瀹炰緥锛氱敤渚嬭嚜宸辨寔鏈夛紝@After 缁熶竴閲婃斁骞跺叧闂縼绉荤嚎绋嬫睜銆?*/
+    private static final java.util.Map<YoBleScanHub.Engine, YoBleScanHub> HUBS =
+            new java.util.LinkedHashMap<>();
+
+    private static YoBleScanHub hubFor(YoBleScanHub.Engine engine) {
+        YoBleScanHub hub = HUBS.get(engine);
+        if (hub == null) {
+            hub = YoBleScanHub.forEngine(engine);
+            HUBS.put(engine, hub);
+        }
+        return hub;
+    }
+
+    private static void releaseHubs() {
+        for (YoBleScanHub hub : HUBS.values()) {
+            hub.release();
+        }
+        HUBS.clear();
+    }
 
     @After
     public void resetHub() {
-        YoBleScanHub.resetForTest();
+        releaseHubs();
     }
 
     @Test
@@ -199,7 +220,7 @@ public final class YoBleScanControllerTest {
         AtomicInteger started = new AtomicInteger();
         AtomicInteger failures = new AtomicInteger();
         AtomicInteger founds = new AtomicInteger();
-        BleOperationHandle subscription = YoBleScanHub.subscribe(controller, new BleScanObserver() {
+        BleOperationHandle subscription = hubFor(controller).subscribe(new BleScanObserver() {
             @Override
             public void onScanStarted() {
                 started.incrementAndGet();
@@ -255,7 +276,7 @@ public final class YoBleScanControllerTest {
         YoBleScanController controller = newController(runtime, platform);
 
         AtomicInteger failures = new AtomicInteger();
-        BleOperationHandle subscription = YoBleScanHub.subscribe(controller, new BleScanObserver() {
+        BleOperationHandle subscription = hubFor(controller).subscribe(new BleScanObserver() {
             @Override
             public void onScanFailed(@NonNull BleFailure failure) {
                 failures.incrementAndGet();
@@ -270,7 +291,7 @@ public final class YoBleScanControllerTest {
         // 订阅者退订：Hub 最后一个订阅者离开会停引擎，控制器据此放弃恢复现场。
         // 停扫由 Hub 的会话迁移线程推进（不在句柄取消栈上调用引擎），等它落地再驱动适配器。
         subscription.cancel();
-        CountDownLatch transitionBarrier = YoBleScanHub.submitTransitionBarrierForTest();
+        CountDownLatch transitionBarrier = hubFor(controller).submitTransitionBarrierForTest();
         assertTrue("Hub 会话迁移必须在超时内排空",
                 transitionBarrier.await(5L, TimeUnit.SECONDS));
         await(() -> !controller.isScanning(), 3000);
@@ -364,7 +385,9 @@ public final class YoBleScanControllerTest {
     private static YoBleRuntime newRuntime() {
         return new YoBleRuntime(YoBleRuntimeConfig.builder()
                 .callbackOnMainThread(false)
-                .build());
+                .build(),
+                new BluetoothDiagnosticsBus(YoBtLogger.SINK,
+                        BluetoothDiagnosticsBus.DEFAULT_CAPACITY));
     }
 
     @NonNull
@@ -502,11 +525,6 @@ public final class YoBleScanControllerTest {
         @Override
         public boolean isLocationServicesEnabled() {
             return true;
-        }
-
-        @Override
-        public int sdkInt() {
-            return 35;
         }
     }
 }

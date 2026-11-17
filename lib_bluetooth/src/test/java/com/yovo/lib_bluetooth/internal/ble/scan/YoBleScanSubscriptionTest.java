@@ -26,16 +26,33 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>验收对应 {@code scan-architecture.md} §2.2 / §7.4：连续替换 5 次谓词，引擎启动次数不变。</p>
  */
 public final class YoBleScanSubscriptionTest {
+    /** 每个引擎一个扫描器实例：用例自己持有，{@code @After} 统一释放并关闭迁移线程池。 */
+    private static final java.util.Map<YoBleScanHub.Engine, YoBleScanHub> HUBS =
+            new java.util.LinkedHashMap<>();
+
+    
+    private static synchronized YoBleScanHub hubFor(YoBleScanHub.Engine engine) {
+        YoBleScanHub hub = HUBS.get(engine);
+        if (hub == null) {
+            hub = YoBleScanHub.forEngine(engine);
+            HUBS.put(engine, hub);
+
+        }
+        return hub;
+    }
 
     @After
     public void resetHub() {
-        YoBleScanHub.resetForTest();
+        for (YoBleScanHub hub : HUBS.values()) {
+            hub.release();
+        }
+        HUBS.clear();
     }
 
     @Test
     public void swappingFrameFilterFiveTimesNeverRestartsTheEngine() {
         RecordingEngine engine = new RecordingEngine();
-        BleScanSubscription subscription = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleScanSubscription subscription = hubFor(engine).subscribe(new BleScanObserver() {
         });
 
         int startsAfterSubscribe = engine.starts.get();
@@ -54,7 +71,7 @@ public final class YoBleScanSubscriptionTest {
     public void frameFilterOnlyDeliversMatchingFrames() {
         RecordingEngine engine = new RecordingEngine();
         List<Integer> delivered = new ArrayList<>();
-        YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 delivered.add(result.rssi());
@@ -72,7 +89,7 @@ public final class YoBleScanSubscriptionTest {
     public void replacingTheFilterTakesEffectForSubsequentFramesOnly() {
         RecordingEngine engine = new RecordingEngine();
         List<Integer> delivered = new ArrayList<>();
-        BleScanSubscription subscription = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleScanSubscription subscription = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 delivered.add(result.rssi());
@@ -93,7 +110,7 @@ public final class YoBleScanSubscriptionTest {
     public void nullFilterDeliversEveryFrame() {
         RecordingEngine engine = new RecordingEngine();
         AtomicInteger delivered = new AtomicInteger();
-        BleScanSubscription subscription = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleScanSubscription subscription = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 delivered.incrementAndGet();
@@ -113,7 +130,7 @@ public final class YoBleScanSubscriptionTest {
     public void batchFramesAreFilteredPerSubscription() {
         RecordingEngine engine = new RecordingEngine();
         List<Integer> delivered = new ArrayList<>();
-        YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onBatchScanResults(List<BleScanResult> results) {
                 for (BleScanResult result : results) {
@@ -137,7 +154,7 @@ public final class YoBleScanSubscriptionTest {
     public void lostEventsFollowTheSameFrameFilter() {
         RecordingEngine engine = new RecordingEngine();
         AtomicInteger lost = new AtomicInteger();
-        YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanResultLost(BleScanResult result) {
                 lost.incrementAndGet();
@@ -153,13 +170,13 @@ public final class YoBleScanSubscriptionTest {
     @Test
     public void cancelStillDetachesWhileAFilterIsInstalled() throws Exception {
         RecordingEngine engine = new RecordingEngine();
-        BleScanSubscription subscription = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleScanSubscription subscription = hubFor(engine).subscribe(new BleScanObserver() {
         });
         subscription.setFrameFilter(frame -> true);
         assertEquals(1, engine.starts.get());
 
         subscription.cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
 
         assertEquals(1, engine.stops.get());
         assertTrue(subscription.isCancelled());
@@ -173,8 +190,8 @@ public final class YoBleScanSubscriptionTest {
                 0L);
     }
 
-    private static void awaitSessionTransitions() throws Exception {
-        java.util.concurrent.CountDownLatch barrier = YoBleScanHub.submitTransitionBarrierForTest();
+    private static void awaitSessionTransitions(YoBleScanHub hub) throws Exception {
+        java.util.concurrent.CountDownLatch barrier = hub.submitTransitionBarrierForTest();
         assertTrue("会话迁移未在超时内排空", barrier.await(5L, java.util.concurrent.TimeUnit.SECONDS));
     }
 

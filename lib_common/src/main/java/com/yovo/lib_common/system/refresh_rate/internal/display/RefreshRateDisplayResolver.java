@@ -7,7 +7,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
-import com.yovo.lib_common.system.refresh_rate.internal.sdk.RefreshRateSdk;
 import com.yovo.lib_common.system.refresh_rate.model.RefreshRateMode;
 
 import java.util.ArrayList;
@@ -54,10 +53,6 @@ public final class RefreshRateDisplayResolver {
 
     @Nullable
     public static RefreshRateModeSnapshot snapshot(@NonNull Display display) {
-        if (!RefreshRateSdk.supportsDisplayModes()) {
-            return null;
-        }
-
         int displayId = display.getDisplayId();
         Display.Mode current = display.getMode();
         int currentWidth = current != null ? current.getPhysicalWidth() : 0;

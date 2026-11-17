@@ -88,6 +88,8 @@ app (应用壳：View / ViewModel / domain / wiring)
 
 ## 3. lib_bluetooth 变更清单
 
+> Remediation log: see [lib-bluetooth-remediation.md](lib-bluetooth-remediation.md) (2026-11-17).
+
 1. 删除 `provider/lib_common/BluetoothProviderInstaller.java`（含 `installAll()`、`installed` 静态标志）。
 2. `internal/common/permission/YoBluetoothPermissionChecker`：删除 `static volatile BluetoothPermissionPort port` 与 `setPort`；改为实例持有端口，`new YoBluetoothPermissionChecker(port)`。
 3. 所有内部使用点（`YoBleAndroidCapabilityInspector`、`YoCbtAndroidModuleGraph`、`YoCbtDiscoveryController`、`YoCbtBondedDeviceProvider`、`YoCbtBondOperationController`、`YoCbtAndroidDiscoveryPlatform`、`YoCbtAndroidBondedDeviceLoader` 等）改为**构造参数注入** checker，不再自行 `new`。
@@ -540,6 +542,8 @@ public interface DevicePort {
 4. 权限：`lib_bluetooth 内部 provider/lib_common/permission` 构造注入；app 侧权限只经 `provider/lib_common/permission` 查询/请求，无全局安装步骤。
 
 ## 8. 门禁（gradle 结构性检查，D8）
+
+> Remediation log: see [lib-bluetooth-remediation.md](lib-bluetooth-remediation.md) (2026-11-17).
 
 每个模块一个 `check<Module>Boundary`，规则来自 §1.2，**不允许任何人名/类名白名单**：
 

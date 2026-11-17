@@ -39,7 +39,7 @@ public final class DeviceProfileFixtures {
                                              Integer min, Integer max, Integer step) {
         Optional<ControlRange> range = min == null
                 ? Optional.empty()
-                : Optional.of(new ControlRange(min, max, step));
+                : Optional.of(ControlRange.of(min, max, step));
         return new DeviceCapabilityView(id, title, group, DeviceCapabilityKind.LEVEL,
                 List.of(), range);
     }

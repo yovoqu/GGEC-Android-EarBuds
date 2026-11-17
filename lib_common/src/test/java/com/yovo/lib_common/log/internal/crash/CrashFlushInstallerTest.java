@@ -6,17 +6,23 @@ import static org.junit.Assert.assertNull;
 
 import org.junit.After;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/** 崩溃路径会经 {@code YoLog} 上报，需要 Robolectric 提供 {@code android.util.Log}。 */
+@RunWith(RobolectricTestRunner.class)
 public final class CrashFlushInstallerTest {
+
+    /** 每个用例持有独立安装器：handler 链状态属于实例。 */
+    private final CrashFlushInstaller installer = new CrashFlushInstaller();
 
     @After
     public void tearDown() {
-        CrashFlushInstaller.uninstall();
-        CrashFlushInstaller.resetForTest();
+        installer.uninstall();
     }
 
     @Test
@@ -30,7 +36,7 @@ public final class CrashFlushInstallerTest {
                     latch.countDown();
                 };
         Thread.setDefaultUncaughtExceptionHandler(previous);
-        CrashFlushInstaller.install((thread, cause) -> {
+        installer.install((thread, cause) -> {
             drained.set(true);
             latch.countDown();
         });
@@ -47,15 +53,30 @@ public final class CrashFlushInstallerTest {
     }
 
     @Test
+    public void failedDrain_stillChainsToPreviousHandler() {
+        AtomicBoolean previousCalled = new AtomicBoolean();
+        Thread.setDefaultUncaughtExceptionHandler(
+                (thread, throwable) -> previousCalled.set(true));
+        installer.install((thread, cause) -> {
+            throw new IllegalStateException("drain-failure");
+        });
+
+        Thread.getDefaultUncaughtExceptionHandler()
+                .uncaughtException(Thread.currentThread(), new IllegalStateException("crash"));
+
+        assertTrue(previousCalled.get());
+    }
+
+    @Test
     public void uninstall_restoresPreviousHandler() {
         Thread.UncaughtExceptionHandler previous =
                 (thread, throwable) -> {
                 };
         Thread.setDefaultUncaughtExceptionHandler(previous);
-        CrashFlushInstaller.install((thread, cause) -> {
+        installer.install((thread, cause) -> {
         });
 
-        CrashFlushInstaller.uninstall();
+        installer.uninstall();
 
         assertEquals(previous, Thread.getDefaultUncaughtExceptionHandler());
     }
@@ -63,10 +84,10 @@ public final class CrashFlushInstallerTest {
     @Test
     public void uninstall_withNullPrevious_resetsToNull() {
         Thread.setDefaultUncaughtExceptionHandler(null);
-        CrashFlushInstaller.install((thread, cause) -> {
+        installer.install((thread, cause) -> {
         });
 
-        CrashFlushInstaller.uninstall();
+        installer.uninstall();
 
         assertNull(Thread.getDefaultUncaughtExceptionHandler());
     }

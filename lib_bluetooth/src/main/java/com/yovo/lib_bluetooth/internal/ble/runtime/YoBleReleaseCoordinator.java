@@ -15,14 +15,22 @@ import java.util.List;
 public final class YoBleReleaseCoordinator {
 
     private static final String TAG = "YoBleRelease";
+    private final BluetoothDiagnosticsBus diagnostics;
     private final List<YoReleasable> resources = new ArrayList<>();
     private boolean released;
 
+    public YoBleReleaseCoordinator(@NonNull BluetoothDiagnosticsBus diagnostics) {
+        this.diagnostics = diagnostics;
+    }
+
     public synchronized void register(@NonNull YoReleasable resource) {
         if (released) {
+            // 已释放后注册：立即释放该资源（调用方无法再自己释放），失败进同一诊断通道。
             try {
                 resource.release();
-            } catch (Throwable ignored) {
+            } catch (RuntimeException releaseFailure) {
+                diagnostics.recordException(TAG,
+                        "释放后注册组件异常: " + resource.getClass().getSimpleName(), releaseFailure);
             }
             return;
         }
@@ -43,9 +51,9 @@ public final class YoBleReleaseCoordinator {
         for (YoReleasable resource : snapshot) {
             try {
                 resource.release();
-            } catch (Throwable t) {
-                BluetoothDiagnosticsBus.get().recordException(TAG,
-                        "释放组件异常: " + resource.getClass().getSimpleName(), t);
+            } catch (RuntimeException releaseFailure) {
+                diagnostics.recordException(TAG,
+                        "释放组件异常: " + resource.getClass().getSimpleName(), releaseFailure);
             }
         }
     }

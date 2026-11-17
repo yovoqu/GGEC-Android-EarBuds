@@ -7,60 +7,72 @@ import android.content.Intent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.biz_appupdate.api.UpdateUiPort;
+import com.yovo.biz_appupdate.api.UpdateUiSession;
 import com.yovo.biz_appupdate.internal.core.YoAppUpdateCore;
 
 import java.io.File;
 
 /**
- * APP 更新模块唯一对外门面。
+ * APP 更新模块唯一对外门面（实例）。
+ *
+ * <p>没有静态单例：装配根创建一次、持有一个实例，模块内部状态都在这个实例的
+ * {@link YoAppUpdateCore} 里。多实例各自独立，互不可见。</p>
  */
 public final class YoAppUpdate {
 
-    private YoAppUpdate() {
+    private final YoAppUpdateCore core;
+
+    private YoAppUpdate(@NonNull YoAppUpdateCore core) {
+        this.core = core;
     }
 
-    public static void init(@NonNull Context context, @NonNull Config config) {
-        YoAppUpdateCore.install(context, config);
+    /** 创建门面：内部建图（目录、端口适配、引擎）并返回可控实例。 */
+    @NonNull
+    public static YoAppUpdate create(@NonNull Context context, @NonNull Config config) {
+        return new YoAppUpdate(YoAppUpdateCore.create(context, config));
     }
 
     @NonNull
-    public static LaunchSession startLaunchCheck(@NonNull Activity activity,
-                                                 @NonNull LaunchCallback callback) {
-        return YoAppUpdateCore.get().startLaunchCheck(activity, callback);
+    public LaunchSession startLaunchCheck(@NonNull Activity activity,
+                                          @NonNull LaunchCallback callback) {
+        return core.startLaunchCheck(activity, callback);
     }
 
-    public static void attachLaunchPrompt(@NonNull Intent intent,
-                                          @NonNull LaunchPrompt prompt) {
-        YoAppUpdateCore.get().attachLaunchPrompt(intent, prompt);
+    public void attachLaunchPrompt(@NonNull Intent intent, @NonNull LaunchPrompt prompt) {
+        core.attachLaunchPrompt(intent, prompt);
+    }
+
+    /**
+     * 绑定更新 UI：状态、事件、系统级 effect 全部经 {@code port} 推给宿主。
+     *
+     * @param context 宿主上下文（安装要它）；一般是 Activity
+     * @param launchIntent 启动 Intent，可为 null；其中的启动更新决策会被消费
+     * @param port 宿主的渲染实现
+     */
+    @NonNull
+    public UpdateUiSession attachUpdateUi(@NonNull Context context,
+                                          @Nullable Intent launchIntent,
+                                          @NonNull UpdateUiPort port) {
+        return core.attachUpdateUi(context, launchIntent, port);
+    }
+
+    public boolean requestInstallUnknownSources(@NonNull Activity activity) {
+        return core.requestInstallUnknownSources(activity);
     }
 
     @NonNull
-    public static UpdateUiSession attachUpdateUi(@NonNull Activity activity,
-                                                 @Nullable Intent launchIntent,
-                                                 @NonNull UpdateUiHost host) {
-        return YoAppUpdateCore.get().attachUpdateUi(activity, launchIntent, host);
-    }
-
-    public static boolean requestDownloadDirPermissionIfNeeded(@NonNull Activity activity) {
-        return YoAppUpdateCore.get().requestDownloadDirPermissionIfNeeded(activity);
-    }
-
-    public static boolean requestInstallUnknownSources(@NonNull Activity activity) {
-        return YoAppUpdateCore.get().requestInstallUnknownSources(activity);
+    public File downloadRootDir() {
+        return core.downloadRootDir();
     }
 
     @NonNull
-    public static File downloadRootDir(@NonNull Context context) {
-        return YoAppUpdateCore.get().downloadRootDir();
+    public String versionName() {
+        return core.versionName();
     }
 
-    @NonNull
-    public static String versionName() {
-        return YoAppUpdateCore.get().versionName();
-    }
-
-    public static int versionCode() {
-        return YoAppUpdateCore.get().versionCode();
+    public int versionCode() {
+        return core.versionCode();
     }
 
     public enum StoragePolicy {
@@ -333,8 +345,7 @@ public final class YoAppUpdate {
             NONE,
             SHOW_UPDATE,
             INSTALL_DIRECT,
-            SELECT_LOCAL_APK,
-            NEED_DOWNLOAD_DIR
+            SELECT_LOCAL_APK
         }
 
         @NonNull
@@ -366,32 +377,6 @@ public final class YoAppUpdate {
         public File apkFile() {
             return apkFile;
         }
-    }
-
-    public interface UpdateUiHost {
-        void openSafTreePicker();
-
-        void requestDownloadDirPermission();
-
-        void requestInstallUnknownSources();
-
-        void openAppSettings();
-    }
-
-    public interface UpdateUiSession {
-        void checkUpdate();
-
-        void detach();
-
-        void onSafTreeResult(boolean granted);
-
-        void onDownloadDirPermissionResult(boolean granted);
-
-        void onDownloadDirPermissionResume();
-
-        void onDownloadDirPermissionPermanentlyDenied();
-
-        void onInstallPermissionResult();
     }
 
     public interface LaunchCallback {

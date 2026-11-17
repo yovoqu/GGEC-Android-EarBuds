@@ -35,30 +35,42 @@ import java.util.function.Supplier;
 
 /**
  * YoLog 核心：init/shutdown 互斥、记录构建、目标选择、降级与未初始化行为。
+ *
+ * <p>日志管线、配置、崩溃 flush 安装状态与上下文存储都只是本实例的字段；
+ * 门面 {@link YoLog} 持有唯一实例，不再以静态可写字段承载装配状态。
+ * 需要隔离生命周期（如单测）的调用方可自行 {@code new LogCore()}。</p>
  */
-@SuppressWarnings("deprecation")
 public final class LogCore {
 
-    private static final Object LOCK = new Object();
+    private final Object lock = new Object();
 
-    private static final LogcatSink UNINITIALIZED_SINK = new LogcatSink(LogLevel.DEBUG);
+    private final LogcatSink uninitializedSink = new LogcatSink(LogLevel.DEBUG);
+
+    private final LogContext logContext = new LogContext();
+
+    private final CrashFlushInstaller crashFlushInstaller = new CrashFlushInstaller();
+
+    private final LogLifecycleBinder lifecycleBinder = new LogLifecycleBinder();
 
     @Nullable
-    private static volatile LogPipeline pipeline;
+    private LogPipeline pipeline;
 
     @Nullable
-    private static volatile LogConfig config;
+    private LogConfig config;
 
-    private static volatile boolean crashFlushInstalled;
+    @Nullable
+    private InitResult lastResult;
 
-    private static volatile boolean shutDown;
+    private boolean crashFlushInstalled;
 
-    private LogCore() {
+    private boolean shutDown;
+
+    public LogCore() {
     }
 
     @NonNull
-    public static InitResult init(@NonNull Context context, @NonNull LogConfig newConfig) {
-        synchronized (LOCK) {
+    public InitResult init(@NonNull Context context, @NonNull LogConfig newConfig) {
+        synchronized (lock) {
             shutDown = false;
             if (pipeline != null) {
                 shutdownLocked();
@@ -113,18 +125,18 @@ public final class LogCore {
             config = newConfig;
 
             if (newConfig.flushOnBackground()) {
-                LogLifecycleBinder.install(LogCore::flush);
+                lifecycleBinder.install(this::flush);
             }
             if (newConfig.installCrashFlush()) {
                 if (!crashFlushInstalled) {
-                    CrashFlushInstaller.install((thread, cause) -> {
+                    crashFlushInstaller.install((thread, cause) -> {
                         log(LogLevel.ASSERT, "YoLog", "process crash: " + cause, cause);
                         flushCrash();
                     });
                     crashFlushInstalled = true;
                 }
             } else {
-                CrashFlushInstaller.uninstall();
+                crashFlushInstaller.uninstall();
                 crashFlushInstalled = false;
             }
 
@@ -133,147 +145,183 @@ public final class LogCore {
             String disabledReason = fileEnabled
                     ? null
                     : (status != null ? status.detail() : selection.detail());
-            YoLog.i("YoLog", "YoLog 已初始化：logcat=" + newConfig.enableLogcat()
+            i("YoLog", "YoLog 已初始化：logcat=" + newConfig.enableLogcat()
                     + "，文件日志=" + fileEnabled
                     + (fileEnabled ? "，目录=" + selection.target()
                     : "，原因=" + disabledReason));
-            return new InitResult(
+            InitResult result = new InitResult(
                     newConfig.enableLogcat(),
                     fileEnabled,
                     fileEnabled ? selection.target() : null,
                     disabledReason);
+            lastResult = result;
+            return result;
         }
     }
 
-    public static boolean isInitialized() {
+    /**
+     * 只初始化一次：本实例已初始化则直接返回 {@code false}，不重建管线。
+     *
+     * <p>判定与初始化在同一把实例锁内完成，避免并发入口出现「先查后建」的重复 init。</p>
+     */
+    public boolean initOnce(@NonNull Context context, @NonNull LogConfig newConfig) {
+        synchronized (lock) {
+            if (pipeline != null) {
+                return false;
+            }
+            init(context, newConfig);
+            return true;
+        }
+    }
+
+    public boolean isInitialized() {
         return pipeline != null;
     }
 
-    public static boolean isLoggable(@NonNull LogLevel level) {
+    @Nullable
+    public InitResult lastResult() {
+        return lastResult;
+    }
+
+    // ---- LogContext（类 MDC）----
+
+    public void putContext(@NonNull String key, @NonNull String value) {
+        logContext.put(key, value);
+    }
+
+    public void removeContext(@NonNull String key) {
+        logContext.remove(key);
+    }
+
+    public void clearContext() {
+        logContext.clear();
+    }
+
+    public boolean isLoggable(@NonNull LogLevel level) {
         LogConfig current = config;
         LogLevel min = current != null ? current.minLevel() : LogLevel.DEBUG;
         return level.isEnabled(min);
     }
 
-    public static void v(@NonNull String message) {
+    public void v(@NonNull String message) {
         log(LogLevel.VERBOSE, tag(), message, null);
     }
 
-    public static void v(@NonNull String tag, @NonNull String message) {
+    public void v(@NonNull String tag, @NonNull String message) {
         log(LogLevel.VERBOSE, tag, message, null);
     }
 
-    public static void d(@NonNull String message) {
+    public void d(@NonNull String message) {
         log(LogLevel.DEBUG, tag(), message, null);
     }
 
-    public static void d(@NonNull String tag, @NonNull String message) {
+    public void d(@NonNull String tag, @NonNull String message) {
         log(LogLevel.DEBUG, tag, message, null);
     }
 
-    public static void i(@NonNull String message) {
+    public void i(@NonNull String message) {
         log(LogLevel.INFO, tag(), message, null);
     }
 
-    public static void i(@NonNull String tag, @NonNull String message) {
+    public void i(@NonNull String tag, @NonNull String message) {
         log(LogLevel.INFO, tag, message, null);
     }
 
-    public static void w(@NonNull String message) {
+    public void w(@NonNull String message) {
         log(LogLevel.WARN, tag(), message, null);
     }
 
-    public static void w(@NonNull String tag, @NonNull String message) {
+    public void w(@NonNull String tag, @NonNull String message) {
         log(LogLevel.WARN, tag, message, null);
     }
 
-    public static void w(@NonNull String tag, @NonNull String message,
-                         @Nullable Throwable throwable) {
+    public void w(@NonNull String tag, @NonNull String message,
+                  @Nullable Throwable throwable) {
         log(LogLevel.WARN, tag, message, throwable);
     }
 
-    public static void v(@NonNull String tag, @NonNull String message,
-                         @Nullable Throwable throwable) {
+    public void v(@NonNull String tag, @NonNull String message,
+                  @Nullable Throwable throwable) {
         log(LogLevel.VERBOSE, tag, message, throwable);
     }
 
-    public static void d(@NonNull String tag, @NonNull String message,
-                         @Nullable Throwable throwable) {
+    public void d(@NonNull String tag, @NonNull String message,
+                  @Nullable Throwable throwable) {
         log(LogLevel.DEBUG, tag, message, throwable);
     }
 
-    public static void i(@NonNull String tag, @NonNull String message,
-                         @Nullable Throwable throwable) {
+    public void i(@NonNull String tag, @NonNull String message,
+                  @Nullable Throwable throwable) {
         log(LogLevel.INFO, tag, message, throwable);
     }
 
-    public static void w(@NonNull String tag, @NonNull String format,
-                         @NonNull Object... args) {
+    public void w(@NonNull String tag, @NonNull String format,
+                  @NonNull Object... args) {
         if (!isLoggable(LogLevel.WARN)) {
             return;
         }
         log(LogLevel.WARN, tag, String.format(Locale.US, format, args), null);
     }
 
-    public static void e(@NonNull String message) {
+    public void e(@NonNull String message) {
         log(LogLevel.ERROR, tag(), message, null);
     }
 
-    public static void e(@NonNull String tag, @NonNull String message) {
+    public void e(@NonNull String tag, @NonNull String message) {
         log(LogLevel.ERROR, tag, message, null);
     }
 
-    public static void e(@NonNull String tag, @NonNull String message,
-                         @Nullable Throwable throwable) {
+    public void e(@NonNull String tag, @NonNull String message,
+                  @Nullable Throwable throwable) {
         log(LogLevel.ERROR, tag, message, throwable);
     }
 
-    public static void e(@NonNull String tag, @NonNull String format,
-                         @NonNull Object... args) {
+    public void e(@NonNull String tag, @NonNull String format,
+                  @NonNull Object... args) {
         if (!isLoggable(LogLevel.ERROR)) {
             return;
         }
         log(LogLevel.ERROR, tag, String.format(Locale.US, format, args), null);
     }
 
-    public static void v(@NonNull String tag, @NonNull String format,
-                         @NonNull Object... args) {
+    public void v(@NonNull String tag, @NonNull String format,
+                  @NonNull Object... args) {
         if (!isLoggable(LogLevel.VERBOSE)) {
             return;
         }
         log(LogLevel.VERBOSE, tag, String.format(Locale.US, format, args), null);
     }
 
-    public static void d(@NonNull String tag, @NonNull String format,
-                         @NonNull Object... args) {
+    public void d(@NonNull String tag, @NonNull String format,
+                  @NonNull Object... args) {
         if (!isLoggable(LogLevel.DEBUG)) {
             return;
         }
         log(LogLevel.DEBUG, tag, String.format(Locale.US, format, args), null);
     }
 
-    public static void i(@NonNull String tag, @NonNull String format,
-                         @NonNull Object... args) {
+    public void i(@NonNull String tag, @NonNull String format,
+                  @NonNull Object... args) {
         if (!isLoggable(LogLevel.INFO)) {
             return;
         }
         log(LogLevel.INFO, tag, String.format(Locale.US, format, args), null);
     }
 
-    public static void d(@NonNull String tag, @NonNull Supplier<String> message) {
+    public void d(@NonNull String tag, @NonNull Supplier<String> message) {
         lazy(LogLevel.DEBUG, tag, message, null);
     }
 
-    public static void e(@NonNull String tag,
-                         @NonNull Supplier<String> message,
-                         @Nullable Throwable throwable) {
+    public void e(@NonNull String tag,
+                  @NonNull Supplier<String> message,
+                  @Nullable Throwable throwable) {
         lazy(LogLevel.ERROR, tag, message, throwable);
     }
 
-    public static void log(@NonNull LogLevel level,
-                           @NonNull String tag,
-                           @NonNull String message,
-                           @Nullable Throwable throwable) {
+    public void log(@NonNull LogLevel level,
+                    @NonNull String tag,
+                    @NonNull String message,
+                    @Nullable Throwable throwable) {
         if (!isLoggable(level)) {
             return;
         }
@@ -288,14 +336,14 @@ public final class LogCore {
                 captureThread ? Thread.currentThread().getName() : "",
                 captureThread ? Thread.currentThread().getId() : 0L,
                 throwable,
-                captureContext ? LogContext.snapshot() : Collections.emptyMap());
+                captureContext ? logContext.snapshot() : Collections.emptyMap());
         dispatch(record);
     }
 
-    private static void lazy(@NonNull LogLevel level,
-                             @NonNull String tag,
-                             @NonNull Supplier<String> message,
-                             @Nullable Throwable throwable) {
+    private void lazy(@NonNull LogLevel level,
+                      @NonNull String tag,
+                      @NonNull Supplier<String> message,
+                      @Nullable Throwable throwable) {
         if (!isLoggable(level)) {
             return;
         }
@@ -309,7 +357,7 @@ public final class LogCore {
     }
 
     @NonNull
-    public static FileLogStatus fileStatus() {
+    public FileLogStatus fileStatus() {
         LogPipeline current = pipeline;
         if (current == null) {
             return shutDown
@@ -321,53 +369,53 @@ public final class LogCore {
         return current.fileStatus();
     }
 
-    public static void flush() {
+    public void flush() {
         LogPipeline current = pipeline;
         if (current != null) {
             current.flush(2000L);
         }
     }
 
-    public static void flush(long timeoutMs) {
+    public void flush(long timeoutMs) {
         LogPipeline current = pipeline;
         if (current != null) {
             current.flush(timeoutMs);
         }
     }
 
-    private static void flushCrash() {
+    private void flushCrash() {
         LogConfig current = config;
         flush(current != null ? current.crashFlushTimeoutMs() : 2000L);
     }
 
-    public static void shutdown() {
-        synchronized (LOCK) {
+    public void shutdown() {
+        synchronized (lock) {
             shutdownLocked();
         }
     }
 
     @NonNull
-    private static String tag() {
+    private String tag() {
         LogConfig current = config;
         return current != null ? current.defaultTag() : "YoLog";
     }
 
-    private static void dispatch(@NonNull LogRecord record) {
+    private void dispatch(@NonNull LogRecord record) {
         LogPipeline current = pipeline;
         if (current != null) {
             current.log(record);
         } else {
-            UNINITIALIZED_SINK.write(record);
+            uninitializedSink.write(record);
         }
     }
 
-    private static void shutdownLocked() {
+    private void shutdownLocked() {
         LogPipeline current = pipeline;
         pipeline = null;
         config = null;
-        CrashFlushInstaller.uninstall();
+        crashFlushInstaller.uninstall();
         crashFlushInstalled = false;
-        LogLifecycleBinder.uninstall();
+        lifecycleBinder.uninstall();
         shutDown = true;
         if (current != null) {
             current.shutdown();
@@ -388,7 +436,6 @@ public final class LogCore {
     }
 
     @NonNull
-    @SuppressWarnings("deprecation")
     private static String processSuffix(@NonNull LogConfig cfg) {
         if (!cfg.processNameSuffix()) {
             return "";

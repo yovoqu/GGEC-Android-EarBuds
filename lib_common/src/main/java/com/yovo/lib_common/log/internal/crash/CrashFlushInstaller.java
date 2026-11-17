@@ -3,41 +3,50 @@ package com.yovo.lib_common.log.internal.crash;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_common.log.YoLog;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 可选崩溃 flush：先合成 FATAL（由调用方执行）并限时 drain，再转交原 handler；
  * 支持 {@link #uninstall()} 卸载，避免库长期持有全局 handler。
+ *
+ * <p>安装状态与 handler 链属于本实例：由日志核心实例创建并持有，不落静态可写字段。</p>
  */
 public final class CrashFlushInstaller {
+
+    private static final String TAG = "CrashFlushInstaller";
 
     public interface CrashDrain {
         void drain(@NonNull Thread thread, @NonNull Throwable cause);
     }
 
-    private static final AtomicBoolean INSTALLED = new AtomicBoolean();
+    private final AtomicBoolean installed = new AtomicBoolean();
 
     @Nullable
-    private static volatile Thread.UncaughtExceptionHandler previousHandler;
+    private Thread.UncaughtExceptionHandler previousHandler;
 
     @Nullable
-    private static volatile Thread.UncaughtExceptionHandler installedHandler;
+    private Thread.UncaughtExceptionHandler installedHandler;
 
-    private CrashFlushInstaller() {
+    public CrashFlushInstaller() {
     }
 
-    public static void install(@NonNull CrashDrain drain) {
-        if (!INSTALLED.compareAndSet(false, true)) {
+    public void install(@NonNull CrashDrain drain) {
+        if (!installed.compareAndSet(false, true)) {
             return;
         }
         Thread.UncaughtExceptionHandler handler = (thread, throwable) -> {
             try {
                 drain.drain(thread, throwable);
-            } catch (Throwable ignored) {
-            }
-            Thread.UncaughtExceptionHandler previous = previousHandler;
-            if (previous != null) {
-                previous.uncaughtException(thread, throwable);
+            } catch (RuntimeException drainFailure) {
+                // 崩溃路径上 drain 失败不能再抛出，否则会顶掉原 handler；按类型收口并上报。
+                YoLog.w(TAG, "崩溃 flush 失败，转交原 handler", drainFailure);
+            } finally {
+                Thread.UncaughtExceptionHandler previous = previousHandler;
+                if (previous != null) {
+                    previous.uncaughtException(thread, throwable);
+                }
             }
         };
         previousHandler = Thread.getDefaultUncaughtExceptionHandler();
@@ -46,8 +55,8 @@ public final class CrashFlushInstaller {
     }
 
     /** 仅当当前 handler 仍为本库安装的实例时恢复原 handler，避免覆盖其他库的链。 */
-    public static void uninstall() {
-        if (!INSTALLED.compareAndSet(true, false)) {
+    public void uninstall() {
+        if (!installed.compareAndSet(true, false)) {
             return;
         }
         Thread.UncaughtExceptionHandler current =
@@ -57,12 +66,6 @@ public final class CrashFlushInstaller {
             // previous 为 null 时显式重置，避免残留本库 handler。
             Thread.setDefaultUncaughtExceptionHandler(previous);
         }
-        installedHandler = null;
-        previousHandler = null;
-    }
-
-    static void resetForTest() {
-        INSTALLED.set(false);
         installedHandler = null;
         previousHandler = null;
     }

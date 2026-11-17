@@ -16,8 +16,6 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.lifecycle.ViewModelProvider;
 
-import com.ggec.earbuds.R;
-import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.ai.settings.AiSettingsActivity;
 import com.ggec.earbuds.ui.common.YoUi;
@@ -26,26 +24,26 @@ import com.ggec.earbuds.wiring.AppContainer;
 /**
  * 通话页宿主：只处理权限、生命周期和跨页面导航。
  *
- * <p>遵循严格 MVVM 架构：Activity 不持有业务逻辑与控制状态，
- * 所有状态由 {@link AiCallViewModel} 持有并通过 LiveData 发布；
- * 视图事件直接单向委托给 ViewModel 执行。</p>
+ * <p>遵循严格 MVVM 架构：Activity 不持有业务逻辑与控制状态，也不决定「该不该渲染」——
+ * 权限被拒是 {@link AiCallUiState.Phase#PERMISSION_DENIED} 这一帧状态，页面照常按状态渲染；
+ * 所有状态由 {@link AiCallViewModel} 持有并通过 LiveData 发布，视图事件直接单向委托给 ViewModel。</p>
  */
 public final class AiCallActivity extends AppCompatActivity {
+
+    private AiCallViewModel viewModel;
+    private AiCallScreen screen;
+    /** 本实例是否已经弹过系统权限对话框：只用于避免 onStart 反复弹窗，不参与渲染判定。 */
+    private boolean permissionRequested;
+    private boolean finishing;
 
     private final ActivityResultLauncher<String> microphone = registerForActivityResult(
             new ActivityResultContracts.RequestPermission(), granted -> {
                 if (granted) {
                     startCall();
                 } else {
-                    showPermissionDenied();
+                    viewModel.permissionDenied();
                 }
             });
-
-    private AiCallViewModel viewModel;
-    private AiCallScreen screen;
-    private boolean askedForMicrophone;
-    private boolean denied;
-    private boolean finishing;
 
     @NonNull
     public static Intent intent(@NonNull Context context) {
@@ -71,7 +69,7 @@ public final class AiCallActivity extends AppCompatActivity {
         setContentView(screen.view());
 
         viewModel.uiState().observe(this, state -> {
-            if (!finishing && !denied && state != null) {
+            if (!finishing) {
                 screen.render(state);
             }
         });
@@ -94,28 +92,22 @@ public final class AiCallActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        if (!hasMicrophone()) {
-            if (askedForMicrophone) {
-                showPermissionDenied();
-            } else {
-                askedForMicrophone = true;
-                microphone.launch(Manifest.permission.RECORD_AUDIO);
-            }
+        if (hasMicrophone()) {
+            startCall();
             return;
         }
-        startCall();
+        if (permissionRequested) {
+            viewModel.permissionDenied();
+            return;
+        }
+        permissionRequested = true;
+        microphone.launch(Manifest.permission.RECORD_AUDIO);
     }
 
     private void startCall() {
-        denied = false;
         if (!viewModel.isStarted()) {
             viewModel.start();
         }
-    }
-
-    private void showPermissionDenied() {
-        denied = true;
-        viewModel.permissionDenied();
     }
 
     private void hangUp() {

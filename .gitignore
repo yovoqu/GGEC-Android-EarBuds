@@ -72,3 +72,8 @@ replay_pid*.log
 /.logs/
 /.agent-logs/
 
+# GitHub 单文件 100MB 硬限制：paraformer encoder(157.8MB) 只保留在 GitLab ces 分支，
+# 同一 blob 在下列两处，都不进 GitHub 历史；本地文件保留，Ces 分支照常携带。
+/biz_ggec_record/src/main/assets/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx
+/bleplayer-master/app/src/main/assets/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx
+

@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Android 13+ 发送通知（下载/更新完成提示由 lib_common 的 DownloadNotificationController 触发）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- APP 更新：安装/检查所需权限（REQUEST_INSTALL_PACKAGES、ACCESS_NETWORK_STATE）由
+         biz_appupdate 自己的 manifest 合并进来，本文件不重复声明；存储权限不需要，因为更新包
+         落在应用私有外部目录（biz_appupdate 的 APP_PRIVATE 下载目录）。 -->
 
     <!-- enableOnBackInvokedCallback 必须显式打开：YoUI 的对话框、面板和菜单靠它接管返回键，
          不写时返回键会越过它们直接关掉整个页面。 -->
@@ -77,6 +80,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- APP 更新：安装器只能读到 FileProvider 授出的 Uri，不暴露应用私有外部目录之外的路径。
+             authority 与 AppUpdateProviders 的推导值（packageName + ".fileprovider"）一一对应。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths_update" />
+        </provider>
     </application>
 
 </manifest>

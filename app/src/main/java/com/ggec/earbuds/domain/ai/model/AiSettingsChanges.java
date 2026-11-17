@@ -14,6 +14,10 @@ import java.util.function.UnaryOperator;
  * "界面成功、磁盘拒绝"的两套行为。这里把每条配置变更集中成纯函数，视图模型只负责
  * 组合与调度，仓库只负责执行；不再为每个字段各留一个只做 {@code repository.update}
  * 的用例包装。</p>
+ *
+ * <p>密钥不在这里：明文与"已配置"标记必须在同一个仓库方法里成对提交，
+ * 所以它们是 {@code AiSettingsRepository#savePlatform} / {@code #saveVoiceKey}，
+ * 不是这里的一条纯变更。</p>
  */
 public final class AiSettingsChanges {
 
@@ -31,14 +35,17 @@ public final class AiSettingsChanges {
         };
     }
 
+    /** 设置页切分段：写的是设置文档里的视图偏好，不碰任何请求参数。 */
     @NonNull
-    public static UnaryOperator<AiSettings> voiceModel(@NonNull AiVoiceModel model) {
-        return settings -> settings.withVoice(settings.voice().withModel(model));
+    public static UnaryOperator<AiSettings> settingsMode(@NonNull AiInteractionMode mode) {
+        Objects.requireNonNull(mode, "mode");
+        return settings -> settings.withPreferences(
+                settings.preferences().withLastSettingsMode(mode));
     }
 
     @NonNull
-    public static UnaryOperator<AiSettings> voiceApiKey(@NonNull String apiKey) {
-        return settings -> settings.withVoice(settings.voice().withConfigured(!apiKey.isBlank()));
+    public static UnaryOperator<AiSettings> voiceModel(@NonNull AiVoiceModel model) {
+        return settings -> settings.withVoice(settings.voice().withModel(model));
     }
 
     /** 空串恢复官方地址；非法地址抛 {@link IllegalArgumentException}。 */

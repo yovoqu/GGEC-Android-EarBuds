@@ -12,25 +12,34 @@ import java.util.Map;
 
 /**
  * 运行时权限请求结果，按请求顺序映射到各权限状态。
+ *
+ * <p>未被本服务处理的回调不再是「无信息忽略」：{@link #ignoreReason()} 给出
+ * {@link PermissionIgnoreReason} 分类，便于上层区分正常忽略与调用点配置错误。</p>
  */
 public final class PermissionResult {
 
     private final boolean handled;
     private final Map<Permission, PermissionStatus> statuses;
     private final Map<Permission, Boolean> permanentlyDenied;
+    @Nullable private final PermissionIgnoreReason ignoreReason;
 
     private PermissionResult(boolean handled,
                              @NonNull Map<Permission, PermissionStatus> statuses,
-                             @NonNull Map<Permission, Boolean> permanentlyDenied) {
+                             @NonNull Map<Permission, Boolean> permanentlyDenied,
+                             @Nullable PermissionIgnoreReason ignoreReason) {
         this.handled = handled;
         this.statuses = statuses;
         this.permanentlyDenied = permanentlyDenied;
+        this.ignoreReason = ignoreReason;
     }
 
+    /**
+     * 未被处理的结果，必须带上原因分类。
+     */
     @NonNull
-    public static PermissionResult ignored() {
+    public static PermissionResult ignored(@NonNull PermissionIgnoreReason reason) {
         return new PermissionResult(
-                false, Collections.emptyMap(), Collections.emptyMap());
+                false, Collections.emptyMap(), Collections.emptyMap(), reason);
     }
 
     @NonNull
@@ -57,12 +66,20 @@ public final class PermissionResult {
                             ? PermissionStatus.GRANTED
                             : PermissionStatus.DENIED);
         }
-        return new PermissionResult(!pending.isEmpty(), statuses, permanentlyDenied);
+        return new PermissionResult(!pending.isEmpty(), statuses, permanentlyDenied, null);
     }
 
     /** 是否为本次权限管理服务处理的请求。 */
     public boolean handled() {
         return handled;
+    }
+
+    /**
+     * 未被处理时的原因分类；已处理的结果返回 {@code null}。
+     */
+    @Nullable
+    public PermissionIgnoreReason ignoreReason() {
+        return ignoreReason;
     }
 
     public boolean contains(@NonNull Permission permission) {

@@ -7,9 +7,9 @@ import android.webkit.URLUtil;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.biz_appupdate.internal.contract.ApkStoragePort;
 import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;
 import com.yovo.biz_appupdate.internal.contract.DownloadProvider;
-import com.yovo.biz_appupdate.internal.infrastructure.local.ApkStorage;
 import com.yovo.biz_appupdate.internal.model.DownloadMode;
 import com.yovo.biz_appupdate.internal.model.RemoteUpdate;
 import com.yovo.lib_common.download.YoDownload;
@@ -24,11 +24,11 @@ public final class YoDownloadProvider implements DownloadProvider {
     private static final String MIME = "application/vnd.android.package-archive";
 
     private final Context appContext;
-    private final ApkStorage apkStorage;
+    private final ApkStoragePort apkStorage;
     private final DownloadDirAccessPort downloadDirAccess;
 
     public YoDownloadProvider(@NonNull Context context,
-                              @NonNull ApkStorage apkStorage,
+                              @NonNull ApkStoragePort apkStorage,
                               @NonNull DownloadDirAccessPort downloadDirAccess) {
         appContext = context.getApplicationContext();
         this.apkStorage = apkStorage;
@@ -40,18 +40,9 @@ public final class YoDownloadProvider implements DownloadProvider {
                          @NonNull RemoteUpdate update,
                          @NonNull Callback callback) {
         switch (mode) {
-            case INTERNAL:
-                downloadInternal(update, callback);
-                break;
-            case SYSTEM:
-                downloadSystem(update, callback);
-                break;
-            case BROWSER:
-                downloadBrowser(update, callback);
-                break;
-            default:
-                callback.onStartFailed(mode, StartFailure.ERROR);
-                break;
+            case INTERNAL -> downloadInternal(update, callback);
+            case SYSTEM -> downloadSystem(update, callback);
+            case BROWSER -> downloadBrowser(update, callback);
         }
     }
 
@@ -99,11 +90,9 @@ public final class YoDownloadProvider implements DownloadProvider {
                                   @NonNull YoDownload.Result result) {
                 YoDownload.notification().cancel(appContext, task.id());
                 File file = result.file();
-                if (file != null && apkStorage.isSaf()) {
-                    if (!apkStorage.copyToSaf(file)) {
-                        callback.onError(task.id(), "SAF download dir write failed");
-                        return;
-                    }
+                if (file != null && !apkStorage.finishDownload(file)) {
+                    callback.onError(task.id(), "下载目录写入失败");
+                    return;
                 }
                 callback.onSuccess(task.id(), file);
             }

@@ -6,8 +6,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.biz_appupdate.internal.contract.ApkVerifier;
-import com.yovo.biz_appupdate.internal.contract.InstallProvider;
 import com.yovo.biz_appupdate.internal.contract.InstallOutcome;
+import com.yovo.biz_appupdate.internal.contract.InstallProvider;
 import com.yovo.biz_appupdate.internal.model.RemoteUpdate;
 
 import java.io.File;
@@ -31,14 +31,10 @@ public final class InstallUpdateAction {
             return InstallOutcome.VERIFY_FAILED;
         }
         InstallProvider.Result result = installProvider.install(context, apkFile);
-        switch (result) {
-            case SUCCESS:
-                return InstallOutcome.SUCCESS;
-            case INVALID_FILE:
-                return InstallOutcome.INVALID_FILE;
-            case NO_INSTALLER:
-            default:
-                return InstallOutcome.NO_INSTALLER;
-        }
+        return switch (result) {
+            case SUCCESS -> InstallOutcome.SUCCESS;
+            case INVALID_FILE -> InstallOutcome.INVALID_FILE;
+            case NO_INSTALLER -> InstallOutcome.NO_INSTALLER;
+        };
     }
 }

@@ -11,8 +11,9 @@ import java.util.Optional;
 /**
  * AI 功能的全部用户配置：已添加的平台、文本模式选中项、语音模式预设与对话偏好。
  *
- * <p><b>当前分段不在这里</b>：它只决定设置页展示哪一块，是视图偏好，存在
- * {@code AiUiPreferences}；写进配置文档会让每次切 tab 都落一次盘。</p>
+ * <p><b>设置页当前分段</b>也在这一份里（{@link AiChatPreferences#lastSettingsMode()}），
+ * 只不过它是视图偏好：切分段走 {@link AiSettingsChanges#settingsMode} 的同一条提交通道，
+ * 由设置的串行写者合并落盘，不存在第二套偏好存储。</p>
  *
  * @param textSelection 文本模式选中的平台与对话模型
  * @param voice         语音模式选中的预设模型与它自己的 Key

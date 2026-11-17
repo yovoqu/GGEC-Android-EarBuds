@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.channel;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
@@ -17,6 +18,7 @@ import com.yovo.lib_bluetooth.model.ble.BleL2capServerObserver;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleValueObserver;
 import com.yovo.lib_bluetooth.model.common.Result;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -41,6 +43,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class YoBleL2capManager implements YoReleasable {
 
     private static final String MODULE = "ble-l2cap";
+    private static final String TAG = "YoBleL2cap";
     private static final int READ_BUFFER_SIZE = 4096;
 
     private final YoBleRuntime runtime;
@@ -86,7 +89,7 @@ public final class YoBleL2capManager implements YoReleasable {
             runtime.callback(() -> observer.onFailed(f));
             return BleOperationHandle.completed(opId);
         }
-        if (capabilityInspector.sdkInt() < 29) {
+        if (!AndroidPlatform.supportsL2capCoc()) {
             BleFailure f = YoBleErrorMapper.failure(
                     BleErrorCode.UNSUPPORTED_OPERATION, MODULE,
                     "L2CAP CoC channel requires Android 10 (API 29+)", deviceId);
@@ -159,10 +162,7 @@ public final class YoBleL2capManager implements YoReleasable {
             }
 
             if (cancelled.get() || released || !terminalNotified.compareAndSet(false, true)) {
-                try {
-                    socket.close();
-                } catch (IOException ignored) {
-                }
+                closeQuietly(socket);
                 if (cancelled.get() && terminalNotified.compareAndSet(false, true)) {
                     BleFailure cancelErr = YoBleErrorMapper.failure(
                             BleErrorCode.OPERATION_CANCELLED, MODULE,
@@ -222,10 +222,7 @@ public final class YoBleL2capManager implements YoReleasable {
             cancelled.set(true);
             YoBleL2capPlatform.ListeningSocket server = serverRef.get();
             if (server != null) {
-                try {
-                    server.close();
-                } catch (IOException ignored) {
-                }
+                closeQuietly(server);
             }
         });
     }
@@ -287,7 +284,7 @@ public final class YoBleL2capManager implements YoReleasable {
         if (released || runtime.isReleased()) {
             return YoBleErrorMapper.failure(BleErrorCode.RELEASED, MODULE, "Client released");
         }
-        if (capabilityInspector.sdkInt() < 29) {
+        if (!AndroidPlatform.supportsL2capCoc()) {
             return YoBleErrorMapper.failure(
                     BleErrorCode.UNSUPPORTED_OPERATION, MODULE, "L2CAP CoC channel requires Android 10 (API 29+)");
         }
@@ -326,10 +323,7 @@ public final class YoBleL2capManager implements YoReleasable {
             while (!cancelled.get() && !released) {
                 YoBleL2capPlatform.SocketConnection socket = server.accept();
                 if (cancelled.get() || released) {
-                    try {
-                        socket.close();
-                    } catch (IOException ignored) {
-                    }
+                    closeQuietly(socket);
                     break;
                 }
                 BleDeviceId remote = socket.remoteDeviceId();
@@ -383,18 +377,20 @@ public final class YoBleL2capManager implements YoReleasable {
             runtime.callback(() -> observer.onFailed(failure));
         } finally {
             if (server != null) {
-                try {
-                    server.close();
-                } catch (IOException ignored) {
-                }
+                closeQuietly(server);
             }
         }
     }
 
-    private static void closeQuietly(@NonNull Closeable c) {
+    /**
+     * 关闭一个已被判定为“丢弃”的通道/监听端。关闭失败不改变已上报的失败类别，
+     * 也不再抛给调用方，只在模块日志里留证，避免第二个异常覆盖根因。
+     */
+    private static void closeQuietly(@NonNull Closeable channel) {
         try {
-            c.close();
-        } catch (Throwable ignored) {
+            channel.close();
+        } catch (IOException closeFailure) {
+            YoBtLogger.w(TAG, "L2CAP channel close failed", closeFailure);
         }
     }
 
@@ -540,10 +536,7 @@ public final class YoBleL2capManager implements YoReleasable {
                 activeChannels.remove(this);
                 writeQueue.offer(WriteJob.STOP);
                 writer.interrupt();
-                try {
-                    socket.close();
-                } catch (IOException ignored) {
-                }
+                closeQuietly(socket);
                 timeline.record(MODULE, "L2CAP channel closed device=" + deviceId + " psm=" + psm);
             }
             if (notifyObserver && observer != null && closedNotified.compareAndSet(false, true)) {

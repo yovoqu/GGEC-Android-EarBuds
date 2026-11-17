@@ -28,5 +28,7 @@ public enum DeviceFailure {
     /** 台账或档案读写失败（含 JSON 损坏）。 */
     STORE_FAILED,
     /** 目标设备不在台账里。 */
-    DEVICE_NOT_FOUND
+    DEVICE_NOT_FOUND,
+    /** 经典蓝牙未连接。 */
+    CLASSIC_NOT_CONNECTED
 }

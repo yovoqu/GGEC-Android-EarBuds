@@ -60,8 +60,8 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
                 case DeviceSettingsEvent.Failure failure ->
                         YoToast.showWarning(this,
                                 getString(DeviceFailureText.message(failure.failure())));
-                case DeviceSettingsEvent.ControlOutcome outcome ->
-                        screen.onControlOutcome(outcome.outcome());
+                case DeviceSettingsEvent.ActionUnsupported ignored ->
+                        YoToast.showWarning(this, getString(R.string.device_action_unsupported));
             }
         });
         viewModel.start();

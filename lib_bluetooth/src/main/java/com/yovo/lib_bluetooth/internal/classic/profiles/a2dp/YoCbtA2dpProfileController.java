@@ -29,8 +29,13 @@ public final class YoCbtA2dpProfileController {
     @NonNull
     private final CopyOnWriteArrayList<YoCbtA2dpStateObserver> observers = new CopyOnWriteArrayList<>();
 
-    public YoCbtA2dpProfileController(@NonNull YoCbtA2dpProfilePort profilePort) {
+    @NonNull
+    private final BluetoothDiagnosticsBus diagnostics;
+
+    public YoCbtA2dpProfileController(@NonNull YoCbtA2dpProfilePort profilePort,
+                                      @NonNull BluetoothDiagnosticsBus diagnostics) {
         this.profilePort = profilePort;
+        this.diagnostics = diagnostics;
     }
 
     @NonNull
@@ -44,7 +49,7 @@ public final class YoCbtA2dpProfileController {
         try {
             return YoResult.success(profilePort.getConnectedDevices());
         } catch (Exception e) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "获取已连接设备失败", e);
+            diagnostics.recordException(TAG, "获取已连接设备失败", e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_A2DP_STATE_QUERY_FAILED,
                     "Failed to list connected devices: " + e.getMessage(),
@@ -72,7 +77,7 @@ public final class YoCbtA2dpProfileController {
                     YoCbtProfileStateSource.ANDROID_PROFILE_PROXY);
             return YoResult.success(deviceState);
         } catch (Exception e) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "获取设备状态失败，设备 " + deviceId.value(), e);
+            diagnostics.recordException(TAG, "获取设备状态失败，设备 " + deviceId.value(), e);
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_A2DP_STATE_QUERY_FAILED,
                     "Failed to query device state: " + e.getMessage(),
@@ -105,7 +110,7 @@ public final class YoCbtA2dpProfileController {
             try {
                 observer.onA2dpStateChanged(state);
             } catch (Exception e) {
-                BluetoothDiagnosticsBus.get().recordException(TAG, "通知期间观察者抛出异常", e);
+                diagnostics.recordException(TAG, "通知期间观察者抛出异常", e);
             }
         }
     }

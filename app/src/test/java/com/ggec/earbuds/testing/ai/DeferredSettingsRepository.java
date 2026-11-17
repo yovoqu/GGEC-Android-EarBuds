@@ -1,7 +1,10 @@
 package com.ggec.earbuds.testing.ai;
 
+import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 
@@ -52,6 +55,20 @@ public final class DeferredSettingsRepository implements AiSettingsRepository {
     }
 
     @Override
+    public AiPlatformConfig savePlatform(AiPlatformConfig platform, String apiKey) {
+        AiPlatformConfig configured = platform.withConnection(platform.name(),
+                !apiKey.isBlank(), platform.baseUrl(), platform.protocol());
+        update(settings -> settings.withPlatform(configured));
+        return configured;
+    }
+
+    @Override
+    public AiSettings saveVoiceKey(AiVoiceModel model, String apiKey) {
+        return update(settings -> settings.withVoice(
+                settings.voice().withConfigured(!apiKey.isBlank())));
+    }
+
+    @Override
     public Subscription observe(Consumer<AiSettings> observer) {
         observers.add(observer);
         return () -> observers.remove(observer);
@@ -62,6 +79,17 @@ public final class DeferredSettingsRepository implements AiSettingsRepository {
             Consumer<AiSettingsPersistenceStatus> observer) {
         statuses.add(observer);
         return () -> statuses.remove(observer);
+    }
+
+    @Override
+    public Subscription observePersistenceFailures(Consumer<AiFailure> observer) {
+        return () -> {
+        };
+    }
+
+    @Override
+    public CompletableFuture<Void> flush() {
+        return CompletableFuture.completedFuture(null);
     }
 
     public void complete(AiSettings settings) {

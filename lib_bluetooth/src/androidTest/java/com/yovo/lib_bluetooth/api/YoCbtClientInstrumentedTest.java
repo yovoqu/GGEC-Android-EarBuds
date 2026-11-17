@@ -7,12 +7,12 @@ import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
 import android.content.Context;
-import android.os.Build;
 
 import androidx.annotation.NonNull;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtAclLinkState;
@@ -71,7 +71,7 @@ public class YoCbtClientInstrumentedTest {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         grantBluetoothPermissions();
         client = YoBluetoothSDK.classic(context);
-        YoLog.i(TAG, "经典蓝牙客户端已创建，SDK " + Build.VERSION.SDK_INT);
+        YoLog.i(TAG, "经典蓝牙客户端已创建，SDK " + AndroidPlatform.level());
     }
 
     @After
@@ -492,7 +492,7 @@ public class YoCbtClientInstrumentedTest {
     }
 
     private static void grantBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (!AndroidPlatform.usesRuntimeBluetoothPermissions()) {
             return;
         }
         try {

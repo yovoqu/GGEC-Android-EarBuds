@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.connection;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
@@ -588,14 +589,10 @@ public final class YoBleGattSession implements YoBleSessionContext {
         if (local == null || local.isClosed()) {
             return;
         }
-        try {
-            local.disconnect();
-        } catch (Throwable ignored) {
-        }
-        try {
-            local.close();
-        } catch (Throwable ignored) {
-        }
+        // 句柄实现自身负责把 disconnect/close 的平台失败记录为日志（见 YoBleAndroidConnectionPlatform），
+        // 这里不需要再加一层包裹：包裹只会把真实失败藏起来。
+        local.disconnect();
+        local.close();
         lastCloseAtMillis = nowMillis();
         closeTimestampSink.accept(deviceId, lastCloseAtMillis);
     }
@@ -786,7 +783,7 @@ public final class YoBleGattSession implements YoBleSessionContext {
                                      @NonNull Runnable onGiveUp) {
         BleBondPolicy policy = connectionConfig.bondPolicy();
         boolean allow = policy == BleBondPolicy.AUTO_BOND_ON_AUTH_ERROR
-                || (policy == BleBondPolicy.NONE && capabilityInspector.sdkInt() < 26);
+                || (policy == BleBondPolicy.NONE && AndroidPlatform.requiresBondRetryAfterAuthError());
         if (!allow || !YoBleGattStatus.isAuthOrEncryptionError(failure.rawStatusCode())) {
             onGiveUp.run();
             return;

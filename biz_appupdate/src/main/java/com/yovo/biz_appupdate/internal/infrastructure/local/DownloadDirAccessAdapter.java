@@ -32,18 +32,15 @@ public final class DownloadDirAccessAdapter implements DownloadDirAccessPort {
 
     @Override
     public boolean isAccessible() {
-        switch (dirSpec.type()) {
-            case APP_PRIVATE:
-                return true;
-            case ABSOLUTE:
-                return permissionProvider.isGranted(dirSpec.type());
-            case SAF:
-            default: {
+        return switch (dirSpec.type()) {
+            case APP_PRIVATE -> true;
+            case ABSOLUTE -> permissionProvider.isGranted(dirSpec.type());
+            case SAF -> {
                 Uri treeUri = dirSpec.safTreeUri() != null
                         ? dirSpec.safTreeUri()
                         : safProvider.loadTreeUri();
-                return safProvider.isTreeAccessible(treeUri);
+                yield safProvider.isTreeAccessible(treeUri);
             }
-        }
+        };
     }
 }

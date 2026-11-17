@@ -177,7 +177,11 @@ public class YoCbtCommandSessionTest {
         }
 
         void waitForCompletion() {
-            try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

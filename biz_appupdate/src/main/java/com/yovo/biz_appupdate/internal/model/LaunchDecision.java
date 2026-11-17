@@ -16,8 +16,7 @@ public final class LaunchDecision {
         NONE,
         SHOW_UPDATE_DIALOG,
         INSTALL_DIRECT,
-        SELECT_LOCAL_APK,
-        NEED_DOWNLOAD_DIR
+        SELECT_LOCAL_APK
     }
 
     @NonNull
@@ -59,11 +58,6 @@ public final class LaunchDecision {
     @NonNull
     public static LaunchDecision selectLocalApks(@NonNull List<LocalApk> apks) {
         return new LaunchDecision(Action.SELECT_LOCAL_APK, null, null, apks);
-    }
-
-    @NonNull
-    public static LaunchDecision needDownloadDir() {
-        return new LaunchDecision(Action.NEED_DOWNLOAD_DIR, null, null, Collections.emptyList());
     }
 
     @NonNull
