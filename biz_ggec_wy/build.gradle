@@ -1,0 +1,187 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.biz_ggec_wy'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    implementation project(':lib_bluetooth')
+    implementation project(':lib_common')
+    implementation project(':lib_ggec_opus')
+    implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def bizGgecWyRoot = project.projectDir
+
+/**
+ * 结构性边界门禁：只看目录与 import 归属，没有任何类名/包名白名单。
+ *
+ * 规则：
+ *  - api/ 只允许 java.*、androidx.annotation 与 api 自身（契约层零实现、零依赖）。
+ *  - api/、internal/ 禁止 lib_bluetooth 与 android.bluetooth（蓝牙栈只有 provider 能碰）。
+ *  - 非 provider 目录一律禁止 import lib_bluetooth。
+ *  - provider/lib_bluetooth 是栈适配层：禁止反向点名上层与装配，也不得 import lib_common。
+ *  - provider/lib_common/log 是唯一日志缝：只委托 lib_common.log。
+ *  - 中层与上层可以调用日志缝，但不得 import provider/lib_bluetooth。
+ *  - 非日志缝目录禁止 import lib_common，也禁止 android.util.Log。
+ *  - 其他模块的生产源集（src/main/java）禁止 import 本模块 internal/ 与 provider/。
+ */
+tasks.register('checkBizGgecWyBoundary') {
+    group = 'verification'
+    description = 'Structural layering gate for biz_ggec_wy (no allow lists); 生产边界只约束 src/main，测试源集允许触达内部实现。'
+    doLast {
+        def offenders = []
+        def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
+
+        fileTree(bizGgecWyRoot) {
+            include 'src/main/java/**/*.java'
+            include 'src/test/java/**/*.java'
+        }.each { file ->
+            def path = rel(file)
+            def relative = path.substring(path.indexOf('/src/'))
+            def inApi = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/api/')
+            def inInternal = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/')
+            def inUpper = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/scan/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/link/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/record/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/internal/center/catalog/')
+            def inBtProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_bluetooth/')
+            def inLogProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_common/log/')
+            def inOpusProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/lib_ggec_opus/')
+            def inProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_wy/provider/')
+            def inMain = relative.startsWith('/src/main/java/')
+            def logSeam = 'com.yovo.biz_ggec_wy.provider.lib_common.log.'
+
+            file.eachLine { line, index ->
+                def location = "${path}:${index}"
+                if (inMain && !inLogProvider && (line =~ /\bYoLog\s*\./)) {
+                    offenders << "${location}: 日志缝之外直接调用 YoLog"
+                }
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
+                }
+                def target = imported.group(1)
+                if (inApi) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.annotation.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.api.')
+                    if (!allowed) {
+                        offenders << "${location}: api 只能依赖 java/androidx.annotation/api 自身 -> ${target}"
+                    }
+                }
+                if ((inApi || inInternal) && (target.startsWith('com.yovo.lib_bluetooth.')
+                        || target.startsWith('android.bluetooth.'))) {
+                    offenders << "${location}: api/internal 不得触碰蓝牙栈 -> ${target}"
+                }
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_bluetooth.')) {
+                    offenders << "${location}: 只有 provider 可以 import lib_bluetooth -> ${target}"
+                }
+                if (inBtProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('android.')
+                            || target.startsWith('androidx.')
+                            || target.startsWith('com.yovo.lib_bluetooth.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.api.')
+                            || target.startsWith('com.yovo.biz_ggec_wy.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider/lib_bluetooth 不得依赖协议/上层/装配/lib_common -> ${target}"
+                    }
+                }
+                if (inLogProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('android.')
+                            || target.startsWith('androidx.')
+                            || target.startsWith('com.yovo.lib_common.log.')
+                    if (!allowed) {
+                        offenders << "${location}: 日志缝只委托 lib_common.log -> ${target}"
+                    }
+                }
+                if (inProvider && !inBtProvider && !inLogProvider && !inOpusProvider) {
+                    offenders << "${location}: provider 只允许 lib_bluetooth、lib_common/log 与 lib_ggec_opus -> ${target}"
+                }
+                if (inOpusProvider) {
+                    def allowed = target.startsWith('java.')
+                            || target.startsWith('androidx.')
+                            || (target.startsWith('com.yovo.lib_ggec_opus.') && !target.startsWith('com.yovo.lib_ggec_opus.internal.'))
+                            || target.startsWith('com.yovo.biz_ggec_wy.internal.center.port.')
+                    if (!allowed) {
+                        offenders << "${location}: provider/lib_ggec_opus 只能依赖 lib_ggec_opus 公共契约与内部端口 -> ${target}"
+                    }
+                }
+                if (inMain && !inProvider && target.startsWith('com.yovo.lib_ggec_opus.')) {
+                    offenders << "${location}: 只有 provider 可以 import lib_ggec_opus -> ${target}"
+                }
+                if (inMain && !inLogProvider && target.startsWith('com.yovo.lib_common.')) {
+                    offenders << "${location}: 只有日志缝可以 import lib_common -> ${target}"
+                }
+                if (inMain && line.trim().contains('import android.util.Log')) {
+                    offenders << "${location}: 禁止 android.util.Log，日志只经 WyLog"
+                }
+                def touchesOtherProvider = target.startsWith('com.yovo.biz_ggec_wy.provider.')
+                        && !target.startsWith(logSeam)
+                if (inUpper && touchesOtherProvider) {
+                    offenders << "${location}: 扫描/连接/交互/目录不得直接 import 蓝牙适配 -> ${target}"
+                }
+            }
+        }
+
+        fileTree(project.rootDir) {
+            include '**/src/main/java/**/*.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+            exclude 'biz_ggec_wy/**'
+        }.each { file ->
+            def path = rel(file)
+            file.eachLine { line, index ->
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (!imported.find()) {
+                    return
+                }
+                def target = imported.group(1)
+                if (target.startsWith('com.yovo.biz_ggec_wy.internal.')
+                        || target.startsWith('com.yovo.biz_ggec_wy.provider.')) {
+                    offenders << "${path}:${index}: 外部模块的 src/main 不得 import 本模块内部实现 -> ${target}"
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_ggec_wy 边界被打破:\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkBizGgecWyBoundary'
+}
