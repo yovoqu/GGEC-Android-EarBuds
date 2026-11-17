@@ -23,6 +23,7 @@ final class YoCbtDiscoveryOperationContext {
     final YoCbtDiscoveryObserver observer;
     final YoCbtDiscoveryFilter filter;
     final AtomicBoolean completed;
+    final AtomicBoolean hardwareStarted;
     final LinkedHashMap<YoCbtDeviceId, YoCbtDiscoveryResultEntry> results;
     @Nullable YoCbtRuntimeScope scope;
     @Nullable YoTimeoutHandle timeoutHandle;
@@ -35,6 +36,7 @@ final class YoCbtDiscoveryOperationContext {
         this.observer = observer;
         this.filter = config.toFilter();
         this.completed = new AtomicBoolean(false);
+        this.hardwareStarted = new AtomicBoolean(false);
         this.results = new LinkedHashMap<>();
     }
 }

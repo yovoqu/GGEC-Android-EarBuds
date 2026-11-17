@@ -17,6 +17,7 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.CancelTransmitRecordCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StartTransmitRecordCommand;
 import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioFrameAssembler;
+import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioPacketClassifier;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.io.File;
@@ -135,6 +136,10 @@ public final class HsDeviceRecordSyncSession {
 
     private void onSyncDataReceived(byte[] chunk) {
         if (!syncing || chunk == null || chunk.length == 0) {
+            return;
+        }
+        if (HsAudioPacketClassifier.isControlPacket(chunk)) {
+            HsLog.i(TAG, "文件同步通道收到控制包: len=" + chunk.length);
             return;
         }
         syncExecutor.execute(() -> {

@@ -3,14 +3,13 @@ package com.yovo.lib_bluetooth.internal.classic.internal.android.discovery;
 import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 
 import android.annotation.SuppressLint;
-
 import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
-import android.os.Build;
 
 import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryPlatform;
@@ -18,21 +17,26 @@ import com.yovo.lib_bluetooth.internal.classic.discovery.YoCbtDiscoveryPlatform;
 import java.util.Objects;
 
 /**
- * @author tingfeng.yang
- * @date 2026-06-18
- * @description Android 经典蓝牙发现 {@link YoCbtDiscoveryPlatform} 实现。
+ * Android 经典蓝牙发现 {@link YoCbtDiscoveryPlatform} 实现。
  */
-
 @SuppressLint("MissingPermission")
 public final class YoCbtAndroidDiscoveryPlatform implements YoCbtDiscoveryPlatform {
 
     private final YoBluetoothAdapterProvider adapterProvider;
     private final YoBluetoothPermissionChecker permissionChecker;
+    private final YoBtRadioCoordinator radioCoordinator;
 
     public YoCbtAndroidDiscoveryPlatform(@NonNull YoBluetoothAdapterProvider adapterProvider,
                                          @NonNull YoBluetoothPermissionChecker permissionChecker) {
-        this.adapterProvider = Objects.requireNonNull(adapterProvider);
-        this.permissionChecker = Objects.requireNonNull(permissionChecker);
+        this(adapterProvider, permissionChecker, YoBtRadioCoordinator.forAdapterProvider(adapterProvider));
+    }
+
+    public YoCbtAndroidDiscoveryPlatform(@NonNull YoBluetoothAdapterProvider adapterProvider,
+                                         @NonNull YoBluetoothPermissionChecker permissionChecker,
+                                         @NonNull YoBtRadioCoordinator radioCoordinator) {
+        this.adapterProvider = Objects.requireNonNull(adapterProvider, "adapterProvider cannot be null");
+        this.permissionChecker = Objects.requireNonNull(permissionChecker, "permissionChecker cannot be null");
+        this.radioCoordinator = Objects.requireNonNull(radioCoordinator, "radioCoordinator cannot be null");
     }
 
     @Override
@@ -42,29 +46,25 @@ public final class YoCbtAndroidDiscoveryPlatform implements YoCbtDiscoveryPlatfo
 
     @Override
     public boolean isEnabled() {
-        BluetoothAdapter adapter = adapterProvider.adapter();
-        return adapter != null && adapter.isEnabled();
+        return radioCoordinator.getRadioPlatform().isAdapterEnabled();
     }
 
     @Override
     public boolean isDiscovering() {
-        BluetoothAdapter adapter = adapterProvider.adapter();
-        return adapter != null && adapter.isDiscovering();
+        return radioCoordinator.getRadioPlatform().isDiscovering();
     }
 
     @Override
     public boolean startDiscovery() {
-        BluetoothAdapter adapter = adapterProvider.adapter();
-        return adapter != null && adapter.startDiscovery();
+        if (!radioCoordinator.isClassicDiscoveryAllowed()) {
+            return false;
+        }
+        return radioCoordinator.getRadioPlatform().startDiscovery();
     }
 
     @Override
     public void cancelDiscovery() {
-        BluetoothAdapter adapter = adapterProvider.adapter();
-        if (adapter == null) return;
-        if (adapter.isDiscovering()) {
-            adapter.cancelDiscovery();
-        }
+        radioCoordinator.cancelDiscoverySafely();
     }
 
     @Override

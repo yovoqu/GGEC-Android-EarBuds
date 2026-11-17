@@ -18,6 +18,7 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StartStreamRecordCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StopStreamRecordCommand;
 import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioFrameAssembler;
+import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioPacketClassifier;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.io.File;
@@ -135,6 +136,13 @@ public final class HsStreamRecordSession {
         if (!recording || chunk == null || chunk.length == 0) {
             return;
         }
+
+        // 820003 控制上报包轻量分流：控制包不进入音频拆包管线
+        if (HsAudioPacketClassifier.isControlPacket(chunk)) {
+            handleControlPacket(chunk);
+            return;
+        }
+
         decodeExecutor.execute(() -> {
             List<byte[]> opusFrames = frameAssembler.assemble(chunk);
             if (opusFrames.isEmpty() || decoder == null) {
@@ -147,6 +155,9 @@ public final class HsStreamRecordSession {
                 }
                 totalPcmFrames++;
                 float amplitude = calculateAmplitude(pcm);
+                if (totalPcmFrames == 1 || totalPcmFrames % 50 == 0) {
+                    HsLog.d(TAG, "解码 PCM 帧=" + totalPcmFrames + " 时长=" + (totalPcmFrames * 20) + "ms 振幅=" + amplitude);
+                }
 
                 // 流分发
                 if (currentConfig != null
@@ -163,6 +174,15 @@ public final class HsStreamRecordSession {
                 }
             }
         });
+    }
+
+    private void handleControlPacket(byte[] chunk) {
+        int cmdType = HsAudioPacketClassifier.resolveControlCmdType(chunk);
+        HsLog.i(TAG, "收到音频通道控制上报包: len=" + chunk.length + " cmdType=0x" + Integer.toHexString(cmdType));
+        if (cmdType == HsAudioPacketClassifier.CMD_TYPE_STOP) {
+            HsLog.i(TAG, "耳机远端主动按键停录，触发远端停止收尾");
+            mainHandler.post(() -> stopInternal(null, null));
+        }
     }
 
     private synchronized void stopInternal(@Nullable HsControl.Callback callback, @Nullable String error) {
@@ -183,6 +203,8 @@ public final class HsStreamRecordSession {
             calcDuration = Math.max(0, System.currentTimeMillis() - startTimeMs);
         }
         final long finalDuration = calcDuration;
+        HsLog.i(TAG, "停止随录随传，总 PCM 帧数=" + totalPcmFrames + " 测算时长=" + finalDuration + "ms 文件="
+                + (savedFile != null ? savedFile.getAbsolutePath() : "null"));
 
         decodeExecutor.execute(() -> {
             if (fileWriter != null) {

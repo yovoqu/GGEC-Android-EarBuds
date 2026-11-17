@@ -5,6 +5,8 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioLease;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
@@ -46,6 +48,8 @@ public final class YoCbtDiscoveryController {
     private final YoCbtDiscoveryBroadcastPort discoveryBroadcastPort;
     @Nullable
     private final YoCbtDiscoveryResultMerger resultMerger;
+    private final YoBtRadioCoordinator radioCoordinator;
+    private volatile YoBtRadioLease activeRadioLease;
 
     private final AtomicReference<YoCbtDiscoveryState> state =
             new AtomicReference<>(YoCbtDiscoveryState.IDLE);
@@ -57,12 +61,24 @@ public final class YoCbtDiscoveryController {
                                     @NonNull YoCbtDiscoveryPlatform discoveryPlatform,
                                     @NonNull YoCbtDiscoveryBroadcastPort discoveryBroadcastPort,
                                     @Nullable YoCbtDiscoveryResultMerger resultMerger) {
+        this(appContext, runtime, permissionChecker, discoveryPlatform, discoveryBroadcastPort, resultMerger,
+                YoBtRadioCoordinator.get());
+    }
+
+    public YoCbtDiscoveryController(@NonNull Context appContext,
+                                    @NonNull YoCbtRuntime runtime,
+                                    @NonNull YoBluetoothPermissionChecker permissionChecker,
+                                    @NonNull YoCbtDiscoveryPlatform discoveryPlatform,
+                                    @NonNull YoCbtDiscoveryBroadcastPort discoveryBroadcastPort,
+                                    @Nullable YoCbtDiscoveryResultMerger resultMerger,
+                                    @NonNull YoBtRadioCoordinator radioCoordinator) {
         this.appContext = appContext.getApplicationContext();
         this.runtime = runtime;
         this.permissionChecker = permissionChecker;
         this.discoveryPlatform = discoveryPlatform;
         this.discoveryBroadcastPort = discoveryBroadcastPort;
         this.resultMerger = resultMerger;
+        this.radioCoordinator = java.util.Objects.requireNonNull(radioCoordinator, "radioCoordinator cannot be null");
     }
 
     @NonNull
@@ -100,6 +116,11 @@ public final class YoCbtDiscoveryController {
                     YoCbtErrorCode.YO_CBT_BLUETOOTH_DISABLED,
                     "Bluetooth is disabled on this device",
                     SOURCE_MODULE));
+        }
+
+        YoCbtDiscoveryOperationContext oldSession = activeSession.get();
+        if (oldSession != null && oldSession.completed.get()) {
+            state.set(YoCbtDiscoveryState.IDLE);
         }
 
         if (!state.compareAndSet(YoCbtDiscoveryState.IDLE, YoCbtDiscoveryState.PREPARING)) {
@@ -142,9 +163,17 @@ public final class YoCbtDiscoveryController {
                     SOURCE_MODULE));
         }
 
+        // 同步标记 session 完成并请求底层取消发现，防止异步排队延迟导致后续立即 start 触发冲突
+        session.completed.set(true);
+        if (session.timeoutHandle != null) {
+            session.timeoutHandle.cancel();
+            session.timeoutHandle = null;
+        }
+        discoveryPlatform.cancelDiscovery();
+
         runtime.state(() -> {
             YoCbtDiscoveryOperationContext s = activeSession.get();
-            if (s == null || s.completed.get()) return;
+            if (s == null) return;
             state.set(YoCbtDiscoveryState.STOPPING);
             notifyStateChanged(s, YoCbtDiscoveryState.STOPPING);
             stopDiscoveryInternal(s);
@@ -163,6 +192,7 @@ public final class YoCbtDiscoveryController {
             session.timeoutHandle = null;
         }
 
+        releaseRadioLease();
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         state.set(YoCbtDiscoveryState.IDLE);
@@ -190,6 +220,7 @@ public final class YoCbtDiscoveryController {
             }
         }
 
+        releaseRadioLease();
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         YoBtLogger.d(TAG, "发现控制器已释放");
@@ -198,12 +229,25 @@ public final class YoCbtDiscoveryController {
     private void onDiscoveryStarted() {
         YoCbtDiscoveryOperationContext session = activeSession.get();
         if (session == null || session.completed.get()) return;
+        session.hardwareStarted.set(true);
         YoBtLogger.d(TAG, "收到 ACTION_DISCOVERY_STARTED：操作=" + session.operationId);
     }
 
     private void onDiscoveryFinished() {
         YoCbtDiscoveryOperationContext session = activeSession.get();
-        if (session == null) return;
+        if (session == null || session.completed.get()) return;
+
+        // 若当前 session 刚发起，系统尚未派发当前 session 的 ACTION_DISCOVERY_STARTED，
+        // 则该 finish 广播是前序已取消 session 的残留广播，予以吸收丢弃，避免误伤当前新发现会话
+        if (!session.hardwareStarted.get()) {
+            YoBtLogger.d(TAG, "忽略残留的 ACTION_DISCOVERY_FINISHED 广播：操作=" + session.operationId);
+            return;
+        }
+
+        completeDiscoveryNormally(session);
+    }
+
+    private void completeDiscoveryNormally(@NonNull YoCbtDiscoveryOperationContext session) {
         if (!session.completed.compareAndSet(false, true)) return;
 
         if (session.timeoutHandle != null) {
@@ -211,6 +255,8 @@ public final class YoCbtDiscoveryController {
             session.timeoutHandle = null;
         }
 
+        releaseRadioLease();
+        discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         activeSession.compareAndSet(session, null);
 
@@ -267,9 +313,22 @@ public final class YoCbtDiscoveryController {
     }
 
     private void initiateDiscovery(@NonNull YoCbtDiscoveryOperationContext session) {
-        if (session.completed.get()) return;
+        if (session.completed.get()) {
+            state.set(YoCbtDiscoveryState.IDLE);
+            return;
+        }
 
         try {
+            // 申请 CLASSIC_DISCOVERY 租约，自动协调停止/挂起 BLE 扫描
+            YoBtRadioLease lease = radioCoordinator.acquireLease(
+                    YoBtRadioLease.Type.CLASSIC_DISCOVERY, "YoCbtDiscoveryController");
+            if (lease == null) {
+                failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
+                        "RadioCoordinator rejected CLASSIC_DISCOVERY lease (radio preempted for connection)");
+                return;
+            }
+            this.activeRadioLease = lease;
+
             session.scope = runtime.createScope();
             discoveryBroadcastPort.setListener(new YoCbtDiscoveryBroadcastPort.Listener() {
                 @Override
@@ -295,24 +354,26 @@ public final class YoCbtDiscoveryController {
                     session.eventSession, System.currentTimeMillis()));
 
             if (!discoveryPlatform.startDiscovery()) {
-                failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
-                        "BluetoothAdapter.startDiscovery() returned false");
-                return;
+                // 若底层系统因前一次 cancelDiscovery 正在处理中导致瞬时返回 false，尝试重试一次
+                try {
+                    Thread.sleep(80);
+                } catch (InterruptedException ignored) {
+                }
+                if (session.completed.get()) {
+                    state.set(YoCbtDiscoveryState.IDLE);
+                    return;
+                }
+                if (!discoveryPlatform.startDiscovery()) {
+                    failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
+                            "BluetoothAdapter.startDiscovery() returned false");
+                    return;
+                }
             }
 
             session.timeoutHandle = runtime.scheduler().schedule(() -> {
                 runtime.state(() -> {
-                    if (!session.completed.compareAndSet(false, true)) return;
-                    if (session.timeoutHandle != null) {
-                        session.timeoutHandle.cancel();
-                        session.timeoutHandle = null;
-                    }
-                    discoveryPlatform.cancelDiscovery();
-                    clearReceiverListener();
-                    activeSession.compareAndSet(session, null);
-                    failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_TIMEOUT,
-                            "Discovery timed out after "
-                                    + session.config.getTimeoutMillis() + "ms");
+                    YoBtLogger.d(TAG, "发现超时自然结束：操作=" + session.operationId);
+                    completeDiscoveryNormally(session);
                 });
             }, session.config.getTimeoutMillis());
 
@@ -332,6 +393,7 @@ public final class YoCbtDiscoveryController {
             session.timeoutHandle = null;
         }
 
+        releaseRadioLease();
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         activeSession.compareAndSet(session, null);
@@ -382,9 +444,18 @@ public final class YoCbtDiscoveryController {
             session.timeoutHandle.cancel();
             session.timeoutHandle = null;
         }
+        releaseRadioLease();
         discoveryPlatform.cancelDiscovery();
         clearReceiverListener();
         activeSession.compareAndSet(session, null);
+    }
+
+    private void releaseRadioLease() {
+        YoBtRadioLease lease = activeRadioLease;
+        activeRadioLease = null;
+        if (lease != null) {
+            lease.release();
+        }
     }
 
     private void clearReceiverListener() {

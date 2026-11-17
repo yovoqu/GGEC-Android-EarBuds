@@ -17,17 +17,20 @@ import com.yovo.lib_bluetooth.internal.ble.scan.BleScanConfig;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform;
 import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanPlatform.StartResult;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioLease;
 import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Android {@link BluetoothLeScanner} 平台适配器（含回调生成期隔离与低端 ROM 扫描参数自动降级）。
+ * Android {@link BluetoothLeScanner} 平台适配器（含回调生成期隔离、低端 ROM 扫描参数自动降级与射频仲裁协同）。
  */
 @SuppressLint("MissingPermission")
 public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
@@ -35,6 +38,7 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     private static final String TAG = "YoBleAndroidScan";
 
     private final YoBluetoothAdapterProvider adapterProvider;
+    private final YoBtRadioCoordinator radioCoordinator;
     private final Object scanLock = new Object();
     private final AtomicLong generationSeq = new AtomicLong();
 
@@ -43,12 +47,19 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     private volatile ScanCallback activeCallback;
     @Nullable
     private volatile BluetoothLeScanner activeScanner;
+    @Nullable
+    private volatile YoBtRadioLease activeRadioLease;
+    @Nullable
+    private volatile BleScanConfig activeConfig;
+    @Nullable
+    private volatile PlatformCallback activePlatformCallback;
+    private volatile boolean scanSuspendedByRadio = false;
 
     /**
      * 扫描结果转换专用线程（主线程保护）：Android 的 {@link ScanCallback} 默认在主线程/Looper 回调，
      * 而 {@link YoBleScanCompat#toBleScanResult} 会做 AD TLV 解析与多个同步 Binder IPC
      * （getName/getAlias/getType/getAddressType）。把转换移出主线程，回调本身只做一次轻量入队，
-     * 彻底消除真机 >100 包/秒时主线程被 Binder 阻塞导致的掉帧/卡死（实测单帧 14.4s、Skipped 1433 frames）。
+     * 彻底消除真机 >100 包/秒时主线程被 Binder 阻塞导致的掉帧/卡死。
      */
     private final ExecutorService parseExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "yo-ble-scan-parse");
@@ -57,7 +68,24 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     });
 
     public YoBleAndroidScanPlatform(@NonNull YoBluetoothAdapterProvider adapterProvider) {
-        this.adapterProvider = adapterProvider;
+        this(adapterProvider, YoBtRadioCoordinator.forAdapterProvider(adapterProvider));
+    }
+
+    public YoBleAndroidScanPlatform(@NonNull YoBluetoothAdapterProvider adapterProvider,
+                                    @NonNull YoBtRadioCoordinator radioCoordinator) {
+        this.adapterProvider = Objects.requireNonNull(adapterProvider, "adapterProvider cannot be null");
+        this.radioCoordinator = Objects.requireNonNull(radioCoordinator, "radioCoordinator cannot be null");
+        this.radioCoordinator.registerBleScanHook(new YoBtRadioCoordinator.BleScanCoordinationHook() {
+            @Override
+            public void onSuspendBleScan() {
+                suspendScanForRadioCoordination();
+            }
+
+            @Override
+            public void onResumeBleScan() {
+                resumeScanForRadioCoordination();
+            }
+        });
     }
 
     @Override
@@ -85,7 +113,7 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
     @NonNull
     @Override
     public YoBleScanPlatform.StartResult startPlatformScan(@NonNull BleScanConfig config,
-                                         @NonNull PlatformCallback callback) {
+                                                          @NonNull PlatformCallback callback) {
         BluetoothAdapter adapter = adapterProvider.adapter();
         if (adapter == null || !adapter.isEnabled()) {
             return StartResult.failed(0, "Bluetooth adapter unavailable or disabled");
@@ -97,6 +125,14 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
 
         synchronized (scanLock) {
             stopPlatformScanLocked();
+
+            // 申请 BLE_SCAN 租约，并协调取消经典发现
+            YoBtRadioLease lease = radioCoordinator.acquireLease(
+                    YoBtRadioLease.Type.BLE_SCAN, "YoBleAndroidScanPlatform");
+            this.activeRadioLease = lease;
+            this.activeConfig = config;
+            this.activePlatformCallback = callback;
+            this.scanSuspendedByRadio = false;
 
             final long gen = generationSeq.incrementAndGet();
             ScanSettings settings = YoBleScanCompat.toAndroidScanSettings(config);
@@ -193,11 +229,19 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
                 } catch (Throwable fallbackErr) {
                     activeCallback = null;
                     activeScanner = null;
+                    if (activeRadioLease != null) {
+                        activeRadioLease.release();
+                        activeRadioLease = null;
+                    }
                     return StartResult.failed(0, "BluetoothLeScanner.startScan failed: " + fallbackErr.getMessage());
                 }
             } catch (Throwable t) {
                 activeCallback = null;
                 activeScanner = null;
+                if (activeRadioLease != null) {
+                    activeRadioLease.release();
+                    activeRadioLease = null;
+                }
                 return StartResult.failed(0, "BluetoothLeScanner.startScan failed: " + t.getMessage());
             }
         }
@@ -235,11 +279,64 @@ public final class YoBleAndroidScanPlatform implements YoBleScanPlatform {
         BluetoothLeScanner scanner = activeScanner;
         activeCallback = null;
         activeScanner = null;
+        activeConfig = null;
+        activePlatformCallback = null;
+        scanSuspendedByRadio = false;
+
+        YoBtRadioLease lease = activeRadioLease;
+        activeRadioLease = null;
+        if (lease != null) {
+            lease.release();
+        }
+
         if (scanner != null && cb != null) {
             try {
                 scanner.stopScan(cb);
             } catch (Throwable t) {
                 YoBtLogger.w(TAG, "stopScan failed", t);
+            }
+        }
+    }
+
+    private void suspendScanForRadioCoordination() {
+        synchronized (scanLock) {
+            BluetoothLeScanner scanner = activeScanner;
+            ScanCallback cb = activeCallback;
+            if (scanner != null && cb != null && !scanSuspendedByRadio) {
+                scanSuspendedByRadio = true;
+                try {
+                    scanner.stopScan(cb);
+                    YoBtLogger.d(TAG, "BLE scan suspended for radio arbitration (classic discovery active)");
+                } catch (Throwable t) {
+                    YoBtLogger.w(TAG, "suspendScan stopScan failed", t);
+                }
+            }
+        }
+    }
+
+    private void resumeScanForRadioCoordination() {
+        synchronized (scanLock) {
+            if (scanSuspendedByRadio && activeCallback != null && activeConfig != null) {
+                BluetoothAdapter adapter = adapterProvider.adapter();
+                if (adapter != null && adapter.isEnabled()) {
+                    BluetoothLeScanner scanner = adapter.getBluetoothLeScanner();
+                    if (scanner != null) {
+                        ScanSettings settings = YoBleScanCompat.toAndroidScanSettings(activeConfig);
+                        List<ScanFilter> filters = YoBleScanCompat.toAndroidScanFilters(activeConfig.filters());
+                        try {
+                            if (filters.isEmpty()) {
+                                scanner.startScan(null, settings, activeCallback);
+                            } else {
+                                scanner.startScan(filters, settings, activeCallback);
+                            }
+                            activeScanner = scanner;
+                            scanSuspendedByRadio = false;
+                            YoBtLogger.d(TAG, "BLE scan resumed after radio arbitration");
+                        } catch (Throwable t) {
+                            YoBtLogger.w(TAG, "resumeScan startScan failed", t);
+                        }
+                    }
+                }
             }
         }
     }

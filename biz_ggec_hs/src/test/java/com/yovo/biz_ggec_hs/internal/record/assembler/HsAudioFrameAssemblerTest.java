@@ -40,6 +40,27 @@ public class HsAudioFrameAssemblerTest {
     }
 
     @Test
+    public void testDualHalf168AssemblerStartingAtZero() {
+        HsAudioFrameAssembler assembler = new HsAudioFrameAssembler();
+        // 验证固件从 index 0 开始的真实场景
+        byte[] chunk1 = createDualHalf168(0, (byte) 0x33);
+        List<byte[]> frames1 = assembler.assemble(chunk1);
+
+        assertEquals(HsAudioNotifyFormat.HS02_DUAL_HALF_168, assembler.getActiveFormat());
+        assertEquals(2, frames1.size());
+        assertEquals(1, assembler.getLastDataIndex());
+
+        byte[] chunk2 = createDualHalf168(2, (byte) 0x44);
+        List<byte[]> frames2 = assembler.assemble(chunk2);
+        assertEquals(2, frames2.size());
+        assertEquals(3, assembler.getLastDataIndex());
+        for (byte[] frame : frames2) {
+            assertEquals(HsAudioFrameContract.OPUS_BYTES_32K, frame.length);
+            assertEquals((byte) 0x44, frame[0]);
+        }
+    }
+
+    @Test
     public void testMtuSplitContinuousStreaming() {
         HsAudioFrameAssembler assembler = new HsAudioFrameAssembler();
 
@@ -66,6 +87,32 @@ public class HsAudioFrameAssemblerTest {
         assertEquals(2, assembler.getLastDataIndex());
         assertEquals(160, frames2.get(0).length);
         assertEquals((byte) 0xBB, frames2.get(0)[0]);
+    }
+
+    @Test
+    public void testControlPacketClassificationAndAssemblerRejection() {
+        byte[] startAck = new byte[]{0x04, (byte) 0x80, 0x01, 0x00, 0x00};
+        byte[] stopNotify = new byte[]{0x05, (byte) 0x80, 0x01, 0x00, 0x01};
+        byte[] delayReport = new byte[]{0x12, (byte) 0x80, 0x02, 0x00, 0x00, 0x00};
+
+        org.junit.Assert.assertTrue(HsAudioPacketClassifier.isControlPacket(startAck));
+        org.junit.Assert.assertTrue(HsAudioPacketClassifier.isControlPacket(stopNotify));
+        org.junit.Assert.assertTrue(HsAudioPacketClassifier.isControlPacket(delayReport));
+        assertEquals(HsAudioPacketClassifier.CMD_TYPE_STOP, HsAudioPacketClassifier.resolveControlCmdType(stopNotify));
+
+        HsAudioFrameAssembler assembler = new HsAudioFrameAssembler();
+        // 控制小包不满足最小音频子帧 44 字节，拆包器不应崩溃也不应污染暂存
+        List<byte[]> emptyFrames = assembler.assemble(startAck);
+        org.junit.Assert.assertTrue(emptyFrames.isEmpty());
+        assertEquals(0, assembler.pendingBytes());
+        org.junit.Assert.assertNull(assembler.getActiveFormat());
+
+        // 随后合法的 168B 随录随传音频正常锁定 HS02_DUAL_HALF_168
+        byte[] validChunk = createDualHalf168(0, (byte) 0x55);
+        List<byte[]> validFrames = assembler.assemble(validChunk);
+        assertEquals(HsAudioNotifyFormat.HS02_DUAL_HALF_168, assembler.getActiveFormat());
+        assertEquals(2, validFrames.size());
+        assertEquals(1, assembler.getLastDataIndex());
     }
 
     private static byte[] createQuad176(int startIndex, byte fill) {

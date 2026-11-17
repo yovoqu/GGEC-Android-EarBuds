@@ -13,7 +13,7 @@ public final class HsAudioFrameContract {
 
     public static final int HEADER_BYTES = 4;
     public static final int HEADER_LEGACY_BYTES = 8;
-    public static final int STARTING_DATA_INDEX = 1;
+    public static final int STARTING_DATA_INDEX = 0;
 
     public static final int OPUS_BYTES_16K = 40;
     public static final int OPUS_BYTES_32K = 80;

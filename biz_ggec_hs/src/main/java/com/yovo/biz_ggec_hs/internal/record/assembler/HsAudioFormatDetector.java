@@ -2,6 +2,8 @@ package com.yovo.biz_ggec_hs.internal.record.assembler;
 
 /**
  * HS02 音频 Notify 格式自动识别器。
+ * <p>
+ * 基于首包特征或包长与包序号指纹精准识别空口格式，并保持整会话锁定。
  */
 final class HsAudioFormatDetector {
 
@@ -10,11 +12,8 @@ final class HsAudioFormatDetector {
 
     static HsAudioNotifyFormat detect(byte[] chunk, int pendingBytes,
                                       HsAudioPacketTracker indexTracker) {
-        if (chunk == null || chunk.length == 0) {
+        if (chunk == null || chunk.length < HsAudioFrameContract.SUBFRAME_44) {
             return null;
-        }
-        if (pendingBytes > 0) {
-            return HsAudioNotifyFormat.HS02_MTU_SPLIT;
         }
         return detectFromNotifyLength(chunk, indexTracker);
     }

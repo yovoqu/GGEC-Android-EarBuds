@@ -58,7 +58,7 @@ final class HsAudioPacketTracker {
             return false;
         }
         if (lastDataIndex < 0) {
-            return dataIndex == HsAudioFrameContract.STARTING_DATA_INDEX;
+            return dataIndex == 0 || dataIndex == 1;
         }
         return dataIndex == lastDataIndex + 1;
     }

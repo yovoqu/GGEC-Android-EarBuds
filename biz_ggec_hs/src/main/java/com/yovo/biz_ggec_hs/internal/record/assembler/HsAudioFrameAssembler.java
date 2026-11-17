@@ -60,7 +60,7 @@ public final class HsAudioFrameAssembler {
 
     @NonNull
     public List<byte[]> assemble(@NonNull byte[] chunk) {
-        if (chunk == null || chunk.length == 0) {
+        if (chunk == null || chunk.length < HsAudioFrameContract.SUBFRAME_44) {
             return Collections.emptyList();
         }
         ensureFormatLocked(chunk);
@@ -69,6 +69,7 @@ public final class HsAudioFrameAssembler {
             ensureFormatLocked(chunk);
         }
         if (lockedFormat == null) {
+            HsLog.w(TAG, "无法识别音频 Notify 格式，当前暂存 size=" + size + " chunkLen=" + chunk.length);
             return Collections.emptyList();
         }
         return dispatchByFormat(chunk);
