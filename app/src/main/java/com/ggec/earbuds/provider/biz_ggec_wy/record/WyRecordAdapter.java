@@ -1,5 +1,6 @@
 package com.ggec.earbuds.provider.biz_ggec_wy.record;
 
+import android.media.MediaMetadataRetriever;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -17,6 +18,7 @@ import com.yovo.biz_ggec_wy.api.StreamRecordListener;
 import com.yovo.biz_ggec_wy.api.WyControl;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -144,23 +146,44 @@ public final class WyRecordAdapter implements RecordPort {
         rejectUnsupported(onComplete);
     }
 
-    /**
-     * WY 的 SDK 没有「手机本地已存录音目录」API，因此清单为空——这是能力缺失的显式结果，
-     * 不是空实现：随录随传落盘的文件由 SDK 自己管理路径，本适配层无从枚举。
-     */
     @NonNull
     @Override
     public List<SavedRecordItem> listLocalSavedFiles() {
-        return List.of();
+        List<File> files = sdk.record().listLocalSavedFiles();
+        List<SavedRecordItem> items = new ArrayList<>(files.size());
+        for (File file : files) {
+            long duration = resolveAudioDuration(file);
+            items.add(SavedRecordItem.of(file, duration));
+        }
+        return items;
     }
 
     @NonNull
     @Override
     public RecordOutcome deleteLocalSavedFile(@NonNull String filePath) {
-        File file = new File(filePath);
-        return file.delete()
+        return sdk.record().deleteLocalSavedFile(filePath)
                 ? RecordOutcome.ok()
                 : RecordOutcome.failed(RecordFailure.IO);
+    }
+
+    private long resolveAudioDuration(File file) {
+        String name = file.getName().toLowerCase();
+        if (name.endsWith(".pcm")) {
+            return file.length() / 32L;
+        }
+        if (name.endsWith(".wav")) {
+            return Math.max(0, file.length() - 44) / 32L;
+        }
+        try (MediaMetadataRetriever mmr = new MediaMetadataRetriever()) {
+            mmr.setDataSource(file.getAbsolutePath());
+            String durationStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (durationStr != null) {
+                return Long.parseLong(durationStr);
+            }
+        } catch (Throwable ignored) {
+            // 元数据解析失败只影响时长展示，文件本身仍然可播放：按 0 时长返回。
+        }
+        return 0L;
     }
 
     @NonNull
