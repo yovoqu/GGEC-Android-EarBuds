@@ -9,12 +9,14 @@ import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 录音页面整体 UI 状态模型。
  */
 public record RecordUiState(
         @NonNull RecordMode mode,
+        @NonNull Set<RecordMode> supportedModes,
         boolean isConnected,
         @NonNull String deviceName,
         boolean isStreamRecording,
@@ -35,6 +37,7 @@ public record RecordUiState(
 ) {
     public RecordUiState {
         Objects.requireNonNull(mode, "mode");
+        supportedModes = Set.copyOf(Objects.requireNonNull(supportedModes, "supportedModes"));
         Objects.requireNonNull(deviceName, "deviceName");
         localFiles = List.copyOf(Objects.requireNonNull(localFiles, "localFiles"));
         deviceFiles = List.copyOf(Objects.requireNonNull(deviceFiles, "deviceFiles"));
@@ -43,6 +46,7 @@ public record RecordUiState(
     public static RecordUiState initial() {
         return new RecordUiState(
                 RecordMode.STREAM,
+                Set.of(RecordMode.STREAM, RecordMode.LOCAL),
                 false,
                 "",
                 false,

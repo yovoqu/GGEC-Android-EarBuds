@@ -46,8 +46,8 @@ public final class ScanViewModel extends ViewModel {
     private long scanToken;
     private int connectEpoch;
     private ScanConnectPhase connectPhase = ScanConnectPhase.IDLE;
-    private String connectingBleAddress = "";
-    private String selectedFilterModelId = ScanFilterOption.ALL_MODELS;
+    private String connectingAddress = "";
+    private String selectedFilterModelId = "HS02";
 
     public ScanViewModel(@NonNull ScanDevices scanDevices,
                          @NonNull OpenDevice openDevice,
@@ -58,6 +58,8 @@ public final class ScanViewModel extends ViewModel {
         this.catalog = catalog;
         this.scanPermission = scanPermission;
         this.filterOptions = buildFilterOptions(catalog);
+        this.selectedFilterModelId = defaultModelId(this.filterOptions);
+        this.scanDevices.filterModels(Set.of(this.selectedFilterModelId));
         this.uiState = new MutableLiveData<>(ScanUiMapper.mapState(
                 false, false, selectedFilterModelId, this.filterOptions, List.of(),
                 ScanConnectPhase.IDLE, ""));
@@ -122,20 +124,21 @@ public final class ScanViewModel extends ViewModel {
     }
 
     public void selectFilter(@Nullable String modelId) {
-        String normalized = modelId == null || modelId.isEmpty()
-                ? ScanFilterOption.ALL_MODELS : modelId;
+        String normalized = (modelId == null || modelId.trim().isEmpty())
+                ? "HS02" : modelId.trim();
         synchronized (lock) {
             if (selectedFilterModelId.equals(normalized)) {
                 return;
             }
             selectedFilterModelId = normalized;
+            visible = List.of();
         }
-        scanDevices.filterModels(normalized.isEmpty() ? Set.of() : Set.of(normalized));
+        scanDevices.filterModels(Set.of(normalized));
         ScanUiState snapshot;
         synchronized (lock) {
             snapshot = buildStateLocked();
         }
-        uiState.postValue(snapshot);
+        publish(snapshot);
     }
 
     private void startScan() {
@@ -182,7 +185,7 @@ public final class ScanViewModel extends ViewModel {
             scanning = false;
             epoch = ++connectEpoch;
             connectPhase = ScanConnectPhase.CONNECTING;
-            connectingBleAddress = item.bleAddress();
+            connectingAddress = item.address();
             connecting = buildStateLocked();
         }
         scanDevices.stop();
@@ -193,8 +196,8 @@ public final class ScanViewModel extends ViewModel {
     @NonNull
     private static DeviceTarget targetOf(@NonNull ScanItem item) {
         return new DeviceTarget(
-                new DeviceId(item.modelId(), item.bleAddress()),
-                new DeviceIdentity(item.bleName(), item.classicAddress(), item.classicName()));
+                new DeviceId(item.modelId(), item.address()),
+                new DeviceIdentity(item.name(), item.address(), item.name()));
     }
 
     private void onConnectSettled(int epoch, ConnectSettlement settlement) {
@@ -204,7 +207,7 @@ public final class ScanViewModel extends ViewModel {
                 return;
             }
             connectPhase = ScanConnectPhase.IDLE;
-            connectingBleAddress = "";
+            connectingAddress = "";
             next = buildStateLocked();
         }
         publish(next);
@@ -227,7 +230,7 @@ public final class ScanViewModel extends ViewModel {
             scanning = false;
             connectEpoch++;
             connectPhase = ScanConnectPhase.IDLE;
-            connectingBleAddress = "";
+            connectingAddress = "";
         }
         scanDevices.stop();
         super.onCleared();
@@ -274,7 +277,7 @@ public final class ScanViewModel extends ViewModel {
             case SCAN_THROTTLED -> ScanEvent.SCAN_THROTTLED;
             case SCAN_FAILED, NOT_READY, TIMEOUT, REJECTED, UNSUPPORTED_CAPABILITY,
                  DEVICE_ERROR, INTERNAL_ERROR, INCOMPLETE_IDENTITY, STORE_FAILED,
-                 DEVICE_NOT_FOUND -> ScanEvent.FAILED;
+                 DEVICE_NOT_FOUND, CLASSIC_NOT_CONNECTED -> ScanEvent.FAILED;
         };
     }
 
@@ -299,7 +302,7 @@ public final class ScanViewModel extends ViewModel {
                 filterOptions,
                 visible,
                 connectPhase,
-                connectingBleAddress);
+                connectingAddress);
     }
 
     /** 一律 postValue：状态可能从扫描回调线程来，ViewModel 不判断自己在哪个线程上。 */
@@ -314,10 +317,19 @@ public final class ScanViewModel extends ViewModel {
     @NonNull
     private static List<ScanFilterOption> buildFilterOptions(@NonNull DeviceCapabilityCatalog catalog) {
         List<ScanFilterOption> options = new ArrayList<>();
-        options.add(new ScanFilterOption(ScanFilterOption.ALL_MODELS, ""));
         for (DeviceProfileView model : catalog.models()) {
             options.add(new ScanFilterOption(model.modelId(), model.displayName()));
         }
         return List.copyOf(options);
+    }
+
+    @NonNull
+    private static String defaultModelId(@NonNull List<ScanFilterOption> options) {
+        for (ScanFilterOption opt : options) {
+            if ("HS02".equalsIgnoreCase(opt.modelId())) {
+                return opt.modelId();
+            }
+        }
+        return options.isEmpty() ? "HS02" : options.get(0).modelId();
     }
 }

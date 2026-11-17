@@ -48,7 +48,7 @@ public final class DeviceFixtures {
         return new DeviceSnapshot(connection, ID.modelId(),
                 new BatterySnapshot(leftBattery, leftBattery, BatterySnapshot.UNKNOWN, false),
                 WearState.UNKNOWN, firmware,
-                ID.bleAddress(), "HS01", "11:22:33:44:55:66", "HS01",
+                ID.address(), "HS01", "11:22:33:44:55:66", "HS01",
                 3, state, Optional.empty(), List.of());
     }
 }

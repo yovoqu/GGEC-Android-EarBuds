@@ -32,7 +32,9 @@ public final class ScanViewModelTest {
     private static final DeviceCapabilityCatalog CATALOG = new DeviceCapabilityCatalog() {
         @Override
         public List<DeviceProfileView> models() {
-            return List.of(new DeviceProfileView("HS01", "HS01 耳机", List.of()));
+            return List.of(
+                    new DeviceProfileView("HS02", "HS02 耳机", List.of()),
+                    new DeviceProfileView("WY01", "WY01 耳机", List.of()));
         }
 
         @Override
@@ -53,7 +55,7 @@ public final class ScanViewModelTest {
         ScanUiState state = vm.uiState().getValue();
         assertFalse(state.scanning());
         assertFalse(state.hasScanned());
-        assertEquals(ScanFilterOption.ALL_MODELS, state.selectedFilterModelId());
+        assertEquals("HS02", state.selectedFilterModelId());
         assertEquals(2, state.filterOptions().size());
         assertTrue(state.results().isEmpty());
         assertEquals(0, state.totalDiscoveredCount());

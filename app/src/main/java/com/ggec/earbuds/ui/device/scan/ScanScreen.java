@@ -50,7 +50,7 @@ public final class ScanScreen {
         @Override
         public boolean areItemsTheSame(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
             return oldItem.modelId().equals(newItem.modelId())
-                    && oldItem.bleAddress().equalsIgnoreCase(newItem.bleAddress());
+                    && oldItem.address().equalsIgnoreCase(newItem.address());
         }
 
         @Override
@@ -61,9 +61,9 @@ public final class ScanScreen {
         @Nullable
         @Override
         public Object getChangePayload(@NonNull ScanItem oldItem, @NonNull ScanItem newItem) {
-            // BLE 名称或 BLE 地址变化需要完整重绑；只有连接状态或 RSSI 变化时局部刷新。
-            if (!oldItem.bleName().equals(newItem.bleName())
-                    || !oldItem.bleAddress().equalsIgnoreCase(newItem.bleAddress())) {
+            // 设备名称或 MAC 地址变化需要完整重绑；只有连接状态或 RSSI 变化时局部刷新。
+            if (!oldItem.name().equals(newItem.name())
+                    || !oldItem.address().equalsIgnoreCase(newItem.address())) {
                 return null;
             }
             if (oldItem.connecting() != newItem.connecting()) {
@@ -275,7 +275,7 @@ public final class ScanScreen {
         int selectedIndex = findOptionIndex(renderedOptions, state.selectedFilterModelId());
         String selectedModelId = selectedIndex >= 0
                 ? renderedOptions.get(selectedIndex).modelId()
-                : ScanFilterOption.ALL_MODELS;
+                : (renderedOptions.isEmpty() ? "HS02" : renderedOptions.get(0).modelId());
         if (optionsChanged || !selectedModelId.equals(lastSelectedModelId)) {
             updatingFilter = true;
             try {
@@ -297,9 +297,7 @@ public final class ScanScreen {
 
     @NonNull
     private String optionLabel(@NonNull ScanFilterOption option) {
-        return option.isAll() || option.label().isEmpty()
-                ? activity.getString(R.string.device_scan_filter_all)
-                : option.label();
+        return option.label().isEmpty() ? option.modelId() : option.label();
     }
 
     @NonNull

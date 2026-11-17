@@ -27,8 +27,8 @@ public record ScanUiState(
 ) {
 
     public ScanUiState {
-        selectedFilterModelId = selectedFilterModelId == null
-                ? ScanFilterOption.ALL_MODELS : selectedFilterModelId;
+        selectedFilterModelId = (selectedFilterModelId == null || selectedFilterModelId.trim().isEmpty())
+                ? "HS02" : selectedFilterModelId;
         filterOptions = filterOptions == null ? List.of() : List.copyOf(filterOptions);
         results = results == null ? List.of() : List.copyOf(results);
         totalDiscoveredCount = Math.max(0, totalDiscoveredCount);
@@ -72,7 +72,7 @@ public record ScanUiState(
         return new ScanUiState(
                 false,
                 false,
-                ScanFilterOption.ALL_MODELS,
+                "HS02",
                 defaultFilterOptions(),
                 List.of(),
                 0,
@@ -86,9 +86,11 @@ public record ScanUiState(
     }
 
     public static List<ScanFilterOption> defaultFilterOptions() {
-        // 型号筛选项的唯一来源是领域目录（DeviceCapabilityCatalog.models() → ViewModel.filterOptions）；
-        // 初始态不硬编码任何机型，避免与目录形成第二份真源而漂移。
-        return List.of(new ScanFilterOption(ScanFilterOption.ALL_MODELS, ""));
+        return List.of(
+                new ScanFilterOption("HS01", "HS01"),
+                new ScanFilterOption("HS02", "HS02"),
+                new ScanFilterOption("WY01", "WY01")
+        );
     }
 
     @NonNull

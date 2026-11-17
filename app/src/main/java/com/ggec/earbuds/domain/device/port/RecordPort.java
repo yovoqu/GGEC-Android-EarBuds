@@ -4,12 +4,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.device.model.RecordFileView;
+import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 import com.ggec.earbuds.domain.device.model.SyncProgressState;
 
 import java.io.File;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -69,4 +71,8 @@ public interface RecordPort {
 
     /** 删除手机本地录音文件 */
     boolean deleteLocalSavedFile(@NonNull String filePath);
+
+    /** 当前设备/驱动支持的录音模式集合 */
+    @NonNull
+    Set<RecordMode> supportedModes();
 }

@@ -23,6 +23,7 @@ import com.yovo.lib_common.event.OneShotLiveData;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 录音功能 ViewModel：驱动随录随传和耳机本地录音业务流程。
@@ -45,6 +46,7 @@ public final class RecordViewModel extends ViewModel {
     private final Subscription deviceSubscription;
 
     private RecordMode currentMode = RecordMode.STREAM;
+    private Set<RecordMode> supportedModes = Set.of(RecordMode.STREAM, RecordMode.LOCAL);
     private boolean isConnected = false;
     private String deviceName = "";
 
@@ -93,6 +95,7 @@ public final class RecordViewModel extends ViewModel {
         this.observeDevice = Objects.requireNonNull(observeDevice, "observeDevice");
         this.pcmPlaybackPort = Objects.requireNonNull(pcmPlaybackPort, "pcmPlaybackPort");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
+        this.supportedModes = recordPort.supportedModes();
 
         reloadLocalFiles();
 
@@ -112,7 +115,13 @@ public final class RecordViewModel extends ViewModel {
 
     private void onDeviceSnapshot(@NonNull DeviceSnapshot snapshot) {
         this.isConnected = snapshot.isConnected();
-        this.deviceName = snapshot.bleName().isEmpty() ? "蓝牙耳机" : snapshot.bleName();
+        this.deviceName = snapshot.displayName().isEmpty() ? "蓝牙耳机" : snapshot.displayName();
+        this.supportedModes = recordPort.supportedModes();
+        if (!supportedModes.contains(currentMode)) {
+            currentMode = supportedModes.contains(RecordMode.STREAM)
+                    ? RecordMode.STREAM
+                    : supportedModes.iterator().next();
+        }
         if (snapshot.recordFiles() != null && !snapshot.recordFiles().isEmpty()) {
             this.deviceFiles = new ArrayList<>(snapshot.recordFiles());
         }
@@ -122,6 +131,7 @@ public final class RecordViewModel extends ViewModel {
     private void publish() {
         uiState.postValue(new RecordUiState(
                 currentMode,
+                supportedModes,
                 isConnected,
                 deviceName,
                 isStreamRecording,
@@ -143,6 +153,9 @@ public final class RecordViewModel extends ViewModel {
     }
 
     public void setMode(@NonNull RecordMode mode) {
+        if (!supportedModes.contains(mode)) {
+            return;
+        }
         if (this.currentMode != mode) {
             this.currentMode = mode;
             publish();

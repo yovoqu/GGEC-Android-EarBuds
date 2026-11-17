@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
@@ -52,6 +53,8 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
             new CopyOnWriteArrayList<>();
     private final Object lock = new Object();
     private final Observer observer = new Observer();
+
+    private final Map<String, HsDevice.Radios> discoveredRadios = new ConcurrentHashMap<>();
 
     private volatile DeviceSnapshot current = DeviceSnapshot.idle();
 
@@ -94,11 +97,17 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
         if (onSettled == null) {
             throw new IllegalArgumentException("connect requires a settlement callback");
         }
-        HsDevice.Radios radios = new HsDevice.Radios(
-                target.id().bleAddress(),
-                target.identity().bleName(),
-                target.identity().classicAddress(),
-                target.identity().classicName());
+        HsDevice.Radios cached = discoveredRadios.get(target.id().address());
+        String bleAddr = target.id().address();
+        String bleName = !target.identity().bleName().isEmpty() ? target.identity().bleName() : target.name();
+        String classicAddr = (cached != null && !cached.classicAddress().isEmpty())
+                ? cached.classicAddress()
+                : (!target.identity().classicAddress().isEmpty() ? target.identity().classicAddress() : bleAddr);
+        String classicName = (cached != null && !cached.classicName().isEmpty())
+                ? cached.classicName()
+                : (!target.identity().classicName().isEmpty() ? target.identity().classicName() : bleName);
+
+        HsDevice.Radios radios = new HsDevice.Radios(bleAddr, bleName, classicAddr, classicName);
         synchronized (lock) {
             targetModelId = target.id().modelId();
             targetRadios = radios;
@@ -201,10 +210,13 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
     }
 
     @NonNull
-    private static ScanResult toScanResult(@NonNull HsScan.Found device) {
+    private ScanResult toScanResult(@NonNull HsScan.Found device) {
         HsDevice.Radios radios = device.radios();
-        return new ScanResult(device.modelId(), radios.bleAddress(), radios.bleName(),
-                radios.classicAddress(), radios.classicName(), device.rssi());
+        String name = !radios.bleName().isEmpty() ? radios.bleName()
+                : (!radios.classicName().isEmpty() ? radios.classicName() : device.modelId());
+        String address = !radios.bleAddress().isEmpty() ? radios.bleAddress() : radios.classicAddress();
+        discoveredRadios.put(address, radios);
+        return new ScanResult(device.modelId(), name, address, device.rssi());
     }
 
     /**

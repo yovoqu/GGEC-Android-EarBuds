@@ -7,6 +7,7 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 import com.ggec.earbuds.domain.device.model.SyncProgressState;
@@ -21,6 +22,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -194,6 +196,12 @@ public final class HsRecordAdapter implements RecordPort {
     @Override
     public boolean deleteLocalSavedFile(@NonNull String filePath) {
         return sdk.record().deleteLocalSavedFile(filePath);
+    }
+
+    @NonNull
+    @Override
+    public Set<RecordMode> supportedModes() {
+        return Set.of(RecordMode.STREAM, RecordMode.LOCAL);
     }
 
     private long resolveAudioDuration(File file) {

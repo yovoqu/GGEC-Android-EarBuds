@@ -129,7 +129,7 @@ public final class DeviceSession {
     private static DeviceSnapshot disconnected(@NonNull DeviceTarget previous) {
         return new DeviceSnapshot(ConnectionState.DISCONNECTED, previous.id().modelId(),
                 BatterySnapshot.unknown(), WearState.UNKNOWN, "",
-                previous.id().bleAddress(), previous.identity().bleName(),
+                previous.id().address(), previous.identity().bleName(),
                 previous.identity().classicAddress(), previous.identity().classicName(),
                 DeviceSnapshot.UNKNOWN_EAR_COLOR, new DeviceState(Map.of()),
                 Optional.empty(), List.of());

@@ -88,7 +88,7 @@ public final class DeviceRosterRepositoryImplTest {
                 .upsert(withAddress("AA:00:00:00:00:02"))
                 .upsert(withAddress("AA:00:00:00:00:01"));
         List<DeviceRecord> sorted = roster.sorted();
-        assertEquals("AA:00:00:00:00:01", sorted.get(0).id().bleAddress());
+        assertEquals("AA:00:00:00:00:01", sorted.get(0).id().address());
     }
 
     private static DeviceRecord withAddress(String address) {

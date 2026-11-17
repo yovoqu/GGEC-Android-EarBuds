@@ -295,5 +295,6 @@
     <string name="device_roster_forget_body">将从本机移除「%1$s」的档案，不会改动耳机的蓝牙配对。</string>
     <string name="device_error_store">设备记录读取失败，已保留损坏文件。</string>
     <string name="device_error_not_found">该设备已不在列表中。</string>
+    <string name="device_error_classic_not_connected">经典蓝牙未连接，请先在系统设置中配对并连接该设备。</string>
     <string name="device_error_incomplete_identity">这台设备没有上报经典蓝牙地址，暂时无法连接。</string>
 </resources>

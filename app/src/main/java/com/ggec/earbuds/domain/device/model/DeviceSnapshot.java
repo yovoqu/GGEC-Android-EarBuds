@@ -76,4 +76,14 @@ public record DeviceSnapshot(
     public boolean isConnected() {
         return connection.isConnected();
     }
+
+    public String address() {
+        return !bleAddress.isEmpty() ? bleAddress : classicAddress;
+    }
+
+    public String displayName() {
+        if (!bleName.isEmpty()) return bleName;
+        if (!classicName.isEmpty()) return classicName;
+        return modelId != null ? modelId : "";
+    }
 }

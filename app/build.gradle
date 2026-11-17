@@ -44,6 +44,7 @@ dependencies {
     implementation project(':lib_ai')
     implementation project(':biz_appupdate')
     implementation project(':biz_ggec_hs')
+    implementation project(':biz_ggec_wy')
     implementation project(':biz_ggec_record')
 
     implementation files('libs/youi_kit-1.0.0.aar')
@@ -71,7 +72,7 @@ dependencies {
 // ---------------------------------------------------------------------------
 
 // 本模块依赖的业务能力模块：只有 provider/<dependency> 可以直接 import。
-def providerDependencyModules = ['lib_ai', 'lib_common', 'biz_ggec_hs', 'biz_appupdate', 'biz_ggec_record']
+def providerDependencyModules = ['lib_ai', 'lib_common', 'biz_ggec_hs', 'biz_ggec_wy', 'biz_appupdate', 'biz_ggec_record']
 
 // 平台基线（design.md §1.2 R6）：按依赖分类放行，不是文件名白名单。
 // 事件槽这类共享 UI 原语等价于 androidx 基线，任何 ui 类可用；业务能力域仍必须走 provider。

@@ -100,7 +100,7 @@ public final class DeviceRosterJson {
         JSONObject item = new JSONObject();
         JSONObject id = new JSONObject();
         JsonValues.put(id, "modelId", record.id().modelId());
-        JsonValues.put(id, "bleAddress", record.id().bleAddress());
+        JsonValues.put(id, "address", record.id().address());
         JsonValues.put(item, "id", id);
         JsonValues.put(item, "alias", record.alias());
 
@@ -137,8 +137,11 @@ public final class DeviceRosterJson {
         if (id == null) {
             throw new IllegalArgumentException("device id is missing");
         }
-        DeviceId deviceId = new DeviceId(JsonValues.string(id, "modelId", ""),
-                JsonValues.string(id, "bleAddress", ""));
+        String address = JsonValues.string(id, "address", "");
+        if (address.isEmpty()) {
+            address = JsonValues.string(id, "bleAddress", "");
+        }
+        DeviceId deviceId = new DeviceId(JsonValues.string(id, "modelId", ""), address);
 
         JSONObject identity = item.optJSONObject("identity");
         DeviceIdentity identityValue = identity == null

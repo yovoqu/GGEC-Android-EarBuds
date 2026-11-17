@@ -24,12 +24,18 @@ public record DeviceRecord(DeviceId id,
         Objects.requireNonNull(state, "state");
     }
 
-    /** 展示名：用户别名优先，其次广播名，最后型号。 */
+    /** 展示名：用户别名优先，其次设备名称，最后型号。 */
     public String displayName() {
         if (!alias.isEmpty()) {
             return alias;
         }
-        return identity.bleName().isEmpty() ? id.modelId() : identity.bleName();
+        if (!identity.bleName().isEmpty()) {
+            return identity.bleName();
+        }
+        if (!identity.classicName().isEmpty()) {
+            return identity.classicName();
+        }
+        return id.modelId();
     }
 
     public boolean live() {

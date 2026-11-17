@@ -12,6 +12,7 @@ import com.ggec.earbuds.data.device.json.DeviceRosterJson;
 import com.ggec.earbuds.data.device.roster.DeviceRosterRepositoryImpl;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
+import com.ggec.earbuds.domain.device.port.DeviceLinkPort;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.ScanPermissionPort;
@@ -27,7 +28,12 @@ import com.ggec.earbuds.domain.device.usecase.ScanDevices;
 import com.ggec.earbuds.domain.device.usecase.SyncActiveDevice;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.platform.device.AndroidPcmPlayback;
-import com.ggec.earbuds.provider.biz_ggec_hs.HsDeviceProviders;
+import com.ggec.earbuds.wiring.device.CompositeCapabilityCatalog;
+import com.ggec.earbuds.wiring.device.CompositeDeviceLinkAdapter;
+import com.ggec.earbuds.wiring.device.CompositeRecordPort;
+import com.ggec.earbuds.wiring.device.DeviceDriver;
+import com.ggec.earbuds.wiring.device.HsDeviceDriver;
+import com.ggec.earbuds.wiring.device.WyDeviceDriver;
 import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
 import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermission;
@@ -41,6 +47,7 @@ import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.device.settings.SettingsSectionFactory;
 
 import java.io.File;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.LongSupplier;
@@ -54,10 +61,11 @@ import java.util.function.LongSupplier;
  */
 public final class DeviceGraph {
 
-    private final HsDeviceProviders providers;
+    private final List<DeviceDriver> drivers;
     private final DeviceRosterRepository roster;
     private final DeviceSession session;
     private final DeviceCapabilityCatalog catalog;
+    private final DeviceLinkPort deviceLink;
     private final ScanDevices scanDevices;
     private final WriteDeviceControl writeControl;
     private final RunDeviceAction runAction;
@@ -76,24 +84,29 @@ public final class DeviceGraph {
     public DeviceGraph(@NonNull Context appContext, @NonNull Executor storeExecutor,
                        @NonNull LongSupplier clock) {
         Context app = appContext.getApplicationContext();
-        this.providers = HsDeviceProviders.open(app);
+        DeviceDriver hsDriver = new HsDeviceDriver(app);
+        DeviceDriver wyDriver = new WyDeviceDriver(app);
+        this.drivers = List.of(hsDriver, wyDriver);
+        CompositeDeviceLinkAdapter linkAdapter = new CompositeDeviceLinkAdapter(this.drivers);
+        this.deviceLink = linkAdapter;
+        this.catalog = new CompositeCapabilityCatalog(this.drivers);
+        this.recordPort = new CompositeRecordPort(linkAdapter::activeRecordPort);
+
         this.roster = new DeviceRosterRepositoryImpl(
                 new File(app.getFilesDir(), "devices/roster.json"), new DeviceRosterJson(),
                 Objects.requireNonNull(storeExecutor, "storeExecutor"));
-        this.session = new DeviceSession(providers.deviceLink());
+        this.session = new DeviceSession(this.deviceLink);
         this.observeRoster = new ObserveDeviceRoster(roster, session, clock);
         this.openDevice = new OpenDevice(session);
         this.closeDevice = new CloseDevice(session);
         this.forgetDevice = new ForgetDevice(roster, session);
         this.observeDevice = new ObserveDevice(session);
-        this.catalog = providers.deviceCatalog();
         this.homeMapper = new DeviceHomeUiMapper(catalog);
         this.listEntries = new ListDeviceEntries(catalog);
-        this.scanDevices = new ScanDevices(providers.deviceLink());
-        this.writeControl = new WriteDeviceControl(providers.deviceLink());
-        this.runAction = new RunDeviceAction(providers.deviceLink());
+        this.scanDevices = new ScanDevices(this.deviceLink);
+        this.writeControl = new WriteDeviceControl(this.deviceLink);
+        this.runAction = new RunDeviceAction(this.deviceLink);
         this.scanPermission = new BluetoothScanPermission(app);
-        this.recordPort = providers.recordPort();
         new SyncActiveDevice(roster, session, clock).start();
     }
 
@@ -135,7 +148,9 @@ public final class DeviceGraph {
 
     /** 释放设备子图持有的底层 BLE/协议资源（停止扫描、关闭会话、释放 BLE 客户端）。 */
     public void release() {
-        providers.close();
+        for (DeviceDriver driver : drivers) {
+            driver.close();
+        }
     }
 
     private interface Builder<T extends ViewModel> {

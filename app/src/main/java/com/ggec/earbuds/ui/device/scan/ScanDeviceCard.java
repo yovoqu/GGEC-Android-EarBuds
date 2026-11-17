@@ -119,7 +119,7 @@ public final class ScanDeviceCard {
 
     public void bind(@NonNull ScanItem result, boolean anyConnecting) {
         boundItem = result;
-        String title = DeviceFormats.textOrUnknown(result.bleName());
+        String title = DeviceFormats.textOrUnknown(result.displayName());
         if (!title.contentEquals(name.getText())) {
             name.setText(title);
         }
@@ -170,7 +170,7 @@ public final class ScanDeviceCard {
 
     @NonNull
     private String subtitleOf(@NonNull ScanItem result) {
-        return result.bleAddress() + DeviceFormats.META_SEPARATOR + DeviceFormats.rssi(result.rssi());
+        return result.displayAddress() + DeviceFormats.META_SEPARATOR + DeviceFormats.rssi(result.rssi());
     }
 
     @NonNull

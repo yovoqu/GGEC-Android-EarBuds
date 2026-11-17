@@ -23,9 +23,9 @@ public final class ScanUiMapper {
     public static ScanItem map(ScanResult result, @Nullable String connectingAddress) {
         boolean connecting = connectingAddress != null
                 && !connectingAddress.isEmpty()
-                && result.bleAddress().equalsIgnoreCase(connectingAddress);
-        return new ScanItem(result.modelId(), result.bleAddress(), result.bleName(),
-                result.classicAddress(), result.classicName(), result.rssi(), connecting);
+                && result.address().equalsIgnoreCase(connectingAddress);
+        return new ScanItem(result.modelId(), result.name(), result.address(),
+                result.rssi(), connecting);
     }
 
     public static List<ScanItem> map(List<ScanResult> results) {

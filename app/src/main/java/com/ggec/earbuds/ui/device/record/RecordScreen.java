@@ -53,6 +53,7 @@ public final class RecordScreen {
     private final FrameLayout contentHost;
     private final NestedScrollView scroll;
     private final LinearLayout column;
+    private final LinearLayout segmentContainer;
 
     private YoSegmentButton segmentButton;
     private final StreamRecordPanel streamPanel;
@@ -110,7 +111,7 @@ public final class RecordScreen {
         root.addView(header, matchWrap());
 
         // 2. 分段控制器容器
-        LinearLayout segmentContainer = new LinearLayout(activity);
+        segmentContainer = new LinearLayout(activity);
         segmentContainer.setOrientation(LinearLayout.VERTICAL);
         segmentContainer.setPadding(theme.dp(DeviceTheme.LIST_EDGE), theme.dp(DeviceTheme.SPACE_XS),
                 theme.dp(DeviceTheme.LIST_EDGE), theme.dp(DeviceTheme.SPACE_S));
@@ -230,13 +231,19 @@ public final class RecordScreen {
                 theme.dp(DeviceTheme.STATUS_DOT / 2f)));
         connectionStatusText.setText(connected ? R.string.earbuds_record_status_connected : R.string.earbuds_record_status_disconnected);
 
+        // 动态支持单模式与多模式展示：WY01 仅支持随录随传时隐藏分段控制器
+        boolean singleMode = state.supportedModes().size() <= 1;
+        segmentContainer.setVisibility(singleMode ? View.GONE : View.VISIBLE);
+
         // 切换分段面板可见性
         RecordMode mode = state.mode();
-        if (renderedMode != mode) {
+        if (renderedMode != mode || (singleMode && streamPanel.view().getVisibility() != View.VISIBLE)) {
             renderedMode = mode;
-            int targetIndex = mode == RecordMode.STREAM ? 0 : 1;
-            if (segmentButton != null && segmentButton.getSelectedIndex() != targetIndex) {
-                segmentButton.setSelectedIndex(targetIndex);
+            if (!singleMode && segmentButton != null) {
+                int targetIndex = mode == RecordMode.STREAM ? 0 : 1;
+                if (segmentButton.getSelectedIndex() != targetIndex) {
+                    segmentButton.setSelectedIndex(targetIndex);
+                }
             }
             streamPanel.view().setVisibility(mode == RecordMode.STREAM ? View.VISIBLE : View.GONE);
             localPanel.view().setVisibility(mode == RecordMode.LOCAL ? View.VISIBLE : View.GONE);

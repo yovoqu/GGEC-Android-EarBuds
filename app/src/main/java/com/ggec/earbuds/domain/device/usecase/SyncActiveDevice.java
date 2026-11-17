@@ -62,7 +62,7 @@ public final class SyncActiveDevice {
         if (snapshot.connection() == ConnectionState.DISCONNECTED) {
             for (DeviceRecord record : roster.current().devices()) {
                 if (record.id().modelId().equals(snapshot.modelId())
-                        && record.id().bleAddress().equals(snapshot.bleAddress())) {
+                        && record.id().address().equals(snapshot.address())) {
                     return DeviceTarget.of(record);
                 }
             }

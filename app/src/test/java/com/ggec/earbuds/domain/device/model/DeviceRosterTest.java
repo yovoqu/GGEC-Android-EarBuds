@@ -30,7 +30,7 @@ public final class DeviceRosterTest {
                 .orElseThrow();
         assertEquals("别名", replaced.alias());
         assertEquals(300L, replaced.status().lastSeenMillis());
-        assertEquals("AA:00:00:00:00:02", roster.devices().get(1).id().bleAddress());
+        assertEquals("AA:00:00:00:00:02", roster.devices().get(1).id().address());
     }
 
     @Test

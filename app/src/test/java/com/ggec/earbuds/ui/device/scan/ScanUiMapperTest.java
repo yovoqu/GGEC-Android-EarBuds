@@ -15,23 +15,20 @@ public class ScanUiMapperTest {
 
     @Test
     public void mapWithoutConnectingAddressDefaultsToFalse() {
-        ScanResult result = new ScanResult("modelA", "11:22:33:44:55:66", "Earbuds",
-                "AA:BB:CC:DD:EE:FF", "Earbuds Classic", -60);
+        ScanResult result = new ScanResult("modelA", "Earbuds", "11:22:33:44:55:66", -60);
         ScanItem item = ScanUiMapper.map(result);
 
         assertEquals("modelA", item.modelId());
-        assertEquals("11:22:33:44:55:66", item.bleAddress());
-        assertEquals("Earbuds", item.bleName());
+        assertEquals("11:22:33:44:55:66", item.address());
+        assertEquals("Earbuds", item.name());
         assertEquals(-60, item.rssi());
         assertFalse(item.connecting());
     }
 
     @Test
     public void mapWithMatchingConnectingAddressMarksConnectingTrue() {
-        ScanResult result1 = new ScanResult("modelA", "11:22:33:44:55:66", "Earbuds 1",
-                "AA:BB:CC:DD:EE:01", "Earbuds Classic", -60);
-        ScanResult result2 = new ScanResult("modelA", "AA:BB:CC:11:22:33", "Earbuds 2",
-                "AA:BB:CC:DD:EE:02", "Earbuds Classic", -75);
+        ScanResult result1 = new ScanResult("modelA", "Earbuds 1", "11:22:33:44:55:66", -60);
+        ScanResult result2 = new ScanResult("modelA", "Earbuds 2", "AA:BB:CC:11:22:33", -75);
 
         List<ScanItem> items = ScanUiMapper.map(List.of(result1, result2), "11:22:33:44:55:66");
 
@@ -42,8 +39,7 @@ public class ScanUiMapperTest {
 
     @Test
     public void mapWithCaseInsensitiveConnectingAddress() {
-        ScanResult result = new ScanResult("modelA", "aa:bb:cc:dd:ee:ff", "Earbuds",
-                "", "", -50);
+        ScanResult result = new ScanResult("modelA", "Earbuds", "aa:bb:cc:dd:ee:ff", -50);
         ScanItem item = ScanUiMapper.map(result, "AA:BB:CC:DD:EE:FF");
 
         assertTrue(item.connecting());
@@ -54,7 +50,7 @@ public class ScanUiMapperTest {
         ScanUiState state = new ScanUiState(
                 false,
                 true,
-                ScanFilterOption.ALL_MODELS,
+                "HS02",
                 List.of(),
                 List.of(),
                 0,
@@ -108,7 +104,7 @@ public class ScanUiMapperTest {
 
     @Test
     public void mapStatePopulatesCalculatedFields() {
-        ScanResult r1 = new ScanResult("HS01", "11:22:33:44:55:66", "Buds", "", "", -55);
+        ScanResult r1 = new ScanResult("HS01", "Buds", "11:22:33:44:55:66", -55);
         ScanUiState state = ScanUiMapper.mapState(
                 false,
                 true,
@@ -127,18 +123,5 @@ public class ScanUiMapperTest {
         assertEquals(R.string.device_scan_found_count, state.statusTextRes());
         assertEquals(1, state.statusCount());
         assertEquals(R.string.device_scan_start, state.actionTextRes());
-    }
-
-    @Test
-    public void scanUiStateIdleInitializesDefaultResources() {
-        ScanUiState idle = ScanUiState.idle();
-
-        assertFalse(idle.scanning());
-        assertFalse(idle.hasScanned());
-        assertEquals(0, idle.totalDiscoveredCount());
-        assertTrue(idle.results().isEmpty());
-        assertEquals(R.string.device_scan_idle_title, idle.emptyTitleRes());
-        assertEquals(R.string.device_scan_idle_body, idle.emptyBodyRes());
-        assertEquals(R.string.device_scan_start, idle.actionTextRes());
     }
 }

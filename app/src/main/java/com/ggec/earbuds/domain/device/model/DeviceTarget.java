@@ -13,8 +13,8 @@ public record DeviceTarget(DeviceId id, DeviceIdentity identity) {
     public static DeviceTarget of(ScanResult scan) {
         Objects.requireNonNull(scan, "scan");
         return new DeviceTarget(
-                new DeviceId(scan.modelId(), scan.bleAddress()),
-                new DeviceIdentity(scan.bleName(), scan.classicAddress(), scan.classicName()));
+                new DeviceId(scan.modelId(), scan.address()),
+                new DeviceIdentity(scan.name(), scan.address(), scan.name()));
     }
 
     public static DeviceTarget of(DeviceRecord record) {
@@ -24,5 +24,11 @@ public record DeviceTarget(DeviceId id, DeviceIdentity identity) {
 
     public boolean is(DeviceId other) {
         return id.equals(other);
+    }
+
+    public String name() {
+        if (!identity.bleName().isEmpty()) return identity.bleName();
+        if (!identity.classicName().isEmpty()) return identity.classicName();
+        return id.modelId();
     }
 }

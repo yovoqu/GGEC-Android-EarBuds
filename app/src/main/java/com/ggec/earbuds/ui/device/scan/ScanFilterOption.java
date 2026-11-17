@@ -2,14 +2,16 @@ package com.ggec.earbuds.ui.device.scan;
 
 import androidx.annotation.NonNull;
 
-/** 扫描页标题栏筛选下拉项：modelId 为空串表示展示全部已识别设备类型。 */
+import java.util.Objects;
+
+/**
+ * 扫描页标题栏筛选下拉项：单一按照具体产品型号来（如 HS02, HS01, WY01），严禁捆绑或保留"全部设备"逻辑。
+ */
 public record ScanFilterOption(@NonNull String modelId, @NonNull String label) {
 
-    public static final String ALL_MODELS = "";
-
     public ScanFilterOption {
-        modelId = modelId == null ? ALL_MODELS : modelId;
-        label = label == null ? "" : label;
+        modelId = Objects.requireNonNull(modelId, "modelId cannot be null").trim();
+        label = (label == null || label.trim().isEmpty()) ? modelId : label.trim();
     }
 
     public boolean isAll() {

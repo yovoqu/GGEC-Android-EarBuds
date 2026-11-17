@@ -30,6 +30,7 @@ public final class DeviceFailureText {
             case INCOMPLETE_IDENTITY -> R.string.device_error_incomplete_identity;
             case STORE_FAILED -> R.string.device_error_store;
             case DEVICE_NOT_FOUND -> R.string.device_error_not_found;
+            case CLASSIC_NOT_CONNECTED -> R.string.device_error_classic_not_connected;
         };
     }
 }
