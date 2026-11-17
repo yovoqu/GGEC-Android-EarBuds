@@ -36,13 +36,4 @@ public record BleScanPlan(@NonNull BleScanMode mode,
         }
         hardwareFilters = List.copyOf(hardwareFilters);
     }
-
-    /**
-     * 机制层默认计划：低时延、不批处理、仅上报 legacy 之外的全部广播、无硬件过滤。
-     * 这是"无硬件卸载过滤时客户端按帧过滤"的标准起点。
-     */
-    @NonNull
-    public static BleScanPlan defaults() {
-        return new BleScanPlan(BleScanMode.LOW_LATENCY, 0L, false, List.of());
-    }
 }

@@ -14,6 +14,8 @@ import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleDeviceSnapshotStore;
 import com.yovo.lib_bluetooth.internal.ble.diagnostics.YoBleTimelineRecorder;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntime;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 import com.yovo.lib_bluetooth.internal.ble.runtime.YoBleRuntimeConfig;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
@@ -42,10 +44,29 @@ import java.util.function.BooleanSupplier;
  * 健康度字段语义、能力查询来自平台。</p>
  */
 public final class YoBleScanReconfigureTest {
+    /** 姣忎釜寮曟搸涓€涓壂鎻忓櫒瀹炰緥锛氱敤渚嬭嚜宸辨寔鏈夛紝@After 缁熶竴閲婃斁骞跺叧闂縼绉荤嚎绋嬫睜銆?*/
+    private static final java.util.Map<YoBleScanHub.Engine, YoBleScanHub> HUBS =
+            new java.util.LinkedHashMap<>();
+
+    private static YoBleScanHub hubFor(YoBleScanHub.Engine engine) {
+        YoBleScanHub hub = HUBS.get(engine);
+        if (hub == null) {
+            hub = YoBleScanHub.forEngine(engine);
+            HUBS.put(engine, hub);
+        }
+        return hub;
+    }
+
+    private static void releaseHubs() {
+        for (YoBleScanHub hub : HUBS.values()) {
+            hub.release();
+        }
+        HUBS.clear();
+    }
 
     @After
     public void resetHub() {
-        YoBleScanHub.resetForTest();
+        releaseHubs();
     }
 
     @Test
@@ -60,7 +81,7 @@ public final class YoBleScanReconfigureTest {
         await(controller::isScanning, 3000);
         int startsBeforeReconfigure = platform.startCount.get();
 
-        Result<Void> result = controller.reconfigure(BleScanPlan.defaults());
+        Result<Void> result = controller.reconfigure(YoBleScanDefaults.plan());
 
         assertTrue("参数一致必须返回成功", result.isSuccess());
         Thread.sleep(150L);
@@ -98,7 +119,7 @@ public final class YoBleScanReconfigureTest {
         YoBleRuntime runtime = newRuntime();
         YoBleScanController controller = newController(runtime, platform, clock);
 
-        Result<Void> result = controller.reconfigure(BleScanPlan.defaults());
+        Result<Void> result = controller.reconfigure(YoBleScanDefaults.plan());
 
         assertFalse("无会话时重配必须失败", result.isSuccess());
         assertEquals("不得发起平台扫描", 0, platform.startCount.get());
@@ -213,7 +234,9 @@ public final class YoBleScanReconfigureTest {
 
     @NonNull
     private static YoBleRuntime newRuntime() {
-        return new YoBleRuntime(YoBleRuntimeConfig.builder().callbackOnMainThread(false).build());
+        return new YoBleRuntime(YoBleRuntimeConfig.builder().callbackOnMainThread(false).build(),
+                new BluetoothDiagnosticsBus(YoBtLogger.SINK,
+                        BluetoothDiagnosticsBus.DEFAULT_CAPACITY));
     }
 
     @NonNull
@@ -335,11 +358,6 @@ public final class YoBleScanReconfigureTest {
         @Override
         public boolean isLocationServicesEnabled() {
             return true;
-        }
-
-        @Override
-        public int sdkInt() {
-            return 35;
         }
     }
 }

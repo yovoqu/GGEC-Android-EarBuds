@@ -4,8 +4,8 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.permission.BluetoothPermissionPort;
-import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
+import com.yovo.lib_bluetooth.spi.permission.BluetoothPermissionPort;
+import com.yovo.lib_bluetooth.spi.permission.YoBluetoothPermission;
 import com.yovo.lib_common.system.permission.YoPermission;
 import com.yovo.lib_common.system.permission.model.Permission;
 import com.yovo.lib_common.system.permission.model.PermissionPolicy;

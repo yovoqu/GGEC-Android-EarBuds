@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.scan;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.device.YoBleCapabilityInspector;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.model.ble.BleErrorCode;
@@ -40,7 +41,7 @@ final class YoBleScanPreflight {
                     BleErrorCode.PERMISSION_SCAN_DENIED, module, "Missing BLE scan permission");
         }
         // Android < 12 (API < 31) 或未声明位置豁免时需检查位置权限与系统位置服务开关
-        boolean requiresLocation = capabilityInspector.sdkInt() < 31 || !config.locationExempt();
+        boolean requiresLocation = AndroidPlatform.requiresLocationForBleScan() || !config.locationExempt();
         if (requiresLocation) {
             if (!capabilityInspector.hasLocationPermission()) {
                 return YoBleErrorMapper.failure(

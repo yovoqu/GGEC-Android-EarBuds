@@ -12,7 +12,6 @@ import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinat
 import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioLease;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 
@@ -24,7 +23,7 @@ import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 
-import com.yovo.lib_bluetooth.internal.classic.internal.android.spp.YoCbtSppRemoteDeviceGateway;
+import com.yovo.lib_bluetooth.internal.classic.platform.spp.YoCbtSppRemoteDeviceGateway;
 
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
 
@@ -45,6 +44,7 @@ import com.yovo.lib_bluetooth.internal.classic.spp.transport.YoCbtSppSocket;
 import com.yovo.lib_bluetooth.internal.classic.spp.transport.YoCbtSppSocketFactory;
 
 import com.yovo.lib_bluetooth.internal.classic.spp.transport.YoCbtSppTransport;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 
 
@@ -59,6 +59,8 @@ import java.util.Objects;
 
 import java.util.Locale;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 
@@ -140,60 +142,6 @@ public final class YoCbtSppConnection {
     private volatile int resolvedChannel;
 
     private final AtomicBoolean terminal = new AtomicBoolean(false);
-
-
-
-    public YoCbtSppConnection(@NonNull YoCbtSppConnectionId connectionId,
-
-                              @NonNull YoCbtSppConnectionKey connectionKey,
-
-                              @NonNull YoCbtSppConfig config,
-
-                              @NonNull YoCbtSppConnectionObserver observer,
-
-                              @Nullable List<YoCbtSppEndpoint> sdpResolvedEndpoints,
-
-                              @NonNull YoCbtRuntime runtime,
-
-                              @NonNull YoCbtSppRemoteDeviceGateway remoteDeviceGateway,
-
-                              @NonNull YoCbtSppSocketFactory socketFactory,
-
-                              @NonNull Host host) {
-
-        this(connectionId, connectionKey, config, observer, sdpResolvedEndpoints, runtime,
-
-                remoteDeviceGateway, socketFactory, host, -1);
-
-    }
-
-
-
-    public YoCbtSppConnection(@NonNull YoCbtSppConnectionId connectionId,
-
-                              @NonNull YoCbtSppConnectionKey connectionKey,
-
-                              @NonNull YoCbtSppConfig config,
-
-                              @NonNull YoCbtSppConnectionObserver observer,
-
-                              @Nullable List<YoCbtSppEndpoint> sdpResolvedEndpoints,
-
-                              @NonNull YoCbtRuntime runtime,
-
-                              @NonNull YoCbtSppRemoteDeviceGateway remoteDeviceGateway,
-
-                              @NonNull YoCbtSppSocketFactory socketFactory,
-
-                              @NonNull Host host,
-
-                              int initialResolvedChannel) {
-
-        this(connectionId, connectionKey, config, observer, sdpResolvedEndpoints, runtime,
-
-                remoteDeviceGateway, socketFactory, host, initialResolvedChannel, YoBtRadioCoordinator.get());
-
-    }
 
 
 
@@ -561,13 +509,7 @@ public final class YoCbtSppConnection {
 
                     if (i + 1 < attempts) {
 
-                        try {
-
-                            Thread.sleep(config.getRetryDelayMillis());
-
-                        } catch (InterruptedException ignored) {
-
-                            Thread.currentThread().interrupt();
+                        if (!awaitRetryDelay(config.getRetryDelayMillis())) {
 
                             return;
 
@@ -737,7 +679,7 @@ public final class YoCbtSppConnection {
 
         if (!terminal.compareAndSet(false, true)) return;
 
-        BluetoothDiagnosticsBus.get().recordException(TAG, message + "，连接ID=" + connectionId, throwable);
+        runtime.diagnostics().recordException(TAG, message + "，连接ID=" + connectionId, throwable);
 
 
 
@@ -1017,18 +959,37 @@ public final class YoCbtSppConnection {
 
 
 
-    private static void closeQuietly(@Nullable YoCbtSppSocket closeable) {
-
-        if (closeable == null) return;
-
-        try {
-
-            closeable.close();
-
-        } catch (Throwable ignored) {
-
+    /**
+     * 连接重试间隔：以可中断等待代替线程休眠，让 cancel/超时能立即打断退避。
+     *
+     * @return {@code true} 表示等待正常结束，可以继续下一次尝试；{@code false} 表示被中断
+     */
+    private boolean awaitRetryDelay(long delayMillis) {
+        if (delayMillis <= 0L) {
+            return true;
         }
+        CountDownLatch delay = new CountDownLatch(1);
+        try {
+            delay.await(delayMillis, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            YoBtLogger.d(TAG, "SPP 连接重试等待被中断，放弃剩余重试");
+            return false;
+        }
+    }
 
+    /**
+     * 关闭一条已被判定为“丢弃”的 SPP socket。关闭失败不改变连接状态机已落的终态，
+     * 也不再抛回调用方（否则会覆盖真正的失败原因），但必须留证（失败会泄漏 fd）。
+     */
+    private static void closeQuietly(@Nullable YoCbtSppSocket closeable) {
+        if (closeable == null) return;
+        try {
+            closeable.close();
+        } catch (IOException closeFailure) {
+            YoBtLogger.w(TAG, "SPP socket close failed", closeFailure);
+        }
     }
 
 }

@@ -26,10 +26,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class YoBleScanHubTest {
+    /** 每个引擎一个扫描器实例：用例自己持有，{@code @After} 统一释放并关闭迁移线程池。 */
+    private static final java.util.Map<YoBleScanHub.Engine, YoBleScanHub> HUBS =
+            new java.util.LinkedHashMap<>();
+
+    
+    private static synchronized YoBleScanHub hubFor(YoBleScanHub.Engine engine) {
+        YoBleScanHub hub = HUBS.get(engine);
+        if (hub == null) {
+            hub = YoBleScanHub.forEngine(engine);
+            HUBS.put(engine, hub);
+
+        }
+        return hub;
+    }
 
     @After
     public void resetHub() {
-        YoBleScanHub.resetForTest();
+        for (YoBleScanHub hub : HUBS.values()) {
+            hub.release();
+        }
+        HUBS.clear();
     }
 
     @Test
@@ -40,8 +57,8 @@ public final class YoBleScanHubTest {
         BleScanObserver second = new BleScanObserver() {
         };
 
-        BleOperationHandle firstHandle = YoBleScanHub.subscribe(engine, first);
-        BleOperationHandle secondHandle = YoBleScanHub.subscribe(engine, second);
+        BleOperationHandle firstHandle = hubFor(engine).subscribe(first);
+        BleOperationHandle secondHandle = hubFor(engine).subscribe(second);
         assertEquals(1, engine.starts.get());
         assertEquals(0, engine.stops.get());
 
@@ -49,10 +66,10 @@ public final class YoBleScanHubTest {
         assertEquals(0, engine.stops.get());
         secondHandle.cancel();
         // 停扫由会话迁移线程推进，句柄取消栈上不得调用引擎：这里等它落地再判停扫次数。
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
         assertEquals(1, engine.stops.get());
 
-        YoBleScanHub.subscribe(engine, first);
+        hubFor(engine).subscribe(first);
         assertEquals(2, engine.starts.get());
     }
 
@@ -61,13 +78,13 @@ public final class YoBleScanHubTest {
         RecordingEngine engine = new RecordingEngine();
         AtomicInteger firstCount = new AtomicInteger();
         AtomicInteger secondCount = new AtomicInteger();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanStarted() {
                 firstCount.incrementAndGet();
             }
         });
-        BleOperationHandle second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle second = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanStarted() {
                 secondCount.incrementAndGet();
@@ -84,16 +101,16 @@ public final class YoBleScanHubTest {
     @Test
     public void releasedEngineAllowsNewEngineToStartAndReceiveFrames() {
         RecordingEngine oldEngine = new RecordingEngine();
-        BleOperationHandle oldHandle = YoBleScanHub.subscribe(oldEngine, new BleScanObserver() {
+        BleOperationHandle oldHandle = hubFor(oldEngine).subscribe(new BleScanObserver() {
         });
         assertEquals(1, oldEngine.starts.get());
         oldHandle.cancel();
 
-        YoBleScanHub.release(oldEngine);
+        hubFor(oldEngine).release();
 
         RecordingEngine newEngine = new RecordingEngine();
         AtomicInteger found = new AtomicInteger();
-        YoBleScanHub.subscribe(newEngine, new BleScanObserver() {
+        hubFor(newEngine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 found.incrementAndGet();
@@ -106,22 +123,22 @@ public final class YoBleScanHubTest {
     }
 
     @Test
-    public void staleHubIsReplacedByTheEnginePassedOnNextSubscribe() {
+    public void independentEnginesKeepIndependentHubs() {
         RecordingEngine oldEngine = new RecordingEngine();
-        YoBleScanHub.subscribe(oldEngine, new BleScanObserver() {
+        hubFor(oldEngine).subscribe(new BleScanObserver() {
         });
 
         RecordingEngine newEngine = new RecordingEngine();
         AtomicInteger found = new AtomicInteger();
-        YoBleScanHub.subscribe(newEngine, new BleScanObserver() {
+        hubFor(newEngine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 found.incrementAndGet();
             }
         });
 
-        assertEquals("第二次订阅必须使用传入的新引擎", 1, newEngine.starts.get());
-        assertTrue("旧引擎应被停掉，避免泄漏", oldEngine.stops.get() >= 1);
+        assertEquals("new engine must be started by its own hub", 1, newEngine.starts.get());
+        assertTrue("per-engine hubs are independent: old engine keeps running until its own hub is released", oldEngine.stops.get() == 0);
         newEngine.fanout.onDeviceFound(result());
         assertEquals(1, found.get());
     }
@@ -131,7 +148,7 @@ public final class YoBleScanHubTest {
         RecordingEngine engine = new RecordingEngine();
         AtomicInteger failures = new AtomicInteger();
         AtomicInteger found = new AtomicInteger();
-        BleOperationHandle handle = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle handle = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanFailed(BleFailure failure) {
                 failures.incrementAndGet();
@@ -153,9 +170,9 @@ public final class YoBleScanHubTest {
 
         // 再次订阅同一引擎：STOPPED → STARTING，引擎重启一次。
         handle.cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
         AtomicInteger secondFound = new AtomicInteger();
-        BleOperationHandle second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle second = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onDeviceFound(BleScanResult result) {
                 secondFound.incrementAndGet();
@@ -170,38 +187,38 @@ public final class YoBleScanHubTest {
     @Test
     public void resumesRunningStateWhenEngineRestartsAfterFailure() {
         RecordingEngine engine = new RecordingEngine();
-        BleOperationHandle handle = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle handle = hubFor(engine).subscribe(new BleScanObserver() {
         });
-        assertTrue("订阅后引擎必须在运行态", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("订阅后引擎必须在运行态", hubFor(engine).isEngineRunningForTest());
 
         engine.fanout.onScanFailed(failure());
-        assertFalse("失败后引擎不得再被当作运行中", YoBleScanHub.isEngineRunningForTest());
+        assertFalse("失败后引擎不得再被当作运行中", hubFor(engine).isEngineRunningForTest());
 
         // 引擎在失败后自行恢复（例如适配器重新开启）会重新上报 onScanStarted。
         engine.fanout.onScanStarted();
-        assertTrue("引擎恢复必须把会话拉回运行态", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("引擎恢复必须把会话拉回运行态", hubFor(engine).isEngineRunningForTest());
 
         handle.cancel();
-        assertFalse("最后一个订阅者取消后引擎不得留在运行态", YoBleScanHub.isEngineRunningForTest());
+        assertFalse("最后一个订阅者取消后引擎不得留在运行态", hubFor(engine).isEngineRunningForTest());
     }
 
     @Test
     public void engineSelfStopAllowsNextSubscribeToRestart() {
         RecordingEngine engine = new RecordingEngine();
-        BleOperationHandle handle = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle handle = hubFor(engine).subscribe(new BleScanObserver() {
         });
-        assertTrue(YoBleScanHub.isEngineRunningForTest());
+        assertTrue(hubFor(engine).isEngineRunningForTest());
 
         // 引擎自停（例如达到扫描超时）：Hub 必须回到非运行态，否则下一个订阅者永远起不来。
         engine.fanout.onScanStopped();
-        assertFalse("引擎自停后 Hub 不得仍认为在运行", YoBleScanHub.isEngineRunningForTest());
+        assertFalse("引擎自停后 Hub 不得仍认为在运行", hubFor(engine).isEngineRunningForTest());
 
         handle.cancel();
-        awaitSessionTransitions();
-        BleOperationHandle second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        awaitSessionTransitions(hubFor(engine));
+        BleOperationHandle second = hubFor(engine).subscribe(new BleScanObserver() {
         });
         assertEquals("自停后的下一次订阅必须能重新启动引擎", 2, engine.starts.get());
-        assertTrue(YoBleScanHub.isEngineRunningForTest());
+        assertTrue(hubFor(engine).isEngineRunningForTest());
         second.cancel();
     }
 
@@ -210,13 +227,13 @@ public final class YoBleScanHubTest {
         RecordingEngine engine = new RecordingEngine();
         AtomicInteger firstLost = new AtomicInteger();
         AtomicInteger secondLost = new AtomicInteger();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanResultLost(BleScanResult result) {
                 firstLost.incrementAndGet();
             }
         });
-        BleOperationHandle second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle second = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanResultLost(BleScanResult result) {
                 secondLost.incrementAndGet();
@@ -242,7 +259,7 @@ public final class YoBleScanHubTest {
             threads[i] = new Thread(() -> {
                 ready.countDown();
                 awaitUninterruptibly(go);
-                YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                hubFor(engine).subscribe(new BleScanObserver() {
                     @Override
                     public void onDeviceFound(BleScanResult result) {
                         found.incrementAndGet();
@@ -275,7 +292,7 @@ public final class YoBleScanHubTest {
         Thread[] threads = new Thread[count];
         for (int i = 0; i < count; i++) {
             threads[i] = new Thread(() -> {
-                BleOperationHandle handle = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                BleOperationHandle handle = hubFor(engine).subscribe(new BleScanObserver() {
                 });
                 subscribed.countDown();
                 awaitUninterruptibly(cancel);
@@ -285,18 +302,18 @@ public final class YoBleScanHubTest {
         }
         assertTrue("全部订阅者必须在超时内完成订阅", subscribed.await(5, TimeUnit.SECONDS));
         assertEquals("订阅者非空时只允许启动一次引擎", 1, engine.starts.get());
-        assertTrue("订阅者非空时引擎必须在运行", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("订阅者非空时引擎必须在运行", hubFor(engine).isEngineRunningForTest());
 
         cancel.countDown();
         for (Thread thread : threads) {
             thread.join(5000);
         }
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
 
         assertFalse("无订阅者时引擎不得运行", engine.running());
-        assertFalse("Hub 不得把已停止的会话当作运行中", YoBleScanHub.isEngineRunningForTest());
+        assertFalse("Hub 不得把已停止的会话当作运行中", hubFor(engine).isEngineRunningForTest());
         assertEquals("Hub 运行态视图必须与引擎真实运行标记一致",
-                engine.running(), YoBleScanHub.isEngineRunningForTest());
+                engine.running(), hubFor(engine).isEngineRunningForTest());
         assertEquals("每次启动都必须被停掉", engine.starts.get(), engine.stops.get());
     }
 
@@ -310,14 +327,14 @@ public final class YoBleScanHubTest {
         GatedEngine engine = new GatedEngine();
         AtomicReference<BleOperationHandle> starter = new AtomicReference<>();
         Thread starterThread = new Thread(
-                () -> starter.set(YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                () -> starter.set(hubFor(engine).subscribe(new BleScanObserver() {
                 })), "hub-starter");
         starterThread.start();
         assertTrue("启动必须已经进入引擎", engine.startEntered.await(5, TimeUnit.SECONDS));
 
         AtomicReference<BleOperationHandle> late = new AtomicReference<>();
         Thread lateThread = new Thread(
-                () -> late.set(YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                () -> late.set(hubFor(engine).subscribe(new BleScanObserver() {
                 })), "hub-late");
         lateThread.setDaemon(true);
         lateThread.start();
@@ -329,14 +346,14 @@ public final class YoBleScanHubTest {
         starterThread.join(5_000L);
 
         assertEquals("启动在途时的额外订阅不得重复启动引擎", 1, engine.starts.get());
-        assertTrue("启动落地后会话必须进入运行态", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("启动落地后会话必须进入运行态", hubFor(engine).isEngineRunningForTest());
         assertTrue(engine.running());
 
         starter.get().cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
         assertFalse("最后一个订阅者取消后引擎必须停止", engine.running());
         assertEquals(1, engine.stops.get());
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        assertFalse(hubFor(engine).isEngineRunningForTest());
     }
 
     /**
@@ -348,18 +365,18 @@ public final class YoBleScanHubTest {
         GatedEngine engine = new GatedEngine();
         AtomicReference<BleOperationHandle> subscription = new AtomicReference<>();
         Thread subscriber = new Thread(
-                () -> subscription.set(YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                () -> subscription.set(hubFor(engine).subscribe(new BleScanObserver() {
                 })), "hub-released-starter");
         subscriber.start();
         assertTrue("启动必须已经进入引擎", engine.startEntered.await(5, TimeUnit.SECONDS));
 
-        YoBleScanHub.release(engine);
+        hubFor(engine).release();
         engine.allowStartReturn.countDown();
         subscriber.join(5_000L);
 
         assertFalse("释放后仍落地的启动必须被补偿停掉", engine.running());
         assertEquals("释放路径自身不重复停扫，停扫由启动线程补齐", 1, engine.stops.get());
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        assertFalse(hubFor(engine).isEngineRunningForTest());
 
         // 释放后迟到的句柄取消是空操作：不得再对已丢弃的归属补一次停扫。
         subscription.get().cancel();
@@ -373,7 +390,7 @@ public final class YoBleScanHubTest {
     @Test
     public void synchronousStartFailureDispatchesOutsideTheHubLock() throws Exception {
         FailingStartEngine engine = new FailingStartEngine();
-        BleOperationHandle previous = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle previous = hubFor(engine).subscribe(new BleScanObserver() {
         });
 
         AtomicBoolean cancelFinished = new AtomicBoolean();
@@ -384,7 +401,7 @@ public final class YoBleScanHubTest {
         canceller.setDaemon(true);
 
         AtomicInteger failures = new AtomicInteger();
-        YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanFailed(BleFailure failure) {
                 canceller.start();
@@ -401,7 +418,7 @@ public final class YoBleScanHubTest {
         assertTrue("失败分发期间不得持有 Hub 锁，否则并发取消失败", cancelFinished.get());
         assertEquals("两次订阅各启动一次", 2, engine.starts.get());
         assertEquals("启动已同步失败时不得重复停扫", 0, engine.stops.get());
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        assertFalse(hubFor(engine).isEngineRunningForTest());
     }
 
     /**
@@ -414,14 +431,14 @@ public final class YoBleScanHubTest {
         GatedStopEngine engine = new GatedStopEngine();
         AtomicInteger firstStops = new AtomicInteger();
         AtomicInteger secondStops = new AtomicInteger();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanStopped() {
                 firstStops.incrementAndGet();
             }
         });
         assertEquals("首个订阅者必须启动平台扫描", 1, engine.starts.get());
-        assertTrue(YoBleScanHub.isEngineRunningForTest());
+        assertTrue(hubFor(engine).isEngineRunningForTest());
 
         Thread canceller = new Thread(first::cancel, "hub-last-cancel");
         canceller.setDaemon(true);
@@ -431,7 +448,7 @@ public final class YoBleScanHubTest {
         BleOperationHandle second;
         try {
             // 停扫窗口内新订阅：只挂载，等补偿启动，自己不得再启动一次引擎。
-            second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+            second = hubFor(engine).subscribe(new BleScanObserver() {
                 @Override
                 public void onScanStopped() {
                     secondStops.incrementAndGet();
@@ -444,14 +461,14 @@ public final class YoBleScanHubTest {
         canceller.join(5_000L);
 
         assertTrue("补偿重启必须把新代次拉到平台", engine.restarted.await(5, TimeUnit.SECONDS));
-        awaitSessionTransitions();
-        assertTrue("补偿重启落地后会话必须处于运行态", YoBleScanHub.isEngineRunningForTest());
+        awaitSessionTransitions(hubFor(engine));
+        assertTrue("补偿重启落地后会话必须处于运行态", hubFor(engine).isEngineRunningForTest());
         assertEquals("补偿重启只允许启动一次", 2, engine.starts.get());
 
         // 旧代次迟到的停扫终态：停扫任务在扫描状态线程上异步完成，重启之后才到是正常顺序。
         engine.fanoutOfStart(1).onScanStopped();
 
-        assertTrue("旧代次终态不得把新会话标成 STOPPED", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("旧代次终态不得把新会话标成 STOPPED", hubFor(engine).isEngineRunningForTest());
         assertTrue("平台上的新会话必须仍在运行", engine.running());
         assertEquals("旧代次的结束不得分发给停扫窗口内新挂上的订阅者", 0, secondStops.get());
         assertEquals("已退订的旧订阅者不得再收到终态", 0, firstStops.get());
@@ -459,13 +476,13 @@ public final class YoBleScanHubTest {
         assertEquals("旧代次终态不得触发额外启动", 2, engine.starts.get());
 
         // 误标窗口里新订阅者不得再起一次平台扫描：那一次启动白耗 5/30 限流预算。
-        BleOperationHandle third = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle third = hubFor(engine).subscribe(new BleScanObserver() {
         });
         assertEquals("运行中的会话不得因新订阅多起一次平台扫描", 2, engine.starts.get());
 
         third.cancel();
         second.cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
     }
 
     /**
@@ -475,7 +492,7 @@ public final class YoBleScanHubTest {
     @Test
     public void platformFailureDuringStaleStopWindowStillReachesSubscribers() throws Exception {
         GatedStopEngine engine = new GatedStopEngine();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
         });
 
         Thread canceller = new Thread(first::cancel, "hub-last-cancel");
@@ -486,7 +503,7 @@ public final class YoBleScanHubTest {
         AtomicInteger failures = new AtomicInteger();
         BleOperationHandle second;
         try {
-            second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+            second = hubFor(engine).subscribe(new BleScanObserver() {
                 @Override
                 public void onScanFailed(BleFailure failure) {
                     failures.incrementAndGet();
@@ -497,7 +514,7 @@ public final class YoBleScanHubTest {
         }
         canceller.join(5_000L);
         assertTrue("补偿重启必须把新代次拉到平台", engine.restarted.await(5, TimeUnit.SECONDS));
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
 
         // 旧代次迟到的停扫终态（旧实现会在这里把会话误标成 STOPPED，从而吞掉下面的真实失败）。
         // 会话状态的归属由 staleScanStoppedDoesNotKillTheRestartedSession 断言，这里只判失败是否送达。
@@ -505,12 +522,12 @@ public final class YoBleScanHubTest {
 
         engine.fanoutOfStart(2).onScanFailed(failure());
         assertEquals("当前代次的平台失败必须恰好送达一次", 1, failures.get());
-        assertFalse("失败后会话不得仍被当作运行中", YoBleScanHub.isEngineRunningForTest());
+        assertFalse("失败后会话不得仍被当作运行中", hubFor(engine).isEngineRunningForTest());
 
         engine.fanoutOfStart(1).onScanFailed(failure());
         assertEquals("被作废代次的失败必须被吸收", 1, failures.get());
         second.cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
     }
 
     /**
@@ -521,21 +538,21 @@ public final class YoBleScanHubTest {
     @Test
     public void attachAfterImmediateStopStartsNewEpochAndIgnoresLateTerminal() {
         ImmediateStopEngine engine = new ImmediateStopEngine();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
         });
         assertEquals("首个订阅者必须启动平台扫描", 1, engine.starts.get());
-        assertTrue(YoBleScanHub.isEngineRunningForTest());
+        assertTrue(hubFor(engine).isEngineRunningForTest());
 
         // stop() 立即返回：迁移线程把会话落到 STOPPED，这里用迁移栅栏拿这个确定点，不拿调度当同步。
         first.cancel();
-        awaitSessionTransitions();
-        assertFalse("停扫落地后会话不得仍被当作运行中", YoBleScanHub.isEngineRunningForTest());
+        awaitSessionTransitions(hubFor(engine));
+        assertFalse("停扫落地后会话不得仍被当作运行中", hubFor(engine).isEngineRunningForTest());
         assertEquals("最后一个订阅者取消必须停扫一次", 1, engine.stops.get());
 
         AtomicInteger startedSeen = new AtomicInteger();
         AtomicInteger stoppedSeen = new AtomicInteger();
         AtomicInteger found = new AtomicInteger();
-        BleOperationHandle second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle second = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanStarted() {
                 startedSeen.incrementAndGet();
@@ -552,7 +569,7 @@ public final class YoBleScanHubTest {
             }
         });
         assertEquals("STOPPED 上的新订阅必须开新代次并启动一次引擎", 2, engine.starts.get());
-        assertTrue("新代次启动后会话必须处于运行态", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("新代次启动后会话必须处于运行态", hubFor(engine).isEngineRunningForTest());
 
         // 旧代次迟到的终态（停扫任务在引擎状态线程上异步完成，重启之后才到是正常顺序）。
         engine.fanoutOfStart(1).onScanStopped();
@@ -560,7 +577,7 @@ public final class YoBleScanHubTest {
 
         assertEquals("旧代次的结束不得送达新代次的订阅者", 0, stoppedSeen.get());
         assertEquals("旧代次的开始不得送达新代次的订阅者", 0, startedSeen.get());
-        assertTrue("旧代次终态不得把新会话标成非运行", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("旧代次终态不得把新会话标成非运行", hubFor(engine).isEngineRunningForTest());
         assertEquals("旧代次终态不得触发额外启动", 2, engine.starts.get());
         assertEquals("旧代次终态不得触发额外停扫", 1, engine.stops.get());
 
@@ -571,10 +588,10 @@ public final class YoBleScanHubTest {
         assertEquals("新代次的开始必须送达", 1, startedSeen.get());
         engine.fanoutOfStart(2).onScanStopped();
         assertEquals("新代次的结束必须送达", 1, stoppedSeen.get());
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        assertFalse(hubFor(engine).isEngineRunningForTest());
 
         second.cancel();
-        awaitSessionTransitions();
+        awaitSessionTransitions(hubFor(engine));
     }
 
     /**
@@ -585,7 +602,7 @@ public final class YoBleScanHubTest {
     @Test
     public void failureDuringStopWindowStillResumesForTheSubscriberThatWaitedForIt() throws Exception {
         GatedStopEngine engine = new GatedStopEngine();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
         });
 
         Thread canceller = new Thread(first::cancel, "hub-last-cancel");
@@ -597,7 +614,7 @@ public final class YoBleScanHubTest {
         BleOperationHandle second;
         try {
             // 停扫窗口内新订阅：只挂载，等补偿启动，自己不得再启动一次引擎。
-            second = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+            second = hubFor(engine).subscribe(new BleScanObserver() {
                 @Override
                 public void onScanFailed(BleFailure failure) {
                     failures.incrementAndGet();
@@ -607,22 +624,22 @@ public final class YoBleScanHubTest {
             // 停扫真的落地了：同一代次的平台失败把会话置 STOPPED（引擎已经没有会话）。
             engine.fanoutOfStart(1).onScanFailed(failure());
             assertEquals("当前代次的失败必须送达停扫窗口内的订阅者", 1, failures.get());
-            assertFalse("失败后会话不得仍被当作运行中", YoBleScanHub.isEngineRunningForTest());
+            assertFalse("失败后会话不得仍被当作运行中", hubFor(engine).isEngineRunningForTest());
         } finally {
             engine.allowStopReturn.countDown();
         }
         canceller.join(5_000L);
 
         assertTrue("停扫窗口里的失败不得放弃补偿重启", engine.restarted.await(5, TimeUnit.SECONDS));
-        awaitSessionTransitions();
-        assertTrue("补偿重启落地后会话必须处于运行态", YoBleScanHub.isEngineRunningForTest());
+        awaitSessionTransitions(hubFor(engine));
+        assertTrue("补偿重启落地后会话必须处于运行态", hubFor(engine).isEngineRunningForTest());
         assertTrue("补偿重启必须把新代次拉到平台", engine.running());
         assertEquals("补偿重启只允许启动一次", 2, engine.starts.get());
         assertEquals("失败后的补偿重启不得多停一次", 1, engine.stops.get());
 
         second.cancel();
-        awaitSessionTransitions();
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        awaitSessionTransitions(hubFor(engine));
+        assertFalse(hubFor(engine).isEngineRunningForTest());
     }
 
     /**
@@ -641,11 +658,11 @@ public final class YoBleScanHubTest {
         AtomicInteger firstStarted = new AtomicInteger();
         AtomicInteger lateStarted = new AtomicInteger();
         AtomicReference<BleOperationHandle> late = new AtomicReference<>();
-        BleOperationHandle first = YoBleScanHub.subscribe(engine, new BleScanObserver() {
+        BleOperationHandle first = hubFor(engine).subscribe(new BleScanObserver() {
             @Override
             public void onScanStarted() {
                 firstStarted.incrementAndGet();
-                late.set(YoBleScanHub.subscribe(engine, new BleScanObserver() {
+                late.set(hubFor(engine).subscribe(new BleScanObserver() {
                     @Override
                     public void onScanStarted() {
                         lateStarted.incrementAndGet();
@@ -660,12 +677,12 @@ public final class YoBleScanHubTest {
         assertEquals("既有订阅者必须收到这一次开始", 1, firstStarted.get());
         assertEquals("分发开始后才挂上的订阅者不得参与本次分发", 0, lateStarted.get());
         assertEquals("分发期间的新订阅不得重复启动引擎", 1, engine.starts.get());
-        assertTrue("分发期间的新订阅不得改动会话状态", YoBleScanHub.isEngineRunningForTest());
+        assertTrue("分发期间的新订阅不得改动会话状态", hubFor(engine).isEngineRunningForTest());
 
         first.cancel();
         late.get().cancel();
-        awaitSessionTransitions();
-        assertFalse(YoBleScanHub.isEngineRunningForTest());
+        awaitSessionTransitions(hubFor(engine));
+        assertFalse(hubFor(engine).isEngineRunningForTest());
     }
 
     private static BleScanResult result() {
@@ -684,8 +701,8 @@ public final class YoBleScanHubTest {
      * 等 Hub 的会话迁移队列排空：句柄取消栈上不再调用引擎，停扫与补偿重启由迁移线程推进，
      * 用例必须等它落地（条件通知），不能拿线程调度当同步。
      */
-    private static void awaitSessionTransitions() {
-        CountDownLatch barrier = YoBleScanHub.submitTransitionBarrierForTest();
+    private static void awaitSessionTransitions(YoBleScanHub hub) {
+        CountDownLatch barrier = hub.submitTransitionBarrierForTest();
         try {
             if (!barrier.await(5L, TimeUnit.SECONDS)) {
                 fail("会话迁移未在超时内排空");

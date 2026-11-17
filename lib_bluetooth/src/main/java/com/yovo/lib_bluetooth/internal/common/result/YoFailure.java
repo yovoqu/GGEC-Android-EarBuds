@@ -11,7 +11,7 @@ import androidx.annotation.Nullable;
  * @description 失败结果基类，携带错误码、消息、可追溯 ID 与可恢复/可重试标记。
  */
 public class YoFailure {
-    private final YoErrorCode errorCode;
+    private final YoErrorCode<?> errorCode;
     private final String message;
     private final Throwable cause;
     private final boolean recoverable;
@@ -19,7 +19,7 @@ public class YoFailure {
     private final String sourceModule;
     private final String traceId;
 
-    public YoFailure(@NonNull YoErrorCode errorCode,
+    public YoFailure(@NonNull YoErrorCode<?> errorCode,
                      @NonNull String message,
                      @Nullable Throwable cause,
                      boolean recoverable,
@@ -36,7 +36,7 @@ public class YoFailure {
     }
 
     @NonNull
-    public YoErrorCode getErrorCode() {
+    public YoErrorCode<?> getErrorCode() {
         return errorCode;
     }
 

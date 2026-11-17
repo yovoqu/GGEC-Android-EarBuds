@@ -21,8 +21,11 @@ public interface YoCbtDiscoveryPlatform {
 
     void cancelDiscovery();
 
-    boolean requiresLegacyLocationPermission();
+    /**
+     * 本机是否还要求应用声明位置权限才能开始经典蓝牙发现（现代版本不再要求）。
+     */
+    boolean requiresLocationPermission();
 
-    /** @return Android 12 以下设备是否已授予旧版位置权限 */
-    boolean hasLegacyLocationPermission(@NonNull Context context);
+    /** @return 发现所需的位置权限是否已授予 */
+    boolean hasLocationPermission(@NonNull Context context);
 }

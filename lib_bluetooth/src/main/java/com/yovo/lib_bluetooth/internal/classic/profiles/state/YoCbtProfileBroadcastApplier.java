@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic.profiles.state;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshot;
@@ -174,7 +173,7 @@ public final class YoCbtProfileBroadcastApplier {
                 try {
                     observer.onProfileStateChanged(state);
                 } catch (Exception e) {
-                    BluetoothDiagnosticsBus.get().recordException(TAG, "观察者抛出异常", e);
+                    runtime.diagnostics().recordException(TAG, "观察者抛出异常", e);
                 }
             });
         }

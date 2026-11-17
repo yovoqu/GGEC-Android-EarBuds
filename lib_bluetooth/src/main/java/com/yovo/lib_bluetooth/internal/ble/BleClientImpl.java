@@ -10,9 +10,13 @@ import com.yovo.lib_bluetooth.api.BleScanHealth;
 import com.yovo.lib_bluetooth.api.BleScanPlan;
 import com.yovo.lib_bluetooth.api.BleScanSubscription;
 import com.yovo.lib_bluetooth.api.YoBleClient;
-import com.yovo.lib_bluetooth.internal.ble.internal.android.YoBleAndroidModuleGraph;
-import com.yovo.lib_bluetooth.internal.ble.scan.YoBleScanHub;
+import com.yovo.lib_bluetooth.internal.ble.platform.YoBleAndroidModuleGraph;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtAndroidRadioPlatform;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
+import com.yovo.lib_bluetooth.spi.log.LogSink;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleAdvertiseConfig;
@@ -60,11 +64,20 @@ public final class BleClientImpl implements YoBleClient {
     private final YoBleAndroidModuleGraph androidGraph;
     @NonNull
     private final YoBleModuleCore core;
+    /** 本客户端唯一的射频协调器：由图创建并持有，向下只做构造注入。 */
+    @NonNull
+    private final YoBtRadioCoordinator radioCoordinator;
 
     public BleClientImpl(@NonNull Context context,
                          @NonNull BleConfig config,
-                         @NonNull YoBluetoothPermissionChecker permissionChecker) {
-        this.androidGraph = YoBleAndroidModuleGraph.create(context, config, permissionChecker);
+                         @NonNull YoBluetoothPermissionChecker permissionChecker,
+                         @NonNull LogSink logSink) {
+        Context appContext = context.getApplicationContext();
+        this.radioCoordinator = new YoBtRadioCoordinator(
+                new YoBtAndroidRadioPlatform(new YoBluetoothAdapterProvider(appContext)));
+        this.androidGraph = YoBleAndroidModuleGraph.create(
+                context, config, permissionChecker, radioCoordinator,
+                new BluetoothDiagnosticsBus(logSink, BluetoothDiagnosticsBus.DEFAULT_CAPACITY));
         this.core = androidGraph.core;
     }
 
@@ -115,7 +128,7 @@ public final class BleClientImpl implements YoBleClient {
     @NonNull
     @Override
     public BleScanSubscription subscribeScan(@NonNull BleScanObserver observer) {
-        return YoBleScanHub.subscribe(core.scanController, observer);
+        return core.scanHub.subscribe(observer);
     }
 
     @NonNull

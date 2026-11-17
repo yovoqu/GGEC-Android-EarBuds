@@ -2,9 +2,6 @@ package com.yovo.lib_bluetooth.internal.classic.profiles.core;
 
 import androidx.annotation.NonNull;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * @author tingfeng.yang
  * @date 2026-06-18
@@ -27,16 +24,6 @@ public enum YoCbtProfileType {
     HEARING_AID(21),
     LE_AUDIO(22),
     UNKNOWN(-1);
-
-    private static final Map<Integer, YoCbtProfileType> ANDROID_MAP = new HashMap<>();
-
-    static {
-        for (YoCbtProfileType type : values()) {
-            if (type.hasAndroidProfile()) {
-                ANDROID_MAP.putIfAbsent(type.androidProfile, type);
-            }
-        }
-    }
 
     private final int androidProfile;
     private final boolean extensionOnly;
@@ -70,7 +57,11 @@ public enum YoCbtProfileType {
 
     @NonNull
     public static YoCbtProfileType fromAndroidProfile(int androidProfile) {
-        YoCbtProfileType type = ANDROID_MAP.get(androidProfile);
-        return type != null ? type : UNKNOWN;
+        for (YoCbtProfileType type : values()) {
+            if (type.hasAndroidProfile() && type.androidProfile == androidProfile) {
+                return type;
+            }
+        }
+        return UNKNOWN;
     }
 }

@@ -2,6 +2,8 @@ package com.yovo.lib_bluetooth.internal.classic.protocol.codec;
 
 import com.yovo.lib_bluetooth.internal.classic.protocol.packet.YoCbtPacket;
 import com.yovo.lib_bluetooth.internal.classic.protocol.packet.YoCbtPacketFramer;
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
+
 import androidx.annotation.NonNull;
 
 /**
@@ -10,6 +12,8 @@ import androidx.annotation.NonNull;
  * @description 长度前缀帧格式编解码器，载荷编解码委托内部编解码器。
  */
 public final class YoCbtFramedPacketCodec implements YoCbtPacketCodec {
+
+    private static final String TAG = "YoCbtFramedCodec";
 
     private final YoCbtPacketCodec innerCodec;
     private final YoCbtPacketFramer framer;
@@ -44,7 +48,9 @@ public final class YoCbtFramedPacketCodec implements YoCbtPacketCodec {
         for (byte[] frame : framer.feed(rawBytes)) {
             try {
                 consumer.accept(decode(frame));
-            } catch (Throwable ignored) {
+            } catch (Exception frameFailure) {
+                // 帧已从缓冲移除：单帧解码/消费失败不阻断后续帧，但必须留证，不能静默丢弃。
+                YoBtLogger.w(TAG, "frame decode/consume failed, bytes=" + frame.length, frameFailure);
             }
         }
     }

@@ -8,7 +8,7 @@ import com.yovo.lib_bluetooth.api.YoCbtClient;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClient;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalClientConfig;
 import com.yovo.lib_bluetooth.internal.classic.api.CbtInternalOperationHandle;
-import com.yovo.lib_bluetooth.internal.classic.internal.android.YoCbtAndroidClient;
+import com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidClient;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtConnectedDeviceObserver;
@@ -50,7 +50,11 @@ import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpoint;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppEndpointSource;
 import com.yovo.lib_bluetooth.internal.classic.spp.endpoint.YoCbtSppSecurityMode;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtAndroidRadioPlatform;
+import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
+import com.yovo.lib_bluetooth.spi.log.LogSink;
 import com.yovo.lib_bluetooth.internal.common.diagnostics.YoEventTimeline;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.model.classic.CbtDiagnosticReport;
@@ -106,16 +110,26 @@ public final class ClassicClientImpl implements YoCbtClient {
 
     @NonNull
     private final CbtInternalClient delegate;
+    /** 本客户端唯一的诊断总线：由图持有，导出诊断报告只读这一个实例。 */
+    @NonNull
+    private final BluetoothDiagnosticsBus diagnostics;
 
     public ClassicClientImpl(@NonNull Context context,
                              @NonNull CbtConfig config,
-                             @NonNull YoBluetoothPermissionChecker permissionChecker) {
+                             @NonNull YoBluetoothPermissionChecker permissionChecker,
+                             @NonNull LogSink logSink) {
         CbtInternalClientConfig oldConfig = CbtInternalClientConfig.builder()
                 .allowHiddenApiBondManagement(config.allowHiddenApiBondManagement())
                 .allowHiddenApiSppChannel(config.allowHiddenApiSppChannel())
                 .sppWriteQueueCapacity(config.sppWriteQueueCapacity())
                 .build();
-        this.delegate = new YoCbtAndroidClient(context, oldConfig, permissionChecker);
+        this.diagnostics = new BluetoothDiagnosticsBus(
+                logSink, BluetoothDiagnosticsBus.DEFAULT_CAPACITY);
+        Context appContext = context.getApplicationContext();
+        this.delegate = new YoCbtAndroidClient(context, oldConfig, permissionChecker,
+                new YoBtRadioCoordinator(
+                        new YoBtAndroidRadioPlatform(new YoBluetoothAdapterProvider(appContext))),
+                diagnostics);
     }
 
     @NonNull
@@ -542,7 +556,7 @@ public final class ClassicClientImpl implements YoCbtClient {
     @Override
     @NonNull
     public Result<CbtDiagnosticReport> exportDiagnosticReport() {
-        BluetoothDiagnosticsBus bus = BluetoothDiagnosticsBus.get();
+        BluetoothDiagnosticsBus bus = diagnostics;
         List<String> entries = new ArrayList<>();
         for (YoEventTimeline.TimedEvent event : bus.timelineSnapshot()) {
             entries.add(event.toString());
@@ -897,7 +911,7 @@ public final class ClassicClientImpl implements YoCbtClient {
     private static CbtFailure toPublic(
             @NonNull com.yovo.lib_bluetooth.internal.common.result.YoFailure failure) {
         return new CbtFailure(
-                mapErrorCode(failure.getErrorCode().code()),
+                publicClassOf(failure),
                 failure.getMessage(),
                 failure.getCause(),
                 failure.isRecoverable(),
@@ -909,7 +923,7 @@ public final class ClassicClientImpl implements YoCbtClient {
     @NonNull
     private static CbtFailure toPublic(@NonNull YoCbtFailure failure) {
         return new CbtFailure(
-                mapErrorCode(failure.getErrorCode().code()),
+                publicClassOf(failure),
                 failure.getMessage(),
                 failure.getCause(),
                 failure.isRecoverable(),
@@ -918,104 +932,14 @@ public final class ClassicClientImpl implements YoCbtClient {
                 failure.getDeviceId() == null ? null : toPublic(failure.getDeviceId()));
     }
 
+    /**
+     * 内部错误码自带对外分类枚举：投影层只做一次类型收窄，不存在「内部字符串 → 公开枚举」
+     * 的对表，也没有 default 兜底分支。
+     */
     @NonNull
-    private static CbtErrorCode mapErrorCode(@NonNull String code) {
-        switch (code) {
-            case "YO_CBT_BLUETOOTH_NOT_SUPPORTED":
-                return CbtErrorCode.BLUETOOTH_NOT_SUPPORTED;
-            case "YO_CBT_BLUETOOTH_DISABLED":
-                return CbtErrorCode.BLUETOOTH_DISABLED;
-            case "YO_CBT_PERMISSION_SCAN_DENIED":
-            case "YO_CBT_PERMISSION_CONNECT_DENIED":
-            case "YO_CBT_PERMISSION_LOCATION_DENIED":
-                return CbtErrorCode.PERMISSION_DENIED;
-            case "YO_CBT_DISCOVERY_START_FAILED":
-            case "YO_CBT_DISCOVERY_ALREADY_RUNNING":
-            case "YO_CBT_DISCOVERY_STOP_FAILED":
-            case "YO_CBT_DISCOVERY_TIMEOUT":
-            case "YO_CBT_DISCOVERY_RECEIVER_ERROR":
-                return CbtErrorCode.DISCOVERY_START_FAILED;
-            case "YO_CBT_BOND_START_FAILED":
-            case "YO_CBT_BOND_CANCEL_FAILED":
-            case "YO_CBT_BOND_REMOVE_FAILED":
-            case "YO_CBT_BONDED_DEVICE_NOT_FOUND":
-            case "YO_CBT_BOND_HIDDEN_API_BLOCKED":
-            case "YO_CBT_BOND_DEVICE_NOT_CONNECTABLE":
-                return CbtErrorCode.BOND_FAILED;
-            case "YO_CBT_ACL_STATE_QUERY_FAILED":
-            case "YO_CBT_ACL_STATE_UNKNOWN":
-            case "YO_CBT_ACL_RECEIVER_ERROR":
-                return CbtErrorCode.ACL_QUERY_FAILED;
-            case "YO_CBT_SDP_START_FAILED":
-            case "YO_CBT_SDP_TIMEOUT":
-            case "YO_CBT_SDP_UUID_EMPTY":
-            case "YO_CBT_SDP_UUID_NOT_MATCHED":
-            case "YO_CBT_SDP_ACTION_UUID_NOT_RECEIVED":
-            case "YO_CBT_SDP_CHANNEL_NOT_RESOLVED":
-                return CbtErrorCode.SDP_FAILED;
-            case "YO_CBT_PROFILE_PROXY_GET_FAILED":
-            case "YO_CBT_PROFILE_PROXY_NOT_READY":
-            case "YO_CBT_PROFILE_PROXY_ALREADY_REQUESTED":
-            case "YO_CBT_PROFILE_PROXY_LIFECYCLE_ERROR":
-            case "YO_CBT_PROFILE_UNSUPPORTED":
-            case "YO_CBT_PROFILE_TYPE_UNSUPPORTED":
-                return CbtErrorCode.PROFILE_PROXY_FAILED;
-            case "YO_CBT_AUDIO_CONNECT_REJECTED":
-                return CbtErrorCode.AUDIO_CONNECT_REJECTED;
-            case "YO_CBT_PROFILE_STATE_QUERY_FAILED":
-            case "YO_CBT_PROFILE_CAPABILITY_UNKNOWN":
-            case "YO_CBT_A2DP_STATE_QUERY_FAILED":
-            case "YO_CBT_HEADSET_STATE_QUERY_FAILED":
-                return CbtErrorCode.PROFILE_STATE_QUERY_FAILED;
-            case "YO_CBT_SPP_CONNECT_FAILED":
-            case "YO_CBT_SPP_ALREADY_CONNECTED":
-                return CbtErrorCode.SPP_CONNECT_FAILED;
-            case "YO_CBT_SPP_CONNECT_TIMEOUT":
-                return CbtErrorCode.SPP_CONNECT_TIMEOUT;
-            case "YO_CBT_SPP_SOCKET_CREATE_FAILED":
-                return CbtErrorCode.SPP_SOCKET_CREATE_FAILED;
-            case "YO_CBT_SPP_CHANNEL_CONNECT_FAILED":
-                return CbtErrorCode.SPP_CHANNEL_CONNECT_FAILED;
-            case "YO_CBT_SPP_CHANNEL_INVALID":
-                return CbtErrorCode.SPP_CHANNEL_INVALID;
-            case "YO_CBT_SPP_CHANNEL_HIDDEN_API_BLOCKED":
-                return CbtErrorCode.SPP_CHANNEL_HIDDEN_API_BLOCKED;
-            case "YO_CBT_SPP_CHANNEL_HIDDEN_API_NOT_AVAILABLE":
-                return CbtErrorCode.SPP_CHANNEL_HIDDEN_API_NOT_AVAILABLE;
-            case "YO_CBT_SPP_CHANNEL_SOCKET_CREATE_FAILED":
-                return CbtErrorCode.SPP_CHANNEL_SOCKET_CREATE_FAILED;
-            case "YO_CBT_SPP_CHANNEL_REFLECTION_FAILED":
-                return CbtErrorCode.SPP_CHANNEL_REFLECTION_FAILED;
-            case "YO_CBT_SPP_DEVICE_INVALID":
-                return CbtErrorCode.SPP_DEVICE_INVALID;
-            case "YO_CBT_SPP_UUID_INVALID":
-                return CbtErrorCode.SPP_UUID_INVALID;
-            case "YO_CBT_SPP_LOCAL_CLOSED":
-                return CbtErrorCode.SPP_LOCAL_CLOSED;
-            case "YO_CBT_SPP_REMOTE_CLOSED":
-                return CbtErrorCode.SPP_REMOTE_CLOSED;
-            case "YO_CBT_SPP_STREAM_OPEN_FAILED":
-                return CbtErrorCode.SPP_STREAM_OPEN_FAILED;
-            case "YO_CBT_OPERATION_CANCELLED":
-                return CbtErrorCode.OPERATION_CANCELLED;
-            case "YO_CBT_SPP_WRITE_FAILED":
-                return CbtErrorCode.SPP_WRITE_FAILED;
-            case "YO_CBT_SPP_READ_FAILED":
-                return CbtErrorCode.SPP_READ_FAILED;
-            case "YO_CBT_COMMAND_TIMEOUT":
-            case "YO_CBT_COMMAND_CANCELLED":
-            case "YO_CBT_COMMAND_QUEUE_FULL":
-            case "YO_CBT_RESPONSE_NOT_MATCHED":
-            case "YO_CBT_PACKET_ENCODE_FAILED":
-            case "YO_CBT_PACKET_DECODE_FAILED":
-                return CbtErrorCode.COMMAND_FAILED;
-            case "YO_CBT_RELEASED":
-            case "YO_CBT_ALREADY_RELEASED":
-            case "YO_CBT_RELEASE_IN_PROGRESS":
-                return CbtErrorCode.RELEASED;
-            default:
-                return CbtErrorCode.SPP_CONNECT_FAILED;
-        }
+    private static CbtErrorCode publicClassOf(
+            @NonNull com.yovo.lib_bluetooth.internal.common.result.YoFailure failure) {
+        return CbtErrorCode.class.cast(failure.getErrorCode().publicClass());
     }
 
     @NonNull

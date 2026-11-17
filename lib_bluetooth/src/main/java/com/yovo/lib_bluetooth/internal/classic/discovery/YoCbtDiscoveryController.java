@@ -7,8 +7,7 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioCoordinator;
 import com.yovo.lib_bluetooth.internal.common.bluetooth.radio.YoBtRadioLease;
-import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
-import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermission;
+import com.yovo.lib_bluetooth.spi.permission.YoBluetoothPermission;
 import com.yovo.lib_bluetooth.internal.common.permission.YoBluetoothPermissionChecker;
 import com.yovo.lib_bluetooth.internal.common.result.YoResult;
 import com.yovo.lib_bluetooth.internal.classic.device.capability.YoCbtDeviceCapability;
@@ -41,6 +40,9 @@ public final class YoCbtDiscoveryController {
     private static final String TAG = "YoCbtDiscoveryController";
     private static final String SOURCE_MODULE = "yocbt:discovery:controller";
 
+    /** 一次条件重试的调度延迟：只用于吸收前一次 cancelDiscovery 尚未落定的窗口。 */
+    private static final long DISCOVERY_START_RETRY_DELAY_MILLIS = 80L;
+
     private final Context appContext;
     private final YoCbtRuntime runtime;
     private final YoBluetoothPermissionChecker permissionChecker;
@@ -54,16 +56,6 @@ public final class YoCbtDiscoveryController {
     private final AtomicReference<YoCbtDiscoveryState> state =
             new AtomicReference<>(YoCbtDiscoveryState.IDLE);
     private final AtomicReference<YoCbtDiscoveryOperationContext> activeSession = new AtomicReference<>(null);
-
-    public YoCbtDiscoveryController(@NonNull Context appContext,
-                                    @NonNull YoCbtRuntime runtime,
-                                    @NonNull YoBluetoothPermissionChecker permissionChecker,
-                                    @NonNull YoCbtDiscoveryPlatform discoveryPlatform,
-                                    @NonNull YoCbtDiscoveryBroadcastPort discoveryBroadcastPort,
-                                    @Nullable YoCbtDiscoveryResultMerger resultMerger) {
-        this(appContext, runtime, permissionChecker, discoveryPlatform, discoveryBroadcastPort, resultMerger,
-                YoBtRadioCoordinator.get());
-    }
 
     public YoCbtDiscoveryController(@NonNull Context appContext,
                                     @NonNull YoCbtRuntime runtime,
@@ -97,8 +89,8 @@ public final class YoCbtDiscoveryController {
                     "BLUETOOTH_SCAN permission is not granted",
                     SOURCE_MODULE));
         }
-        if (discoveryPlatform.requiresLegacyLocationPermission()
-                && !discoveryPlatform.hasLegacyLocationPermission(appContext)) {
+        if (discoveryPlatform.requiresLocationPermission()
+                && !discoveryPlatform.hasLocationPermission(appContext)) {
             return YoResult.failure(YoCbtFailure.of(
                     YoCbtErrorCode.YO_CBT_PERMISSION_LOCATION_DENIED,
                     "Location permission is required for classic Bluetooth discovery on this Android version",
@@ -165,6 +157,7 @@ public final class YoCbtDiscoveryController {
 
         // 同步标记 session 完成并请求底层取消发现，防止异步排队延迟导致后续立即 start 触发冲突
         session.completed.set(true);
+        cancelRetry(session);
         if (session.timeoutHandle != null) {
             session.timeoutHandle.cancel();
             session.timeoutHandle = null;
@@ -186,6 +179,7 @@ public final class YoCbtDiscoveryController {
         if (session == null) return;
 
         session.completed.set(true);
+        cancelRetry(session);
         releaseSessionScope(session);
         if (session.timeoutHandle != null) {
             session.timeoutHandle.cancel();
@@ -214,6 +208,7 @@ public final class YoCbtDiscoveryController {
         YoCbtDiscoveryOperationContext session = activeSession.getAndSet(null);
         if (session != null) {
             session.completed.set(true);
+            cancelRetry(session);
             if (session.timeoutHandle != null) {
                 session.timeoutHandle.cancel();
                 session.timeoutHandle = null;
@@ -249,6 +244,8 @@ public final class YoCbtDiscoveryController {
 
     private void completeDiscoveryNormally(@NonNull YoCbtDiscoveryOperationContext session) {
         if (!session.completed.compareAndSet(false, true)) return;
+
+        cancelRetry(session);
 
         if (session.timeoutHandle != null) {
             session.timeoutHandle.cancel();
@@ -354,20 +351,9 @@ public final class YoCbtDiscoveryController {
                     session.eventSession, System.currentTimeMillis()));
 
             if (!discoveryPlatform.startDiscovery()) {
-                // 若底层系统因前一次 cancelDiscovery 正在处理中导致瞬时返回 false，尝试重试一次
-                try {
-                    Thread.sleep(80);
-                } catch (InterruptedException ignored) {
-                }
-                if (session.completed.get()) {
-                    state.set(YoCbtDiscoveryState.IDLE);
-                    return;
-                }
-                if (!discoveryPlatform.startDiscovery()) {
-                    failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
-                            "BluetoothAdapter.startDiscovery() returned false");
-                    return;
-                }
+                // 前一次 cancelDiscovery 尚未在协议栈落定时，系统会瞬时返回 false。
+                // 此处不阻塞等待：交由运行时调度器做一次条件重试（回调到期后回 state 线程重新判定）。
+                scheduleStartRetry(session);
             }
 
             session.timeoutHandle = runtime.scheduler().schedule(() -> {
@@ -377,7 +363,7 @@ public final class YoCbtDiscoveryController {
                 });
             }, session.config.getTimeoutMillis());
 
-            YoBtLogger.d(TAG, "发现已启动：操作=" + session.operationId
+            YoBtLogger.d(TAG, "发现已发起：操作=" + session.operationId
                     + "，超时=" + session.config.getTimeoutMillis() + "毫秒");
         } catch (Throwable t) {
             failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
@@ -385,8 +371,42 @@ public final class YoCbtDiscoveryController {
         }
     }
 
+    /**
+     * 系统在前一次 cancelDiscovery 尚未落定时会瞬时返回 {@code false}。
+     *
+     * <p>此前以固定 80ms 休眠在状态线程上原地等待，会阻塞整条状态队列；
+     * 这里改为运行时调度器触发一次条件重试：回调到期后回到 state 线程，重新判定会话是否仍有效，
+     * 再决定发起或失败。仅一次、有界，不轮询。</p>
+     */
+    private void scheduleStartRetry(@NonNull YoCbtDiscoveryOperationContext session) {
+        cancelRetry(session);
+        YoBtLogger.d(TAG, "startDiscovery 返回 false，安排一次条件重试：操作=" + session.operationId);
+        session.retryHandle = runtime.scheduler().schedule(() -> runtime.state(() -> {
+            session.retryHandle = null;
+            if (session.completed.get()) {
+                return;
+            }
+            if (discoveryPlatform.startDiscovery()) {
+                YoBtLogger.d(TAG, "条件重试后发现已启动：操作=" + session.operationId);
+                return;
+            }
+            failDiscovery(session, YoCbtErrorCode.YO_CBT_DISCOVERY_START_FAILED,
+                    "BluetoothAdapter.startDiscovery() returned false");
+        }), DISCOVERY_START_RETRY_DELAY_MILLIS);
+    }
+
+    private void cancelRetry(@Nullable YoCbtDiscoveryOperationContext session) {
+        if (session == null || session.retryHandle == null) {
+            return;
+        }
+        session.retryHandle.cancel();
+        session.retryHandle = null;
+    }
+
     private void stopDiscoveryInternal(@NonNull YoCbtDiscoveryOperationContext session) {
         if (!session.completed.compareAndSet(false, true)) return;
+
+        cancelRetry(session);
 
         if (session.timeoutHandle != null) {
             session.timeoutHandle.cancel();
@@ -431,7 +451,7 @@ public final class YoCbtDiscoveryController {
         String detail = "发现失败：操作=" + session.operationId
                 + "，错误码=" + errorCode + "，信息=" + message;
         if (cause != null) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, detail, cause);
+            runtime.diagnostics().recordException(TAG, detail, cause);
         } else {
             YoBtLogger.e(TAG, detail);
         }
@@ -439,6 +459,7 @@ public final class YoCbtDiscoveryController {
 
     private void cleanupSession(@NonNull YoCbtDiscoveryOperationContext session) {
         session.completed.set(true);
+        cancelRetry(session);
         releaseSessionScope(session);
         if (session.timeoutHandle != null) {
             session.timeoutHandle.cancel();

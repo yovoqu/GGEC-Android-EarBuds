@@ -10,6 +10,8 @@ import com.yovo.lib_bluetooth.model.common.Failure;
  */
 public final class CbtFailure extends Failure {
 
+    @NonNull
+    private final CbtErrorCode errorCode;
     @Nullable
     private final CbtDeviceId deviceId;
 
@@ -21,6 +23,7 @@ public final class CbtFailure extends Failure {
                       @NonNull String sourceModule,
                       @Nullable CbtDeviceId deviceId) {
         super(errorCode.name(), message, cause, recoverable, retryable, sourceModule);
+        this.errorCode = errorCode;
         this.deviceId = deviceId;
     }
 
@@ -31,10 +34,6 @@ public final class CbtFailure extends Failure {
 
     @NonNull
     public CbtErrorCode errorCode() {
-        try {
-            return CbtErrorCode.valueOf(code());
-        } catch (IllegalArgumentException ignored) {
-            return CbtErrorCode.SPP_CONNECT_FAILED;
-        }
+        return errorCode;
     }
 }

@@ -4,6 +4,9 @@ import androidx.annotation.NonNull;
 
 import com.yovo.lib_bluetooth.api.BleScanPlan;
 import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
+import com.yovo.lib_bluetooth.model.ble.BleScanMode;
+
+import java.util.List;
 
 /**
  * 进程内唯一扫描器使用的策略。调用方不能改这些值。
@@ -12,8 +15,9 @@ import com.yovo.lib_bluetooth.model.ble.BleScanCallbackType;
  * <p>单台设备末次广播超时判 lost 与移除是设备级过期语义（不是产品扫描超时），
  * 阈值在本类单点给出。</p>
  *
- * <p>平台扫描参数只有一个来源：{@link BleScanPlan}。默认计划见 {@link BleScanPlan#defaults()}，
- * 显式重扫时由调用方给出的计划替换它。</p>
+ * <p>默认扫描计划属于实现层策略，只在 {@link #plan()} 定义一次：低时延、不批处理、
+ * 不上报 legacy-only、无硬件过滤（等价于"无硬件卸载过滤时客户端按帧过滤"的标准起点）。
+ * 公开契约 {@link BleScanPlan} 只描述参数形状，不携带默认策略。</p>
  */
 final class YoBleScanDefaults {
 
@@ -25,7 +29,7 @@ final class YoBleScanDefaults {
 
     @NonNull
     static BleScanPlan plan() {
-        return BleScanPlan.defaults();
+        return new BleScanPlan(BleScanMode.LOW_LATENCY, 0L, false, List.of());
     }
 
     @NonNull

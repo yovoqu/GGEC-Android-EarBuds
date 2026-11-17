@@ -3,6 +3,7 @@ package com.yovo.lib_bluetooth.internal.ble.gatt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.internal.ble.error.YoBleErrorMapper;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.CompletionHandler;
 import com.yovo.lib_bluetooth.internal.ble.gatt.YoBleGattOperationQueue.OpKind;
@@ -231,7 +232,7 @@ public final class YoBleServiceDiscoveryManager {
     }
 
     private void subscribeServiceChanged(@NonNull BleGattDatabaseSnapshot database) {
-        if (serviceChangedSubscribed || context.capabilityInspector().sdkInt() >= 31
+        if (serviceChangedSubscribed || AndroidPlatform.usesServiceChangedCallback()
                 || !database.hasServiceChangedCharacteristic()) {
             return;
         }

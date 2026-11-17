@@ -7,7 +7,6 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceId;
 import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceIdentity;
-import com.yovo.lib_bluetooth.internal.classic.device.identity.YoCbtDeviceType;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtBondedDevice;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.internal.classic.device.snapshot.YoCbtDeviceSnapshotStore;
@@ -20,9 +19,7 @@ import com.yovo.lib_bluetooth.internal.classic.service.resolve.YoCbtProfileUuidM
 import com.yovo.lib_bluetooth.internal.classic.service.resolve.YoCbtServiceRecordFactory;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -31,9 +28,6 @@ import java.util.UUID;
  * @description 已配对设备协调器，加载 Bond 列表并分发状态变更。
  */
 public final class YoCbtBondedDeviceCoordinator {
-
-    private static final Set<YoCbtDeviceType> SUPPORTED_TYPES =
-            EnumSet.of(YoCbtDeviceType.CLASSIC, YoCbtDeviceType.DUAL);
 
     private final YoCbtBondedDeviceLoader loader;
     private final YoCbtBondedDeviceRepository repository;
@@ -80,7 +74,7 @@ public final class YoCbtBondedDeviceCoordinator {
     @Nullable
     private YoCbtDeviceSnapshot persistBondedDevice(@NonNull YoCbtBondedDevice bonded) {
         YoCbtDeviceIdentity identity = bonded.getIdentity();
-        if (!SUPPORTED_TYPES.contains(identity.getDeviceType())) {
+        if (!identity.getDeviceType().isBondedInventoryType()) {
             return null;
         }
 

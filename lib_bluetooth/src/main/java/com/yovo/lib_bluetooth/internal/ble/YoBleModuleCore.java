@@ -27,6 +27,7 @@ import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 import com.yovo.lib_bluetooth.model.ble.BleAdapterStateObserver;
 import com.yovo.lib_bluetooth.model.ble.BleConfig;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
+import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.ble.BleDiagnosticReport;
@@ -52,9 +53,11 @@ public final class YoBleModuleCore {
     public final YoBleDeviceSnapshotStore snapshotStore;
     public final YoBleTimelineRecorder timeline;
     public final LongSupplier clockMillis;
-    public final YoBleReleaseCoordinator releaseCoordinator = new YoBleReleaseCoordinator();
+    public final YoBleReleaseCoordinator releaseCoordinator;
 
     public final YoBleScanController scanController;
+    /** 本客户端唯一的 BLE 扫描会话持有者：由图创建并关闭其迁移线程池。 */
+    public final YoBleScanHub scanHub;
     public final YoBleBondController bondController;
     public final YoBleConnectionManager connectionManager;
     public final YoBleL2capManager l2capManager;
@@ -67,6 +70,7 @@ public final class YoBleModuleCore {
 
     public YoBleModuleCore(@NonNull BleConfig config,
                             @NonNull YoBleRuntimeConfig runtimeConfig,
+                            @NonNull BluetoothDiagnosticsBus diagnostics,
                             @NonNull YoBleCapabilityInspector capabilityInspector,
                             @NonNull YoBleScanPlatform scanPlatform,
                             @NonNull YoBleConnectionPlatform connectionPlatform,
@@ -75,7 +79,8 @@ public final class YoBleModuleCore {
                             @NonNull YoBlePeripheralPlatform peripheralPlatform,
                             @NonNull LongSupplier clockMillis) {
         this.config = config;
-        this.runtime = new YoBleRuntime(runtimeConfig);
+        this.runtime = new YoBleRuntime(runtimeConfig, diagnostics);
+        this.releaseCoordinator = new YoBleReleaseCoordinator(diagnostics);
         this.capabilityInspector = capabilityInspector;
         this.clockMillis = clockMillis;
         this.adapterState = capabilityInspector.adapterState();
@@ -84,6 +89,7 @@ public final class YoBleModuleCore {
 
         this.scanController = new YoBleScanController(
                 runtime, config, capabilityInspector, scanPlatform, snapshotStore, timeline, clockMillis);
+        this.scanHub = YoBleScanHub.forEngine(scanController);
         this.bondController = new YoBleBondController(
                 runtime, config, capabilityInspector, bondPlatform, snapshotStore, timeline, clockMillis);
         this.connectionManager = new YoBleConnectionManager(
@@ -225,9 +231,9 @@ public final class YoBleModuleCore {
                 YoBtLogger.w(MODULE, "platform teardown hook failed during release", teardownError);
             }
         }
-        // 进程内扫描器是静态单例：释放归属本控制的引擎后必须重置 hub，
-        // 否则新 client 复用已释放引擎导致永不扫描（L-P0-1）。
-        YoBleScanHub.release(scanController);
+        // 扫描会话持有者随本核心释放：清空订阅者并关闭它的迁移线程池，
+        // 否则不同客户端的扫描器会共用/悬挂线程（L-P0-1 的归属问题随之消失）。
+        scanHub.release();
         releaseCoordinator.releaseAll();
         runtime.release();
     }

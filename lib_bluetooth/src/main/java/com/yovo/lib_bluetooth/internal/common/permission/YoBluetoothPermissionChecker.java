@@ -4,13 +4,16 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
+import com.yovo.lib_bluetooth.spi.permission.BluetoothPermissionPort;
+import com.yovo.lib_bluetooth.spi.permission.YoBluetoothPermission;
+
 import java.util.EnumSet;
 import java.util.Objects;
 
 /**
  * 检查应用是否已授予指定蓝牙相关权限，统一委托构造注入的 {@link BluetoothPermissionPort}。
  *
- * <p>端口实例由装配根 {@code BluetoothSdkCore} 创建并沿客户端实现向下传；
+ * <p>端口实例由模块装配根（根门面 {@code YoBluetoothSDK} → {@code BluetoothSdkCore}）创建并沿客户端实现向下传；
  * 本类不持有任何静态状态，也不提供安装/替换入口。</p>
  */
 public final class YoBluetoothPermissionChecker {

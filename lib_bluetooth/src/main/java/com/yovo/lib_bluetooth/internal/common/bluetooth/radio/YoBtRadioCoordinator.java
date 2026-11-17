@@ -1,12 +1,8 @@
 package com.yovo.lib_bluetooth.internal.common.bluetooth.radio;
 
-import android.content.Context;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.VisibleForTesting;
 
-import com.yovo.lib_bluetooth.internal.common.bluetooth.YoBluetoothAdapterProvider;
 import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
 import java.util.ArrayList;
@@ -16,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -24,15 +22,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>维护当前活动租约与射频状态；在申请经典发现时协调停止/挂起 BLE 扫描；
  * 在申请 BLE 扫描时确保取消经典发现；在发起任何连接（GATT 或 SPP）前强制执行
  * {@link #preemptForConnection(String)} 确保 cancelDiscovery 并等待底层就绪。</p>
+ *
+ * <p>租约、观察者与射频状态都是本实例的字段：唯一实例由客户端装配点（{@code BleClientImpl} /
+ * {@code ClassicClientImpl}）构造并持有，再沿构造参数逐层注入；本类不提供静态可写实例。</p>
  */
 public final class YoBtRadioCoordinator {
 
     private static final String TAG = "YoBtRadioCoordinator";
     private static final long DEFAULT_SETTLE_TIMEOUT_MS = 200L;
     private static final long DEFAULT_SETTLE_DELAY_MS = 20L;
-
-    private static final Object INSTANCE_LOCK = new Object();
-    private static volatile YoBtRadioCoordinator sDefaultInstance;
 
     /**
      * BLE 扫描与经典蓝牙发现的射频协同钩子。
@@ -59,66 +57,6 @@ public final class YoBtRadioCoordinator {
     private final CopyOnWriteArrayList<BleScanCoordinationHook> bleScanHooks = new CopyOnWriteArrayList<>();
 
     private YoBtRadioState currentState = YoBtRadioState.IDLE;
-
-    /**
-     * 获取或创建进程级共享协调器实例。
-     */
-    @NonNull
-    public static YoBtRadioCoordinator get() {
-        YoBtRadioCoordinator local = sDefaultInstance;
-        if (local == null) {
-            synchronized (INSTANCE_LOCK) {
-                local = sDefaultInstance;
-                if (local == null) {
-                    YoBluetoothAdapterProvider adapterProvider = new YoBluetoothAdapterProvider(null);
-                    local = sDefaultInstance = new YoBtRadioCoordinator(new YoBtAndroidRadioPlatform(adapterProvider));
-                }
-            }
-        }
-        return local;
-    }
-
-    /**
-     * 根据上下文构造或复用协调器。
-     */
-    @NonNull
-    public static YoBtRadioCoordinator forContext(@Nullable Context context) {
-        YoBtRadioCoordinator local = sDefaultInstance;
-        if (local == null) {
-            synchronized (INSTANCE_LOCK) {
-                local = sDefaultInstance;
-                if (local == null) {
-                    YoBluetoothAdapterProvider adapterProvider = new YoBluetoothAdapterProvider(context);
-                    local = sDefaultInstance = new YoBtRadioCoordinator(new YoBtAndroidRadioPlatform(adapterProvider));
-                }
-            }
-        }
-        return local;
-    }
-
-    /**
-     * 根据适配器提供者构造或复用协调器。
-     */
-    @NonNull
-    public static YoBtRadioCoordinator forAdapterProvider(@NonNull YoBluetoothAdapterProvider adapterProvider) {
-        YoBtRadioCoordinator local = sDefaultInstance;
-        if (local == null) {
-            synchronized (INSTANCE_LOCK) {
-                local = sDefaultInstance;
-                if (local == null) {
-                    local = sDefaultInstance = new YoBtRadioCoordinator(new YoBtAndroidRadioPlatform(adapterProvider));
-                }
-            }
-        }
-        return local;
-    }
-
-    @VisibleForTesting
-    public static void setInstanceForTesting(@Nullable YoBtRadioCoordinator coordinator) {
-        synchronized (INSTANCE_LOCK) {
-            sDefaultInstance = coordinator;
-        }
-    }
 
     public YoBtRadioCoordinator(@NonNull YoBtRadioPlatform radioPlatform) {
         this(radioPlatform, DEFAULT_SETTLE_DELAY_MS);
@@ -342,24 +280,16 @@ public final class YoBtRadioCoordinator {
             notifyDiscoveryPreempted("Connection preempted by " + holder);
         }
 
-        // 轮询等待底层 cancelDiscovery 生效（避免 133 超时与射频冲突）
-        long deadline = System.currentTimeMillis() + Math.max(0, settleTimeoutMs);
-        while (radioPlatform.isDiscovering() && System.currentTimeMillis() < deadline) {
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-
-        // 给予射频基带短暂恢复时间
-        if (settleDelayMs > 0) {
-            try {
-                Thread.sleep(settleDelayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+        // 底层 BluetoothAdapter 的 cancelDiscovery 没有完成回调（{@link YoBtRadioPlatform}
+        // 只暴露 isDiscovering()），因此这里做一次有界可中断等待，等待结束再复核一次状态：
+        // 不再按 10ms 间隔轮询，也不会无限等待。
+        long waitWindowMs = hadDiscovery
+                ? Math.max(0L, settleTimeoutMs) + settleDelayMs
+                : settleDelayMs;
+        awaitRadioSettled(waitWindowMs);
+        if (hadDiscovery && radioPlatform.isDiscovering()) {
+            YoBtLogger.w(TAG, "cancelDiscovery 未在 " + waitWindowMs
+                    + "ms 窗口内落定，交由连接重试处理");
         }
 
         notifyLeaseAcquired(connLease);
@@ -367,6 +297,24 @@ public final class YoBtRadioCoordinator {
             notifyStateChanged(oldState, newState);
         }
         return connLease;
+    }
+
+    /**
+     * 单次有界可中断等待（射频基带恢复窗口）。
+     *
+     * @param windowMs 等待窗口；≤0 表示不需要等待
+     */
+    private void awaitRadioSettled(long windowMs) {
+        if (windowMs <= 0L) {
+            return;
+        }
+        CountDownLatch window = new CountDownLatch(1);
+        try {
+            window.await(windowMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            YoBtLogger.w(TAG, "射频就绪等待被中断，直接进入连接", interrupted);
+        }
     }
 
     private void releaseLeaseInternal(@NonNull YoBtRadioLease lease) {

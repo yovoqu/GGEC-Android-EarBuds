@@ -2,7 +2,6 @@ package com.yovo.lib_bluetooth.internal.classic.spp.io;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.lib_bluetooth.internal.common.diagnostics.BluetoothDiagnosticsBus;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtErrorCode;
 import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
@@ -134,7 +133,7 @@ public final class YoCbtSppReader implements Runnable {
                 dispatchBatch(batch);
             }
         } catch (Throwable e) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "读取出错，连接 " + connectionId, e);
+            runtime.diagnostics().recordException(TAG, "读取出错，连接 " + connectionId, e);
             if (running.get()) {
                 YoCbtFailure failure = new YoCbtFailure(
                         YoCbtErrorCode.YO_CBT_SPP_READ_FAILED,

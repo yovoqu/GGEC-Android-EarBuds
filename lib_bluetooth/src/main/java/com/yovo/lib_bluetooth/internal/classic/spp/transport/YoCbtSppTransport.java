@@ -2,6 +2,8 @@ package com.yovo.lib_bluetooth.internal.classic.spp.transport;
 
 import androidx.annotation.NonNull;
 
+import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,6 +16,8 @@ import java.io.OutputStream;
  */
 
 public final class YoCbtSppTransport {
+
+    private static final String TAG = "YoCbtSppTransport";
 
     private final Closeable socket;
     private final InputStream input;
@@ -37,22 +41,20 @@ public final class YoCbtSppTransport {
     }
 
     public void close() {
-        closeQuietly(input);
-        closeQuietly(output);
-        closeQuietly(socket);
+        closeStream(input);
+        closeStream(output);
+        closeStream(socket);
     }
 
-    private static void closeQuietly(Object closeable) {
-        if (closeable == null) return;
+    /**
+     * 逐个关闭同一条 SPP 链路上的流与 socket：任一步失败都不能阻止其余两步关闭，
+     * 因此不向上抛，但失败必须留证（关闭失败会泄漏 fd）。
+     */
+    private static void closeStream(@NonNull Closeable closeable) {
         try {
-            if (closeable instanceof Closeable) {
-                ((Closeable) closeable).close();
-            } else if (closeable instanceof InputStream) {
-                ((InputStream) closeable).close();
-            } else if (closeable instanceof OutputStream) {
-                ((OutputStream) closeable).close();
-            }
-        } catch (Throwable ignored) {
+            closeable.close();
+        } catch (IOException closeFailure) {
+            YoBtLogger.w(TAG, "SPP stream close failed", closeFailure);
         }
     }
 }

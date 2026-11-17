@@ -27,6 +27,7 @@ final class YoCbtDiscoveryOperationContext {
     final LinkedHashMap<YoCbtDeviceId, YoCbtDiscoveryResultEntry> results;
     @Nullable YoCbtRuntimeScope scope;
     @Nullable YoTimeoutHandle timeoutHandle;
+    @Nullable YoTimeoutHandle retryHandle;
 
     YoCbtDiscoveryOperationContext(@NonNull YoCbtDiscoveryConfig config,
                                    @NonNull YoCbtDiscoveryObserver observer) {

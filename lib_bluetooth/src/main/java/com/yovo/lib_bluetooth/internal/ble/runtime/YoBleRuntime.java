@@ -59,17 +59,18 @@ public final class YoBleRuntime implements YoReleasable {
     private final YoTaskScheduler scheduler;
     @NonNull
     private final BluetoothEventBus eventBus = new BluetoothEventBus();
+    /** 诊断总线：由客户端装配点构造并注入，本运行时只持有，不自行创建。 */
+    @NonNull
+    private final BluetoothDiagnosticsBus diagnostics;
     /** 已提交但尚未执行完的 state 任务数，仅用于关闭阶段判断是否排空。 */
     private final AtomicInteger pendingStateTasks = new AtomicInteger();
     /** 当前 state 线程；由线程工厂在创建线程时同步写入。 */
     @Nullable
     private volatile Thread stateThread;
 
-    public YoBleRuntime() {
-        this(YoBleRuntimeConfig.builder().build());
-    }
-
-    public YoBleRuntime(@NonNull YoBleRuntimeConfig config) {
+    public YoBleRuntime(@NonNull YoBleRuntimeConfig config,
+                        @NonNull BluetoothDiagnosticsBus diagnostics) {
+        this.diagnostics = diagnostics;
         final String stateThreadName = config.stateThreadName();
         this.stateExecutor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, stateThreadName);
@@ -113,11 +114,12 @@ public final class YoBleRuntime implements YoReleasable {
         return scheduler.schedule(() -> state(task), delayMillis);
     }
 
-    /** 投递阻塞式 IO 任务。 */
+    /** 投递阻塞式 IO 任务。释放后投递被丢弃（执行器已关闭）。 */
     public void io(@NonNull Runnable task) {
         try {
             ioExecutor.execute(task);
-        } catch (RejectedExecutionException ignored) {
+        } catch (RejectedExecutionException closed) {
+            YoBtLogger.d(TAG, "io task dropped: runtime already closed");
         }
     }
 
@@ -128,7 +130,8 @@ public final class YoBleRuntime implements YoReleasable {
     public void callback(@NonNull Runnable task) {
         try {
             callbackDispatcher.dispatch(task);
-        } catch (RejectedExecutionException ignored) {
+        } catch (RejectedExecutionException closed) {
+            YoBtLogger.d(TAG, "callback task dropped: runtime already closed");
         }
     }
 
@@ -144,7 +147,7 @@ public final class YoBleRuntime implements YoReleasable {
 
     @NonNull
     public BluetoothDiagnosticsBus diagnostics() {
-        return BluetoothDiagnosticsBus.get();
+        return diagnostics;
     }
 
     public boolean isStateThread() {
@@ -177,7 +180,7 @@ public final class YoBleRuntime implements YoReleasable {
         try {
             task.run();
         } catch (Throwable t) {
-            BluetoothDiagnosticsBus.get().recordException(TAG, "state 线程任务异常（已隔离）", t);
+            diagnostics.recordException(TAG, "state 线程任务异常（已隔离）", t);
         } finally {
             pendingStateTasks.decrementAndGet();
         }

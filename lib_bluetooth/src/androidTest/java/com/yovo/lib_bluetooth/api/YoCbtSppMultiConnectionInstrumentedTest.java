@@ -5,12 +5,12 @@ import static org.junit.Assert.assertTrue;
 
 import android.Manifest;
 import android.content.Context;
-import android.os.Build;
 
 import androidx.annotation.NonNull;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.model.classic.CbtConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
@@ -414,7 +414,7 @@ public class YoCbtSppMultiConnectionInstrumentedTest {
     }
 
     private static void grantBluetoothPermissions() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
+        if (!AndroidPlatform.usesRuntimeBluetoothPermissions()) return;
         try {
             var ui = InstrumentationRegistry.getInstrumentation().getUiAutomation();
             String pkg = InstrumentationRegistry.getInstrumentation()
