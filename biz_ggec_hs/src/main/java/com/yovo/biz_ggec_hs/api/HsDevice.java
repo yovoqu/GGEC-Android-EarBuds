@@ -6,6 +6,7 @@ import com.yovo.biz_ggec_hs.api.HsControl.Value;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -71,10 +72,28 @@ public final class HsDevice {
     public record Option(String optionId, String title) {
     }
 
-    public record Range(int min, int max, int step) {
+    /**
+     * 取值范围。{@code step} 恒为正；单位由能力自己定义（自定义 EQ 用协议增益单位，0x01 = 0.5 dB）。
+     *
+     * <p>{@code neutral} 是这条能力声明的中立档（自定义 EQ 即协议 {@code 0x0C} = 0 dB）：哪一档算
+     * 「不增不减」只有描述符知道，调用方不得再从上下界推算，也不得拿 {@code min} 充当中立档。
+     * 空＝这条能力没有声明中立档，调用方要回落到什么值必须写成自己的显式产品默认。</p>
+     */
+    public record Range(int min, int max, int step, OptionalInt neutral) {
+
+        /** 没有中立档的值域：显式声明缺失，不是补一个默认值。 */
+        public static Range of(int min, int max, int step) {
+            return new Range(min, max, step, OptionalInt.empty());
+        }
     }
 
-    /** 一条能力的呈现。{@code form == LEVEL} 时 {@code range} 必有值。 */
+    /**
+     * 一条能力的呈现。
+     *
+     * <p>{@code kind == LEVEL}（等级）与 {@code kind == CURVE}（曲线）时 {@code range} 必有值；
+     * {@code CURVE} 的 {@code options} 是曲线段表（自定义 EQ 即 10 个频段），段数等于选项数，
+     * 界面不猜段数、不猜取值域。</p>
+     */
     public record Feature(Capability capability, String title, Group group, Form kind,
                           List<Option> options, Optional<Range> range) {
     }

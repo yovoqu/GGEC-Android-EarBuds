@@ -40,7 +40,7 @@ public final class WyGraph {
         Context app = context.getApplicationContext();
         Context target = app != null ? app : context;
 
-        WyLog.ensureInitialized(target);
+        WyLog.requireInitialized();
 
         WyClassicRadio radio = WyClassicRadio.open(target);
         WyOpusCodecProvider opusCodecProvider = new WyOpusCodecProvider();

@@ -176,7 +176,8 @@ final class CommandScheduler {
         try {
             policy = policyResolver.resolve(command, payload);
         } catch (RuntimeException e) {
-            command.abort(failure("命令调度策略解析失败: " + e.getMessage()));
+            HsLog.w(TAG, "命令调度策略解析失败", e);
+            command.abort(failure("命令调度策略解析失败"));
             return;
         }
         long now = dispatcher.nowMs();
@@ -599,7 +600,8 @@ final class CommandScheduler {
                 }
             });
         } catch (RuntimeException e) {
-            failCurrent("GATT 写入请求执行异常: " + e.getMessage());
+            HsLog.w(TAG, "GATT 写入请求执行异常", e);
+            failCurrent("GATT 写入请求执行异常");
             return;
         }
         if (!accepted && isCurrentAttempt(node, command, attemptId)) {
@@ -658,7 +660,8 @@ final class CommandScheduler {
                 }
             }
         } catch (RuntimeException e) {
-            failCurrent("命令响应解析异常: " + e.getMessage());
+            HsLog.w(TAG, "命令响应解析异常", e);
+            failCurrent("命令响应解析异常");
         }
     }
 
@@ -770,7 +773,8 @@ final class CommandScheduler {
                             command, node, attemptId, command.getInterFrameTimeoutMs());
                 }
             } catch (RuntimeException e) {
-                failCurrent("命令超时处理异常: " + e.getMessage());
+                HsLog.w(TAG, "命令超时处理异常", e);
+                failCurrent("命令超时处理异常");
             }
         }, timeoutMs);
     }
@@ -911,7 +915,8 @@ final class CommandScheduler {
         try {
             return command.getCommandData();
         } catch (RuntimeException e) {
-            command.abort(failure("命令编码异常: " + e.getMessage()));
+            HsLog.w(TAG, "命令编码异常", e);
+            command.abort(failure("命令编码异常"));
             return null;
         }
     }

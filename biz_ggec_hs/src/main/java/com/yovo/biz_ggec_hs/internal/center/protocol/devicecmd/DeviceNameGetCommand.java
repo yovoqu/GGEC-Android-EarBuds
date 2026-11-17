@@ -75,7 +75,7 @@ public class DeviceNameGetCommand extends Command {
             return completed(ResultCode.SUCCESS, deviceName, message);
         } catch (Exception e) {
             HsLog.e(TAG, "解析设备名失败", e);
-            String errorMsg = "解析设备名失败: " + e.getMessage();
+            String errorMsg = "解析设备名失败";
             return completed(ResultCode.FAILED, null, errorMsg);
         }
     }

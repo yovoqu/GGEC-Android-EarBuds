@@ -6,10 +6,10 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_ggec_wy.api.StreamRecordConfig;
 import com.yovo.biz_ggec_wy.api.StreamRecordListener;
 import com.yovo.biz_ggec_wy.api.WyControl;
-import com.yovo.biz_ggec_wy.internal.center.port.WyAudioCodecProviderPort;
-import com.yovo.biz_ggec_wy.internal.center.port.WyAudioDecoder;
-import com.yovo.biz_ggec_wy.internal.center.port.WyAudioFileWriter;
-import com.yovo.biz_ggec_wy.internal.record.assembler.WyAudioFrameContract;
+import com.yovo.lib_ggec_audio.AudioFrameContract;
+import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
+import com.yovo.lib_ggec_audio.record.AudioDecoder;
+import com.yovo.lib_ggec_audio.record.AudioFileWriter;
 
 import org.junit.Test;
 
@@ -27,7 +27,7 @@ import static org.junit.Assert.assertTrue;
 
 public class WyStreamRecordSessionTest {
 
-    private static class FakeCodecProvider implements WyAudioCodecProviderPort {
+    private static class FakeCodecProvider implements AudioCodecProviderPort {
         boolean decoderCreated;
         boolean decoderReleased;
         boolean fileWriterCreated;
@@ -35,13 +35,13 @@ public class WyStreamRecordSessionTest {
 
         @NonNull
         @Override
-        public WyAudioDecoder createDecoder() {
+        public AudioDecoder createDecoder() {
             decoderCreated = true;
-            return new WyAudioDecoder() {
+            return new AudioDecoder() {
                 @Nullable
                 @Override
                 public byte[] decode(@NonNull byte[] opusPacket) {
-                    byte[] pcm = new byte[WyAudioFrameContract.PCM_FRAME_BYTES];
+                    byte[] pcm = new byte[AudioFrameContract.PCM_FRAME_BYTES];
                     // 填充一些测试 PCM 数据 (16-bit)
                     pcm[0] = 0x10;
                     pcm[1] = 0x20;
@@ -57,9 +57,9 @@ public class WyStreamRecordSessionTest {
 
         @NonNull
         @Override
-        public WyAudioFileWriter createPcmFileWriter(@NonNull File targetFile) {
+        public AudioFileWriter createPcmFileWriter(@NonNull File targetFile) {
             fileWriterCreated = true;
-            return new WyAudioFileWriter() {
+            return new AudioFileWriter() {
                 @Override
                 public void writePcm(@NonNull byte[] pcmData) {
                 }
@@ -159,7 +159,7 @@ public class WyStreamRecordSessionTest {
 
         assertEquals(4, receivedPcm.size());
         assertEquals(4, receivedAmplitudes.size());
-        assertEquals(WyAudioFrameContract.PCM_FRAME_BYTES, receivedPcm.get(0).length);
+        assertEquals(AudioFrameContract.PCM_FRAME_BYTES, receivedPcm.get(0).length);
         assertTrue(receivedAmplitudes.get(0) > 0f);
 
         // 3. 停止录音

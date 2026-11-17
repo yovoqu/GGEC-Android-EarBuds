@@ -36,6 +36,7 @@ android {
 dependencies {
     implementation project(':lib_bluetooth')
     implementation project(':lib_common')
+    api project(':lib_ggec_audio')
     implementation project(':lib_ggec_opus')
     implementation 'androidx.annotation:annotation:1.9.1'
     testImplementation 'junit:junit:4.13.2'
@@ -44,26 +45,26 @@ dependencies {
 def bizGgecHsRoot = project.projectDir
 
 /**
- * 结构性边界门禁：只看目录与 import 归属，没有任何类名/包名白名单。
+ * 缁撴瀯鎬ц竟鐣岄棬绂侊細鍙湅鐩綍涓?import 褰掑睘锛屾病鏈変换浣曠被鍚?鍖呭悕鐧藉悕鍗曘€?
  *
- * 规则来源 docs/architecture/2026-11-refactor/design.md §1.2 / §8：
- *  - api/ 只允许 java.*、androidx.annotation 与 api 自身（契约层零实现、零依赖）。
- *  - api/、internal/ 禁止 lib_bluetooth 与 android.bluetooth（蓝牙栈只有 provider 能碰）。
- *  - 非 provider 目录一律禁止 import lib_bluetooth。
- *  - provider/lib_bluetooth 是栈适配层：禁止反向点名上层与装配，也不得 import lib_common。
- *  - provider/lib_common/log 是唯一日志缝：只委托 lib_common.log。
- *  - 中层与上层可以调用日志缝，但不得 import provider/lib_bluetooth。
- *  - 中层两块互不点名（protocol ⇄ broadcast）。
- *  - 非日志缝目录禁止 import lib_common，也禁止 android.util.Log。
- *  - 其他模块的**生产源集**（src/main/java）禁止 import 本模块 internal/ 与 provider/；
- *    测试源集（src/test、src/androidTest）不在生产边界内，允许触达内部实现以对真实目录做投影校验。
+ * 瑙勫垯鏉ユ簮 docs/architecture/2026-11-app-rebuild/architecture-rules.md 搂2 / 搂3.2锛堢洰褰曞绾﹁ biz_ggec_hs/README.md锛夛細
+ *  - api/ 鍙厑璁?java.*銆乤ndroidx.annotation 涓?api 鑷韩锛堝绾﹀眰闆跺疄鐜般€侀浂渚濊禆锛夈€?
+ *  - api/銆乮nternal/ 绂佹 lib_bluetooth 涓?android.bluetooth锛堣摑鐗欐爤鍙湁 provider 鑳界锛夈€?
+ *  - 闈?provider 鐩綍涓€寰嬬姝?import lib_bluetooth銆?
+ *  - provider/lib_bluetooth 鏄爤閫傞厤灞傦細绂佹鍙嶅悜鐐瑰悕涓婂眰涓庤閰嶏紝涔熶笉寰?import lib_common銆?
+ *  - provider/lib_common/log 鏄敮涓€鏃ュ織缂濓細鍙鎵?lib_common.log銆?
+ *  - 涓眰涓庝笂灞傚彲浠ヨ皟鐢ㄦ棩蹇楃紳锛屼絾涓嶅緱 import provider/lib_bluetooth銆?
+ *  - 涓眰涓ゅ潡浜掍笉鐐瑰悕锛坧rotocol 鈬?broadcast锛夈€?
+ *  - 闈炴棩蹇楃紳鐩綍绂佹 import lib_common锛屼篃绂佹 android.util.Log銆?
+ *  - 鍏朵粬妯″潡鐨?*鐢熶骇婧愰泦**锛坰rc/main/java锛夌姝?import 鏈ā鍧?internal/ 涓?provider/锛?
+ *    娴嬭瘯婧愰泦锛坰rc/test銆乻rc/androidTest锛変笉鍦ㄧ敓浜ц竟鐣屽唴锛屽厑璁歌Е杈惧唴閮ㄥ疄鐜颁互瀵圭湡瀹炵洰褰曞仛鎶曞奖鏍￠獙銆?
  */
 tasks.register('checkBizGgecHsBoundary') {
     group = 'verification'
-    description = 'Structural layering gate for biz_ggec_hs (no allow lists); 生产边界只约束 src/main，测试源集允许触达内部实现。'
+    description = 'Structural layering gate for biz_ggec_hs: production boundary covers src/main only; test source sets may reach internals for projection checks.'
     doLast {
         def offenders = []
-        // 统一成带前导 '/' 的仓库相对路径，规则对相对路径同样生效。
+        // 缁熶竴鎴愬甫鍓嶅 '/' 鐨勪粨搴撶浉瀵硅矾寰勶紝瑙勫垯瀵圭浉瀵硅矾寰勫悓鏍风敓鏁堛€?
         def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
 
         fileTree(bizGgecHsRoot) {
@@ -79,6 +80,7 @@ tasks.register('checkBizGgecHsBoundary') {
             def inUpper = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/scan/')
                     || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/link/')
                     || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/interact/')
+                    || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/record/')
                     || relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/internal/center/catalog/')
             def inBtProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/lib_bluetooth/')
             def inLogProvider = relative.startsWith('/src/main/java/com/yovo/biz_ggec_hs/provider/lib_common/log/')
@@ -90,7 +92,7 @@ tasks.register('checkBizGgecHsBoundary') {
             file.eachLine { line, index ->
                 def location = "${path}:${index}"
                 if (inMain && !inLogProvider && (line =~ /\bYoLog\s*\./)) {
-                    offenders << "${location}: 日志缝之外直接调用 YoLog"
+                    offenders << "${location}: 鏃ュ織缂濅箣澶栫洿鎺ヨ皟鐢?YoLog"
                 }
                 def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
                 if (!imported.find()) {
@@ -99,22 +101,25 @@ tasks.register('checkBizGgecHsBoundary') {
                 def target = imported.group(1)
 
                 if (inApi) {
+                    // api 灞傚彧鍏佽 java / androidx.annotation / api 鑷韩锛屼互鍙婂叡浜?L1 褰曢煶濂戠害
+                    // 锛圫treamRecordConfig / StreamRecordListener 鐨勫敮涓€瀹炵幇鍦?lib_ggec_audio锛夈€?
                     def allowed = target.startsWith('java.')
                             || target.startsWith('androidx.annotation.')
                             || target.startsWith('com.yovo.biz_ggec_hs.api.')
+                            || target.startsWith('com.yovo.lib_ggec_audio.record.')
                     if (!allowed) {
-                        offenders << "${location}: api 只能依赖 java/androidx.annotation/api 自身 -> ${target}"
+                        offenders << "${location}: api 鍙兘渚濊禆 java/androidx.annotation/api 鑷韩/鍏变韩褰曢煶濂戠害 -> ${target}"
                     }
                 }
                 if ((inApi || inInternal) && (target.startsWith('com.yovo.lib_bluetooth.')
                         || target.startsWith('android.bluetooth.'))) {
-                    offenders << "${location}: api/internal 不得触碰蓝牙栈 -> ${target}"
+                    offenders << "${location}: api/internal 涓嶅緱瑙︾钃濈墮鏍?-> ${target}"
                 }
                 if (inMain && !inProvider && target.startsWith('com.yovo.lib_bluetooth.')) {
-                    offenders << "${location}: 只有 provider 可以 import lib_bluetooth -> ${target}"
+                    offenders << "${location}: 鍙湁 provider 鍙互 import lib_bluetooth -> ${target}"
                 }
                 if (inBtProvider) {
-                    // 栈适配只允许：平台/Java、蓝牙栈、对外契约、链路端口。
+                    // 鏍堥€傞厤鍙厑璁革細骞冲彴/Java銆佽摑鐗欐爤銆佸澶栧绾︺€侀摼璺鍙ｃ€?
                     def allowed = target.startsWith('java.')
                             || target.startsWith('android.')
                             || target.startsWith('androidx.')
@@ -122,7 +127,7 @@ tasks.register('checkBizGgecHsBoundary') {
                             || target.startsWith('com.yovo.biz_ggec_hs.api.')
                             || target.startsWith('com.yovo.biz_ggec_hs.internal.center.port.')
                     if (!allowed) {
-                        offenders << "${location}: provider/lib_bluetooth 不得依赖协议/上层/装配/lib_common -> ${target}"
+                        offenders << "${location}: provider/lib_bluetooth 涓嶅緱渚濊禆鍗忚/涓婂眰/瑁呴厤/lib_common -> ${target}"
                     }
                 }
                 if (inLogProvider) {
@@ -131,54 +136,55 @@ tasks.register('checkBizGgecHsBoundary') {
                             || target.startsWith('androidx.')
                             || target.startsWith('com.yovo.lib_common.log.')
                     if (!allowed) {
-                        offenders << "${location}: 日志缝只委托 lib_common.log -> ${target}"
+                        offenders << "${location}: 鏃ュ織缂濆彧濮旀墭 lib_common.log -> ${target}"
                     }
                 }
                 if (inProvider && !inBtProvider && !inLogProvider && !inOpusProvider) {
-                    offenders << "${location}: provider 只允许 lib_bluetooth、lib_common/log 与 lib_ggec_opus -> ${target}"
+                    offenders << "${location}: provider 鍙厑璁?lib_bluetooth銆乴ib_common/log 涓?lib_ggec_opus -> ${target}"
                 }
                 if (inOpusProvider) {
                     def allowed = target.startsWith('java.')
                             || target.startsWith('androidx.')
                             || (target.startsWith('com.yovo.lib_ggec_opus.') && !target.startsWith('com.yovo.lib_ggec_opus.internal.'))
+                            || target.startsWith('com.yovo.lib_ggec_audio.record.')
                             || target.startsWith('com.yovo.biz_ggec_hs.internal.center.port.')
                     if (!allowed) {
-                        offenders << "${location}: provider/lib_ggec_opus 只能依赖 lib_ggec_opus 公共契约与内部端口 -> ${target}"
+                        offenders << "${location}: provider/lib_ggec_opus 鍙兘渚濊禆 lib_ggec_opus 鍏叡濂戠害銆佸叡浜綍闊冲绾︿笌鍐呴儴绔彛 -> ${target}"
                     }
                 }
                 if (inMain && !inProvider && target.startsWith('com.yovo.lib_ggec_opus.')) {
-                    offenders << "${location}: 只有 provider 可以 import lib_ggec_opus -> ${target}"
+                    offenders << "${location}: 鍙湁 provider 鍙互 import lib_ggec_opus -> ${target}"
                 }
                 if (inMain && !inLogProvider && target.startsWith('com.yovo.lib_common.')) {
-                    offenders << "${location}: 只有日志缝可以 import lib_common -> ${target}"
+                    offenders << "${location}: 鍙湁鏃ュ織缂濆彲浠?import lib_common -> ${target}"
                 }
                 if (inMain && line.trim().contains('import android.util.Log')) {
-                    offenders << "${location}: 禁止 android.util.Log，日志只经 HsLog"
+                    offenders << "${location}: 绂佹 android.util.Log锛屾棩蹇楀彧缁?HsLog"
                 }
                 def touchesOtherProvider = target.startsWith('com.yovo.biz_ggec_hs.provider.')
                         && !target.startsWith(logSeam)
                 if (inUpper && touchesOtherProvider) {
-                    offenders << "${location}: 扫描/连接/交互/目录不得直接 import 蓝牙适配 -> ${target}"
+                    offenders << "${location}: 鎵弿/杩炴帴/浜や簰/鐩綍涓嶅緱鐩存帴 import 钃濈墮閫傞厤 -> ${target}"
                 }
                 if ((inProtocol || inBroadcast)
                         && (touchesOtherProvider
                         || target.startsWith('com.yovo.lib_bluetooth.')
                         || target.startsWith('android.bluetooth.'))) {
-                    offenders << "${location}: 中层不得 import 蓝牙适配/蓝牙栈 -> ${target}"
+                    offenders << "${location}: 涓眰涓嶅緱 import 钃濈墮閫傞厤/钃濈墮鏍?-> ${target}"
                 }
                 if (inProtocol && target.startsWith('com.yovo.biz_ggec_hs.internal.center.broadcast.')) {
-                    offenders << "${location}: protocol 不得点名 broadcast -> ${target}"
+                    offenders << "${location}: protocol 涓嶅緱鐐瑰悕 broadcast -> ${target}"
                 }
                 if (inBroadcast && target.startsWith('com.yovo.biz_ggec_hs.internal.center.protocol.')) {
-                    offenders << "${location}: broadcast 不得点名 protocol -> ${target}"
+                    offenders << "${location}: broadcast 涓嶅緱鐐瑰悕 protocol -> ${target}"
                 }
             }
         }
 
-        // 跨模块规则只约束**生产源集**：src/main/java。
-        // 理由：生产边界只约束 src/main；测试源集允许触达内部实现以对真实目录做投影校验——
-        // 强行把生产边界套到测试上会逼出「为了过门禁而用 fake 形状」的假测试，而假形状正是漏缺陷的根源。
-        // （androidTest 同样属于测试源集，一并排除；build/.gradle 是产物与缓存。）
+        // 璺ㄦā鍧楄鍒欏彧绾︽潫**鐢熶骇婧愰泦**锛歴rc/main/java銆?
+        // 鐞嗙敱锛氱敓浜ц竟鐣屽彧绾︽潫 src/main锛涙祴璇曟簮闆嗗厑璁歌Е杈惧唴閮ㄥ疄鐜颁互瀵圭湡瀹炵洰褰曞仛鎶曞奖鏍￠獙鈥斺€?
+        // 寮鸿鎶婄敓浜ц竟鐣屽鍒版祴璇曚笂浼氶€煎嚭銆屼负浜嗚繃闂ㄧ鑰岀敤 fake 褰㈢姸銆嶇殑鍋囨祴璇曪紝鑰屽亣褰㈢姸姝ｆ槸婕忕己闄风殑鏍规簮銆?
+        // 锛坅ndroidTest 鍚屾牱灞炰簬娴嬭瘯婧愰泦锛屼竴骞舵帓闄わ紱build/.gradle 鏄骇鐗╀笌缂撳瓨銆傦級
         fileTree(project.rootDir) {
             include '**/src/main/java/**/*.java'
             exclude '**/build/**'
@@ -194,13 +200,13 @@ tasks.register('checkBizGgecHsBoundary') {
                 def target = imported.group(1)
                 if (target.startsWith('com.yovo.biz_ggec_hs.internal.')
                         || target.startsWith('com.yovo.biz_ggec_hs.provider.')) {
-                    offenders << "${path}:${index}: 外部模块的 src/main 不得 import 本模块内部实现 -> ${target}"
+                    offenders << "${path}:${index}: 澶栭儴妯″潡鐨?src/main 涓嶅緱 import 鏈ā鍧楀唴閮ㄥ疄鐜?-> ${target}"
                 }
             }
         }
 
         if (!offenders.isEmpty()) {
-            throw new GradleException('biz_ggec_hs 边界被打破:\n' + offenders.join('\n'))
+            throw new GradleException('biz_ggec_hs 杈圭晫琚墦鐮?\n' + offenders.join('\n'))
         }
     }
 }

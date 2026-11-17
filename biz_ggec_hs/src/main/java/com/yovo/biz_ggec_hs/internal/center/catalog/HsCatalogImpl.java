@@ -8,6 +8,7 @@ import com.yovo.biz_ggec_hs.api.HsDevice;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.ControlCommandV11;
 import com.yovo.biz_ggec_hs.internal.center.protocol.controlcmd.PressActionConfiguration;
+import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.CustomEQRealtimeCommand;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -29,9 +31,12 @@ import java.util.Set;
  *   <li>{@code ACTION} 能力必须有可达命令（写入或动作映射至少一个），否则 UI 只能渲染出
  *       永远失败的按钮；</li>
  *   <li>{@code LEVEL} 能力必须带 {@link HsDevice.Range}；</li>
+ *   <li>{@code CURVE} 能力必须同时带频段 {@code options} 与增益 {@link HsDevice.Range}
+ *       ——曲线段数与每段可写范围都由 biz 给出，UI 不猜；</li>
+ *   <li>值域若声明中立档，必须落在 {@code [min, max]} 内（中立档是描述符的声明，不是调用方的推算）；</li>
  *   <li>{@code GATE} 能力不得带值域、不得有写入命令，也不得进入快照控制值——它的展示由调用方
  *       既有界面承担，biz 不渲染信息行；</li>
- *   <li>其余形态（TOGGLE / CHOICE / CURVE / LIST）不得带值域，不塞占位值；</li>
+ *   <li>其余形态（TOGGLE / CHOICE / LIST）不得带值域，不塞占位值；</li>
  *   <li>标题非空、每个能力恰好一条描述。</li>
  * </ul>
  *
@@ -83,6 +88,23 @@ public final class HsCatalogImpl {
     private static final List<HsDevice.Option> SOUND_QUALITY_OPTIONS = List.of(
             new HsDevice.Option(HsOptionIds.SOUND_QUALITY_HIGH, "高音质"),
             new HsDevice.Option(HsOptionIds.SOUND_QUALITY_ENDURANCE, "高续航"));
+
+    /**
+     * 自定义 EQ 的频段选项：段数、顺序、标签全部来自协议命令的 {@link CustomEQRealtimeCommand#BAND_LABELS}。
+     * 目录只把它翻译成 {@link HsDevice.Option}，不维护第二份频段表。
+     */
+    private static final List<HsDevice.Option> CUSTOM_EQ_BAND_OPTIONS = customEqBandOptions();
+
+    /**
+     * 自定义 EQ 的增益值域（协议单位 0x00~0x18，步进 0x01 = 0.5 dB），
+     * 中立档取协议常量 {@link CustomEQRealtimeCommand#GAIN_NEUTRAL}（0x0C = 0 dB）。
+     * 中立档由描述符给出，界面因此不必从上下界推算「0 dB 是哪一格」。
+     */
+    private static final HsDevice.Range CUSTOM_EQ_GAIN_RANGE = new HsDevice.Range(
+            CustomEQRealtimeCommand.GAIN_MIN,
+            CustomEQRealtimeCommand.GAIN_MAX,
+            CustomEQRealtimeCommand.GAIN_STEP,
+            OptionalInt.of(CustomEQRealtimeCommand.GAIN_NEUTRAL));
 
     /** 耳类型：0 左右耳，1 左耳，2 右耳（协议取值）。 */
     private static final String[] EAR_TYPES = {"左右耳", "左耳", "右耳"};
@@ -206,8 +228,9 @@ public final class HsCatalogImpl {
      * <ol>
      *   <li>{@code ACTION} 能力必须有可达命令（写入或动作映射至少一个）；</li>
      *   <li>{@code LEVEL} 能力必须带值域；</li>
+     *   <li>{@code CURVE} 能力必须带频段选项与增益值域；</li>
      *   <li>{@code GATE} 能力不得带值域、不得有写入映射，也不进入快照控制值；</li>
-     *   <li>其余形态（TOGGLE / CHOICE / CURVE / LIST）不得带值域。</li>
+     *   <li>其余形态（TOGGLE / CHOICE / LIST）不得带值域。</li>
      * </ol>
      * 没有 {@code default}：新增控件形态必须在这里明确它的不变量。
      */
@@ -224,9 +247,10 @@ public final class HsCatalogImpl {
         }
         switch (descriptor.kind()) {
             case LEVEL -> validateLevel(descriptor);
+            case CURVE -> validateCurve(descriptor);
             case GATE -> validateGate(descriptor);
             case ACTION -> validateAction(descriptor);
-            case TOGGLE, CHOICE, CURVE, LIST -> validateNoRange(descriptor);
+            case TOGGLE, CHOICE, LIST -> validateNoRange(descriptor);
         }
     }
 
@@ -235,10 +259,37 @@ public final class HsCatalogImpl {
             throw new IllegalStateException(
                     "LEVEL 能力必须给出值域: " + descriptor.capability());
         }
+        validateRange(descriptor);
+    }
+
+    /**
+     * 曲线型：频段表给出段数与每段标题，值域给出每段可写范围。
+     * 缺任一项，界面就只能自己猜段数或取值范围，那正是本轮要消灭的写死。
+     */
+    private static void validateCurve(HsDevice.Feature descriptor) {
+        if (descriptor.options().isEmpty()) {
+            throw new IllegalStateException(
+                    "CURVE 能力必须给出频段选项: " + descriptor.capability());
+        }
+        if (descriptor.range().isEmpty()) {
+            throw new IllegalStateException(
+                    "CURVE 能力必须给出增益值域: " + descriptor.capability());
+        }
+        validateRange(descriptor);
+    }
+
+    private static void validateRange(HsDevice.Feature descriptor) {
         HsDevice.Range range = descriptor.range().get();
         if (range.step() <= 0 || range.min() > range.max()) {
-            throw new IllegalStateException("LEVEL 能力值域非法: " + descriptor.capability()
+            throw new IllegalStateException("能力值域非法: " + descriptor.capability()
                     + " min=" + range.min() + " max=" + range.max() + " step=" + range.step());
+        }
+        if (range.neutral().isPresent()
+                && (range.neutral().getAsInt() < range.min()
+                || range.neutral().getAsInt() > range.max())) {
+            throw new IllegalStateException("能力中立档不在值域内: " + descriptor.capability()
+                    + " neutral=" + range.neutral().getAsInt()
+                    + " [" + range.min() + ", " + range.max() + "]");
         }
     }
 
@@ -277,7 +328,7 @@ public final class HsCatalogImpl {
             case EQ_MODE -> of(capability, "均衡器", HsDevice.Group.MUSIC,
                     HsDevice.Form.CHOICE, EQ_MODE_OPTIONS);
             case CUSTOM_EQ -> of(capability, "自定义均衡器", HsDevice.Group.MUSIC,
-                    HsDevice.Form.CURVE, List.of());
+                    HsDevice.Form.CURVE, CUSTOM_EQ_BAND_OPTIONS, CUSTOM_EQ_GAIN_RANGE);
             case LDAC -> of(capability, "LDAC", HsDevice.Group.MUSIC,
                     HsDevice.Form.TOGGLE, List.of());
             case VOLUME_ADAPTIVE -> of(capability, "音量自适应", HsDevice.Group.MUSIC,
@@ -345,6 +396,27 @@ public final class HsCatalogImpl {
                                              List<HsDevice.Option> options) {
         return new HsDevice.Feature(capability, title, group, kind, options,
                 Optional.empty());
+    }
+
+    private static HsDevice.Feature of(HsDevice.Capability capability, String title,
+                                       HsDevice.Group group, HsDevice.Form kind,
+                                       List<HsDevice.Option> options, HsDevice.Range range) {
+        return new HsDevice.Feature(capability, title, group, kind, options,
+                Optional.of(range));
+    }
+
+    /**
+     * 频段选项由协议频段表派生：{@code optionId} 是频段下标（与 gain 字节位置一一对应），
+     * {@code title} 是频率标签。
+     */
+    private static List<HsDevice.Option> customEqBandOptions() {
+        List<HsDevice.Option> options = new ArrayList<>();
+        for (int band = 0; band < CustomEQRealtimeCommand.BAND_COUNT; band++) {
+            options.add(new HsDevice.Option(
+                    Integer.toString(band),
+                    CustomEQRealtimeCommand.BAND_LABELS.get(band)));
+        }
+        return List.copyOf(options);
     }
 
     private static List<HsDevice.Option> pressOptions(int actionMax, String[] actionTitles) {

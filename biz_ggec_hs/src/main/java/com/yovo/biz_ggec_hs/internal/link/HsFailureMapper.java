@@ -1,8 +1,6 @@
 package com.yovo.biz_ggec_hs.internal.link;
 
-
-
-
+import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
@@ -14,8 +12,10 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
  *
  * <p>返回 {@code null} 表示「不是失败」：主动断开与换连接目标的收尾都属于正常结束，
  * 不能塞进任何失败分类。</p>
+ *
+ * <p>录音、同步、连接三条链路都从这里取分类，模块内不存在第二套失败映射。</p>
  */
-final class HsFailureMapper {
+public final class HsFailureMapper {
 
     private HsFailureMapper() {
     }
@@ -25,7 +25,8 @@ final class HsFailureMapper {
      *
      * @return {@code null} 表示正常收尾（主动断开、换连接目标）
      */
-    static HsControl.Failure ofDisconnectReason(String reason) {
+    @Nullable
+    public static HsControl.Failure ofDisconnectReason(String reason) {
         if (reason == null || reason.isEmpty()) {
             return null;
         }
@@ -39,7 +40,7 @@ final class HsFailureMapper {
     }
 
     /** 尚未就绪即失败的原因归一。 */
-    static HsControl.Failure ofConnectFailure(String reason) {
+    public static HsControl.Failure ofConnectFailure(String reason) {
         if (HsProtocolEngine.REASON_READY_TIMEOUT.equals(reason)) {
             return HsControl.Failure.TIMEOUT;
         }
@@ -51,7 +52,8 @@ final class HsFailureMapper {
      *
      * @return {@code null} 表示成功
      */
-    static HsControl.Failure ofCommandCode(int code) {
+    @Nullable
+    public static HsControl.Failure ofCommandCode(int code) {
         return switch (code) {
             case Command.ResultCode.SUCCESS -> null;
             case Command.ResultCode.TIMEOUT -> HsControl.Failure.TIMEOUT;
@@ -61,9 +63,15 @@ final class HsFailureMapper {
         };
     }
 
-    /** 写入/动作回调用结果。 */
-    static HsControl.Outcome<Void> writeResult(CommandCompletion completion) {
-        HsControl.Failure failure = ofCommandCode(completion.getCode());
-        return failure == null ? new HsControl.Outcome.Ok<>(null) : new HsControl.Outcome.Err<>(failure);
+    /** 失败分类到对外结果：{@code null} 即成功。 */
+    public static HsControl.Outcome<Void> writeOutcome(@Nullable HsControl.Failure failure) {
+        return failure == null
+                ? new HsControl.Outcome.Ok<>(null)
+                : new HsControl.Outcome.Err<>(failure);
+    }
+
+    /** 命令完成码到对外结果（写入/动作回调用）。 */
+    public static HsControl.Outcome<Void> writeResult(CommandCompletion completion) {
+        return writeOutcome(ofCommandCode(completion.getCode()));
     }
 }

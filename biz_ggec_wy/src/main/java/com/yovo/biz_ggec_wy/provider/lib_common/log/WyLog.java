@@ -1,7 +1,5 @@
 package com.yovo.biz_ggec_wy.provider.lib_common.log;
 
-import android.content.Context;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -10,6 +8,12 @@ import com.yovo.lib_common.log.YoLogBootstrap;
 
 /**
  * WY 模块唯一日志门面，同时是 {@code lib_common.log} 的 Provider 接入点。
+ *
+ * <p>本类只做一行转发：日志级别、落盘、滚动与降级全部由 {@code lib_common.log} 决定，
+ * 模块内不复制任何日志实现。</p>
+ *
+ * <p>初始化不是本类的职责：宿主必须在使用 SDK 前调用 {@code YoLogBootstrap.initOnce(...)}，
+ * 这里只做断言，不做默认配置兜底（兜底会把宿主配置改写成 logcat-only）。</p>
  */
 public final class WyLog {
 
@@ -17,14 +21,12 @@ public final class WyLog {
     }
 
     /**
-     * SDK 入口兜底初始化 YoLog（幂等）。
+     * 断言宿主已完成日志初始化。
+     *
+     * @throws IllegalStateException 日志尚未初始化
      */
-    public static void ensureInitialized(@NonNull Context context) {
-        YoLogBootstrap.ensureInitialized(context);
-    }
-
-    public static void v(@NonNull String tag, @NonNull String message) {
-        YoLog.v(tag, message);
+    public static void requireInitialized() {
+        YoLogBootstrap.requireInitialized();
     }
 
     public static void d(@NonNull String tag, @NonNull String message) {

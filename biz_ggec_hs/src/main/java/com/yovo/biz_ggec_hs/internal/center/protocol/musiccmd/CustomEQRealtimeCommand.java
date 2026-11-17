@@ -3,6 +3,8 @@ package com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
+import java.util.List;
+
 /**
  * 实时设置耳机自定义EQ模式参数
  * 协议：99 EC B0 00 0A [10个频段gain值] 12 34
@@ -14,9 +16,20 @@ public class CustomEQRealtimeCommand extends Command {
     private static final String COMMAND_PREFIX_STR = "99ECB0";
     private static final String COMMAND_SUFFIX = "1234";
 
-    public static final int BAND_COUNT = 10;
+    /**
+     * 频段表：{@code gains[i]} 对应的频率，逐项顺序即协议字节顺序。
+     *
+     * <p>频段数、目录描述符的频段选项都由这一份派生，不再有第二份表。</p>
+     */
+    public static final List<String> BAND_LABELS = List.of(
+            "60Hz", "125Hz", "250Hz", "500Hz", "1kHz",
+            "2kHz", "4kHz", "8kHz", "12kHz", "16kHz");
+
+    public static final int BAND_COUNT = BAND_LABELS.size();
     public static final int GAIN_MIN = 0x00;
     public static final int GAIN_MAX = 0x18;
+    /** 增益步进（协议单位）：0x01 = 0.5 dB。 */
+    public static final int GAIN_STEP = 1;
     /** 0 dB。名称首字节被误读成 16K 增益时，回收后回填这一档。 */
     public static final int GAIN_NEUTRAL = 0x0C;
 

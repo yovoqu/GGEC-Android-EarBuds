@@ -3,9 +3,9 @@ package com.yovo.biz_ggec_hs.provider.lib_ggec_opus;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioCodecProviderPort;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDecoder;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioFileWriter;
+import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
+import com.yovo.lib_ggec_audio.record.AudioDecoder;
+import com.yovo.lib_ggec_audio.record.AudioFileWriter;
 import com.yovo.lib_ggec_opus.YoOpusSdk;
 import com.yovo.lib_ggec_opus.api.YoOpusDecoder;
 import com.yovo.lib_ggec_opus.api.YoPcmWriter;
@@ -14,17 +14,18 @@ import java.io.File;
 import java.util.Objects;
 
 /**
- * 把 {@code lib_ggec_opus} 的音频编解码与落盘能力适配为模块内部端口 {@link HsAudioCodecProviderPort}。
+ * 把 {@code lib_ggec_opus} 的音频编解码与落盘能力适配为共享录音端口
+ * {@link AudioCodecProviderPort}。
  *
  * <p>本类是 {@code biz_ggec_hs} 内部唯一允许 {@code import com.yovo.lib_ggec_opus} 的地方。</p>
  */
-public final class YoOpusCodecProvider implements HsAudioCodecProviderPort {
+public final class YoOpusCodecProvider implements AudioCodecProviderPort {
 
     @NonNull
     @Override
-    public HsAudioDecoder createDecoder() {
+    public AudioDecoder createDecoder() {
         YoOpusDecoder delegate = YoOpusSdk.openDecoder();
-        return new HsAudioDecoder() {
+        return new AudioDecoder() {
             @Nullable
             @Override
             public byte[] decode(@NonNull byte[] opusPacket) {
@@ -40,9 +41,9 @@ public final class YoOpusCodecProvider implements HsAudioCodecProviderPort {
 
     @NonNull
     @Override
-    public HsAudioFileWriter createPcmFileWriter(@NonNull File targetFile) {
+    public AudioFileWriter createPcmFileWriter(@NonNull File targetFile) {
         YoPcmWriter delegate = YoOpusSdk.openPcmWriter(Objects.requireNonNull(targetFile, "targetFile"));
-        return new HsAudioFileWriter() {
+        return new AudioFileWriter() {
             @Override
             public void writePcm(@NonNull byte[] pcmData) {
                 delegate.writePcm(pcmData);

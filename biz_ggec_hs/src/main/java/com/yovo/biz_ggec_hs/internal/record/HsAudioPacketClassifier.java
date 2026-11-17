@@ -1,4 +1,4 @@
-package com.yovo.biz_ggec_hs.internal.record.assembler;
+package com.yovo.biz_ggec_hs.internal.record;
 
 import androidx.annotation.Nullable;
 
@@ -43,10 +43,7 @@ public final class HsAudioPacketClassifier {
      * @return {@link #CMD_TYPE_START}、{@link #CMD_TYPE_STOP}、{@link #CMD_TYPE_DELAY}，无法识别返回 0
      */
     public static int resolveControlCmdType(@Nullable byte[] value) {
-        if (value == null || value.length < 2) {
-            return 0;
-        }
-        if (value[1] != REMOTE_REPORT_CMD_HI) {
+        if (!isControlPacket(value)) {
             return 0;
         }
         return (value[0] & 0xFF) | ((value[1] & 0xFF) << 8);

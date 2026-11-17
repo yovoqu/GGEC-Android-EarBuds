@@ -50,7 +50,7 @@ public class GetPairedDevicesCommand extends Command {
             return completed(ResultCode.SUCCESS, devices, "获取配对设备列表成功");
         } catch (Exception e) {
             HsLog.e(TAG, "解析配对设备列表失败", e);
-            return completed(ResultCode.FAILED, null, "解析失败: " + e.getMessage());
+            return completed(ResultCode.FAILED, null, "配对设备列表解析失败");
         }
     }
 

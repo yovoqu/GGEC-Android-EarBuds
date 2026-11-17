@@ -4,6 +4,7 @@ import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 
 
 import com.yovo.biz_ggec_hs.api.HsDevice;
+import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.CustomEQRealtimeCommand;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -14,6 +15,7 @@ import org.junit.Test;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -81,17 +83,18 @@ public final class HsCatalogImplTest {
     }
 
     @Test
-    public void levelCapabilitiesCarryRangeAndOthersDoNot() {
+    public void levelAndCurveCapabilitiesCarryRangeAndOthersDoNot() {
         for (HsDevice.Feature descriptor : catalog.descriptors()) {
-            if (descriptor.kind() == HsDevice.Form.LEVEL) {
-                assertTrue("LEVEL 必须给值域: " + descriptor.capability(),
+            if (descriptor.kind() == HsDevice.Form.LEVEL
+                    || descriptor.kind() == HsDevice.Form.CURVE) {
+                assertTrue("LEVEL/CURVE 必须给值域: " + descriptor.capability(),
                         descriptor.range().isPresent());
                 HsDevice.Range range = descriptor.range().get();
                 assertTrue(range.min() <= range.max());
                 assertTrue(range.step() > 0);
                 continue;
             }
-            assertTrue("非 LEVEL 不得带值域: " + descriptor.capability(),
+            assertTrue("非 LEVEL/CURVE 不得带值域: " + descriptor.capability(),
                     descriptor.range().isEmpty());
         }
         assertEquals("电量是纯门控项，不得渲染成可写滑杆",
@@ -99,9 +102,37 @@ public final class HsCatalogImplTest {
         assertTrue(catalog.descriptor(HsDevice.Capability.BATTERY).range().isEmpty());
     }
 
+    /**
+     * 自定义 EQ：段数与增益域都由 biz 描述符给出，且与协议命令表同源。
+     * 中立档（0 dB）也来自协议常量，界面因此不必猜「哪一格是平直」。
+     */
+    @Test
+    public void customEqDescriptorCarriesBandsAndGainRange() {
+        HsDevice.Feature customEq = catalog.descriptor(HsDevice.Capability.CUSTOM_EQ);
+        assertEquals(HsDevice.Form.CURVE, customEq.kind());
+        assertEquals(CustomEQRealtimeCommand.BAND_COUNT, customEq.options().size());
+        for (int band = 0; band < customEq.options().size(); band++) {
+            HsDevice.Option option = customEq.options().get(band);
+            assertEquals(Integer.toString(band), option.optionId());
+            assertEquals(CustomEQRealtimeCommand.BAND_LABELS.get(band), option.title());
+        }
+        HsDevice.Range gain = customEq.range().orElseThrow();
+        assertEquals(CustomEQRealtimeCommand.GAIN_MIN, gain.min());
+        assertEquals(CustomEQRealtimeCommand.GAIN_MAX, gain.max());
+        assertEquals(CustomEQRealtimeCommand.GAIN_STEP, gain.step());
+        assertEquals("CUSTOM_EQ.range().neutral() 必须是协议 0 dB（0x0C）",
+                OptionalInt.of(CustomEQRealtimeCommand.GAIN_NEUTRAL), gain.neutral());
+        assertEquals(0x0C, gain.neutral().getAsInt());
+    }
+
     @Test
     public void choiceCapabilitiesEnumerateTheirOptions() {
         for (HsDevice.Feature descriptor : catalog.descriptors()) {
+            if (descriptor.kind() == HsDevice.Form.CURVE) {
+                assertFalse("CURVE 必须给频段：曲线段数来自描述符: " + descriptor.capability(),
+                        descriptor.options().isEmpty());
+                continue;
+            }
             if (descriptor.kind() != HsDevice.Form.CHOICE) {
                 assertTrue("非 CHOICE 不带选项: " + descriptor.capability(),
                         descriptor.options().isEmpty());
@@ -155,8 +186,8 @@ public final class HsCatalogImplTest {
     }
 
     /**
-     * 目录不变量逐条核对：ACTION 必须可达、LEVEL 必须带值域、INFO/GATE 不得可写也不得带值域、
-     * 其余形态不得带值域。遍历全量能力，新加能力漏了不变量这里会红。
+     * 目录不变量逐条核对：ACTION 必须可达、LEVEL/CURVE 必须带值域、CURVE 必须带频段、
+     * GATE 不得可写也不得带值域、其余形态不得带值域。遍历全量能力，新加能力漏了不变量这里会红。
      */
     @Test
     public void everyCapabilitySatisfiesItsKindInvariant() {
@@ -169,13 +200,19 @@ public final class HsCatalogImplTest {
                         writable || actionable);
                 case LEVEL -> assertTrue("LEVEL 必须带值域: " + capability,
                         descriptor.range().isPresent());
+                case CURVE -> {
+                    assertTrue("CURVE 必须带频段: " + capability,
+                            !descriptor.options().isEmpty());
+                    assertTrue("CURVE 必须带值域: " + capability,
+                            descriptor.range().isPresent());
+                }
                 case GATE -> {
                     assertTrue("GATE 不得带值域: " + capability,
                             descriptor.range().isEmpty());
                     assertFalse("GATE 不得可写: " + capability, writable);
                 }
-                case TOGGLE, CHOICE, CURVE, LIST -> assertTrue(
-                        "非 LEVEL 不得带值域: " + capability, descriptor.range().isEmpty());
+                case TOGGLE, CHOICE, LIST -> assertTrue(
+                        "非 LEVEL/CURVE 不得带值域: " + capability, descriptor.range().isEmpty());
             }
         }
     }

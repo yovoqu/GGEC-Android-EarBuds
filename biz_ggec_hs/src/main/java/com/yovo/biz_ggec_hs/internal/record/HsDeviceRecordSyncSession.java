@@ -8,17 +8,18 @@ import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.api.SyncProgressListener;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioCodecProviderPort;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDecoder;
-import com.yovo.biz_ggec_hs.internal.center.port.HsAudioFileWriter;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.CancelTransmitRecordCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StartTransmitRecordCommand;
-import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioFrameAssembler;
-import com.yovo.biz_ggec_hs.internal.record.assembler.HsAudioPacketClassifier;
+import com.yovo.biz_ggec_hs.internal.link.HsFailureMapper;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
+import com.yovo.lib_ggec_audio.AudioFrameAssembler;
+import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
+import com.yovo.lib_ggec_audio.record.AudioDecoder;
+import com.yovo.lib_ggec_audio.record.AudioFileWriter;
+import com.yovo.lib_ggec_audio.record.LoggingAudioFrameTrace;
 
 import java.io.File;
 import java.util.List;
@@ -33,17 +34,21 @@ public final class HsDeviceRecordSyncSession {
 
     private static final String TAG = "HsDeviceRecordSyncSession";
 
+    /** 设备文件 ID 违约：既不上报进度，也不下发任何下标。 */
+    private static final String ERROR_INVALID_FILE_ID = "设备录音文件 ID 非法";
+
     private final HsProtocolEngine engine;
     private final HsAudioDataLink audioLink;
     private final HsRecordPathResolver pathResolver;
-    private final HsAudioCodecProviderPort codecProvider;
+    private final AudioCodecProviderPort codecProvider;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService syncExecutor = Executors.newSingleThreadExecutor();
 
-    private final HsAudioFrameAssembler frameAssembler = new HsAudioFrameAssembler();
-    private HsAudioDecoder decoder;
-    private HsAudioFileWriter fileWriter;
+    private final AudioFrameAssembler frameAssembler =
+            new AudioFrameAssembler(new LoggingAudioFrameTrace("HsAudioFrame", HsRecordLog.INSTANCE));
+    private AudioDecoder decoder;
+    private AudioFileWriter fileWriter;
     private File currentTargetFile;
     private long totalExpectedBytes;
     private long receivedBytes;
@@ -54,7 +59,7 @@ public final class HsDeviceRecordSyncSession {
     public HsDeviceRecordSyncSession(@NonNull HsProtocolEngine engine,
                                      @NonNull HsAudioDataLink audioLink,
                                      @NonNull HsRecordPathResolver pathResolver,
-                                     @NonNull HsAudioCodecProviderPort codecProvider) {
+                                     @NonNull AudioCodecProviderPort codecProvider) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.audioLink = Objects.requireNonNull(audioLink, "audioLink");
         this.pathResolver = Objects.requireNonNull(pathResolver, "pathResolver");
@@ -74,11 +79,21 @@ public final class HsDeviceRecordSyncSession {
             return;
         }
 
+        // 契约违约：fileId 不是设备侧十进制下标时不下发任何命令，也绝不回落成 0 号文件。
+        Integer index = HsRecordFileId.indexOf(fileId);
+        if (index == null) {
+            HsLog.e(TAG, "拒绝非法设备文件 ID: " + fileId);
+            listener.onError(ERROR_INVALID_FILE_ID);
+            return;
+        }
+
         this.syncing = true;
         this.currentListener = Objects.requireNonNull(listener, "listener");
         this.totalExpectedBytes = expectedTotalBytes;
         this.receivedBytes = 0;
-        this.currentTargetFile = targetFile != null ? targetFile : pathResolver.generateDefaultTransferFile(fileId);
+        this.currentTargetFile = targetFile != null
+                ? targetFile
+                : pathResolver.generateDefaultTransferFile(fileId);
 
         frameAssembler.reset();
         frameAssembler.setAllowIndexResync(true);
@@ -88,13 +103,7 @@ public final class HsDeviceRecordSyncSession {
         decoder = codecProvider.createDecoder();
         fileWriter = codecProvider.createPcmFileWriter(currentTargetFile);
 
-        int index = 0;
-        try {
-            index = Integer.parseInt(fileId);
-        } catch (NumberFormatException ignored) {
-        }
-
-        final int targetIndex = index;
+        int targetIndex = index;
 
         // 严格等待 820003 数据通道 Notify 就绪后再发命令
         audioLink.startAudioNotify(new HsAudioDataLink.ReadyCallback() {
@@ -102,11 +111,11 @@ public final class HsDeviceRecordSyncSession {
             public void onReady() {
                 HsLog.i(TAG, "音频传输 Notify 通道就绪，发送 StartTransmitRecordCommand: " + targetIndex);
                 engine.submit(new StartTransmitRecordCommand(targetIndex), (cmd, completion) -> {
-                    if (completion.getCode() != Command.ResultCode.SUCCESS) {
-                        HsLog.e(TAG, "启动文件传输失败: " + completion.getMessage());
-                        cancelInternal("设备拒绝传输: " + completion.getMessage());
-                    } else {
+                    if (completion.getCode() == Command.ResultCode.SUCCESS) {
                         HsLog.i(TAG, "设备接受传输指令，开始接收数据");
+                    } else {
+                        HsLog.e(TAG, "启动文件传输失败: code=" + completion.getCode());
+                        cancelInternal("设备拒绝传输");
                     }
                 });
             }
@@ -114,7 +123,7 @@ public final class HsDeviceRecordSyncSession {
             @Override
             public void onError(@NonNull String message) {
                 HsLog.e(TAG, "传输通道订阅失败: " + message);
-                cancelInternal("传输通道订阅失败: " + message);
+                cancelInternal("传输通道订阅失败");
             }
         }, this::onSyncDataReceived);
     }
@@ -126,11 +135,8 @@ public final class HsDeviceRecordSyncSession {
         }
 
         engine.submit(new CancelTransmitRecordCommand(), (cmd, completion) -> {
-            boolean success = completion.getCode() == Command.ResultCode.SUCCESS;
             cancelInternal("传输已取消");
-            callback.onResult(success
-                    ? new HsControl.Outcome.Ok<>(null)
-                    : new HsControl.Outcome.Err<>(HsControl.Failure.TIMEOUT));
+            callback.onResult(HsFailureMapper.writeResult(completion));
         });
     }
 
