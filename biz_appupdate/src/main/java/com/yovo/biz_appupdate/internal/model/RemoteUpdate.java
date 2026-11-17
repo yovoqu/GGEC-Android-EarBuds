@@ -48,16 +48,6 @@ public final class RemoteUpdate {
         this.sizeBytes = sizeBytes;
     }
 
-    /**
-     * 兼容旧构造：不携带 versionCode / 强制更新标记。
-     */
-    public RemoteUpdate(boolean hasNewVersion,
-                        @NonNull String version,
-                        @NonNull String description,
-                        @NonNull String downloadUrl) {
-        this(hasNewVersion, version, 0, description, downloadUrl, false);
-    }
-
     public boolean hasNewVersion() {
         return hasNewVersion;
     }
@@ -114,13 +104,5 @@ public final class RemoteUpdate {
                 md5,
                 sha256,
                 sizeBytes);
-    }
-
-    @NonNull
-    public RemoteUpdate withUrlFallback(@Nullable String fallbackUrl) {
-        if (downloadUrl != null && !downloadUrl.trim().isEmpty()) {
-            return this;
-        }
-        return withDownloadUrl(fallbackUrl == null ? "" : fallbackUrl);
     }
 }

@@ -29,6 +29,16 @@ public interface ApkStoragePort {
     @NonNull
     File rootDir();
 
+    /** 确保下载目录可用（SAF 授权检查 + 目录创建）；不可用时返回 false。 */
+    boolean ensureReady();
+
+    /**
+     * 下载完成后的落地策略：非 SAF 目录为空操作，SAF 目录把文件复制进授权树。
+     *
+     * <p>SAF 只是存储策略的一种，策略留在实现里；调用方只关心「文件是否已进目标目录」。</p>
+     */
+    boolean finishDownload(@NonNull File downloadedFile);
+
     /** 按当前命名规范生成文件名。*/
     @NonNull
     String fileName(@NonNull String versionName, int versionCode);

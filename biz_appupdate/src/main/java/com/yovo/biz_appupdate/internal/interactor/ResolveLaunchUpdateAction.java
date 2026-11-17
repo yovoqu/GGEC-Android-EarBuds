@@ -3,7 +3,6 @@ package com.yovo.biz_appupdate.internal.interactor;
 import androidx.annotation.NonNull;
 
 import com.yovo.biz_appupdate.internal.contract.ApkStoragePort;
-import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;
 import com.yovo.biz_appupdate.internal.contract.NetworkPolicy;
 import com.yovo.biz_appupdate.internal.contract.PendingDownloadResumer;
 import com.yovo.biz_appupdate.internal.contract.PromptProvider;
@@ -39,7 +38,6 @@ public final class ResolveLaunchUpdateAction {
     private final NetworkPolicy networkPolicy;
     private final PromptProvider promptProvider;
     private final PendingDownloadResumer resumer;
-    private final DownloadDirAccessPort downloadDirAccess;
 
     public ResolveLaunchUpdateAction(@NonNull UpdateCheckProvider checkProvider,
                                      @NonNull VersionProvider versionProvider,
@@ -48,8 +46,7 @@ public final class ResolveLaunchUpdateAction {
                                      @NonNull UpdatePolicy policy,
                                      @NonNull NetworkPolicy networkPolicy,
                                      @NonNull PromptProvider promptProvider,
-                                     @NonNull PendingDownloadResumer resumer,
-                                     @NonNull DownloadDirAccessPort downloadDirAccess) {
+                                     @NonNull PendingDownloadResumer resumer) {
         this.checkProvider = checkProvider;
         this.versionProvider = versionProvider;
         this.metaStore = metaStore;
@@ -58,15 +55,9 @@ public final class ResolveLaunchUpdateAction {
         this.networkPolicy = networkPolicy;
         this.promptProvider = promptProvider;
         this.resumer = resumer;
-        this.downloadDirAccess = downloadDirAccess;
     }
 
     public void run(@NonNull Callback callback) {
-        if (!downloadDirAccess.isAccessible()) {
-            callback.onComplete(LaunchDecision.needDownloadDir());
-            return;
-        }
-
         CurrentAppVersion current = versionProvider.currentVersion();
         String expectedPackage = apkStorage.currentPackageName();
         String expectedSignature = apkStorage.currentSignatureHash();
@@ -137,7 +128,7 @@ public final class ResolveLaunchUpdateAction {
                                   @NonNull Callback callback) {
         UpdateMeta meta = metaStore.snapshot();
         LaunchDecision decision;
-        if (meta != null && meta.hasNewVersion()
+        if (meta != null
                 && (!promptProvider.isIgnored(meta.version()) || meta.forceUpdate())) {
             RemoteUpdate fallback =
                     DownloadUrlResolver.resolve(meta.toRemoteUpdate(), policy.downloadUrl());
@@ -155,7 +146,8 @@ public final class ResolveLaunchUpdateAction {
             }
         } else {
             RemoteUpdate noRemote = new RemoteUpdate(
-                    false, current.versionName(), current.versionCode(), "", "", false);
+                    false, current.versionName(), current.versionCode(), "", "", false,
+                    "", "", 0L);
             decision = LaunchUpdateDecisionResolver.resolve(
                     noRemote,
                     null,

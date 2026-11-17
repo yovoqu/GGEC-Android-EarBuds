@@ -16,6 +16,9 @@ import java.util.Collections;
 
 /**
  * 对外契约与内部模型的双向映射。
+ *
+ * <p>每个 switch 都穷尽当前枚举：未知取值不存在「静默落到某个默认分支」的路径，
+ * 契约违约就显式抛错。</p>
  */
 public final class ContractMapper {
 
@@ -39,30 +42,28 @@ public final class ContractMapper {
 
     @NonNull
     private static StoragePolicy toInternalPolicy(@NonNull YoAppUpdate.StoragePolicy policy) {
-        switch (policy) {
-            case MULTI_VERSION:
-                return StoragePolicy.MULTI_VERSION;
-            case SINGLE_LATEST:
-            default:
-                return StoragePolicy.SINGLE_LATEST;
-        }
+        return switch (policy) {
+            case MULTI_VERSION -> StoragePolicy.MULTI_VERSION;
+            case SINGLE_LATEST -> StoragePolicy.SINGLE_LATEST;
+        };
     }
 
     @NonNull
     public static DownloadDirSpec toInternalDir(@NonNull YoAppUpdate.DownloadDir dir) {
-        switch (dir.type()) {
-            case ABSOLUTE:
-                return dir.dir() != null
-                        ? DownloadDirSpec.absolute(dir.dir())
-                        : DownloadDirSpec.appPrivate("AppUpdate");
-            case SAF:
-                return DownloadDirSpec.saf();
-            case APP_PRIVATE:
-            default:
-                return dir.dir() != null
-                        ? DownloadDirSpec.appPrivate(dir.dir().getPath())
-                        : DownloadDirSpec.appPrivate("AppUpdate");
+        return switch (dir.type()) {
+            case ABSOLUTE -> DownloadDirSpec.absolute(requireDir(dir));
+            case SAF -> DownloadDirSpec.saf();
+            case APP_PRIVATE -> DownloadDirSpec.appPrivate(requireDir(dir).getPath());
+        };
+    }
+
+    @NonNull
+    private static File requireDir(@NonNull YoAppUpdate.DownloadDir dir) {
+        File value = dir.dir();
+        if (value == null) {
+            throw new IllegalArgumentException("下载目录缺少路径: " + dir.type());
         }
+        return value;
     }
 
     @NonNull
@@ -94,25 +95,12 @@ public final class ContractMapper {
 
     @NonNull
     public static YoAppUpdate.LaunchPrompt toPublicPrompt(@NonNull LaunchDecision decision) {
-        YoAppUpdate.LaunchPrompt.Action action;
-        switch (decision.action()) {
-            case INSTALL_DIRECT:
-                action = YoAppUpdate.LaunchPrompt.Action.INSTALL_DIRECT;
-                break;
-            case SHOW_UPDATE_DIALOG:
-                action = YoAppUpdate.LaunchPrompt.Action.SHOW_UPDATE;
-                break;
-            case SELECT_LOCAL_APK:
-                action = YoAppUpdate.LaunchPrompt.Action.SELECT_LOCAL_APK;
-                break;
-            case NEED_DOWNLOAD_DIR:
-                action = YoAppUpdate.LaunchPrompt.Action.NEED_DOWNLOAD_DIR;
-                break;
-            case NONE:
-            default:
-                action = YoAppUpdate.LaunchPrompt.Action.NONE;
-                break;
-        }
+        YoAppUpdate.LaunchPrompt.Action action = switch (decision.action()) {
+            case INSTALL_DIRECT -> YoAppUpdate.LaunchPrompt.Action.INSTALL_DIRECT;
+            case SHOW_UPDATE_DIALOG -> YoAppUpdate.LaunchPrompt.Action.SHOW_UPDATE;
+            case SELECT_LOCAL_APK -> YoAppUpdate.LaunchPrompt.Action.SELECT_LOCAL_APK;
+            case NONE -> YoAppUpdate.LaunchPrompt.Action.NONE;
+        };
         LocalApk local = decision.localApk();
         return new YoAppUpdate.LaunchPrompt(
                 action,
@@ -122,30 +110,24 @@ public final class ContractMapper {
 
     @NonNull
     public static LaunchDecision toLaunchDecision(@NonNull YoAppUpdate.LaunchPrompt prompt) {
-        switch (prompt.action()) {
-            case INSTALL_DIRECT:
-                if (prompt.update() != null && prompt.apkFile() != null) {
-                    RemoteUpdate remote = toRemoteUpdate(prompt.update());
-                    return LaunchDecision.installDirect(
-                            remote,
-                            new LocalApk(
-                                    prompt.apkFile(),
-                                    prompt.apkFile().lastModified(),
-                                    remote.version()));
-                }
-                return LaunchDecision.none();
-            case SHOW_UPDATE:
-                return prompt.update() != null
-                        ? LaunchDecision.showUpdate(toRemoteUpdate(prompt.update()))
-                        : LaunchDecision.none();
-            case SELECT_LOCAL_APK:
-                return LaunchDecision.selectLocalApks(Collections.emptyList());
-            case NEED_DOWNLOAD_DIR:
-                return LaunchDecision.needDownloadDir();
-            case NONE:
-            default:
-                return LaunchDecision.none();
-        }
+        return switch (prompt.action()) {
+            case INSTALL_DIRECT -> toInstallDirect(prompt);
+            case SHOW_UPDATE -> prompt.update() != null
+                    ? LaunchDecision.showUpdate(toRemoteUpdate(prompt.update()))
+                    : LaunchDecision.none();
+            case SELECT_LOCAL_APK -> LaunchDecision.selectLocalApks(Collections.emptyList());
+            case NONE -> LaunchDecision.none();
+        };
     }
 
+    @NonNull
+    private static LaunchDecision toInstallDirect(@NonNull YoAppUpdate.LaunchPrompt prompt) {
+        if (prompt.update() == null || prompt.apkFile() == null) {
+            return LaunchDecision.none();
+        }
+        RemoteUpdate remote = toRemoteUpdate(prompt.update());
+        return LaunchDecision.installDirect(
+                remote,
+                new LocalApk(prompt.apkFile(), prompt.apkFile().lastModified(), remote.version()));
+    }
 }

@@ -46,7 +46,8 @@ public final class CheckUpdateActionTest {
     @Test
     public void noNewVersionClearsMeta() {
         metaStore.meta = new UpdateMeta(
-                "1.5.2", 154, "old", "https://old.example.com/app.apk", false, 1L, null);
+                "1.5.2", 154, "old", "https://old.example.com/app.apk", false,
+                "", "", 0L, 1L, null);
         checkProvider.result = new RemoteUpdate(
                 false, "1.5.2", 154, "desc", "https://remote.example.com/app.apk", false);
 
@@ -147,7 +148,7 @@ public final class CheckUpdateActionTest {
             meta = new UpdateMeta(
                     update.version(), update.versionCode(), update.description(),
                     update.downloadUrl(), update.forceUpdate(),
-                    1L, null);
+                    "", "", 0L, 1L, null);
         }
 
         @Override

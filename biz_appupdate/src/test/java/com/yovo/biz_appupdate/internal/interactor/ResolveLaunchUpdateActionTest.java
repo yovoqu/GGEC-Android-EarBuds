@@ -8,7 +8,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.biz_appupdate.internal.contract.ApkStoragePort;
-import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;
 import com.yovo.biz_appupdate.internal.contract.NetworkPolicy;
 import com.yovo.biz_appupdate.internal.contract.PendingDownloadResumer;
 import com.yovo.biz_appupdate.internal.contract.PromptProvider;
@@ -60,22 +59,11 @@ public final class ResolveLaunchUpdateActionTest {
             5000L);
 
     @Test
-    public void dirNotAccessible_returnsNoneWithoutChecking() {
-        FakeDownloadDirAccess access = new FakeDownloadDirAccess(false);
-        ResolveLaunchUpdateAction action = createAction(access);
-
-        LaunchDecision decision = run(action);
-
-        assertEquals(LaunchDecision.Action.NEED_DOWNLOAD_DIR, decision.action());
-        assertEquals(0, checkProvider.calls);
-    }
-
-    @Test
     public void remoteNewAndLocalMatches_returnsInstallDirect() throws Exception {
         apkStorage.locals = Collections.singletonList(localApk(VERSION));
         checkProvider.result = RemoteUpdateFactory.newVersion(VERSION);
 
-        LaunchDecision decision = run(createAction(new FakeDownloadDirAccess(true)));
+        LaunchDecision decision = run(createAction());
 
         assertEquals(LaunchDecision.Action.INSTALL_DIRECT, decision.action());
         assertNotNull(decision.localApk());
@@ -88,7 +76,7 @@ public final class ResolveLaunchUpdateActionTest {
         checkProvider.result = new RemoteUpdate(
                 false, VERSION, 150, "desc", "https://example.com/app.apk", false);
 
-        LaunchDecision decision = run(createAction(new FakeDownloadDirAccess(true)));
+        LaunchDecision decision = run(createAction());
 
         assertEquals(LaunchDecision.Action.NONE, decision.action());
         assertTrue(metaStore.cleared);
@@ -99,7 +87,7 @@ public final class ResolveLaunchUpdateActionTest {
         checkProvider.result = RemoteUpdateFactory.newVersion(VERSION);
         promptProvider.ignored = true;
 
-        LaunchDecision decision = run(createAction(new FakeDownloadDirAccess(true)));
+        LaunchDecision decision = run(createAction());
 
         assertEquals(LaunchDecision.Action.NONE, decision.action());
     }
@@ -109,7 +97,7 @@ public final class ResolveLaunchUpdateActionTest {
         apkStorage.locals = Collections.singletonList(localApk(VERSION));
         metaStore.meta = new UpdateMeta(
                 VERSION, 150, "desc", "https://example.com/app.apk",
-                false, System.currentTimeMillis(), null);
+                false, "", "", 0L, System.currentTimeMillis(), null);
         networkPolicy.wifi = false;
         UpdatePolicy offlinePolicy = new UpdatePolicy(
                 "https://example.com/app.apk",
@@ -119,19 +107,17 @@ public final class ResolveLaunchUpdateActionTest {
                 1000L,
                 5000L);
 
-        LaunchDecision decision = run(
-                createAction(new FakeDownloadDirAccess(true), offlinePolicy));
+        LaunchDecision decision = run(createAction(offlinePolicy));
 
         assertEquals(LaunchDecision.Action.INSTALL_DIRECT, decision.action());
         assertEquals(0, checkProvider.calls);
     }
 
-    private ResolveLaunchUpdateAction createAction(FakeDownloadDirAccess access) {
-        return createAction(access, policy);
+    private ResolveLaunchUpdateAction createAction() {
+        return createAction(policy);
     }
 
-    private ResolveLaunchUpdateAction createAction(FakeDownloadDirAccess access,
-                                                   UpdatePolicy updatePolicy) {
+    private ResolveLaunchUpdateAction createAction(UpdatePolicy updatePolicy) {
         return new ResolveLaunchUpdateAction(
                 checkProvider,
                 versionProvider,
@@ -140,8 +126,7 @@ public final class ResolveLaunchUpdateActionTest {
                 updatePolicy,
                 networkPolicy,
                 promptProvider,
-                resumer,
-                access);
+                resumer);
     }
 
     private LaunchDecision run(ResolveLaunchUpdateAction action) {
@@ -160,19 +145,6 @@ public final class ResolveLaunchUpdateActionTest {
         private static RemoteUpdate newVersion(String version) {
             return new RemoteUpdate(
                     true, version, 150, "desc", "https://example.com/app.apk", false);
-        }
-    }
-
-    private static final class FakeDownloadDirAccess implements DownloadDirAccessPort {
-        private final boolean accessible;
-
-        private FakeDownloadDirAccess(boolean accessible) {
-            this.accessible = accessible;
-        }
-
-        @Override
-        public boolean isAccessible() {
-            return accessible;
         }
     }
 
@@ -221,6 +193,16 @@ public final class ResolveLaunchUpdateActionTest {
         public String currentPackageName() {
             return PACKAGE;
         }
+
+        @Override
+        public boolean ensureReady() {
+            return true;
+        }
+
+        @Override
+        public boolean finishDownload(@NonNull File downloadedFile) {
+            return true;
+        }
     }
 
     private static final class FakeCheckProvider implements UpdateCheckProvider {
@@ -262,7 +244,7 @@ public final class ResolveLaunchUpdateActionTest {
             meta = new UpdateMeta(
                     update.version(), update.versionCode(), update.description(),
                     update.downloadUrl(), update.forceUpdate(),
-                    System.currentTimeMillis(), null);
+                    "", "", 0L, System.currentTimeMillis(), null);
         }
 
         @Override
@@ -270,7 +252,7 @@ public final class ResolveLaunchUpdateActionTest {
             meta = new UpdateMeta(
                     update.version(), update.versionCode(), update.description(),
                     update.downloadUrl(), update.forceUpdate(),
-                    System.currentTimeMillis(),
+                    "", "", 0L, System.currentTimeMillis(),
                     new DownloadedApk(apkFile.getAbsolutePath(), update.version(),
                             update.versionCode(), System.currentTimeMillis()));
         }

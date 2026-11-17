@@ -89,6 +89,14 @@ public final class ApkStorage implements ApkStoragePort {
     }
 
     @Override
+    public boolean finishDownload(@NonNull File downloadedFile) {
+        if (!isSaf()) {
+            return true;
+        }
+        return copyToSaf(downloadedFile);
+    }
+
+    @Override
     @NonNull
     public List<LocalApk> listApks() {
         if (isSaf()) {

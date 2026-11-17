@@ -3,12 +3,10 @@ package com.yovo.biz_appupdate.internal.engine;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;
 import com.yovo.biz_appupdate.internal.contract.DownloadProvider;
 import com.yovo.biz_appupdate.internal.contract.InstallOutcome;
 import com.yovo.biz_appupdate.internal.contract.InstallPermissionPort;
 import com.yovo.biz_appupdate.internal.contract.LaunchPromptBridge;
-import com.yovo.biz_appupdate.internal.contract.SafTreeStorePort;
 import com.yovo.biz_appupdate.provider.lib_common.log.YoUpdateLogger;
 import com.yovo.biz_appupdate.internal.contract.UpdateCheckProvider;
 import com.yovo.biz_appupdate.internal.contract.VersionProvider;
@@ -42,10 +40,7 @@ public final class AppUpdateEngine {
     private final VersionProvider versionProvider;
     private final ResolveLaunchUpdateAction resolveLaunchUpdateAction;
     private final LaunchPromptBridge launchPromptBridge;
-    private final DownloadDirAccessPort downloadDirAccess;
     private final InstallPermissionPort installPermission;
-    private final SafTreeStorePort safTreeStore;
-    private final boolean safDownloadDir;
 
     public AppUpdateEngine(@NonNull CheckUpdateAction checkUpdateAction,
                            @NonNull MarkPromptAction markPromptAction,
@@ -56,10 +51,7 @@ public final class AppUpdateEngine {
                            @NonNull VersionProvider versionProvider,
                            @NonNull ResolveLaunchUpdateAction resolveLaunchUpdateAction,
                            @NonNull LaunchPromptBridge launchPromptBridge,
-                           @NonNull DownloadDirAccessPort downloadDirAccess,
-                           @NonNull InstallPermissionPort installPermission,
-                           @NonNull SafTreeStorePort safTreeStore,
-                           boolean safDownloadDir) {
+                           @NonNull InstallPermissionPort installPermission) {
         this.checkUpdateAction = checkUpdateAction;
         this.markPromptAction = markPromptAction;
         this.ignoreVersionAction = ignoreVersionAction;
@@ -69,10 +61,7 @@ public final class AppUpdateEngine {
         this.versionProvider = versionProvider;
         this.resolveLaunchUpdateAction = resolveLaunchUpdateAction;
         this.launchPromptBridge = launchPromptBridge;
-        this.downloadDirAccess = downloadDirAccess;
         this.installPermission = installPermission;
-        this.safTreeStore = safTreeStore;
-        this.safDownloadDir = safDownloadDir;
     }
 
     public void checkUpdate(@NonNull UpdateCheckProvider.Callback callback) {
@@ -189,25 +178,10 @@ public final class AppUpdateEngine {
     }
 
     /**
-     * 下载目录当前是否可访问（权限/SAF 授权判定收敛到端口适配器）。
-     */
-    public boolean isDownloadDirAccessible() {
-        return downloadDirAccess.isAccessible();
-    }
-
-    /**
      * 是否已具备“安装未知来源应用”能力（统一委托 lib_common 权限服务）。
      */
     public boolean canInstallUnknownSources() {
         return installPermission.canInstallUnknownSources();
-    }
-
-    public boolean shouldPickSafDownloadDir() {
-        return safDownloadDir && !downloadDirAccess.isAccessible() && !safTreeStore.isDismissed();
-    }
-
-    public boolean isSafDownloadDir() {
-        return safDownloadDir;
     }
 
     public interface LaunchResolutionCallback {
