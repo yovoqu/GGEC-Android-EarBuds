@@ -1,5 +1,6 @@
 package com.yovo.lib_common.system.keepalive.service;
 
+import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveCore;
 import com.yovo.lib_common.system.keepalive.internal.service.KeepAliveServiceDelegate;
 import com.yovo.lib_common.system.keepalive.internal.service.KeepAliveIntentParser;
 
@@ -13,10 +14,15 @@ import androidx.annotation.Nullable;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveNotificationSpec;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveContracts;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveSession;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveCore;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveActionDispatcher;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveSessionRegistry;
+import com.yovo.lib_common.system.keepalive.YoKeepAlive;
 
+/**
+ * 保活前台服务基类：命令解析、会话提升与用户停止都在这里收敛，
+ * 子类只登记自己的停止处理器并实现 {@link #onSessionCommand}。
+ *
+ * <p>服务端委托由本类构造时注入进程装配实例（{@link KeepAliveCore#processInstance()}），
+ * 会话表/回执表都是该装配实例的字段，没有静态注册表入口。</p>
+ */
 public abstract class BaseKeepAliveService extends Service {
 
     private KeepAliveServiceDelegate delegate;
@@ -24,7 +30,7 @@ public abstract class BaseKeepAliveService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        delegate = new KeepAliveServiceDelegate(this);
+        delegate = new KeepAliveServiceDelegate(this, KeepAliveCore.processInstance());
     }
 
     @Override
@@ -39,25 +45,18 @@ public abstract class BaseKeepAliveService extends Service {
             return START_NOT_STICKY;
         }
         if (KeepAliveContracts.ACTION_USER_STOP.equals(action)) {
-            KeepAliveActionDispatcher.dispatchUserStop(sessionId);
+            YoKeepAlive.dispatchUserStop(sessionId);
             return START_NOT_STICKY;
         }
 
-        KeepAliveSessionRegistry.SessionEntry entry =
-                KeepAliveSessionRegistry.get().get(sessionId);
-        if (entry == null) {
-            return START_NOT_STICKY;
-        }
-
-        KeepAliveSession session = KeepAliveCore.findSession(sessionId);
+        KeepAliveSession session = YoKeepAlive.findSession(sessionId);
         if (session == null) {
             return START_NOT_STICKY;
         }
         KeepAliveNotificationSpec spec = resolveNotificationSpec(intent, session);
-        if (spec != null) {
-            entry.updateSpec(spec);
+        if (!delegate.promote(sessionId, spec)) {
+            return START_NOT_STICKY;
         }
-        delegate.promote(entry);
         onSessionCommand(sessionId, action, session);
         return START_NOT_STICKY;
     }

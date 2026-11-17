@@ -19,6 +19,7 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -93,10 +94,7 @@ public final class ZipArchiveEngine implements ArchiveEngine {
             }
         } finally {
             // 不关闭调用方传入的流；由调用方决定生命周期。
-            try {
-                zis.closeEntry();
-            } catch (Exception ignored) {
-            }
+            closeCurrentEntry(zis);
         }
         return entries;
     }
@@ -192,21 +190,24 @@ public final class ZipArchiveEngine implements ArchiveEngine {
                                 extracted, skipped, rejected, failed, message);
                     }
                 } finally {
-                    try {
-                        zis.closeEntry();
-                    } catch (Exception ignored) {
-                    }
+                    closeCurrentEntry(zis);
                 }
             }
         } finally {
             // 不关闭调用方传入的流；由调用方决定生命周期。
-            try {
-                zis.closeEntry();
-            } catch (Exception ignored) {
-            }
+            closeCurrentEntry(zis);
         }
 
         return ArchiveUnpackResult.of(extracted, skipped, rejected, failed, message);
+    }
+
+    /** 关闭当前条目；失败只按 IOException 收敛并上报，不吞成空块。 */
+    private void closeCurrentEntry(@NonNull ZipInputStream zis) {
+        try {
+            zis.closeEntry();
+        } catch (IOException e) {
+            YoLog.w(TAG, "关闭 zip 条目失败", e);
+        }
     }
 
     @NonNull

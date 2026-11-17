@@ -4,6 +4,7 @@ import com.yovo.lib_common.system.permission.internal.PermissionChecker;
 import com.yovo.lib_common.system.permission.internal.PermissionRationale;
 import com.yovo.lib_common.system.permission.internal.PermissionRequester;
 import com.yovo.lib_common.system.permission.model.Permission;
+import com.yovo.lib_common.system.permission.model.PermissionIgnoreReason;
 import com.yovo.lib_common.system.permission.model.PermissionResult;
 import com.yovo.lib_common.system.permission.model.PermissionStatus;
 
@@ -17,9 +18,6 @@ import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.LifecycleEventObserver;
 import androidx.lifecycle.LifecycleOwner;
 
-import com.yovo.lib_common.system.permission.internal.android.AndroidPermissionChecker;
-import com.yovo.lib_common.system.permission.internal.android.AndroidPermissionRationale;
-import com.yovo.lib_common.system.permission.internal.android.AndroidPermissionRequester;
 import com.yovo.lib_common.system.permission.internal.android.SpecialAccessLifecycleObserver;
 import com.yovo.lib_common.log.YoLog;
 
@@ -35,12 +33,15 @@ import java.util.Set;
 /**
  * 统一权限管理服务（lib_common 底层能力）。
  *
- * <p>上层不再各自检查/请求权限，统一调用本服务：</p>
+ * <p>上层不再各自检查/请求权限，统一调用域门面 {@code YoPermission}：</p>
  * <ul>
- *     <li>检查：{@link #check(Permission)} / {@link #isGranted(Permission)}；</li>
+ *     <li>检查：{@link #check(Context, Permission)} / {@link #isGranted(Context, Permission)}；</li>
  *     <li>请求：运行时权限弹窗或特殊访问设置页；</li>
- *     <li>结果：{@link #handleRequestPermissionsResult(int, String[], int[])}。</li>
+ *     <li>结果：{@link #handleRequestPermissionsResult(Activity, int, String[], int[])}。</li>
  * </ul>
+ *
+ * <p>本类不再持有静态单例：平台实现由 {@link #create} 构造注入，
+ * pending 表是实例状态，门面持有唯一实例。</p>
  */
 public final class PermissionCore {
 
@@ -49,23 +50,6 @@ public final class PermissionCore {
     /** 默认运行时权限组请求码（未指定请求码时使用）。 */
     public static final int REQUEST_CODE_GROUP = 0xB0F0;
 
-    private static volatile PermissionCore instance;
-
-    /**
-     * 创建独立实例（测试/多租户注入场景）。
-     *
-     * <p>普通业务统一使用 {@link #with(Context)} 的单例门面；
-     * 需要隔离 pending 状态或注入 checker/requester/rationale 时使用本方法。</p>
-     */
-    @NonNull
-    public static PermissionCore create(@NonNull Context context,
-                                           @NonNull PermissionChecker checker,
-                                           @NonNull PermissionRequester requester,
-                                           @NonNull PermissionRationale rationale) {
-        return new PermissionCore(context, checker, requester, rationale);
-    }
-
-    private final Context appContext;
     private final PermissionChecker checker;
     private final PermissionRequester requester;
     private final PermissionRationale rationale;
@@ -78,63 +62,44 @@ public final class PermissionCore {
             new HashMap<>();
     private final Set<Activity> observedActivities = new HashSet<>();
 
-    private PermissionCore(@NonNull Context context,
-                              @NonNull PermissionChecker checker,
-                              @NonNull PermissionRequester requester,
-                              @NonNull PermissionRationale rationale) {
-        this.appContext = context.getApplicationContext();
+    private PermissionCore(@NonNull PermissionChecker checker,
+                           @NonNull PermissionRequester requester,
+                           @NonNull PermissionRationale rationale) {
         this.checker = checker;
         this.requester = requester;
         this.rationale = rationale;
     }
 
+    /**
+     * 创建独立实例（平台实现构造注入；测试可注入桩实现）。
+     *
+     * <p>普通业务统一使用门面 {@code YoPermission} 持有的实例；
+     * 需要隔离 pending 状态或注入 checker/requester/rationale 时使用本方法。</p>
+     */
     @NonNull
-    public static PermissionCore with(@NonNull Context context) {
-        PermissionCore local = instance;
-        if (local == null) {
-            synchronized (PermissionCore.class) {
-                local = instance;
-                if (local == null) {
-                    local = new PermissionCore(
-                            context.getApplicationContext(),
-                            new AndroidPermissionChecker(),
-                            new AndroidPermissionRequester(),
-                            new AndroidPermissionRationale());
-                    instance = local;
-                }
-            }
-        }
-        return local;
+    public static PermissionCore create(@NonNull PermissionChecker checker,
+                                        @NonNull PermissionRequester requester,
+                                        @NonNull PermissionRationale rationale) {
+        return new PermissionCore(checker, requester, rationale);
     }
 
     @NonNull
-    public static PermissionCore get() {
-        PermissionCore local = instance;
-        if (local == null) {
-            throw new IllegalStateException("PermissionCore is not initialized.");
-        }
-        return local;
+    public PermissionStatus check(@NonNull Context context,
+                                  @NonNull Permission permission) {
+        return checker.check(context, permission);
     }
 
-    @Nullable
-    public static PermissionCore peek() {
-        return instance;
-    }
-
-    @NonNull
-    public PermissionStatus check(@NonNull Permission permission) {
-        return checker.check(appContext, permission);
-    }
-
-    public boolean isGranted(@NonNull Permission permission) {
-        PermissionStatus status = check(permission);
+    public boolean isGranted(@NonNull Context context,
+                             @NonNull Permission permission) {
+        PermissionStatus status = check(context, permission);
         return status == PermissionStatus.GRANTED
                 || status == PermissionStatus.NOT_REQUIRED;
     }
 
-    public boolean isGranted(@NonNull List<Permission> permissions) {
+    public boolean isGranted(@NonNull Context context,
+                             @NonNull List<Permission> permissions) {
         for (Permission permission : permissions) {
-            if (!isGranted(permission)) {
+            if (!isGranted(context, permission)) {
                 return false;
             }
         }
@@ -189,7 +154,7 @@ public final class PermissionCore {
         boolean unrequestableMissing = false;
         for (Permission permission : permissions) {
             if (!permission.isRequired(Build.VERSION.SDK_INT)
-                    || isGranted(permission)) {
+                    || isGranted(activity, permission)) {
                 continue;
             }
             if (permission.isInstallTime()) {
@@ -228,7 +193,7 @@ public final class PermissionCore {
         boolean launched = false;
         for (Permission permission : permissions) {
             if (!permission.isRequired(Build.VERSION.SDK_INT)
-                    || isGranted(permission)) {
+                    || isGranted(activity, permission)) {
                 continue;
             }
             missing.add(permission);
@@ -243,8 +208,7 @@ public final class PermissionCore {
             callback.onResult(false, new ArrayList<>(missing));
             return;
         }
-        SpecialAccessLifecycleObserver.observe(
-                activity, missing, callback);
+        SpecialAccessLifecycleObserver.observe(activity, missing, callback, this);
     }
 
     /** 打开应用详情设置页（用户“不再询问”后引导手动开启）。 */
@@ -261,16 +225,7 @@ public final class PermissionCore {
     }
 
     /**
-     * 处理 Activity#onRequestPermissionsResult；非本服务发起的请求返回 ignored。
-     */
-    @NonNull
-    public PermissionResult handleRequestPermissionsResult(
-            int requestCode, @Nullable String[] permissions, @Nullable int[] grantResults) {
-        return handleRequestPermissionsResult(null, requestCode, permissions, grantResults);
-    }
-
-    /**
-     * 处理 Activity#onRequestPermissionsResult；非本服务发起的请求返回 ignored。
+     * 处理 Activity#onRequestPermissionsResult；非本服务发起的请求返回带原因分类的 ignored。
      *
      * <p>传入 Activity 时，额外识别“不再询问”的运行时权限，
      * 便于上层引导用户前往设置页手动开启。</p>
@@ -279,10 +234,13 @@ public final class PermissionCore {
     public PermissionResult handleRequestPermissionsResult(
             @Nullable Activity activity,
             int requestCode, @Nullable String[] permissions, @Nullable int[] grantResults) {
-        List<Permission> pending = takePending(activity, requestCode);
-        if (pending == null || pending.isEmpty()) {
-            return PermissionResult.ignored();
+        PendingLookup lookup = takePending(activity, requestCode);
+        if (!lookup.isFound()) {
+            YoLog.d(TAG, "权限结果被忽略：请求码=" + requestCode
+                    + "，原因=" + lookup.reason());
+            return PermissionResult.ignored(lookup.reason());
         }
+        List<Permission> pending = lookup.pending();
         YoLog.d(TAG, "权限结果：请求码=" + requestCode
                 + "，权限=" + pending);
         PermissionResult base = PermissionResult.of(pending, grantResults);
@@ -311,44 +269,101 @@ public final class PermissionCore {
     }
 
     /**
-     * 取出 pending 请求。activity 为 null 时仅在全局唯一命中时处理，
-     * 避免多 Activity 同请求码的歧义。
+     * 取出 pending 请求，并给出「未命中」的原因分类。
+     *
+     * <p>三种未命中不再折叠成同一个 null：Activity 未知、requestCode 未知、
+     * 以及不传 Activity 时多 Activity 撞码的歧义，各自带原因返回。</p>
      */
-    @Nullable
-    private List<Permission> takePending(@Nullable Activity activity, int requestCode) {
+    @NonNull
+    private PendingLookup takePending(@Nullable Activity activity, int requestCode) {
         synchronized (pendingByActivity) {
+            if (pendingByActivity.isEmpty()) {
+                return PendingLookup.ignored(PermissionIgnoreReason.NO_PENDING_REQUEST);
+            }
             if (activity != null) {
                 Map<Integer, List<Permission>> byCode = pendingByActivity.get(activity);
                 if (byCode == null) {
-                    return null;
+                    return PendingLookup.ignored(PermissionIgnoreReason.UNKNOWN_ACTIVITY);
                 }
                 List<Permission> pending = byCode.remove(requestCode);
                 if (byCode.isEmpty()) {
                     pendingByActivity.remove(activity);
                 }
-                return pending;
+                if (pending == null) {
+                    return PendingLookup.ignored(PermissionIgnoreReason.UNKNOWN_REQUEST_CODE);
+                }
+                return PendingLookup.found(pending);
             }
             List<Permission> match = null;
             Activity matchedActivity = null;
+            boolean ambiguous = false;
             for (Map.Entry<Activity, Map<Integer, List<Permission>>> entry
                     : pendingByActivity.entrySet()) {
                 List<Permission> pending = entry.getValue().get(requestCode);
                 if (pending != null) {
                     if (match != null) {
-                        return null; // 多个 Activity 使用同一请求码，无法消歧
+                        ambiguous = true;
+                        break;
                     }
                     match = pending;
                     matchedActivity = entry.getKey();
                 }
             }
-            if (matchedActivity != null) {
-                Map<Integer, List<Permission>> byCode = pendingByActivity.get(matchedActivity);
-                byCode.remove(requestCode);
-                if (byCode.isEmpty()) {
-                    pendingByActivity.remove(matchedActivity);
-                }
+            if (ambiguous) {
+                return PendingLookup.ignored(PermissionIgnoreReason.AMBIGUOUS_ACTIVITY);
             }
-            return match;
+            if (matchedActivity == null || match == null) {
+                return PendingLookup.ignored(PermissionIgnoreReason.UNKNOWN_REQUEST_CODE);
+            }
+            Map<Integer, List<Permission>> byCode = pendingByActivity.get(matchedActivity);
+            byCode.remove(requestCode);
+            if (byCode.isEmpty()) {
+                pendingByActivity.remove(matchedActivity);
+            }
+            return PendingLookup.found(match);
+        }
+    }
+
+    /** pending 查找结果：要么命中权限列表，要么是带原因的忽略。 */
+    private static final class PendingLookup {
+
+        @Nullable private final List<Permission> pending;
+        @Nullable private final PermissionIgnoreReason reason;
+
+        private PendingLookup(@Nullable List<Permission> pending,
+                              @Nullable PermissionIgnoreReason reason) {
+            this.pending = pending;
+            this.reason = reason;
+        }
+
+        @NonNull
+        static PendingLookup found(@NonNull List<Permission> pending) {
+            return new PendingLookup(pending, null);
+        }
+
+        @NonNull
+        static PendingLookup ignored(@NonNull PermissionIgnoreReason reason) {
+            return new PendingLookup(null, reason);
+        }
+
+        boolean isFound() {
+            return pending != null;
+        }
+
+        @NonNull
+        List<Permission> pending() {
+            if (pending == null) {
+                throw new IllegalStateException("PendingLookup 未命中，不能读取权限列表");
+            }
+            return pending;
+        }
+
+        @NonNull
+        PermissionIgnoreReason reason() {
+            if (reason == null) {
+                throw new IllegalStateException("PendingLookup 已命中，没有忽略原因");
+            }
+            return reason;
         }
     }
 

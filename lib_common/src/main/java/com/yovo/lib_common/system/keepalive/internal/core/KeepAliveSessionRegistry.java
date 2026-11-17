@@ -12,18 +12,18 @@ import com.yovo.lib_common.system.keepalive.internal.power.PartialWakeLockContro
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 会话注册表：进程内会话表 + 每个会话的可变装配状态。
+ *
+ * <p>本类没有静态单例，也没有静态可变表：会话表是实例字段，
+ * 唯一实例由 {@link KeepAliveCore} 持有并向下构造注入（客户端、会话句柄、服务端委托）。
+ * 需要隔离状态的调用方可以自行 {@code new KeepAliveSessionRegistry()}。</p>
+ */
 public final class KeepAliveSessionRegistry {
-
-    private static final KeepAliveSessionRegistry INSTANCE = new KeepAliveSessionRegistry();
 
     private final Map<String, SessionEntry> entries = new ConcurrentHashMap<>();
 
-    private KeepAliveSessionRegistry() {}
-
-    @NonNull
-    public static KeepAliveSessionRegistry get() {
-        return INSTANCE;
-    }
+    public KeepAliveSessionRegistry() {}
 
     @NonNull
     public SessionEntry register(@NonNull KeepAliveConfig config,

@@ -48,13 +48,6 @@ public final class RefreshRateWindowApplier {
             return clear(activity);
         }
 
-        if (!RefreshRateSdk.supportsDisplayModes()) {
-            RefreshRateDiagnostics diagnostics =
-                    RefreshRateDiagnosticsCollector.collect(activity, null, "unsupported_api");
-            return new RefreshRateResult(
-                    policy, 0, 0f, 0f, RefreshRateStatus.UNSUPPORTED_API, diagnostics);
-        }
-
         try {
             RefreshRateModeSnapshot snapshot = RefreshRateDisplayResolver.snapshot(activity);
             if (snapshot == null) {

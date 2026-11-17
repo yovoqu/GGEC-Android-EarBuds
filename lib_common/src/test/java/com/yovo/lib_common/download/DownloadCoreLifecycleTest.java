@@ -2,11 +2,9 @@ package com.yovo.lib_common.download;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
 
 import android.content.Context;
-
-import com.yovo.lib_common.download.internal.core.DownloadCore;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -34,10 +32,17 @@ public class DownloadCoreLifecycleTest {
         Context context = RuntimeEnvironment.getApplication();
         YoDownload.init(context, YoDownload.Config.defaults(context));
         YoDownload.shutdown();
-        assertNull(DownloadCore.peek());
+
+        try {
+            YoDownload.queryAll();
+            fail("关停后仍可访问下载引擎");
+        } catch (IllegalStateException expected) {
+            assertEquals("YoDownload is not initialized. Call YoDownload.init() first.",
+                    expected.getMessage());
+        }
 
         YoDownload.init(context, YoDownload.Config.defaults(context));
-        assertNotNull(DownloadCore.peek());
+        assertNotNull(YoDownload.queryAll());
         YoDownload.shutdown();
     }
 }

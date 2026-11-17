@@ -3,7 +3,6 @@ package com.yovo.lib_common.system.keepalive.internal.service;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 
 import androidx.annotation.NonNull;
 
@@ -43,10 +42,7 @@ public final class KeepAliveIntentFactory {
         Intent intent = new Intent(context, receiverClass);
         intent.setAction(KeepAliveContracts.ACTION_USER_STOP);
         intent.putExtra(KeepAliveContracts.EXTRA_SESSION_ID, sessionId);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= PendingIntent.FLAG_IMMUTABLE;
-        }
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
         return PendingIntent.getBroadcast(context, requestCode, intent, flags);
     }
 

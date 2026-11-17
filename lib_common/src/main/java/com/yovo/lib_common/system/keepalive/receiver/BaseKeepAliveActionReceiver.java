@@ -4,8 +4,8 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
+import com.yovo.lib_common.system.keepalive.YoKeepAlive;
 import com.yovo.lib_common.system.keepalive.model.KeepAliveContracts;
-import com.yovo.lib_common.system.keepalive.internal.core.KeepAliveActionDispatcher;
 import com.yovo.lib_common.system.keepalive.internal.service.KeepAliveIntentParser;
 
 public class BaseKeepAliveActionReceiver extends BroadcastReceiver {
@@ -22,6 +22,6 @@ public class BaseKeepAliveActionReceiver extends BroadcastReceiver {
         if (sessionId == null) {
             return;
         }
-        KeepAliveActionDispatcher.dispatchUserStop(sessionId);
+        YoKeepAlive.dispatchUserStop(sessionId);
     }
 }

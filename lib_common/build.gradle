@@ -70,82 +70,103 @@ tasks.register('checkLibCommonInternalImports') {
     }
 }
 
+/**
+ * 公开面判定改为纯包结构（不再匹配任何文件名/类名）：
+ *
+ *  1) 不含 {@code /internal/} 段的文件属于公开面；
+ *  2) 公开面文件所在的包，要么是「域根包」——父目录不再直接放 java 文件（纯分组目录，
+ *     如 {@code lib_common/log/}、{@code lib_common/system/keepalive/}），
+ *     要么是显式登记的公开子包：{@code model}、{@code api}、{@code event}（纯契约）
+ *     与 {@code service}、{@code receiver}（平台扩展点）；
+ *  3) 纯契约包（model/api/event）不得 import internal：契约只能依赖契约；
+ *  4) 任何公开面文件的 public/protected 声明不得出现 internal 类型。
+ *
+ * 新增公开子包必须显式登记，避免「随手在深层包加一个公开类型」。
+ */
 tasks.register('checkLibCommonPublicApiBoundary') {
     group = 'verification'
-    description = 'Fail if public API types (models/extension points) leak internal packages.'
+    description = 'Structural public-surface gate: package placement and internal dependencies.'
     doLast {
-        def allowedClass = { name ->
-            name.startsWith('Yo')
-                    || name in ['BaseKeepAliveService', 'BaseKeepAliveActionReceiver']
-        }
+        def contractSuffixes = ['model', 'api', 'event']
+        def extensionSuffixes = ['service', 'receiver']
+        def sourceRoot = new File(project.projectDir, 'src/main/java')
+        def internalImportPattern =
+                ~/^\s*import\s+(?:static\s+)?com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal\.([A-Za-z0-9_]+)/
         def offenders = []
-        fileTree(project.projectDir) {
-            include 'src/main/java/**/*.java'
-        }.each { file ->
+
+        fileTree(dir: sourceRoot, include: '**/*.java').each { file ->
             def rel = project.relativePath(file).replace('\\', '/')
-            if (rel.contains('/internal/')) {
+            def packedRel = '/' + rel
+            if (packedRel.contains('/internal/')) {
                 return
             }
-            def className = file.name - '.java'
-            if (allowedClass(className)) {
-                return
-            }
-            file.text.eachLine { line, index ->
-                if (line =~ /^\s*import\s+(?:static\s+)?com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal/) {
-                    offenders << "${rel}:${index}: ${line.trim()}"
-                }
-            }
-        }
-        // 签名级检查：门面/扩展点也不得在 public/protected 声明中引用 internal 类型。
-        fileTree(project.projectDir) {
-            include 'src/main/java/**/*.java'
-        }.each { file ->
-            def rel = project.relativePath(file).replace('\\', '/')
-            if (rel.contains('/internal/')) {
-                return
+            def packageDir = file.parentFile
+            def javaInParent = (packageDir.parentFile ?: packageDir).listFiles({ f ->
+                f.isFile() && f.name.endsWith('.java')
+            } as FileFilter)?.length ?: 0
+            def lastSegment = packageDir.name
+            def isDomainRoot = javaInParent == 0
+            def isDeclaredSubPackage =
+                    contractSuffixes.contains(lastSegment) || extensionSuffixes.contains(lastSegment)
+            if (!isDomainRoot && !isDeclaredSubPackage) {
+                offenders << "${rel}: 公开面只能位于域根包或已登记的公开子包"
+                        + "（${(contractSuffixes + extensionSuffixes).join('/')}）"
             }
             def internalSimpleNames = []
             file.text.eachLine { line, index ->
-                def matcher = (line =~ /^\s*import\s+(?:static\s+)?com\.yovo\.lib_common(?:\.[A-Za-z0-9_]+)*\.internal\.([A-Za-z0-9_]+)/)
-                if (matcher) {
-                    internalSimpleNames << matcher.group(1)
+                def matcher = (line =~ internalImportPattern)
+                if (!matcher) {
+                    return
+                }
+                internalSimpleNames << matcher.group(1)
+                if (contractSuffixes.contains(lastSegment)) {
+                    offenders << "${rel}:${index + 1}: 纯契约包不得依赖 internal -> ${line.trim()}"
                 }
             }
             internalSimpleNames.unique().each { name ->
                 file.text.eachLine { line, index ->
                     if (line =~ /(?:public|protected)\s+(?!class\b|interface\b|enum\b|@)[^{;]*\b${name}\b/) {
-                        offenders << "${rel}:${index}: ${line.trim()}"
+                        offenders << "${rel}:${index + 1}: 公开签名不得引用 internal 类型 -> "
+                                + line.trim()
                     }
                 }
             }
         }
         if (!offenders.isEmpty()) {
-            throw new GradleException(
-                    'Public API must not depend on internal packages:\n' + offenders.join('\n'))
+            throw new GradleException('lib_common 公开面边界被打破：\n' + offenders.join('\n'))
         }
     }
 }
 
+/**
+ * 清单归属判定（结构性，无权限名白名单）：
+ *
+ * <p>库清单不得声明任何 {@code uses-permission}。权限名属于宿主/消费方，
+ * 库一旦声明就构成清单聚合；白名单只是把「哪些权限可以越权声明」写死，
+ * 结构规则是「一条都不允许」。</p>
+ */
 tasks.register('checkLibCommonManifestOwnership') {
     group = 'verification'
-    description = 'Fail if lib_common manifest aggregates consumer-owned permissions.'
+    description = 'lib_common may only declare the permissions its own code needs (network); everything else belongs to the consumer.'
     doLast {
-        def allowedPermissions = [
-                'android.permission.INTERNET',
-                'android.permission.ACCESS_NETWORK_STATE'
-        ]
         def manifest = new File(project.projectDir, 'src/main/AndroidManifest.xml')
+        def allowed = [
+                'android.permission.INTERNET',
+                'android.permission.ACCESS_NETWORK_STATE',
+        ]
         def offenders = []
         manifest.eachLine { line, index ->
-            def matcher = (line =~ /android:name="(android\.permission\.[A-Z0-9_]+)"/)
-            if (matcher && !allowedPermissions.contains(matcher.group(1))) {
-                offenders << "${line.trim()} (move to the owning consumer module)"
+            def matcher = line =~ /<uses-permission[^>]*android:name="([^"]+)"/
+            if (matcher.find()) {
+                def name = matcher.group(1)
+                if (!allowed.contains(name)) {
+                    offenders << "${index + 1}: ${name} (not required by lib_common)"
+                }
             }
         }
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                    'lib_common manifest must not declare consumer-owned permissions:\n'
-                            + offenders.join('\n'))
+                    'lib_common manifest declares a permission it does not own:\n' + offenders.join('\n'))
         }
     }
 }

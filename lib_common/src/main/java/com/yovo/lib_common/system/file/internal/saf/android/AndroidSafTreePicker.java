@@ -1,6 +1,5 @@
 package com.yovo.lib_common.system.file.internal.saf.android;
 
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -15,12 +14,9 @@ import com.yovo.lib_common.system.file.model.SafTreePicker;
 import com.yovo.lib_common.system.file.model.SafTreeStore;
 
 /**
- * SAF 目录树选择适配器：只提供契约与授权持久化，startActivityForResult 由宿主 UI 执行。
+ * SAF 目录树选择适配器：注册系统选择器并把授权持久化到 {@link SafTreeStore}。
  */
 public final class AndroidSafTreePicker implements SafTreePicker {
-
-    /** 旧式 onActivityResult 请求码。 */
-    public static final int REQUEST_SAF_TREE = 0x5AF0;
 
     private final SafTreeStore safTreeStore;
 
@@ -35,16 +31,6 @@ public final class AndroidSafTreePicker implements SafTreePicker {
         return activity.registerForActivityResult(
                 new ActivityResultContracts.OpenDocumentTree(),
                 treeUri -> callback.onResult(handlePicked(activity, treeUri)));
-    }
-
-    @Override
-    @Deprecated
-    public void pick(@NonNull Activity activity) {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        activity.startActivityForResult(intent, REQUEST_SAF_TREE);
     }
 
     @Override
@@ -64,10 +50,5 @@ public final class AndroidSafTreePicker implements SafTreePicker {
         }
         safTreeStore.save(treeUri);
         return true;
-    }
-
-    @Override
-    public boolean handlePicked(@NonNull Context context, @Nullable Intent data) {
-        return handlePicked(context, data != null ? data.getData() : null);
     }
 }

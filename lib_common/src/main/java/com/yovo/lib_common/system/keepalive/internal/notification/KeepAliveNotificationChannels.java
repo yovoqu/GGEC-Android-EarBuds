@@ -3,9 +3,10 @@ package com.yovo.lib_common.system.keepalive.internal.notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
-import android.os.Build;
 
 import androidx.annotation.NonNull;
+
+import com.yovo.lib_common.system.keepalive.internal.service.ForegroundServiceRules;
 
 public final class KeepAliveNotificationChannels {
 
@@ -15,7 +16,7 @@ public final class KeepAliveNotificationChannels {
                                      @NonNull String channelId,
                                      @NonNull CharSequence name,
                                      @NonNull CharSequence description) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (!ForegroundServiceRules.notificationChannelRequired()) {
             return;
         }
         NotificationManager nm = context.getSystemService(NotificationManager.class);

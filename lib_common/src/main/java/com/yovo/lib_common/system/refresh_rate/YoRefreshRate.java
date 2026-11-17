@@ -16,67 +16,72 @@ import java.util.List;
 
 /**
  * 刷新率域对外门面。
+ *
+ * <p>门面持有唯一的 {@link RefreshRateCore} 实例，装配状态属于该实例，
+ * 不再散落为静态可写字段。</p>
  */
 public final class YoRefreshRate {
+
+    private static final RefreshRateCore CORE = new RefreshRateCore();
 
     private YoRefreshRate() {
     }
 
     @NonNull
     public static RefreshRateResult applyHighRefresh(@NonNull Activity activity) {
-        return RefreshRateCore.applyHighRefresh(activity);
+        return CORE.applyHighRefresh(activity);
     }
 
     @NonNull
     public static RefreshRateResult applyTarget(@NonNull Activity activity, float hertz) {
-        return RefreshRateCore.applyTarget(activity, hertz);
+        return CORE.applyTarget(activity, hertz);
     }
 
     @NonNull
     public static RefreshRateResult apply(@NonNull Activity activity,
                                           @NonNull RefreshRatePolicy policy) {
-        return RefreshRateCore.apply(activity, policy);
+        return CORE.apply(activity, policy);
     }
 
     public static void installHighRefreshForAllActivities(@NonNull Application application) {
-        RefreshRateCore.installHighRefreshForAllActivities(application);
+        CORE.installHighRefreshForAllActivities(application);
     }
 
     public static void install(@NonNull Application application,
                                @NonNull RefreshRatePolicy policy) {
-        RefreshRateCore.install(application, policy);
+        CORE.install(application, policy);
     }
 
     public static void uninstall(@NonNull Application application) {
-        RefreshRateCore.uninstall(application);
+        CORE.uninstall(application);
     }
 
     @NonNull
     public static Controller bind(@NonNull Activity activity,
                                   @NonNull RefreshRatePolicy policy) {
-        return RefreshRateCore.bind(activity, policy);
+        return CORE.bind(activity, policy);
     }
 
     @NonNull
     public static List<Float> supportedRefreshRates(@NonNull Activity activity) {
-        return RefreshRateCore.supportedRefreshRates(activity);
+        return CORE.supportedRefreshRates(activity);
     }
 
     @NonNull
     public static RefreshRateTestSession testSession(@NonNull Activity activity) {
-        return RefreshRateCore.testSession(activity);
+        return CORE.testSession(activity);
     }
 
     public static void applySurfaceFrameRate(@NonNull Surface surface, float frameRateHz) {
-        RefreshRateCore.applySurfaceFrameRate(surface, frameRateHz);
+        CORE.applySurfaceFrameRate(surface, frameRateHz);
     }
 
     public static void applyUiSurfaceFrameRate(@NonNull Surface surface, float frameRateHz) {
-        RefreshRateCore.applyUiSurfaceFrameRate(surface, frameRateHz);
+        CORE.applyUiSurfaceFrameRate(surface, frameRateHz);
     }
 
     public static void clearSurfaceFrameRate(@NonNull Surface surface) {
-        RefreshRateCore.clearSurfaceFrameRate(surface);
+        CORE.clearSurfaceFrameRate(surface);
     }
 
     public interface Controller {

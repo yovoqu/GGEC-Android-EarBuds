@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.pm.PackageManager;
 
 import com.yovo.lib_common.system.permission.model.Permission;
+import com.yovo.lib_common.system.permission.model.PermissionIgnoreReason;
 import com.yovo.lib_common.system.permission.model.PermissionResult;
 import com.yovo.lib_common.system.permission.model.PermissionStatus;
 
@@ -43,10 +44,12 @@ public final class PermissionResultTest {
     }
 
     @Test
-    public void ignored_notHandled() {
-        PermissionResult result = PermissionResult.ignored();
+    public void ignored_notHandledAndCarriesReason() {
+        PermissionResult result = PermissionResult.ignored(
+                PermissionIgnoreReason.UNKNOWN_REQUEST_CODE);
         assertFalse(result.handled());
         assertFalse(result.allGranted());
+        assertEquals(PermissionIgnoreReason.UNKNOWN_REQUEST_CODE, result.ignoreReason());
     }
 
     @Test

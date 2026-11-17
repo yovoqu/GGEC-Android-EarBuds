@@ -13,7 +13,6 @@ public enum RefreshRateStatus {
     NO_DISPLAY,
     NO_SUPPORTED_MODES,
     NO_HIGH_REFRESH_MODE,
-    UNSUPPORTED_API,
     ERROR,
     CLEARED
 }

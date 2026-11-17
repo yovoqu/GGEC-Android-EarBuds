@@ -18,21 +18,26 @@ import com.yovo.lib_common.system.keepalive.internal.service.KeepAliveIntentFact
 
 /**
  * 保活域对外门面。
+ *
+ * <p>门面持有唯一的 {@link KeepAliveCore} 实例（进程装配实例），全局配置、客户端表、
+ * 会话注册表与启动回执表都属于该实例，不再散落为静态可写字段或静态单例。</p>
  */
 public final class YoKeepAlive {
+
+    private static final KeepAliveCore CORE = KeepAliveCore.processInstance();
 
     private YoKeepAlive() {
     }
 
     public static void install(@NonNull KeepAliveGlobalConfig config) {
-        KeepAliveCore.install(config);
+        CORE.install(config);
     }
 
     @NonNull
     public static KeepAliveStartResult start(@NonNull Context context,
                                              @NonNull KeepAliveConfig config,
                                              @NonNull KeepAliveNotificationSpec spec) {
-        return KeepAliveCore.start(context, config, spec);
+        return CORE.start(context, config, spec);
     }
 
     /**
@@ -44,28 +49,40 @@ public final class YoKeepAlive {
                                              @NonNull KeepAliveConfig config,
                                              @NonNull KeepAliveNotificationSpec spec,
                                              @Nullable StartCallback callback) {
-        return KeepAliveCore.start(context, config, spec, callback);
+        return CORE.start(context, config, spec, callback);
     }
 
     @Nullable
     public static KeepAliveSession findSession(@NonNull String sessionId) {
-        return KeepAliveCore.findSession(sessionId);
+        return CORE.findSession(sessionId);
     }
 
     @NonNull
     public static KeepAliveResult stop(@NonNull Context context,
                                        @NonNull String sessionId) {
-        return KeepAliveCore.stop(context, sessionId);
+        return CORE.stop(sessionId);
+    }
+
+    /**
+     * 通知栏「用户请求停止」入口：把停止意图转交给该会话登记的停止处理器。
+     *
+     * <p>平台侧标准入口是 {@code BaseKeepAliveActionReceiver} 与 {@code BaseKeepAliveService}；
+     * 自定义通知 action 也可直接调用本方法。</p>
+     *
+     * @return true 表示找到会话且已转交；false 表示无会话或无处理器（已在内部记录原因）
+     */
+    public static boolean dispatchUserStop(@NonNull String sessionId) {
+        return CORE.dispatchUserStop(sessionId);
     }
 
     @NonNull
     public static Client client(@NonNull Context context,
                                 @NonNull KeepAliveConfig config) {
-        return KeepAliveCore.client(context, config);
+        return CORE.client(context, config);
     }
 
     public static void releaseAll(@NonNull Context context) {
-        KeepAliveCore.releaseAll(context);
+        CORE.releaseAll();
     }
 
     @NonNull
@@ -85,12 +102,13 @@ public final class YoKeepAlive {
         /**
          * 带回执的启动：服务端 promote 完成后回调 {@link StartCallback}，
          * 超时（默认 5s）或派发异常也会回调失败。
+         *
+         * <p>实现方必须给出真实回执语义，因此本方法没有默认实现：
+         * 「无回执」的简化实现会让调用方误以为回调一定到来。</p>
          */
         @NonNull
-        default KeepAliveStartResult start(@NonNull KeepAliveNotificationSpec spec,
-                                           @Nullable StartCallback callback) {
-            return start(spec);
-        }
+        KeepAliveStartResult start(@NonNull KeepAliveNotificationSpec spec,
+                                   @Nullable StartCallback callback);
 
         @NonNull
         KeepAliveResult stop();
