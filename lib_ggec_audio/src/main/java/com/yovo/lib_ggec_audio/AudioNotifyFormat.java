@@ -14,6 +14,13 @@ public enum AudioNotifyFormat {
             AudioFrameContract.HEADER_BYTES,
             AudioFrameContract.NOTIFY_QUAD_176),
 
+    /** 440 字节一包 10 帧：每帧 4B 头 + 40B Opus（16 kbps）。 */
+    DECA_40_440(
+            AudioFrameContract.OPUS_BYTES_16K,
+            AudioFrameContract.FRAMES_PER_BURST_10,
+            AudioFrameContract.HEADER_BYTES,
+            AudioFrameContract.NOTIFY_BURST_440),
+
     /** 168 字节一包 2 帧：每帧 4B 头 + 80B Opus（32 kbps）。 */
     DUAL_HALF_168(
             AudioFrameContract.OPUS_BYTES_32K,

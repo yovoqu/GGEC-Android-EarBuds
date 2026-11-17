@@ -26,6 +26,20 @@ public class AudioFrameAssemblerTest {
     }
 
     @Test
+    public void locksDeca440AndExtractsTenFrames() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler();
+        List<byte[]> frames = assembler.assemble(deca440(1, (byte) 0x22));
+
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+        assertEquals(10, frames.size());
+        assertEquals(10, assembler.getLastDataIndex());
+        for (byte[] frame : frames) {
+            assertEquals(AudioFrameContract.OPUS_BYTES_16K, frame.length);
+            assertEquals((byte) 0x22, frame[0]);
+        }
+    }
+
+    @Test
     public void locksDualHalf168AndKeepsSequenceAcrossChunks() {
         AudioFrameAssembler assembler = new AudioFrameAssembler();
         List<byte[]> first = assembler.assemble(dualHalf168(0, (byte) 0x33));
@@ -146,6 +160,18 @@ public class AudioFrameAssemblerTest {
         byte[] chunk = new byte[AudioFrameContract.NOTIFY_QUAD_176];
         int step = AudioFrameContract.SUBFRAME_44;
         for (int i = 0; i < AudioFrameContract.FRAMES_PER_NOTIFY_LOCAL; i++) {
+            writeLeUint32(chunk, i * step, startIndex + i);
+            for (int b = AudioFrameContract.HEADER_BYTES; b < step; b++) {
+                chunk[i * step + b] = fill;
+            }
+        }
+        return chunk;
+    }
+
+    private static byte[] deca440(int startIndex, byte fill) {
+        byte[] chunk = new byte[AudioFrameContract.NOTIFY_BURST_440];
+        int step = AudioFrameContract.SUBFRAME_44;
+        for (int i = 0; i < AudioFrameContract.FRAMES_PER_BURST_10; i++) {
             writeLeUint32(chunk, i * step, startIndex + i);
             for (int b = AudioFrameContract.HEADER_BYTES; b < step; b++) {
                 chunk[i * step + b] = fill;

@@ -43,6 +43,9 @@ final class AudioFormatDetector {
         if (len == AudioNotifyFormat.QUAD_40_176.getNotifyBytes()) {
             return detect176Layout(chunk, tracker);
         }
+        if (len == AudioNotifyFormat.DECA_40_440.getNotifyBytes()) {
+            return detect440Layout(chunk, tracker);
+        }
         if (len == AudioNotifyFormat.DUAL_HALF_168.getNotifyBytes()) {
             return detect168Layout(chunk, tracker);
         }
@@ -53,6 +56,24 @@ final class AudioFormatDetector {
     private static AudioNotifyFormat detect176Layout(byte[] chunk,
                                                      AudioPacketTracker tracker) {
         AudioNotifyFormat format = AudioNotifyFormat.QUAD_40_176;
+        int step = format.getSubframeBytes();
+        int idx0 = readLeUint32(chunk, 0);
+        if (!tracker.isPlausible(idx0)) {
+            return null;
+        }
+        for (int i = 1; i < format.getFramesPerNotify(); i++) {
+            int idx = readLeUint32(chunk, i * step);
+            if (idx != idx0 + i) {
+                return null;
+            }
+        }
+        return format;
+    }
+
+    @Nullable
+    private static AudioNotifyFormat detect440Layout(byte[] chunk,
+                                                     AudioPacketTracker tracker) {
+        AudioNotifyFormat format = AudioNotifyFormat.DECA_40_440;
         int step = format.getSubframeBytes();
         int idx0 = readLeUint32(chunk, 0);
         if (!tracker.isPlausible(idx0)) {

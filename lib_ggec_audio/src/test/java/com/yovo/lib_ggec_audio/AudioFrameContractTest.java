@@ -33,6 +33,8 @@ public final class AudioFrameContractTest {
                 AudioFrameContract.SUBFRAME_44);
         assertEquals(AudioFrameContract.SUBFRAME_44 * AudioFrameContract.FRAMES_PER_NOTIFY_LOCAL,
                 AudioFrameContract.NOTIFY_QUAD_176);
+        assertEquals(AudioFrameContract.SUBFRAME_44 * AudioFrameContract.FRAMES_PER_BURST_10,
+                AudioFrameContract.NOTIFY_BURST_440);
         assertEquals(AudioFrameContract.SUBFRAME_84 * AudioFrameContract.FRAMES_PER_NOTIFY_STREAM,
                 AudioFrameContract.NOTIFY_DUAL_168);
         assertEquals(AudioFrameContract.NOTIFY_DUAL_168, AudioFrameContract.NOTIFY_MTU_FIRST);

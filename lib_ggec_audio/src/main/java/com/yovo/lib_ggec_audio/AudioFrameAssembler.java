@@ -105,7 +105,7 @@ public final class AudioFrameAssembler {
 
     private List<byte[]> dispatchByFormat(byte[] chunk, @NonNull AudioNotifyFormat format) {
         return switch (format) {
-            case QUAD_40_176 -> appendFixedStep(chunk, format);
+            case QUAD_40_176, DECA_40_440 -> appendFixedStep(chunk, format);
             case DUAL_HALF_168 -> appendDualHalf168(chunk);
             case FULL_FRAME -> appendFullFrame(chunk);
             case MTU_SPLIT -> appendMtuSplit(chunk);

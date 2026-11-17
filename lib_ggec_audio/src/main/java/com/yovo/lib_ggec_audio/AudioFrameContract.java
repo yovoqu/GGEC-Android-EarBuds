@@ -34,6 +34,7 @@ public final class AudioFrameContract {
 
     public static final int FRAMES_PER_NOTIFY_LOCAL = 4;
     public static final int FRAMES_PER_NOTIFY_STREAM = 2;
+    public static final int FRAMES_PER_BURST_10 = 10;
 
     public static final int SUBFRAME_44 = HEADER_BYTES + OPUS_BYTES_16K;
     public static final int SUBFRAME_84 = HEADER_BYTES + OPUS_BYTES_32K;
@@ -43,6 +44,7 @@ public final class AudioFrameContract {
     public static final int NOTIFY_QUAD_176 = SUBFRAME_44 * FRAMES_PER_NOTIFY_LOCAL;
     public static final int NOTIFY_DUAL_168 = SUBFRAME_84 * FRAMES_PER_NOTIFY_STREAM;
     public static final int NOTIFY_BURST_328 = SUBFRAME_164 * FRAMES_PER_NOTIFY_STREAM;
+    public static final int NOTIFY_BURST_440 = SUBFRAME_44 * FRAMES_PER_BURST_10;
     public static final int NOTIFY_LEGACY_DUAL_336 = PACKET_LEGACY_168 * FRAMES_PER_NOTIFY_STREAM;
     public static final int NOTIFY_MTU_FIRST = NOTIFY_DUAL_168;
 
