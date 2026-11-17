@@ -66,6 +66,9 @@ public final class WyClassicScanner {
         long generation = scanSession.begin();
         WyLog.i(TAG, "启动经典蓝牙扫描，generation=" + generation);
 
+        // 先上报系统已配对（不论已连接或未连接）的设备
+        reportBondedDevices(generation);
+
         radio.startDiscovery(new WyClassicRadioPort.DiscoveryListener() {
             @Override
             public void onDeviceDiscovered(@NonNull String name, @NonNull String address,
@@ -122,6 +125,34 @@ public final class WyClassicScanner {
         }
         scanSession.stop();
         radio.stopDiscovery();
+    }
+
+    private void reportBondedDevices(long generation) {
+        List<WyClassicRadioPort.BondedDevice> bondedList = radio.getBondedDevices();
+        if (bondedList == null || bondedList.isEmpty()) {
+            return;
+        }
+        boolean hasUpdate = false;
+        long now = System.currentTimeMillis();
+        for (WyClassicRadioPort.BondedDevice dev : bondedList) {
+            String name = dev.name();
+            String address = dev.address();
+            if (name == null || !name.trim().toUpperCase(Locale.US).startsWith(DEVICE_PREFIX)) {
+                continue;
+            }
+            // 已配对设备（不论已连接或未连接）均上报，便于发起 SPP 连接
+            registry.update(DEVICE_PREFIX, address, name.trim(), 0, now);
+            hasUpdate = true;
+        }
+        if (hasUpdate) {
+            List<WyScan.Found> foundList = registry.getFoundDevices();
+            mainDispatcher.post(() -> {
+                WyScan.Listener l = currentListener;
+                if (l != null && scanSession.isCurrent(generation)) {
+                    l.onUpdated(foundList);
+                }
+            });
+        }
     }
 
     public void setFilterRule(@NonNull WyScan.Rule rule) {

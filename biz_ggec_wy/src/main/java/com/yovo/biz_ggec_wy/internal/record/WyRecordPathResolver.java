@@ -7,7 +7,9 @@ import androidx.annotation.Nullable;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -51,5 +53,39 @@ public class WyRecordPathResolver {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String fileName = "WY_stream_" + timeStamp + ".pcm";
         return new File(getStreamDir(), fileName);
+    }
+
+    @NonNull
+    public List<File> listLocalSavedFiles() {
+        File root = getRootDir();
+        List<File> result = new ArrayList<>();
+        collectAudioFiles(root, result);
+        result.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return result;
+    }
+
+    public boolean deleteLocalSavedFile(@NonNull String filePath) {
+        File file = new File(filePath);
+        return file.exists() && file.delete();
+    }
+
+    private void collectAudioFiles(@Nullable File dir, @NonNull List<File> result) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) {
+            return;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file.isDirectory()) {
+                collectAudioFiles(file, result);
+            } else {
+                String name = file.getName().toLowerCase(Locale.ROOT);
+                if (name.endsWith(".pcm") || name.endsWith(".wav") || name.endsWith(".mp3")) {
+                    result.add(file);
+                }
+            }
+        }
     }
 }

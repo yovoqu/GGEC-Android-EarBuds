@@ -48,11 +48,13 @@ public final class WyGraph {
         WyRecordPathResolver pathResolver = new WyRecordPathResolver(target);
 
         WyClassicScanner scanner = new WyClassicScanner(radio);
-        WyStreamRecordSession recordSession = new WyStreamRecordSession(opusCodecProvider, pathResolver);
+        WyStreamRecordSession recordSession = new WyStreamRecordSession(radio, opusCodecProvider, pathResolver);
         WySession session = new WySession(radio, catalog);
 
         // 音频数据路由：Audio SPP 接收到的原始音频字节送入录音会话
         session.setAudioChunkConsumer(recordSession::onAudioChunkReceived);
+        // 控制数据路由：Control SPP 接收到的控制流字节送入录音会话以解析 99 EC 协议
+        session.setControlDataConsumer(recordSession::onControlDataReceived);
 
         return new WyGraph(scanner, session, catalog, recordSession);
     }

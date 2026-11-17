@@ -23,6 +23,13 @@ public class WyClassicScannerTest {
         DiscoveryListener discoveryListener;
         boolean discoveryStarted;
         boolean discoveryStopped;
+        final List<BondedDevice> bondedDevices = new ArrayList<>();
+
+        @NonNull
+        @Override
+        public List<BondedDevice> getBondedDevices() {
+            return new ArrayList<>(bondedDevices);
+        }
 
         @Override
         public void startDiscovery(@NonNull DiscoveryListener listener) {
@@ -42,6 +49,14 @@ public class WyClassicScannerTest {
 
         @Override
         public void disconnect() {
+        }
+
+        @Override
+        public void connectAudioSpp(@NonNull ActionCallback callback) {
+        }
+
+        @Override
+        public void disconnectAudioSpp() {
         }
 
         @Override
@@ -165,5 +180,36 @@ public class WyClassicScannerTest {
         scanner.stop();
         assertFalse(scanner.isScanning());
         assertTrue(radio.discoveryStopped);
+    }
+
+    @Test
+    public void testStartReportsBondedDevicesImmediately() {
+        FakeWyClassicRadio radio = new FakeWyClassicRadio();
+        radio.bondedDevices.add(new WyClassicRadioPort.BondedDevice("WY01-Paired", "AA:BB:CC:11:22:33", false));
+        radio.bondedDevices.add(new WyClassicRadioPort.BondedDevice("WY01-Connected", "AA:BB:CC:11:22:44", true));
+        radio.bondedDevices.add(new WyClassicRadioPort.BondedDevice("HS02-Paired", "AA:BB:CC:11:22:55", false));
+
+        WyClassicScanner scanner = new WyClassicScanner(radio, Runnable::run);
+        List<List<WyScan.Found>> updates = new ArrayList<>();
+
+        scanner.start(new WyScan.Listener() {
+            @Override
+            public void onUpdated(List<WyScan.Found> devices) {
+                updates.add(new ArrayList<>(devices));
+            }
+
+            @Override
+            public void onFailed(WyControl.Failure failure) {
+            }
+
+            @Override
+            public void onFinished() {
+            }
+        });
+
+        // 启动瞬间就应立即上报所有已配对（不论已连接或未连接）的 WY01 设备，忽略非 WY01 设备
+        assertFalse(updates.isEmpty());
+        List<WyScan.Found> immediateDevices = updates.get(0);
+        assertEquals(2, immediateDevices.size());
     }
 }

@@ -47,6 +47,23 @@ public class WySessionTest {
             this.audioConnected = false;
         }
 
+        @NonNull
+        @Override
+        public List<BondedDevice> getBondedDevices() {
+            return List.of();
+        }
+
+        @Override
+        public void connectAudioSpp(@NonNull ActionCallback callback) {
+            audioConnected = true;
+            callback.onResult(true, null);
+        }
+
+        @Override
+        public void disconnectAudioSpp() {
+            audioConnected = false;
+        }
+
         @Override
         public void sendControl(@NonNull byte[] data, @NonNull SendCallback callback) {
             callback.onComplete(true, null);
@@ -117,5 +134,41 @@ public class WySessionTest {
         session.disconnect();
         assertEquals(WyControl.State.DISCONNECTED, session.connectionState());
         assertTrue(radio.disconnected);
+    }
+
+    @Test
+    public void testAudioSppDisconnectDoesNotDisconnectSession() {
+        FakeRadioPort radio = new FakeRadioPort();
+        WyCatalogImpl catalog = new WyCatalogImpl();
+        WySession session = new WySession(radio, catalog, Runnable::run);
+
+        List<WyControl.State> states = new ArrayList<>();
+        session.observe(new WyControl.Listener() {
+            @Override
+            public void onConnectionChanged(WyControl.State state, WyControl.Failure failure) {
+                states.add(state);
+            }
+        });
+
+        session.connect("WY01", new WyDevice.Radios("11:22:33:44:55:66", "WY01-Test"));
+        radio.controlConnected = true;
+        radio.sppListener.onControlStateChanged(WyClassicRadioPort.SppState.CONNECTED, null);
+        assertEquals(WyControl.State.READY, session.connectionState());
+
+        // 模拟音频流连上后录音结束断开
+        radio.audioConnected = true;
+        radio.sppListener.onAudioStateChanged(WyClassicRadioPort.SppState.CONNECTED, null);
+        radio.audioConnected = false;
+        radio.sppListener.onAudioStateChanged(WyClassicRadioPort.SppState.DISCONNECTED, null);
+
+        // 核心断言：音频流断开绝不影响全局就绪态
+        assertEquals(WyControl.State.READY, session.connectionState());
+        assertEquals(List.of(WyControl.State.CONNECTING, WyControl.State.READY), states);
+
+        // 控制流断开时才触发整机断开
+        radio.controlConnected = false;
+        radio.sppListener.onControlStateChanged(WyClassicRadioPort.SppState.DISCONNECTED, WyControl.Failure.DISCONNECTED);
+        assertEquals(WyControl.State.DISCONNECTED, session.connectionState());
+        assertEquals(List.of(WyControl.State.CONNECTING, WyControl.State.READY, WyControl.State.DISCONNECTED), states);
     }
 }

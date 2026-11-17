@@ -2,6 +2,9 @@ package com.yovo.biz_ggec_wy.api;
 
 import androidx.annotation.NonNull;
 
+import java.io.File;
+import java.util.List;
+
 /**
  * WY 耳机录音业务 API 契约（随录随传）。
  */
@@ -24,4 +27,15 @@ public interface WyRecordApi {
      * 当前是否正在随录随传。
      */
     boolean isStreamRecording();
+
+    /**
+     * 枚举本地已存录音文件（按最近修改时间倒序）。
+     */
+    @NonNull
+    List<File> listLocalSavedFiles();
+
+    /**
+     * 删除指定的本地已存录音文件。
+     */
+    boolean deleteLocalSavedFile(@NonNull String filePath);
 }

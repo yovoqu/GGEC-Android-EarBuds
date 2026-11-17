@@ -43,6 +43,8 @@ public final class WySession {
 
     @Nullable
     private volatile Consumer<byte[]> audioChunkConsumer;
+    @Nullable
+    private volatile Consumer<byte[]> controlDataConsumer;
 
     public WySession(@NonNull WyClassicRadioPort radio,
                      @NonNull WyCatalogImpl catalog) {
@@ -67,6 +69,10 @@ public final class WySession {
 
     public void setAudioChunkConsumer(@Nullable Consumer<byte[]> consumer) {
         this.audioChunkConsumer = consumer;
+    }
+
+    public void setControlDataConsumer(@Nullable Consumer<byte[]> consumer) {
+        this.controlDataConsumer = consumer;
     }
 
     @NonNull
@@ -117,14 +123,14 @@ public final class WySession {
             public void onControlStateChanged(@NonNull WyClassicRadioPort.SppState state,
                                               @Nullable WyControl.Failure failure) {
                 WyLog.i(TAG, "控制流 SPP 状态变更: " + state + ", failure=" + failure);
-                handleSppState(state, failure);
+                handleControlSppState(state, failure);
             }
 
             @Override
             public void onAudioStateChanged(@NonNull WyClassicRadioPort.SppState state,
                                             @Nullable WyControl.Failure failure) {
                 WyLog.i(TAG, "音频流 SPP 状态变更: " + state + ", failure=" + failure);
-                handleSppState(state, failure);
+                handleAudioSppState(state, failure);
             }
 
             @Override
@@ -142,27 +148,38 @@ public final class WySession {
         });
     }
 
-    private synchronized void handleSppState(@NonNull WyClassicRadioPort.SppState state,
-                                             @Nullable WyControl.Failure failure) {
+    private synchronized void handleControlSppState(@NonNull WyClassicRadioPort.SppState state,
+                                                    @Nullable WyControl.Failure failure) {
         if (state == WyClassicRadioPort.SppState.CONNECTED) {
-            // 控制流与音频流双通道连接判定：至少控制流已连上
+            // 控制流 SPP 连接就绪
             if (radio.isControlConnected() && sessionState.state() != WyControl.State.READY) {
                 sessionState = WySessionState.ready();
-                WyLog.i(TAG, "SPP 双通道就绪 (Ready)");
+                WyLog.i(TAG, "控制流 SPP 就绪 (Ready)");
                 dispatchConnectionChanged(WyControl.State.READY, null);
             }
         } else if (state == WyClassicRadioPort.SppState.DISCONNECTED || state == WyClassicRadioPort.SppState.FAILED) {
             if (sessionState.state() != WyControl.State.DISCONNECTED && sessionState.state() != WyControl.State.IDLE) {
                 sessionState = WySessionState.disconnected(failure);
-                WyLog.w(TAG, "SPP 连接断开: " + failure);
+                WyLog.w(TAG, "控制流 SPP 连接断开: " + failure);
+                radio.disconnectAudioSpp();
                 dispatchConnectionChanged(WyControl.State.DISCONNECTED, failure != null ? failure : WyControl.Failure.DISCONNECTED);
             }
         }
     }
 
+    private void handleAudioSppState(@NonNull WyClassicRadioPort.SppState state,
+                                     @Nullable WyControl.Failure failure) {
+        // 音频流生命周期随录音业务按需拉起与断开，不影响全局会话连接状态
+        WyLog.d(TAG, "音频流 SPP 通道状态: " + state + (failure != null ? (", failure=" + failure) : ""));
+    }
+
     private void handleControlData(@NonNull byte[] data) {
         // 控制流下行协议解析
         WyLog.d(TAG, "收到控制流数据长度: " + data.length);
+        Consumer<byte[]> consumer = controlDataConsumer;
+        if (consumer != null && data != null && data.length > 0) {
+            consumer.accept(data);
+        }
     }
 
     public void disconnect() {

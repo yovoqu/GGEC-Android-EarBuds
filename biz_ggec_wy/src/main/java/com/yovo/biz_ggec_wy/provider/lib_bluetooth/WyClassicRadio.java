@@ -37,6 +37,8 @@ import com.yovo.lib_bluetooth.model.classic.CbtSppConnectionState;
 import com.yovo.lib_bluetooth.model.classic.CbtSppEndpoint;
 import com.yovo.lib_bluetooth.model.common.Result;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -92,6 +94,11 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     private boolean controlConnected;
     private boolean audioConnected;
 
+    @Nullable
+    private CbtDeviceId currentConnectedDeviceId;
+    @Nullable
+    private SppStateListener currentSppListener;
+
     public WyClassicRadio(@NonNull YoCbtClient client) {
         this(client, createDefaultDelay());
     }
@@ -132,6 +139,26 @@ public final class WyClassicRadio implements WyClassicRadioPort {
         Context app = context.getApplicationContext();
         Context target = app != null ? app : context;
         return new WyClassicRadio(YoBluetoothSDK.classic(target));
+    }
+
+    @NonNull
+    @Override
+    public List<BondedDevice> getBondedDevices() {
+        Result<List<CbtDeviceSnapshot>> bonded = client.getBondedDevices();
+        if (bonded.isFailure() || bonded.getValue() == null) {
+            return Collections.emptyList();
+        }
+        List<BondedDevice> result = new ArrayList<>();
+        for (CbtDeviceSnapshot snapshot : bonded.getValue()) {
+            if (snapshot.deviceId() == null) {
+                continue;
+            }
+            String address = snapshot.identity().classicAddress();
+            String name = snapshot.identity().classicName();
+            boolean connected = isClassicConnected(address);
+            result.add(new BondedDevice(name, address, connected));
+        }
+        return Collections.unmodifiableList(result);
     }
 
     @Override
@@ -350,12 +377,14 @@ public final class WyClassicRadio implements WyClassicRadioPort {
             }
             controlConnected = false;
             audioConnected = false;
+            currentConnectedDeviceId = deviceId;
+            currentSppListener = listener;
 
             CbtSppConfig config = CbtSppConfig.builder()
                     .connectTimeoutMillis(15000L)
                     .build();
 
-            // 1. 连接控制通道
+            // 默认只连接控制通道
             controlHandle = client.connectSpp(deviceId, CbtSppEndpoint.uuid(CONTROL_UUID), config, new CbtSppConnectionObserver() {
                 @Override
                 public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
@@ -380,13 +409,38 @@ public final class WyClassicRadio implements WyClassicRadioPort {
                     listener.onControlDataReceived(data);
                 }
             });
+        }
+    }
 
-            // 2. 连接音频通道
+    @Override
+    public void connectAudioSpp(@NonNull ActionCallback callback) {
+        Objects.requireNonNull(callback, "callback");
+        CbtDeviceId deviceId;
+        SppStateListener listener;
+        synchronized (lock) {
+            if (audioConnected) {
+                callback.onResult(true, null);
+                return;
+            }
+            deviceId = currentConnectedDeviceId;
+            listener = currentSppListener;
+            if (deviceId == null || listener == null || !controlConnected) {
+                callback.onResult(false, WyControl.Failure.DISCONNECTED);
+                return;
+            }
+            if (audioHandle != null) {
+                audioHandle.cancel();
+                audioHandle = null;
+            }
+            CbtSppConfig config = CbtSppConfig.builder()
+                    .connectTimeoutMillis(15000L)
+                    .build();
             audioHandle = client.connectSpp(deviceId, CbtSppEndpoint.uuid(AUDIO_UUID), config, new CbtSppConnectionObserver() {
+                private boolean callbackFired;
+
                 @Override
                 public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
                     synchronized (lock) {
-                        if (gen != connectGeneration) return;
                         if (snapshot.state() == CbtSppConnectionState.CONNECTED) {
                             audioConnectionId = snapshot.connectionId();
                             audioConnected = true;
@@ -399,6 +453,18 @@ public final class WyClassicRadio implements WyClassicRadioPort {
                     SppState state = mapSppState(snapshot.state());
                     WyControl.Failure failure = snapshot.failure() != null ? mapFailure(snapshot.failure()) : null;
                     listener.onAudioStateChanged(state, failure);
+
+                    synchronized (this) {
+                        if (!callbackFired) {
+                            if (state == SppState.CONNECTED) {
+                                callbackFired = true;
+                                callback.onResult(true, null);
+                            } else if (state == SppState.FAILED || state == SppState.DISCONNECTED) {
+                                callbackFired = true;
+                                callback.onResult(false, failure != null ? failure : WyControl.Failure.DEVICE_ERROR);
+                            }
+                        }
+                    }
                 }
 
                 @Override
@@ -410,11 +476,28 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     }
 
     @Override
+    public void disconnectAudioSpp() {
+        synchronized (lock) {
+            if (audioHandle != null) {
+                audioHandle.cancel();
+                audioHandle = null;
+            }
+            if (audioConnectionId != null) {
+                client.disconnectSpp(audioConnectionId);
+                audioConnectionId = null;
+            }
+            audioConnected = false;
+        }
+    }
+
+    @Override
     public void disconnect() {
         synchronized (lock) {
             connectGeneration++;
             classicConnectSettled = true;
             cancelClassicObserversLocked();
+            currentConnectedDeviceId = null;
+            currentSppListener = null;
             if (controlHandle != null) {
                 controlHandle.cancel();
                 controlHandle = null;

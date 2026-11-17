@@ -42,8 +42,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -349,10 +351,10 @@ public class WyClassicRadioTest {
 
         radio.connect(TARGET_MAC, listener);
 
-        // 已连经典蓝牙：不重复配对，也不发 connectAudio，直接开双通道 SPP（控制+音频共 2 次）
+        // 已连经典蓝牙：不重复配对，也不发 connectAudio，默认只连接控制流 SPP（共 1 次）
         assertEquals(0, client.createBondCalls);
         assertEquals(0, client.connectAudioCalls);
-        assertEquals(2, client.sppConnectCalls);
+        assertEquals(1, client.sppConnectCalls);
     }
 
     @Test
@@ -383,8 +385,8 @@ public class WyClassicRadioTest {
         // 3. 模拟经典蓝牙 ACL 链路连通
         client.aclObserver.onAclLinkChanged(createSnapshot(CbtBondState.BONDED, CbtAclLinkState.CONNECTED));
 
-        // 经典链路连通后，顺利发起 SPP 双通道连接（控制+音频）
-        assertEquals(2, client.sppConnectCalls);
+        // 经典链路连通后，默认只连接控制流 SPP
+        assertEquals(1, client.sppConnectCalls);
     }
 
     @Test
@@ -406,7 +408,8 @@ public class WyClassicRadioTest {
         // 模拟 ACL 链路建立
         client.aclObserver.onAclLinkChanged(createSnapshot(CbtBondState.BONDED, CbtAclLinkState.CONNECTED));
 
-        assertEquals(2, client.sppConnectCalls);
+        // 默认只连接控制流 SPP
+        assertEquals(1, client.sppConnectCalls);
     }
 
     @Test
@@ -447,5 +450,46 @@ public class WyClassicRadioTest {
         assertEquals(2, listener.controlStates.size());
         assertEquals(WyClassicRadioPort.SppState.FAILED, listener.controlStates.get(1));
         assertEquals(WyControl.Failure.REJECTED, listener.controlFailures.get(1));
+    }
+
+    @Test
+    public void getBondedDevices_returnsBondedDevicesWithConnectionState() {
+        FakeYoCbtClient client = new FakeYoCbtClient();
+        client.bonded = true;
+        client.aclConnected = false;
+        WyClassicRadio radio = new WyClassicRadio(client, new FakeDelay());
+
+        List<WyClassicRadioPort.BondedDevice> bonded = radio.getBondedDevices();
+        assertEquals(1, bonded.size());
+        assertEquals("WY01", bonded.get(0).name());
+        assertEquals(TARGET_MAC, bonded.get(0).address());
+        assertFalse(bonded.get(0).connected());
+    }
+
+    @Test
+    public void connectAudioSpp_whenConnected_connectsAudioChannel() {
+        FakeYoCbtClient client = new FakeYoCbtClient();
+        client.aclConnected = true;
+        WyClassicRadio radio = new WyClassicRadio(client, new FakeDelay());
+        RecordingListener listener = new RecordingListener();
+
+        radio.connect(TARGET_MAC, listener);
+        assertEquals(1, client.sppConnectCalls);
+
+        // 模拟控制通道已连上
+        assertFalse(client.sppObservers.isEmpty());
+        client.sppObservers.get(0).onSppStateChanged(new CbtSppConnectionSnapshot(
+                new CbtSppConnectionId("ctrl-conn"),
+                TARGET_ID,
+                CbtSppConnectionState.CONNECTED,
+                CbtSppEndpoint.uuid(WyClassicRadio.CONTROL_UUID)
+        ));
+        assertTrue(radio.isControlConnected());
+
+        // 请求连接音频流通道
+        AtomicBoolean audioConnected = new AtomicBoolean(false);
+        radio.connectAudioSpp((success, failure) -> audioConnected.set(success));
+
+        assertEquals(2, client.sppConnectCalls);
     }
 }
