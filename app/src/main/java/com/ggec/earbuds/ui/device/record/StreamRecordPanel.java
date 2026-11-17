@@ -9,10 +9,13 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
+import com.ggec.earbuds.domain.device.record.RecordState;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.controls.YoButton;
@@ -24,7 +27,10 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 随录随传视图面板：展示录音主看板（计时、波形、操作按钮）与手机已存录音列表。
+ * 随录随传视图面板：展示录音主看板（阶段 / 计时 / 波形 / 操作按钮）与手机已存录音列表。
+ *
+ * <p>本类只把 {@link RecordUiState} 画出来：阶段是枚举、时长由 {@link DeviceFormats#duration(long)}
+ * 单点格式化、提示文案按阶段取资源；不判断「能不能录」，只用 {@link RecordUiState#canRecord} 的结果。</p>
  */
 public final class StreamRecordPanel {
 
@@ -34,6 +40,8 @@ public final class StreamRecordPanel {
         void onTogglePlay(@NonNull SavedRecordItem item);
         void onDeleteLocalFile(@NonNull SavedRecordItem item);
     }
+
+    private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm";
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
@@ -47,7 +55,7 @@ public final class StreamRecordPanel {
 
     private final TextView localFilesHeader;
     private final LinearLayout filesContainer;
-    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat(DATE_PATTERN, Locale.getDefault());
 
     public StreamRecordPanel(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
                              @NonNull Listener listener) {
@@ -124,33 +132,36 @@ public final class StreamRecordPanel {
     }
 
     public void render(@NonNull RecordUiState state) {
-        boolean recording = state.isStreamRecording();
-        boolean dataReceiving = state.isStreamDataReceiving();
+        renderBoard(state);
+        renderLocalFiles(state);
+    }
 
-        waveformView.setRecording(recording && dataReceiving);
+    private void renderBoard(@NonNull RecordUiState state) {
+        boolean recording = state.streamPhase() == RecordState.StreamPhase.RECORDING;
+        waveformView.setRecording(recording);
         waveformView.setAmplitude(state.streamAmplitude());
 
-        if (recording) {
-            recordActionButton.setText(activity.getString(R.string.earbuds_record_stream_btn_stop));
+        timerText.setText(recording
+                ? DeviceFormats.duration(state.streamDurationMs())
+                : activity.getString(R.string.earbuds_record_stream_timer_default));
+        statusHintText.setText(hintRes(state));
+
+        boolean active = state.streamActive();
+        recordActionButton.setText(activity.getString(active
+                ? R.string.earbuds_record_stream_btn_stop
+                : R.string.earbuds_record_stream_btn_start));
+        recordActionButton.setEnabled(state.canRecord(RecordMode.STREAM));
+        if (active) {
             recordActionButton.setOnClickListener(v -> listener.onStopStreamRecord());
-
-            if (dataReceiving) {
-                timerText.setText(formatDuration(state.streamDurationMs()));
-                statusHintText.setText(R.string.earbuds_record_stream_recording_hint);
-            } else {
-                timerText.setText(R.string.earbuds_record_stream_timer_default);
-                statusHintText.setText(R.string.earbuds_record_stream_waiting_hint);
-            }
-        } else {
-            timerText.setText(R.string.earbuds_record_stream_timer_default);
-            statusHintText.setText(R.string.earbuds_record_stream_idle_hint);
-            recordActionButton.setText(activity.getString(R.string.earbuds_record_stream_btn_start));
-            recordActionButton.setOnClickListener(v -> listener.onStartStreamRecord());
+            return;
         }
+        recordActionButton.setOnClickListener(v -> listener.onStartStreamRecord());
+    }
 
-        // 更新本地已存文件列表
+    private void renderLocalFiles(@NonNull RecordUiState state) {
         List<SavedRecordItem> files = state.localFiles();
-        localFilesHeader.setText(activity.getString(R.string.earbuds_record_local_files_title) + " (" + files.size() + ")");
+        localFilesHeader.setText(activity.getString(R.string.earbuds_record_files_title_count,
+                activity.getString(R.string.earbuds_record_local_files_title), files.size()));
         filesContainer.removeAllViews();
 
         if (files.isEmpty()) {
@@ -163,13 +174,24 @@ public final class StreamRecordPanel {
         }
 
         for (SavedRecordItem file : files) {
-            filesContainer.addView(buildFileItemView(file, state.playingFilePath()), matchWrap());
+            filesContainer.addView(buildFileItemView(file, state.playing(file.filePath())), matchWrap());
         }
     }
 
-    private View buildFileItemView(@NonNull SavedRecordItem item, String playingPath) {
-        boolean isPlaying = playingPath != null && playingPath.equals(item.filePath());
+    @StringRes
+    private int hintRes(@NonNull RecordUiState state) {
+        if (!state.canRecord(RecordMode.STREAM)) {
+            return R.string.earbuds_record_hint_unavailable;
+        }
+        return switch (state.streamPhase()) {
+            case IDLE -> R.string.earbuds_record_stream_idle_hint;
+            case STARTING, WAITING_DATA -> R.string.earbuds_record_stream_waiting_hint;
+            case RECORDING -> R.string.earbuds_record_stream_recording_hint;
+            case STOPPING -> R.string.earbuds_record_stream_stopping_hint;
+        };
+    }
 
+    private View buildFileItemView(@NonNull SavedRecordItem item, boolean isPlaying) {
         LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
@@ -211,10 +233,10 @@ public final class StreamRecordPanel {
 
         // 底行：格式指标
         TextView metaText = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        String durationStr = formatDuration(item.durationMs());
-        String sizeStr = DeviceFormats.size(item.sizeBytes());
-        String dateStr = dateFormat.format(new Date(item.lastModifiedTime()));
-        metaText.setText(durationStr + "  ·  " + sizeStr + "  ·  " + dateStr);
+        metaText.setText(String.join(DeviceFormats.META_SEPARATOR,
+                DeviceFormats.duration(item.durationMs()),
+                DeviceFormats.size(item.sizeBytes()),
+                dateFormat.format(new Date(item.lastModifiedTime()))));
         LinearLayout.LayoutParams metaParams = wrapContent();
         metaParams.topMargin = theme.dp(DeviceTheme.SPACE_XS);
         infoLayout.addView(metaText, metaParams);
@@ -243,17 +265,6 @@ public final class StreamRecordPanel {
                                 () -> listener.onDeleteLocalFile(item))
                 )
                 .show();
-    }
-
-    private String formatDuration(long durationMs) {
-        long seconds = durationMs / 1000;
-        long h = seconds / 3600;
-        long m = (seconds % 3600) / 60;
-        long s = seconds % 60;
-        if (h > 0) {
-            return String.format(Locale.getDefault(), "%02d:%02d:%02d", h, m, s);
-        }
-        return String.format(Locale.getDefault(), "%02d:%02d:%02d", 0, m, s);
     }
 
     private LinearLayout.LayoutParams matchWrap() {

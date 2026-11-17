@@ -15,7 +15,8 @@ import com.yovo.lib_common.system.file.model.PathTarget;
  *
  * <p>幂等由 {@link YoLogBootstrap#initOnce} 自己负责（内部双检），本类不自建
  * 「是否已安装」状态、不做安装注册表：重复调用交给库判断，provider 只提供 App 的日志配置。
- * 其它模块（SDK）走 {@link YoLogBootstrap#ensureInitialized} 兜底，不重复初始化。</p>
+ * 其它模块（SDK）只做 {@link YoLogBootstrap#requireInitialized} 前置断言：
+ * 宿主未初始化即失败，不再用默认配置兜底（兜底会永久占用真实配置）。</p>
  */
 public final class YoLogProvider {
 

@@ -11,6 +11,9 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.model.CapabilityOption;
+import com.ggec.earbuds.domain.device.model.ControlRange;
+import com.ggec.earbuds.ui.device.CurveEditorSeed;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.containers.YoSheet;
 import com.yohu.youi.api.controls.YoButton;
@@ -18,12 +21,16 @@ import com.yohu.youi.api.controls.YoSlider;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 自定义音效（{@code CURVE}）模态面板：N 段可调曲线，数值即 {@code ControlValue.Curve} 的 points。
  *
- * <p>段数来自设备已上报的曲线（points 的长度），界面不假设固定段数；只有段数与频率标签表
- * 一致时才画 60Hz…16kHz 标签。整条曲线只在保存时写一次。</p>
+ * <p>面板只渲染描述符：段数、每段的频率标签来自能力描述符的频段 {@code options}，滑杆的取值域与步进
+ * 来自描述符的 {@code range}。APP 这里没有频段表、没有增益上下界；<b>缺 options 或 range 就表示这条
+ * 能力对编辑器不可用</b>——{@link #show} 返回空，调用方不打开面板、也不猜默认。</p>
+ *
+ * <p>整条曲线只在保存时写一次。</p>
  */
 public final class CustomEqSheet {
 
@@ -33,44 +40,68 @@ public final class CustomEqSheet {
         void onDismissed();
     }
 
-    private static final String[] FREQUENCIES = {
-            "60", "125", "250", "500", "1k", "2k", "4k", "8k", "12k", "16k"
-    };
-
-    /** 曲线取值边界与步长：协议给到的是整数增益。 */
-    private static final int MIN_GAIN = -6;
-    private static final int MAX_GAIN = 6;
-    private static final int STEP = 1;
-
     /** 画布高度：卡片的调节区总高。 */
     private static final float CANVAS_HEIGHT_DP = 270f;
     /** 滑轨高度：实际滑动行程，居中放在画布里。 */
     private static final float TRACK_HEIGHT_DP = 250f;
+    /** 左侧刻度列宽度（与频段列左偏移同宽，标签才对得上滑杆）。 */
+    private static final int SCALE_COLUMN_WIDTH_DP = 24;
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
+    /** 频段表：段数与标签全部来自描述符。 */
+    private final List<CapabilityOption> bands;
+    /** 增益值域：滑杆上下界与步进全部来自描述符。 */
+    private final ControlRange range;
+    /**
+     * 复位后的曲线：与草稿默认值同源——{@link CurveEditorSeed#flat} 给出的平直曲线，即描述符声明的
+     * 中立档（缺省时是值域下界这一显式产品默认）。这里不另取默认，也不带本地常量。
+     */
+    private final List<Integer> rest;
     private final List<Runnable> releases = new ArrayList<>();
     private final List<YoSlider> sliders = new ArrayList<>();
 
     private int[] gains;
     private YoSheet sheet;
 
-    private CustomEqSheet(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme) {
+    private CustomEqSheet(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
+                          @NonNull List<CapabilityOption> bands, @NonNull ControlRange range,
+                          @NonNull List<Integer> rest) {
         this.activity = activity;
         this.theme = theme;
+        this.bands = bands;
+        this.range = range;
+        this.rest = rest;
     }
 
-    public static CustomEqSheet show(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
-                                     @NonNull List<Integer> points, @NonNull Listener listener) {
-        CustomEqSheet panel = new CustomEqSheet(activity, theme);
-        panel.present(points, listener);
-        return panel;
+    /**
+     * 打开面板；描述符没给出曲线契约（频段表为空或缺增益值域）时返回空，调用方不得渲染编辑器。
+     *
+     * @param reported 设备上报的曲线，可为空
+     * @param draft    本次未确认的编辑结果，可为空
+     */
+    @NonNull
+    public static Optional<CustomEqSheet> show(@NonNull AppCompatActivity activity,
+                                               @NonNull DeviceTheme theme,
+                                               @NonNull List<CapabilityOption> bands,
+                                               @NonNull Optional<ControlRange> range,
+                                               @NonNull Optional<List<Integer>> reported,
+                                               @NonNull Optional<List<Integer>> draft,
+                                               @NonNull Listener listener) {
+        Optional<List<Integer>> seed = CurveEditorSeed.of(bands, range, reported, draft);
+        Optional<List<Integer>> rest = CurveEditorSeed.flat(bands, range);
+        if (seed.isEmpty() || rest.isEmpty()) {
+            return Optional.empty();
+        }
+        CustomEqSheet panel = new CustomEqSheet(activity, theme, bands, range.get(), rest.get());
+        panel.present(seed.get(), listener);
+        return Optional.of(panel);
     }
 
-    private void present(List<Integer> points, Listener listener) {
-        gains = new int[points.size()];
+    private void present(List<Integer> seed, Listener listener) {
+        gains = new int[seed.size()];
         for (int index = 0; index < gains.length; index++) {
-            gains[index] = points.get(index);
+            gains[index] = seed.get(index);
         }
 
         LinearLayout content = SettingsChrome.vertical(activity);
@@ -157,36 +188,35 @@ public final class CustomEqSheet {
         body.setOrientation(LinearLayout.HORIZONTAL);
         body.setGravity(Gravity.BOTTOM);
         body.addView(scaleColumn(), new LinearLayout.LayoutParams(
-                theme.dp(24), theme.dp(CANVAS_HEIGHT_DP)));
+                theme.dp(SCALE_COLUMN_WIDTH_DP), theme.dp(CANVAS_HEIGHT_DP)));
 
-        LinearLayout bands = new LinearLayout(activity);
-        bands.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout bandColumns = new LinearLayout(activity);
+        bandColumns.setOrientation(LinearLayout.HORIZONTAL);
         for (int index = 0; index < gains.length; index++) {
-            bands.addView(sliderColumn(index, gains), new LinearLayout.LayoutParams(
+            bandColumns.addView(sliderColumn(index, gains), new LinearLayout.LayoutParams(
                     0, theme.dp(CANVAS_HEIGHT_DP), 1f));
         }
-        body.addView(bands, new LinearLayout.LayoutParams(
+        body.addView(bandColumns, new LinearLayout.LayoutParams(
                 0, theme.dp(CANVAS_HEIGHT_DP), 1f));
         card.addView(body, matchWrap());
 
-        if (gains.length == FREQUENCIES.length) {
-            LinearLayout frequencies = new LinearLayout(activity);
-            frequencies.setOrientation(LinearLayout.HORIZONTAL);
-            frequencies.addView(new View(activity), new LinearLayout.LayoutParams(
-                    theme.dp(24), 0));
-            for (String frequency : FREQUENCIES) {
-                TextView label = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-                label.setText(frequency);
-                label.setGravity(Gravity.CENTER);
-                frequencies.addView(label, new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            }
-            card.addView(frequencies, matchWrap());
+        // 频率标签与滑杆列一一对应，标签文案来自描述符的频段 options。
+        LinearLayout frequencies = new LinearLayout(activity);
+        frequencies.setOrientation(LinearLayout.HORIZONTAL);
+        frequencies.addView(new View(activity), new LinearLayout.LayoutParams(
+                theme.dp(SCALE_COLUMN_WIDTH_DP), 0));
+        for (CapabilityOption band : bands) {
+            TextView label = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
+            label.setText(band.title());
+            label.setGravity(Gravity.CENTER);
+            frequencies.addView(label, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
+        card.addView(frequencies, matchWrap());
         return card;
     }
 
-    /** 左侧刻度列：+6 / 0 / -6 与滑轨上下端对齐（滑轨居中于画布）。 */
+    /** 左侧刻度列：值域上界 / 等分点 / 下界，与滑轨上下端对齐（滑轨居中于画布）。 */
     private View scaleColumn() {
         FrameLayout outer = new FrameLayout(activity);
         FrameLayout frame = new FrameLayout(activity);
@@ -197,23 +227,29 @@ public final class CustomEqSheet {
         frame.addView(ticks, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         TextView top = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        top.setText(String.valueOf(MAX_GAIN));
+        top.setText(String.valueOf(range.max()));
         frame.addView(top, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.START));
 
         TextView middle = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        middle.setText("0");
+        middle.setText(String.valueOf(middleGain()));
         frame.addView(middle, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL | Gravity.START));
 
         TextView bottom = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
-        bottom.setText(String.valueOf(MIN_GAIN));
+        bottom.setText(String.valueOf(range.min()));
         frame.addView(bottom, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.START));
         return outer;
+    }
+
+    /** 刻度列正中的取值：值域按 step 等分后的中间点（落在协议值域内、也落在步进网格上）。 */
+    private int middleGain() {
+        int steps = (range.max() - range.min()) / range.step();
+        return range.min() + (steps / 2) * range.step();
     }
 
     private View sliderColumn(int index, int[] gains) {
@@ -221,9 +257,9 @@ public final class CustomEqSheet {
         column.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
         YoSlider slider = YoSlider.createOutSet(activity)
                 .setOrientation(YoSlider.Orientation.VERTICAL)
-                .setMin(MIN_GAIN)
-                .setMax(MAX_GAIN)
-                .setStep(STEP)
+                .setMin(range.min())
+                .setMax(range.max())
+                .setStep(range.step())
                 .setValue(gains[index])
                 // YoUI OutSet 滑杆默认 block 为 18vp、两侧预留 9–10vp；
                 // thumb 放大到 >18vp 会被组件自身边界裁剪，因此保持官方尺寸。
@@ -242,12 +278,13 @@ public final class CustomEqSheet {
         return column;
     }
 
+    /** 复位到描述符派生的平直曲线（与草稿默认值同源，不是本地常量）。 */
     private void resetGains(int[] gains) {
         for (int index = 0; index < gains.length; index++) {
-            gains[index] = 0;
+            gains[index] = rest.get(index);
         }
-        for (YoSlider slider : sliders) {
-            slider.setValue(0f, false);
+        for (int index = 0; index < sliders.size(); index++) {
+            sliders.get(index).setValue(rest.get(index).floatValue(), false);
         }
     }
 

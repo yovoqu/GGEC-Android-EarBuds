@@ -7,23 +7,23 @@ import androidx.lifecycle.ViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.viewmodel.CreationExtras;
 
-import com.ggec.earbuds.provider.lib_ai.LibAiProvider;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiProvider;
 import com.ggec.earbuds.data.ai.conversation.AiConversationRepositoryImpl;
-import com.ggec.earbuds.provider.lib_ai.LibAiChatGateway;
-import com.ggec.earbuds.provider.lib_ai.LibAiClientPool;
-import com.ggec.earbuds.provider.lib_ai.LibAiModelGateway;
-import com.ggec.earbuds.provider.lib_ai.LibAiPlatformCatalog;
-import com.ggec.earbuds.provider.lib_ai.LibAiSpeedTestGateway;
-import com.ggec.earbuds.provider.lib_ai.LibAiVoiceModelGateway;
+import com.ggec.earbuds.provider.lib_ai.chat.LibAiChatGateway;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiClientPool;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiModelGateway;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiPlatformCatalog;
+import com.ggec.earbuds.provider.lib_ai.chat.LibAiSpeedTestGateway;
+import com.ggec.earbuds.provider.lib_ai.platform.LibAiVoiceModelGateway;
 import com.ggec.earbuds.data.ai.json.AiConversationJson;
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
 import com.ggec.earbuds.data.ai.settings.AiSettingsRepositoryImpl;
-import com.ggec.earbuds.data.ai.store.AiDocumentStore;
 import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
 import com.ggec.earbuds.data.ai.store.EncryptedSecretStore;
-import com.ggec.earbuds.data.ai.store.FileAiDocumentStore;
 import com.ggec.earbuds.data.ai.store.SecretStore;
-import com.ggec.earbuds.provider.lib_ai.RealtimeLinkAdapter;
+import com.ggec.earbuds.data.store.DocumentStore;
+import com.ggec.earbuds.data.store.FileDocumentStore;
+import com.ggec.earbuds.provider.lib_ai.realtime.RealtimeLinkAdapter;
 import com.ggec.earbuds.data.ai.voice.RealtimeVoiceSession;
 import com.ggec.earbuds.domain.ai.chat.AiChatSession;
 import com.ggec.earbuds.domain.ai.policy.AiApiKeyPolicy;
@@ -51,7 +51,6 @@ import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.usecase.SavePlatform;
 import com.ggec.earbuds.domain.ai.usecase.SelectModel;
 import com.ggec.earbuds.platform.ai.KeystoreSecretCipher;
-import com.ggec.earbuds.platform.ai.prefs.SharedPreferencesAiUiPreferences;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioPlayback;
 import com.ggec.earbuds.platform.ai.voice.AndroidAudioSourceCatalog;
 import com.ggec.earbuds.ui.ai.call.AiCallViewModel;
@@ -68,6 +67,7 @@ import com.ggec.earbuds.ui.ai.settings.AiSettingsViewModel;
 import java.io.File;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * AI 功能的装配根：应用里只有一份，创建存储、网关和对话会话，再按需造出对话页的 ViewModel。
@@ -84,11 +84,13 @@ public final class AiGraph {
     private final Context context;
     private final AiClock clock;
     private final Executor voiceState;
+    /** 语音会话的定时器：由装配根持有，会话只取消自己的定时任务。 */
+    private final ScheduledExecutorService voiceTimer;
     /** 历史列表读取单独一条串行执行器；不与会话写盘、网络或音频线程共享。 */
     private final Executor historyIo;
     private final Executor settingsOperation;
     private final Executor realtimeFetch;
-    private final AiDocumentStore documents;
+    private final DocumentStore documents;
     private final LibAiClientPool clients;
     private final LibAiPlatformCatalog catalog = new LibAiPlatformCatalog();
     private final AndroidAudioSourceCatalog audioSourceCatalog;
@@ -101,10 +103,15 @@ public final class AiGraph {
         AiClock clock = System::currentTimeMillis;
         this.clock = clock;
         this.voiceState = executors.voiceState();
+        this.voiceTimer = executors.voiceTimer();
         this.historyIo = executors.historyIo();
-        this.documents = new FileAiDocumentStore(new File(context.getFilesDir(), "ai"));
-        AiDocumentStore secretDocuments = new FileAiDocumentStore(new File(context.getNoBackupFilesDir(), "ai"));
-        SecretStore secrets = new EncryptedSecretStore(secretDocuments, new KeystoreSecretCipher());
+        this.documents = new FileDocumentStore(new File(context.getFilesDir(), "ai"));
+        // 密钥文档放在 noBackup 根：它不参与备份，恢复出厂后 Keystore 里的密钥也没了，
+        // 备份里的密文只会变成解不开的残片。
+        DocumentStore secretDocuments =
+                new FileDocumentStore(new File(context.getNoBackupFilesDir(), "ai"));
+        SecretStore secrets = new EncryptedSecretStore(secretDocuments,
+                new KeystoreSecretCipher());
         this.credentials = new EncryptedCredentialStore(secrets);
         settings = new AiSettingsRepositoryImpl(
                 documents, secrets, new AiSettingsJson(), executors.settingsPersistence());
@@ -155,13 +162,13 @@ public final class AiGraph {
 
     /**
      * 通话页的会话工厂。音频输入通过共享 {@link #audioSourceCatalog} 按源热插拔；
-     * 播放与链路按次新建并由通话执行器串行调度。
+     * 播放与链路按次新建并由通话执行器串行调度，定时器由装配根注入。
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
         return () -> new RealtimeVoiceSession(settings, credentials,
                 audioSourceCatalog, new AndroidAudioPlayback(context),
-                new RealtimeLinkAdapter(), clock, voiceState);
+                new RealtimeLinkAdapter(), clock, voiceState, voiceTimer);
     }
 
     private final class Factory implements ViewModelProvider.Factory {
@@ -183,8 +190,7 @@ public final class AiGraph {
                         new SaveAiSettings(settings),
                         realtimeFetch,
                         new LoadPlatformTemplates(catalog),
-                        new SharedPreferencesAiUiPreferences(context),
-                        new SaveVoiceApiKey(settings, credentials),
+                        new SaveVoiceApiKey(settings),
                         new AiSettingsUiMapper()));
             }
             if (AiPlatformViewModel.class.equals(modelClass)) {
@@ -192,7 +198,7 @@ public final class AiGraph {
                         new LoadAiSettings(settings), new ObserveAiSettings(settings),
                         new LoadPlatformTemplates(catalog),
                         new SavePlatform(settings, catalog, new AiApiKeyPolicy(),
-                                new AiBaseUrlPolicy(catalog), ids, credentials),
+                                new AiBaseUrlPolicy(catalog), ids),
                         new FetchPlatformModels(settings, new LibAiModelGateway(clients, credentials), clock),
                         new AddManualModel(settings, new AiModelIdPolicy()),
                         new RemoveModel(settings), new SelectModel(settings),

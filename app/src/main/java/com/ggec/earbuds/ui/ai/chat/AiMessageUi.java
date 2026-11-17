@@ -17,7 +17,6 @@ public record AiMessageUi(
         boolean streaming,
         Notice notice,
         @Nullable AiFailureKind failureKind,
-        String failureDetail,
         String modelLabel,
         long elapsedMillis,
         int outputTokens,

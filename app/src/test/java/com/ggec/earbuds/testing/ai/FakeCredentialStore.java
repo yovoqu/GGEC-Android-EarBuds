@@ -9,7 +9,7 @@ import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import java.util.HashMap;
 import java.util.Map;
 
-/** 内存凭证仓库：测试里按需放各家的 Key。 */
+/** 内存凭证读取端：测试里按需放各家的 Key。写入由设置仓库负责，这里只有读取。 */
 public final class FakeCredentialStore implements AiCredentialStore {
 
     private final Map<String, String> platformKeys = new HashMap<>();
@@ -39,25 +39,15 @@ public final class FakeCredentialStore implements AiCredentialStore {
         return key != null && !key.isBlank();
     }
 
-    @Override
-    public void putPlatformKey(@NonNull String platformId, @NonNull String key) {
-        put(platformKeys, platformId, key);
-    }
-
-    @Override
-    public void putVoiceKey(@NonNull AiVoiceModel model, @NonNull String key) {
-        put(voiceKeys, model, key);
-    }
-
     @NonNull
     public FakeCredentialStore withVoiceKey(@NonNull AiVoiceModel model, @NonNull String key) {
-        putVoiceKey(model, key);
+        put(voiceKeys, model, key);
         return this;
     }
 
     @NonNull
     public FakeCredentialStore withPlatformKey(@NonNull String platformId, @NonNull String key) {
-        putPlatformKey(platformId, key);
+        put(platformKeys, platformId, key);
         return this;
     }
 

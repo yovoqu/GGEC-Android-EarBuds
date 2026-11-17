@@ -4,11 +4,13 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * 纯状态机：输入 {@code (Model, Event, now)}，输出 {@code (Model, Effects)}。
@@ -162,7 +164,14 @@ public final class VoiceCallReducer {
         }
 
         if (event instanceof VoiceCallEvent.Start) {
+            if (model.assistantActive() || model.playbackStarted()) {
+                // 这一路真的还有助手发言/播放没结束，才需要收尾：停播 + 让服务端停止生成。
+                // 全新会话时链路还没开，不能凭空发 clear/cancel。
+                effects.add(new VoiceCallEffect.StopAssistant(model.generating()));
+            }
+            effects.add(new VoiceCallEffect.StopPlayback());
             Model next = with(model, VoiceCallState.CONNECTING, 0f, null, null, 0L, 0, false, false);
+            next = addGateEffect(model, next, effects);
             effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
         }
@@ -179,6 +188,10 @@ public final class VoiceCallReducer {
         }
 
         if (event instanceof VoiceCallEvent.AssistantText text) {
+            if (linkNotOpen(model)) {
+                // 链路还没 Opened：这段增量属于协议乱序，不进状态机。
+                return same(model);
+            }
             String delta = text.delta();
             if (delta == null || delta.isEmpty()) {
                 return same(model);
@@ -191,7 +204,13 @@ public final class VoiceCallReducer {
                 turnId = "turn-" + created;
                 turns = appendTurn(model.turns(), turnId, delta, now);
             } else {
-                turns = appendText(model.turns(), turnId, delta);
+                Optional<List<AiVoiceSnapshot.Turn>> appended =
+                        appendText(model.turns(), turnId, delta);
+                if (appended.isEmpty()) {
+                    // 找不到对应回合：宁可显式失败，也不能把这段文字悄悄丢掉。
+                    return fail(model, AiFailureKind.PROTOCOL);
+                }
+                turns = appended.get();
             }
             VoiceCallState state = model.assistantActive() ? model.state() : VoiceCallState.THINKING;
             Model next = new Model(state, turns, model.level(), model.failure(), turnId,
@@ -204,6 +223,9 @@ public final class VoiceCallReducer {
         }
 
         if (event instanceof VoiceCallEvent.AssistantAudio audio) {
+            if (linkNotOpen(model)) {
+                return same(model);
+            }
             if (audio.pcm16().length == 0 || audio.sampleRateHz() <= 0) {
                 return same(model);
             }
@@ -297,6 +319,21 @@ public final class VoiceCallReducer {
                     model.activeSource(), model.availableSources());
             effects.add(new VoiceCallEffect.Publish());
             next = addGateEffect(model, next, effects);
+            return new Transition(next, effects);
+        }
+
+        if (event instanceof VoiceCallEvent.Timeout) {
+            if (model.state() != VoiceCallState.THINKING) {
+                // 超时只对 THINKING 有意义：其它阶段说明这一轮已经推进，这条定时已经过期。
+                return same(model);
+            }
+            // 服务端始终没给回答：把半截生成取消掉、回到聆听，并把分类留在快照里。
+            effects.add(new VoiceCallEffect.StopAssistant(model.generating()));
+            Model next = with(model, VoiceCallState.LISTENING, 0f,
+                    new AiFailure(AiFailureKind.TIMEOUT, null), null, 0L,
+                    model.playbackSampleRateHz(), model.playbackStarted(), model.uplinkEnabled());
+            next = addGateEffect(model, next, effects);
+            effects.add(new VoiceCallEffect.Publish());
             return new Transition(next, effects);
         }
 
@@ -405,6 +442,24 @@ public final class VoiceCallReducer {
         return new Transition(model, List.of());
     }
 
+    /** 链路还没 Opened（甚至还没 Start）：此时到达的下行数据一律不进入状态机。 */
+    private static boolean linkNotOpen(@NonNull Model model) {
+        return model.state() == VoiceCallState.IDLE || model.state() == VoiceCallState.CONNECTING;
+    }
+
+    /** 就地判死：状态机自己发现的不一致一律按分类失败收场，不留在中间态里。 */
+    @NonNull
+    private static Transition fail(@NonNull Model model, @NonNull AiFailureKind kind) {
+        List<VoiceCallEffect> effects = new ArrayList<>();
+        Model next = with(model, VoiceCallState.FAILED, 0f, new AiFailure(kind, null), null,
+                0L, 0, false, false);
+        effects.add(new VoiceCallEffect.StopUplink());
+        effects.add(new VoiceCallEffect.StopPlayback());
+        effects.add(new VoiceCallEffect.CloseLink());
+        effects.add(new VoiceCallEffect.Publish());
+        return new Transition(next, effects);
+    }
+
     @NonNull
     private static List<AiVoiceSnapshot.Turn> appendTurn(
             @NonNull List<AiVoiceSnapshot.Turn> turns, @NonNull String id,
@@ -430,19 +485,25 @@ public final class VoiceCallReducer {
         return next;
     }
 
+    /**
+     * 把增量拼到指定回合上。
+     *
+     * <p>找不到回合（或该 id 落在用户发言上）时返回空，由调用方升级成显式失败：
+     * 返回原列表冒充成功等于把这段文字静默吞掉。</p>
+     */
     @NonNull
-    private static List<AiVoiceSnapshot.Turn> appendText(
+    private static Optional<List<AiVoiceSnapshot.Turn>> appendText(
             @NonNull List<AiVoiceSnapshot.Turn> turns, @NonNull String id, @NonNull String delta) {
         List<AiVoiceSnapshot.Turn> next = new ArrayList<>(turns);
         for (int i = 0; i < next.size(); i++) {
             AiVoiceSnapshot.Turn turn = next.get(i);
-            if (turn.id().equals(id)) {
-                next.set(i, new AiVoiceSnapshot.Turn(id, turn.user(), turn.text() + delta,
+            if (turn.id().equals(id) && !turn.user()) {
+                next.set(i, new AiVoiceSnapshot.Turn(id, false, turn.text() + delta,
                         turn.finalTranscript(), turn.atMillis()));
-                return next;
+                return Optional.of(next);
             }
         }
-        return turns;
+        return Optional.empty();
     }
 
     @NonNull

@@ -37,8 +37,9 @@ public final class AiSettingsUiMapper {
     static final int PROMPT_PREVIEW_LENGTH = 34;
 
     /**
-     * @param mode 展示用的接入形态。它由界面偏好提供（{@link com.ggec.earbuds.domain.ai.port.AiUiPreferences}），
-     *             不进设置文档——切分段只是换一个视图，不该触发配置落盘。
+     * @param mode 展示用的接入形态，取自设置文档的
+     *             {@link com.ggec.earbuds.domain.ai.model.AiChatPreferences#lastSettingsMode()}：
+     *             切分段是一条普通的设置提交，不再有第二份偏好存储。
      */
     @NonNull
     public AiSettingsUiState map(@NonNull AiSettings settings, @NonNull AiInteractionMode mode) {

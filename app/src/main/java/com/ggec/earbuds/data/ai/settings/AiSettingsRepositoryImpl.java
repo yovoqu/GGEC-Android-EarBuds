@@ -1,27 +1,32 @@
 package com.ggec.earbuds.data.ai.settings;
 
+import androidx.annotation.Nullable;
+
 import com.ggec.earbuds.data.ai.json.AiSettingsJson;
-import com.ggec.earbuds.data.ai.store.AiDocumentStore;
 import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
-import com.ggec.earbuds.data.ai.store.AiStorageException;
+import com.ggec.earbuds.data.ai.store.EncryptedSecretStore;
+import com.ggec.earbuds.data.ai.store.SecretCipherException;
 import com.ggec.earbuds.data.ai.store.SecretStore;
-import com.ggec.earbuds.data.ai.store.StorageGuard;
+import com.ggec.earbuds.data.store.DocumentFormatException;
+import com.ggec.earbuds.data.store.DocumentStore;
+import com.ggec.earbuds.data.store.FileDocumentStore.DocumentReadException;
+import com.ggec.earbuds.data.store.FileDocumentStore.DocumentWriteException;
+import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiFailureLocation;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
-import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.port.Subscription;
-
-import org.json.JSONException;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
@@ -31,28 +36,34 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 /**
- * 设置的唯一持有者：内存里一份快照，每次修改在锁内读-改-写，再整份落盘。
- * 结构化设置写进文档，密钥单独走加密存储，文档里永远没有密钥。
+ * 设置的唯一持有者与唯一写入口。
  *
- * <p>密钥分两套别名：文本平台用 {@code apikey.<platformId>}，语音预设用
- * {@code voicekey.<voiceModelId>}。两套互不覆盖——删掉文本平台不会把语音 Key 一起带走。</p>
+ * <p>内存里一份快照：{@link #update} 在锁内读-改-写并立即发布，落盘交给注入的串行执行器，
+ * 多次变更只写最后一次（合并到最新 revision）。主线程不承担 JSON 编码、文件写入与 fsync。</p>
  *
- * <p>内存提交与磁盘持久化分离：{@link #update} 只做短事务并立即发布新快照；
- * 写入由单线程执行器串行执行，并自动合并到最新 revision。这样主线程不再承担
- * JSON 编码、文件写入和 {@code fsync}。</p>
+ * <p><b>一次业务提交一个方法</b>：{@link #savePlatform} / {@link #saveVoiceKey}
+ * 把密钥文档与设置文档收进同一提交点。密钥在调用线程上先落密文（密钥文档很小），
+ * 设置文档随后由串行写者落盘；设置文档写失败时，本次提交的密钥按写入前的值回滚，
+ * 所以"密钥写进去了、设置没落盘"的中间态不会留在磁盘上。</p>
+ *
+ * <p><b>configured 单点重算</b>：{@link #decode} 只解码，{@code configured} 一律由
+ * {@link #deriveCredentials} 按密钥文档的真实内容重算，内存快照不会和密钥库脱节。</p>
+ *
+ * <p>所有数据层失败都归一成 {@link AiFailureKind#STORAGE}，载荷是文档坐标
+ * （{@link AiFailureLocation}），不带英文技术串。</p>
  */
 public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
 
     private static final String DOCUMENT = "settings.json";
 
-    private final AiDocumentStore documents;
+    private final DocumentStore documents;
     private final SecretStore secrets;
     private final AiSettingsJson json;
     private final Executor persistenceExecutor;
     private final Object lock = new Object();
     private final Object persistenceLock = new Object();
     private final CopyOnWriteArrayList<Consumer<AiSettings>> observers = new CopyOnWriteArrayList<>();
-    private final CopyOnWriteArrayList<Consumer<Throwable>> failureObservers =
+    private final CopyOnWriteArrayList<Consumer<AiFailure>> failureObservers =
             new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<Consumer<AiSettingsPersistenceStatus>> persistenceObservers =
             new CopyOnWriteArrayList<>();
@@ -67,7 +78,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     private long lastFailureRevision = -1;
     private CompletableFuture<AiSettings> loading;
 
-    public AiSettingsRepositoryImpl(AiDocumentStore documents,
+    public AiSettingsRepositoryImpl(DocumentStore documents,
                                     SecretStore secrets,
                                     AiSettingsJson json,
                                     Executor persistenceExecutor) {
@@ -78,13 +89,13 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     }
 
     /**
-     * @throws com.ggec.earbuds.domain.ai.model.AiFailure 存储读不出来时（种类为 STORAGE）
+     * @throws AiFailure 存储读不出来时（种类为 STORAGE），文档保持原样
      */
     @Override
     public AiSettings load() {
         synchronized (lock) {
-            AiSettings stored = StorageGuard.call(this::loaded);
-            AiSettings derived = StorageGuard.call(() -> deriveCredentials(stored));
+            AiSettings stored = loaded();
+            AiSettings derived = deriveCredentials(stored);
             if (derived != stored) {
                 current = derived;
             }
@@ -110,7 +121,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
             try {
                 persistenceExecutor.execute(() -> completeLoad(waiter));
             } catch (RuntimeException rejected) {
-                failLoad(waiter, rejected);
+                failLoad(waiter, storageFailure(AiFailureLocation.of(DOCUMENT), rejected));
             }
         }
         return waiter;
@@ -124,28 +135,44 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     }
 
     /**
-     * @throws com.ggec.earbuds.domain.ai.model.AiFailure 存储写不进去时（种类为 STORAGE），
-     *                                                    此时内存里的设置和观察者都保持原样
+     * @throws AiFailure 存储写不进去时（种类为 STORAGE），此时内存里的设置和观察者都保持原样
      */
     @Override
     public AiSettings update(UnaryOperator<AiSettings> change) {
-        AiSettings next;
-        long nextRevision;
-        synchronized (lock) {
-            AiSettings before = StorageGuard.call(this::loaded);
-            AiSettings changed = StorageGuard.call(
-                    () -> deriveCredentials(Objects.requireNonNull(change.apply(before), "change")));
-            if (changed.equals(before)) {
-                return before;
-            }
-            current = changed;
-            next = changed;
-            nextRevision = ++revision;
+        return commit(change, List.of());
+    }
+
+    @Override
+    public AiPlatformConfig savePlatform(AiPlatformConfig platform, String apiKey) {
+        Objects.requireNonNull(platform, "platform");
+        Objects.requireNonNull(apiKey, "apiKey");
+        String key = apiKey.strip();
+        AiPlatformConfig target = platform.withConnection(platform.name(), !key.isEmpty(),
+                platform.baseUrl(), platform.protocol());
+        SecretUndo undo = writeSecret(EncryptedCredentialStore.platformAlias(platform.id()), key,
+                platform.id());
+        try {
+            commit(settings -> settings.withPlatform(target), List.of(undo));
+        } catch (RuntimeException rejected) {
+            undo.restore();
+            throw rejected;
         }
-        notifyObservers(next);
-        notifyPersistenceStatus(AiSettingsPersistenceStatus.SAVING);
-        enqueuePersistence(new PendingWrite(nextRevision, next));
-        return next;
+        return target;
+    }
+
+    @Override
+    public AiSettings saveVoiceKey(AiVoiceModel model, String apiKey) {
+        Objects.requireNonNull(model, "model");
+        Objects.requireNonNull(apiKey, "apiKey");
+        String key = apiKey.strip();
+        SecretUndo undo = writeSecret(EncryptedCredentialStore.voiceAlias(model), key, model.id());
+        try {
+            return commit(settings -> settings.withVoice(
+                    settings.voice().withConfigured(!key.isEmpty())), List.of(undo));
+        } catch (RuntimeException rejected) {
+            undo.restore();
+            throw rejected;
+        }
     }
 
     @Override
@@ -155,16 +182,15 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
     }
 
     @Override
-    public Subscription observePersistenceFailures(Consumer<Throwable> observer) {
-        failureObservers.add(Objects.requireNonNull(observer, "observer"));
-        return () -> failureObservers.remove(observer);
+    public Subscription observePersistenceStatus(Consumer<AiSettingsPersistenceStatus> observer) {
+        persistenceObservers.add(Objects.requireNonNull(observer, "observer"));
+        return () -> persistenceObservers.remove(observer);
     }
 
     @Override
-    public Subscription observePersistenceStatus(
-            Consumer<AiSettingsPersistenceStatus> observer) {
-        persistenceObservers.add(Objects.requireNonNull(observer, "observer"));
-        return () -> persistenceObservers.remove(observer);
+    public Subscription observePersistenceFailures(Consumer<AiFailure> observer) {
+        failureObservers.add(Objects.requireNonNull(observer, "observer"));
+        return () -> failureObservers.remove(observer);
     }
 
     @Override
@@ -193,18 +219,39 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         return future;
     }
 
-    private AiSettings loaded() {        if (current == null) {
-            current = read();
-            persisted = current;
+    private AiSettings loaded() {
+        if (current == null) {
+            AiSettings decoded = decode();
+            persisted = decoded;
+            current = deriveCredentials(decoded);
         }
         return current;
+    }
+
+    /** 只解码：不碰密钥、不算 configured。 */
+    private AiSettings decode() {
+        Optional<String> text;
+        try {
+            text = documents.read(DOCUMENT);
+        } catch (DocumentReadException unreadable) {
+            throw storageFailure(AiFailureLocation.of(DOCUMENT), unreadable);
+        }
+        if (text.isEmpty() || text.get().isBlank()) {
+            return AiSettings.EMPTY;
+        }
+        try {
+            return json.decode(text.get());
+        } catch (DocumentFormatException corrupt) {
+            // 损坏的文档按存储失败上报并保留原文件；当成空设置再写回会静默清空用户配置。
+            throw storageFailure(AiFailureLocation.of(DOCUMENT), corrupt);
+        }
     }
 
     private void completeLoad(CompletableFuture<AiSettings> waiter) {
         AiSettings value;
         try {
             synchronized (lock) {
-                value = StorageGuard.call(this::loaded);
+                value = load();
                 loading = null;
             }
         } catch (RuntimeException failure) {
@@ -223,43 +270,32 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         waiter.completeExceptionally(failure);
     }
 
-    private AiSettings read() {
-        String text = documents.read(DOCUMENT);
-        AiSettings stored = AiSettings.EMPTY;
-        if (text != null && !text.isBlank()) {
-            try {
-                stored = json.decode(text);
-            } catch (JSONException corrupt) {
-                // 损坏的文档按存储失败上报并保留原文件；当成空设置再写回会静默清空用户配置。
-                throw new AiStorageException("settings.json is corrupt", corrupt);
+    private AiSettings commit(UnaryOperator<AiSettings> change, List<SecretUndo> undos) {
+        AiSettings next;
+        long nextRevision;
+        synchronized (lock) {
+            AiSettings before = loaded();
+            AiSettings changed = deriveCredentials(
+                    Objects.requireNonNull(change.apply(before), "change"));
+            if (changed.equals(before)) {
+                return before;
             }
+            current = changed;
+            next = changed;
+            nextRevision = ++revision;
         }
-        List<AiPlatformConfig> platforms = new ArrayList<>();
-        for (AiPlatformConfig platform : stored.platforms()) {
-            String key = secrets.get(EncryptedCredentialStore.platformAlias(platform.id()));
-            boolean configured = key != null && !key.isBlank();
-            platforms.add(platform.withConnection(platform.name(), configured,
-                    platform.baseUrl(), platform.protocol()));
-        }
-        Set<AiVoiceModel> configuredVoices = EnumSet.noneOf(AiVoiceModel.class);
-        for (AiVoiceModel model : AiVoiceModel.values()) {
-            String key = secrets.get(EncryptedCredentialStore.voiceAlias(model));
-            if (key != null && !key.isBlank()) {
-                configuredVoices.add(model);
-            }
-        }
-        AiVoiceConfig storedVoice = stored.voice();
-        AiVoiceConfig voice = storedVoice.withConfiguredProviders(configuredVoices);
-        return new AiSettings(platforms, stored.textSelection(), voice,
-                stored.preferences());
+        notifyObservers(next);
+        notifyPersistenceStatus(AiSettingsPersistenceStatus.SAVING);
+        enqueuePersistence(new PendingWrite(nextRevision, next, undos));
+        return next;
     }
 
-    /** 用密钥存储的真实存在情况重算"已配置"标记，内存快照才不会和磁盘/密钥库脱节。 */
+    /** 用密钥存储的真实存在情况重算"已配置"标记；这是它唯一的产生点。 */
     private AiSettings deriveCredentials(AiSettings settings) {
         List<AiPlatformConfig> platforms = new ArrayList<>(settings.platforms().size());
         boolean platformChanged = false;
         for (AiPlatformConfig platform : settings.platforms()) {
-            String key = secrets.get(EncryptedCredentialStore.platformAlias(platform.id()));
+            String key = secret(EncryptedCredentialStore.platformAlias(platform.id()), platform.id());
             boolean configured = key != null && !key.isBlank();
             AiPlatformConfig derived = platform.configured() == configured ? platform
                     : platform.withConnection(platform.name(), configured,
@@ -269,7 +305,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         }
         Set<AiVoiceModel> configured = EnumSet.noneOf(AiVoiceModel.class);
         for (AiVoiceModel model : AiVoiceModel.values()) {
-            String key = secrets.get(EncryptedCredentialStore.voiceAlias(model));
+            String key = secret(EncryptedCredentialStore.voiceAlias(model), model.id());
             if (key != null && !key.isBlank()) {
                 configured.add(model);
             }
@@ -286,22 +322,36 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
                 settings.textSelection(), voice, settings.preferences());
     }
 
-    private void persist(AiSettings before, AiSettings next) {
-        // 删平台时顺手清掉它的密钥；密钥的写入由 SavePlatform 用例负责，仓库从不落明文。
-        for (AiPlatformConfig platform : before.platforms()) {
-            if (next.platform(platform.id()).isEmpty()) {
-                secrets.remove(EncryptedCredentialStore.platformAlias(platform.id()));
-            }
+    @Nullable
+    private String secret(String alias, String entityId) {
+        try {
+            return secrets.get(alias);
+        } catch (DocumentFormatException | DocumentReadException broken) {
+            throw storageFailure(AiFailureLocation.of(EncryptedSecretStore.DOCUMENT, entityId), broken);
         }
-        documents.write(DOCUMENT, json.encode(next));
+    }
+
+    /** 写入一份密钥并返回"写前的值"，供设置文档落盘失败时回滚。 */
+    private SecretUndo writeSecret(String alias, String value, String entityId) {
+        String previous;
+        try {
+            previous = secrets.get(alias);
+            if (value.isEmpty()) {
+                secrets.remove(alias);
+            } else {
+                secrets.put(alias, value);
+            }
+        } catch (DocumentFormatException | DocumentReadException | DocumentWriteException
+                 | SecretCipherException broken) {
+            throw storageFailure(AiFailureLocation.of(EncryptedSecretStore.DOCUMENT, entityId), broken);
+        }
+        return new SecretUndo(alias, previous, entityId);
     }
 
     private void enqueuePersistence(PendingWrite write) {
         boolean shouldStart;
         synchronized (persistenceLock) {
-            if (pendingWrite == null || pendingWrite.revision < write.revision) {
-                pendingWrite = write;
-            }
+            pendingWrite = pendingWrite == null ? write : pendingWrite.merge(write);
             shouldStart = !draining;
             if (shouldStart) {
                 draining = true;
@@ -313,13 +363,17 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         try {
             persistenceExecutor.execute(this::drainPersistence);
         } catch (RuntimeException rejected) {
+            PendingWrite dropped;
             synchronized (persistenceLock) {
                 draining = false;
+                dropped = pendingWrite;
+                pendingWrite = null;
             }
-            AiFailure failure = new AiFailure(
-                    com.ggec.earbuds.domain.ai.model.AiFailureKind.STORAGE,
-                    "settings persistence executor rejected the write", rejected);
-            failRevision(write.revision, failure);
+            if (dropped != null) {
+                dropped.rollback();
+            }
+            failRevision(write.revision(), storageFailure(
+                    AiFailureLocation.of(DOCUMENT, null, write.revision()), rejected));
         }
     }
 
@@ -334,27 +388,46 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
                     return;
                 }
             }
-            AiSettings before;
-            synchronized (lock) {
-                before = persisted;
+            writeOnce(write);
+        }
+    }
+
+    private void writeOnce(PendingWrite write) {
+        AiSettings before;
+        synchronized (lock) {
+            before = persisted;
+        }
+        try {
+            documents.write(DOCUMENT, json.encode(write.state()));
+        } catch (RuntimeException unwritable) {
+            // 文档没落盘：本次提交的密钥按写前的值回滚，磁盘上不留半对状态。
+            write.rollback();
+            failRevision(write.revision(), storageFailure(
+                    AiFailureLocation.of(DOCUMENT, null, write.revision()), unwritable));
+            return;
+        }
+        synchronized (lock) {
+            persisted = write.state();
+            persistedRevision = write.revision();
+            lastFailure = null;
+            lastFailureRevision = -1;
+        }
+        completeWaiters(write.revision(), null);
+        notifyPersistenceStatus(AiSettingsPersistenceStatus.SAVED);
+        removeOrphanedSecrets(before, write.state());
+    }
+
+    /** 平台被删掉后清掉它的密钥。文档已经落盘，所以这里失败只上报，不回滚设置。 */
+    private void removeOrphanedSecrets(AiSettings before, AiSettings next) {
+        for (AiPlatformConfig platform : before.platforms()) {
+            if (next.platform(platform.id()).isPresent()) {
+                continue;
             }
             try {
-                StorageGuard.run(() -> persist(before, write.state));
-                synchronized (lock) {
-                    persisted = write.state;
-                    persistedRevision = write.revision;
-                    lastFailure = null;
-                    lastFailureRevision = -1;
-                }
-                completeWaiters(write.revision, null);
-                notifyPersistenceStatus(AiSettingsPersistenceStatus.SAVED);
-            } catch (AiFailure failure) {
-                failRevision(write.revision, failure);
-            } catch (RuntimeException unexpected) {
-                AiFailure failure = new AiFailure(
-                        com.ggec.earbuds.domain.ai.model.AiFailureKind.STORAGE,
-                        "settings persistence failed", unexpected);
-                failRevision(write.revision, failure);
+                secrets.remove(EncryptedCredentialStore.platformAlias(platform.id()));
+            } catch (DocumentFormatException | DocumentReadException | DocumentWriteException broken) {
+                notifyPersistenceFailures(storageFailure(
+                        AiFailureLocation.of(EncryptedSecretStore.DOCUMENT, platform.id()), broken));
             }
         }
     }
@@ -366,16 +439,10 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
         }
         completeWaiters(failedRevision, failure);
         notifyPersistenceStatus(AiSettingsPersistenceStatus.FAILED);
-        for (Consumer<Throwable> observer : failureObservers) {
-            try {
-                observer.accept(failure);
-            } catch (RuntimeException ignored) {
-                // Persistence failure reporting must not mask the original failure.
-            }
-        }
+        notifyPersistenceFailures(failure);
     }
 
-    private void completeWaiters(long completedRevision, AiFailure failure) {
+    private void completeWaiters(long completedRevision, @Nullable AiFailure failure) {
         List<CompletableFuture<Void>> ready = new ArrayList<>();
         synchronized (lock) {
             while (!flushWaiters.isEmpty()
@@ -397,7 +464,7 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
             try {
                 observer.accept(next);
             } catch (RuntimeException ignored) {
-                // One observer must not prevent the memory commit from reaching the others.
+                // 单个观察者出错不能拦住内存提交到达其他观察者。
             }
         }
     }
@@ -407,11 +474,67 @@ public final class AiSettingsRepositoryImpl implements AiSettingsRepository {
             try {
                 observer.accept(status);
             } catch (RuntimeException ignored) {
-                // Persistence reporting must not interrupt the serial writer.
+                // 状态通知不能打断串行写者。
             }
         }
     }
 
-    private record PendingWrite(long revision, AiSettings state) {
+    private void notifyPersistenceFailures(AiFailure failure) {
+        for (Consumer<AiFailure> observer : failureObservers) {
+            try {
+                observer.accept(failure);
+            } catch (RuntimeException ignored) {
+                // 失败上报不能覆盖原始失败。
+            }
+        }
+    }
+
+    private static AiFailure storageFailure(AiFailureLocation location, Throwable cause) {
+        return new AiFailure(AiFailureKind.STORAGE, location, cause);
+    }
+
+    private record PendingWrite(long revision, AiSettings state, List<SecretUndo> undos) {
+
+        PendingWrite merge(PendingWrite newer) {
+            List<SecretUndo> all = new ArrayList<>(undos);
+            all.addAll(newer.undos);
+            return new PendingWrite(newer.revision, newer.state, List.copyOf(all));
+        }
+
+        /** 按写入的倒序回滚，最早那次写前的值最终生效。 */
+        void rollback() {
+            for (int index = undos.size() - 1; index >= 0; index--) {
+                undos.get(index).restore();
+            }
+        }
+    }
+
+    /** 一次密钥写入的回滚点：把别名恢复成写前的值（{@code null} 表示删掉）。 */
+    private final class SecretUndo {
+
+        private final String alias;
+        private final String previous;
+        private final String entityId;
+
+        SecretUndo(String alias, @Nullable String previous, String entityId) {
+            this.alias = alias;
+            this.previous = previous;
+            this.entityId = entityId;
+        }
+
+        void restore() {
+            try {
+                if (previous == null) {
+                    secrets.remove(alias);
+                } else {
+                    secrets.put(alias, previous);
+                }
+            } catch (DocumentFormatException | DocumentReadException | DocumentWriteException
+                     | SecretCipherException unrestorable) {
+                // 回滚本身失败：原始失败已经上报过，这里只把回滚失败也报出去。
+                notifyPersistenceFailures(storageFailure(
+                        AiFailureLocation.of(EncryptedSecretStore.DOCUMENT, entityId), unrestorable));
+            }
+        }
     }
 }

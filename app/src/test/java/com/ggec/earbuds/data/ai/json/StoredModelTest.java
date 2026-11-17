@@ -2,7 +2,9 @@ package com.ggec.earbuds.data.ai.json;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
 
+import com.ggec.earbuds.data.store.DocumentFormatException;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 
@@ -11,7 +13,7 @@ import org.junit.Test;
 import java.util.Set;
 
 /** 磁盘上的模型条目只带 id 与类别；领域属性不参与序列化。 */
-public class StoredModelTest {
+public final class StoredModelTest {
 
     @Test
     public void onlyIdAndCategoryArePersisted() {
@@ -25,11 +27,11 @@ public class StoredModelTest {
     }
 
     @Test
-    public void aModelWithoutCategoryStoresNoCategory() {
+    public void aModelWithoutCategoryStoresNoCategoryAndReadsBackWithoutOne() {
         StoredModel stored = StoredModel.of(AiModel.manual("my-model"));
 
         assertNull(stored.categoryId());
-        assertNull("手工条目没有类别，读回时丢弃而不是猜类别", stored.toDomain());
+        assertNull("手工条目没有类别，读回也不猜类别", stored.toDomain().category());
     }
 
     @Test
@@ -45,8 +47,18 @@ public class StoredModelTest {
     }
 
     @Test
-    public void unknownCategoryAndBlankIdAreDropped() {
-        assertNull(new StoredModel("m", "not-a-category").toDomain());
-        assertNull(new StoredModel("", AiModelCategory.REALTIME.id()).toDomain());
+    public void anUnknownCategoryOrBlankIdIsCorrupt() {
+        try {
+            new StoredModel("m", "not-a-category").toDomain();
+            fail("an unknown category must not be guessed");
+        } catch (DocumentFormatException expected) {
+            assertEquals("category", expected.field());
+        }
+        try {
+            new StoredModel("", AiModelCategory.REALTIME.id()).toDomain();
+            fail("a blank model id must not be persisted");
+        } catch (DocumentFormatException expected) {
+            assertEquals("id", expected.field());
+        }
     }
 }

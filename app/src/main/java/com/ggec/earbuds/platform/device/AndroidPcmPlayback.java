@@ -84,19 +84,32 @@ public final class AndroidPcmPlayback implements PcmPlaybackPort {
                         framesWritten += written / 2L; // 16-bit mono: 2 bytes per sample/frame
                     }
                 }
-                // 等待 AudioTrack 实际将缓冲区中的 PCM 帧完整播放完毕，避免末尾音频被提前释放丢弃
-                while (isPlaying && framesWritten > 0L) {
-                    int head = audioTrack.getPlaybackHeadPosition();
-                    if (head >= framesWritten) {
-                        break;
-                    }
+                // 等待 AudioTrack 实际将缓冲区中的 PCM 帧完整播放完毕，避免末尾音频被提前释放丢弃。
+                // 用播放位置标记 + 有界等待，不用 sleep 轮询：停止/中断时立即返回，最长等 3 秒。
+                if (framesWritten > 0L) {
+                    java.util.concurrent.CountDownLatch drained =
+                            new java.util.concurrent.CountDownLatch(1);
+                    audioTrack.setPlaybackPositionUpdateListener(
+                            new AudioTrack.OnPlaybackPositionUpdateListener() {
+                                @Override
+                                public void onMarkerReached(AudioTrack track) {
+                                    drained.countDown();
+                                }
+
+                                @Override
+                                public void onPeriodicNotification(AudioTrack track) {
+                                }
+                            }, mainHandler);
+                    audioTrack.setNotificationMarkerPosition(
+                            (int) Math.min(framesWritten, Integer.MAX_VALUE));
                     try {
-                        Thread.sleep(20L);
-                    } catch (InterruptedException e) {
-                        break;
+                        drained.await(3L, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
                     }
                 }
-            } catch (IOException ignored) {
+            } catch (IOException readFailure) {
+                android.util.Log.w("PcmPlayback", "pcm read failed", readFailure);
             } finally {
                 synchronized (AndroidPcmPlayback.this) {
                     isPlaying = false;
@@ -105,7 +118,8 @@ public final class AndroidPcmPlayback implements PcmPlaybackPort {
                         try {
                             audioTrack.stop();
                             audioTrack.release();
-                        } catch (Exception ignored) {
+                        } catch (RuntimeException releaseFailure) {
+                            android.util.Log.w("PcmPlayback", "release after playback failed", releaseFailure);
                         }
                         audioTrack = null;
                     }
@@ -128,7 +142,8 @@ public final class AndroidPcmPlayback implements PcmPlaybackPort {
             try {
                 audioTrack.stop();
                 audioTrack.release();
-            } catch (Exception ignored) {
+            } catch (RuntimeException releaseFailure) {
+                android.util.Log.w("PcmPlayback", "stop release failed", releaseFailure);
             }
             audioTrack = null;
         }

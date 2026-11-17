@@ -118,7 +118,6 @@ public class AiChatViewModelTest {
         AiMessageUi failed = viewModel.uiState().getValue().messages().get(1);
         assertEquals(AiMessageUi.Notice.ERROR, failed.notice());
         assertEquals(AiFailureKind.RATE_LIMITED, failed.failureKind());
-        assertEquals("slow down", failed.failureDetail());
         assertEquals("part", failed.text());
         assertTrue(failed.canRegenerate());
 

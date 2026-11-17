@@ -1,19 +1,13 @@
 package com.ggec.earbuds.domain.device.usecase;
 
-import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
-import com.ggec.earbuds.domain.device.model.DeviceFacts;import com.ggec.earbuds.domain.device.model.DeviceRecord;
 import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.DeviceState;
-import com.ggec.earbuds.domain.device.model.DeviceStatus;
 import com.ggec.earbuds.domain.device.model.DeviceTarget;
-import com.ggec.earbuds.domain.device.model.RecordOrigin;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
 import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.session.DeviceSession;
 
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -24,7 +18,7 @@ import java.util.function.LongSupplier;
  * 台账投影：把「落盘台账 + 活动会话的实时事实」合成页面看到的一份设备列表。
  *
  * <p>只读，不写盘。实时覆盖只在连接中/就绪时发生（断开后由 {@link SyncActiveDevice} 落成
- * ARCHIVED 档案），因此不会用半截快照把档案抹掉。</p>
+ * ARCHIVED 档案），因此不会用半截快照把档案抹掉；合成规则单点在 {@link LiveRecord}。</p>
  */
 public final class ObserveDeviceRoster {
 
@@ -94,22 +88,9 @@ public final class ObserveDeviceRoster {
             return stored;
         }
         DeviceSnapshot snapshot = session.current();
-        ConnectionState connection = snapshot.connection();
-        if (connection != ConnectionState.CONNECTING && connection != ConnectionState.READY) {
+        if (!LiveRecord.ongoing(snapshot.connection())) {
             return stored;
         }
-        Optional<DeviceRecord> existing = stored.find(target.id());
-        boolean ready = connection == ConnectionState.READY;
-        DeviceFacts facts = ready
-                ? new DeviceFacts(snapshot.battery(), snapshot.firmware(),
-                        snapshot.wearState(), snapshot.earColor())
-                : existing.map(DeviceRecord::facts).orElse(DeviceFacts.unknown());
-        DeviceState state = ready
-                ? snapshot.state()
-                : existing.map(DeviceRecord::state).orElse(new DeviceState(Map.of()));
-        DeviceRecord live = new DeviceRecord(target.id(),
-                existing.map(DeviceRecord::alias).orElse(""), target.identity(),
-                new DeviceStatus(RecordOrigin.LIVE, connection, clock.getAsLong()), facts, state);
-        return stored.upsert(live).withActive(Optional.of(target.id()));
+        return LiveRecord.apply(stored, target, snapshot, clock.getAsLong());
     }
 }

@@ -11,24 +11,22 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.LevelPresentation;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
+import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
 import com.yohu.youi.api.callback.OnProgressChangeListener;
 import com.yohu.youi.api.controls.YoSlider;
-
-import java.util.OptionalInt;
 
 /**
  * 档位行组件：标题 + 当前值 + 滑杆。
  *
  * <p>值域完全来自描述符的 {@code range}（min / max / step），界面不做任何推导。与开关同一条裁定：
- * **值未知只把值显示成「未上报」，滑杆仍然可写**——写入是绝对设定语义，不需要已知当前值；
- * 位置先取上报值，否则取用户本次的未确认选择，再否则取下界。拖动只更新读数，抬手写一次；
- * 写入失败时丢弃未确认值并回到未上报呈现。</p>
+ * **值未知只把值显示成「未上报」，滑杆仍然可写**；位置由 {@link LevelPresentation} 从
+ * 「设备上报值 + 写入槽里的未确认值 + 写入状态」算出，本类只显示结果。拖动只更新读数，
+ * 抬手写一次；写入失败的回退由 ViewModel 的状态驱动，本类不持未确认副本。</p>
  */
-final class SliderCardView implements ControlOutcomeSink {
+final class SliderCardView {
 
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
@@ -41,7 +39,6 @@ final class SliderCardView implements ControlOutcomeSink {
     private final FrameLayout sliderHost;
 
     private YoSlider slider;
-    private OptionalInt unconfirmed = OptionalInt.empty();
     private int dragValue;
 
     SliderCardView(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
@@ -76,13 +73,15 @@ final class SliderCardView implements ControlOutcomeSink {
         return view;
     }
 
-    void bind(@NonNull DeviceSettingRow.Level row, boolean interactive) {
+    void bind(@NonNull DeviceSettingRow.Level row,
+              @NonNull DeviceSettingsUiState.WriteSlot slot,
+              boolean interactive) {
         title.setText(row.title());
         sliderHost.removeAllViews();
         releaseSlider();
 
-        LevelPresentation presentation = LevelPresentation.of(row.value(), unconfirmed,
-                row.range().min(), interactive);
+        LevelPresentation presentation = LevelPresentation.of(slot.state(), row.value(),
+                slot.levelValue(), row.range().min(), interactive);
         dragValue = presentation.value();
         value.setText(presentation.unknown()
                 ? activity.getString(R.string.device_value_unknown)
@@ -108,7 +107,6 @@ final class SliderCardView implements ControlOutcomeSink {
                         if (!presentation.enabled()) {
                             return;
                         }
-                        unconfirmed = OptionalInt.of(dragValue);
                         listener.onLevel(capabilityId, dragValue);
                     }
                 })
@@ -120,18 +118,6 @@ final class SliderCardView implements ControlOutcomeSink {
 
     void destroy() {
         releaseSlider();
-    }
-
-    @Override
-    public boolean onControlOutcome(@NonNull DeviceControlOutcome outcome) {
-        if (outcome.succeeded() || !outcome.capabilityId().equals(capabilityId)) {
-            return false;
-        }
-        if (unconfirmed.isEmpty()) {
-            return false;
-        }
-        unconfirmed = OptionalInt.empty();
-        return true;
     }
 
     private void releaseSlider() {

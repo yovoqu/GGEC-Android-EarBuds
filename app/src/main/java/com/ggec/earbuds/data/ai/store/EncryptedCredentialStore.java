@@ -9,8 +9,11 @@ import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import java.util.Objects;
 
 /**
- * {@link AiCredentialStore} 的加密实现：复用 {@link SecretStore} 的两套别名，
+ * {@link AiCredentialStore} 的加密实现：读走 {@link SecretStore} 的两套别名，
  * 文本平台用 {@code apikey.<platformId>}，语音用 {@code voicekey.<modelId>}。
+ *
+ * <p>写入不在这里：密钥必须与设置文档成对提交，那一对由 {@code AiSettingsRepositoryImpl}
+ * 用同样的别名常量完成。别名是单点定义，读写共用。</p>
  */
 public final class EncryptedCredentialStore implements AiCredentialStore {
 
@@ -23,7 +26,7 @@ public final class EncryptedCredentialStore implements AiCredentialStore {
         this.secrets = Objects.requireNonNull(secrets, "secrets");
     }
 
-    /** 平台密钥在密文文档里的别名。单源：仓库与 UI 都从这里取，不再各写一份前缀。 */
+    /** 平台密钥在密文文档里的别名。单源：仓库写、网关读都从这里取。 */
     @NonNull
     public static String platformAlias(@NonNull String platformId) {
         return PLATFORM_PREFIX + platformId;
@@ -55,25 +58,6 @@ public final class EncryptedCredentialStore implements AiCredentialStore {
     @Override
     public boolean hasVoiceKey(@NonNull AiVoiceModel model) {
         return voiceKey(model) != null;
-    }
-
-    @Override
-    public void putPlatformKey(@NonNull String platformId, @NonNull String key) {
-        put(platformAlias(platformId), key);
-    }
-
-    @Override
-    public void putVoiceKey(@NonNull AiVoiceModel model, @NonNull String key) {
-        put(voiceAlias(model), key);
-    }
-
-    private void put(@NonNull String alias, @NonNull String key) {
-        String trimmed = key == null ? "" : key.strip();
-        if (trimmed.isEmpty()) {
-            secrets.remove(alias);
-        } else {
-            secrets.put(alias, trimmed);
-        }
     }
 
     @Nullable

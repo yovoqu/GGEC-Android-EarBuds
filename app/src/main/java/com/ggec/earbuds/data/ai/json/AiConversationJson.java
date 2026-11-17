@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.json;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.data.json.JsonValues;
+import com.ggec.earbuds.data.store.DocumentFormatException;
 import com.ggec.earbuds.domain.ai.model.AiConversation;
 import com.ggec.earbuds.domain.ai.model.AiConversationSummary;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
@@ -20,16 +21,20 @@ import org.json.JSONObject;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * 对话文档与历史索引的编解码。同样宽容：坏掉的单条消息跳过，不让整段对话打不开。
- * 费用写成字符串，避免 JSON 数字经 double 往返丢精度。合计与缓存可以缺省。
+ * 对话文档与历史索引的编解码，严格版本化。
+ *
+ * <p>解码第一步读 {@code v}，不等于当前版本直接抛 {@link DocumentFormatException}；
+ * 没有旧键名迁移，也没有"坏掉的单条消息跳过"——一条消息读不出来，这段对话就是损坏的，
+ * 静默丢掉半段历史等于伪造上下文。费用写成字符串，避免 JSON 数字经 double 往返丢精度。</p>
  */
 public final class AiConversationJson {
 
     static final int VERSION = 1;
 
-    /** 列表摘要的格式版本。摘要内容变了就 +1，旧索引会在读取时被丢弃并按会话文件重建。 */
+    /** 列表摘要的格式版本。摘要内容变了就 +1，旧索引会被当成损坏并按会话文件重建。 */
     static final int INDEX_VERSION = 2;
 
     public String encode(AiConversation conversation) {
@@ -48,26 +53,23 @@ public final class AiConversationJson {
     }
 
     /**
-     * @throws JSONException 文档不是合法的 JSON 对象，或缺少对话 id
+     * @throws DocumentFormatException 文档不是合法 JSON 对象、版本不符、必填字段缺失、
+     *                                类型不符或枚举值未知
      */
-    public AiConversation decode(String text) throws JSONException {
-        JSONObject root = new JSONObject(text);
-        String id = JsonValues.string(root, "id");
-        if (id == null) {
-            throw new JSONException("conversation id is missing");
-        }
+    public AiConversation decode(String text) {
+        JSONObject root = root(text);
+        requireVersion(root, VERSION, "conversation");
         List<AiMessage> messages = new ArrayList<>();
-        JSONArray array = root.optJSONArray("messages");
-        for (int i = 0; array != null && i < array.length(); i++) {
-            JSONObject entry = array.optJSONObject(i);
-            AiMessage message = entry == null ? null : decodeMessage(entry);
-            if (message != null) {
-                messages.add(message);
-            }
+        JSONArray array = requiredArray(root, "messages");
+        for (int i = 0; i < array.length(); i++) {
+            messages.add(decodeMessage(requiredEntry(array, i, "messages")));
         }
-        long createdAt = JsonValues.number(root, "createdAt", 0L);
-        return new AiConversation(id, JsonValues.string(root, "title", ""), createdAt,
-                JsonValues.number(root, "updatedAt", createdAt), messages);
+        return new AiConversation(
+                JsonValues.requiredString(root, "id"),
+                JsonValues.requiredString(root, "title"),
+                JsonValues.requiredLong(root, "createdAt"),
+                JsonValues.requiredLong(root, "updatedAt"),
+                messages);
     }
 
     public String encodeIndex(List<AiConversationSummary> summaries) {
@@ -88,28 +90,57 @@ public final class AiConversationJson {
     }
 
     /**
-     * @throws JSONException 索引不是合法的 JSON 对象
+     * @throws DocumentFormatException 索引不是合法 JSON 对象、版本不符或条目损坏。
+     *                                 索引是派生数据，由仓库据此按会话文件重建。
      */
-    public List<AiConversationSummary> decodeIndex(String text) throws JSONException {
-        JSONObject root = new JSONObject(text);
-        // 版本对不上就返回空，交给上层按会话文件重建。
-        if (JsonValues.integer(root, "v") == null || JsonValues.integer(root, "v") < INDEX_VERSION) {
-            return List.of();
-        }
-        JSONArray items = root.optJSONArray("items");
+    public List<AiConversationSummary> decodeIndex(String text) {
+        JSONObject root = root(text);
+        requireVersion(root, INDEX_VERSION, "conversation index");
+        JSONArray items = requiredArray(root, "items");
         List<AiConversationSummary> summaries = new ArrayList<>();
-        for (int i = 0; items != null && i < items.length(); i++) {
-            JSONObject item = items.optJSONObject(i);
-            String id = item == null ? null : JsonValues.string(item, "id");
-            if (id == null) {
-                continue;
-            }
-            Integer count = JsonValues.integer(item, "count");
-            summaries.add(new AiConversationSummary(id, JsonValues.string(item, "title", ""),
-                    JsonValues.number(item, "updatedAt", 0L), count == null ? 0 : count,
-                    JsonValues.string(item, "preview", "")));
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = requiredEntry(items, i, "items");
+            summaries.add(new AiConversationSummary(
+                    JsonValues.requiredString(item, "id"),
+                    JsonValues.requiredString(item, "title"),
+                    JsonValues.requiredLong(item, "updatedAt"),
+                    JsonValues.requiredInt(item, "count"),
+                    JsonValues.requiredString(item, "preview")));
         }
         return summaries;
+    }
+
+    private static JSONObject root(String text) {
+        try {
+            return new JSONObject(text);
+        } catch (JSONException malformed) {
+            throw new DocumentFormatException("document",
+                    "conversation document is not a JSON object", malformed);
+        }
+    }
+
+    private static void requireVersion(JSONObject root, int current, String what) {
+        int version = JsonValues.requiredInt(root, "v");
+        if (version != current) {
+            throw new DocumentFormatException("v", what + " has unsupported version " + version);
+        }
+    }
+
+    private static JSONArray requiredArray(JSONObject json, String key) {
+        JSONArray value = json.optJSONArray(key);
+        if (value == null) {
+            throw new DocumentFormatException(key, "missing required array " + key);
+        }
+        return value;
+    }
+
+    private static JSONObject requiredEntry(JSONArray array, int index, String path) {
+        JSONObject entry = array.optJSONObject(index);
+        if (entry == null) {
+            throw new DocumentFormatException(path + "[" + index + "]",
+                    path + "[" + index + "] is not an object");
+        }
+        return entry;
     }
 
     private static JSONObject encodeMessage(AiMessage message) {
@@ -121,7 +152,6 @@ public final class AiConversationJson {
         JsonValues.put(json, "status", message.status().name());
         if (message.failure() != null) {
             JsonValues.put(json, "failureKind", message.failure().kind().name());
-            JsonValues.put(json, "failureDetail", message.failure().detail());
         }
         JsonValues.put(json, "finish", message.finishReason().name());
         JsonValues.put(json, "model", message.modelLabel());
@@ -144,52 +174,67 @@ public final class AiConversationJson {
     }
 
     private static AiMessage decodeMessage(JSONObject json) {
-        String id = JsonValues.string(json, "id");
-        String text = JsonValues.string(json, "text");
-        if (id == null || text == null) {
-            return null;
-        }
-        AiMessageFailure failure = null;
-        String failureKind = JsonValues.string(json, "failureKind");
-        if (failureKind != null) {
-            failure = new AiMessageFailure(AiFailureKind.fromName(failureKind),
-                    JsonValues.string(json, "failureDetail", ""));
-        }
-        AiUsage usage = null;
-        JSONObject usageJson = json.optJSONObject("usage");
-        if (usageJson != null) {
-            Integer input = JsonValues.integer(usageJson, "in");
-            Integer output = JsonValues.integer(usageJson, "out");
-            Integer total = JsonValues.integer(usageJson, "total");
-            usage = new AiUsage(input == null ? 0 : input, output == null ? 0 : output,
-                    total == null ? 0 : total, cost(usageJson),
-                    JsonValues.integer(usageJson, "cached"),
-                    JsonValues.integer(usageJson, "cacheWrite"));
-        }
+        String id = JsonValues.requiredString(json, "id");
+        AiRole role = AiRole.fromName(JsonValues.requiredString(json, "role"))
+                .orElseThrow(() -> new DocumentFormatException("role",
+                        "unknown message role in the conversation document"));
+        AiMessageStatus status = AiMessageStatus.fromName(JsonValues.requiredString(json, "status"))
+                .orElseThrow(() -> new DocumentFormatException("status",
+                        "unknown message status in the conversation document"));
+        AiFinishReason finish = AiFinishReason.fromName(JsonValues.requiredString(json, "finish"))
+                .orElseThrow(() -> new DocumentFormatException("finish",
+                        "unknown finish reason in the conversation document"));
         return new AiMessage(
                 id,
-                AiRole.fromName(JsonValues.string(json, "role", "USER")),
-                text,
-                JsonValues.string(json, "reasoning"),
-                AiMessageStatus.fromName(JsonValues.string(json, "status", "COMPLETE")),
-                failure,
-                AiFinishReason.fromName(JsonValues.string(json, "finish", "STOP")),
-                JsonValues.string(json, "model"),
-                JsonValues.number(json, "createdAt", 0L),
-                JsonValues.number(json, "elapsed", 0L),
-                usage);
+                role,
+                JsonValues.requiredString(json, "text"),
+                JsonValues.optionalString(json, "reasoning").orElse(null),
+                status,
+                decodeFailure(json),
+                finish,
+                JsonValues.optionalString(json, "model").orElse(null),
+                JsonValues.requiredLong(json, "createdAt"),
+                JsonValues.requiredLong(json, "elapsed"),
+                decodeUsage(json.optJSONObject("usage")));
     }
 
     @Nullable
-    private static BigDecimal cost(JSONObject usage) {
-        String text = JsonValues.string(usage, "cost");
-        if (text == null || text.isBlank()) {
+    private static AiMessageFailure decodeFailure(JSONObject json) {
+        Optional<String> kind = JsonValues.optionalString(json, "failureKind");
+        if (kind.isEmpty()) {
+            return null;
+        }
+        AiFailureKind parsed = AiFailureKind.fromName(kind.get())
+                .orElseThrow(() -> new DocumentFormatException("failureKind",
+                        "unknown failure kind " + kind.get() + " in the conversation document"));
+        return new AiMessageFailure(parsed);
+    }
+
+    @Nullable
+    private static AiUsage decodeUsage(@Nullable JSONObject json) {
+        if (json == null) {
+            return null;
+        }
+        return new AiUsage(
+                JsonValues.requiredInt(json, "in"),
+                JsonValues.requiredInt(json, "out"),
+                JsonValues.requiredInt(json, "total"),
+                decodeCost(json),
+                JsonValues.optionalInt(json, "cached").orElse(null),
+                JsonValues.optionalInt(json, "cacheWrite").orElse(null));
+    }
+
+    @Nullable
+    private static BigDecimal decodeCost(JSONObject usage) {
+        Optional<String> text = JsonValues.optionalString(usage, "cost");
+        if (text.isEmpty()) {
             return null;
         }
         try {
-            return new BigDecimal(text.trim());
-        } catch (NumberFormatException ignored) {
-            return null;
+            return new BigDecimal(text.get().strip());
+        } catch (NumberFormatException malformed) {
+            throw new DocumentFormatException("cost",
+                    "usage cost is not a decimal number in the conversation document", malformed);
         }
     }
 }

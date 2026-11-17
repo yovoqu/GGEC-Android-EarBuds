@@ -2,6 +2,7 @@ package com.ggec.earbuds.ui.device.scan;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.ggec.earbuds.R;
@@ -13,10 +14,13 @@ import java.util.List;
 
 public class ScanUiMapperTest {
 
+    private static final List<ScanFilterOption> OPTIONS =
+            List.of(new ScanFilterOption("M01", "M01"), new ScanFilterOption("M02", "M02"));
+
     @Test
     public void mapWithoutConnectingAddressDefaultsToFalse() {
         ScanResult result = new ScanResult("modelA", "Earbuds", "11:22:33:44:55:66", -60);
-        ScanItem item = ScanUiMapper.map(result);
+        ScanItem item = ScanUiMapper.map(result, null);
 
         assertEquals("modelA", item.modelId());
         assertEquals("11:22:33:44:55:66", item.address());
@@ -46,82 +50,99 @@ public class ScanUiMapperTest {
     }
 
     @Test
-    public void scanUiStateCarriesConnectingAddress() {
-        ScanUiState state = new ScanUiState(
-                false,
-                true,
-                "HS02",
-                List.of(),
-                List.of(),
-                0,
-                ScanConnectPhase.CONNECTING,
-                "AA:BB:CC:DD:EE:FF");
+    public void connectingPhaseCarriesAddressAndMarksItem() {
+        ScanResult result = new ScanResult("M01", "Earbuds", "AA:BB:CC:DD:EE:FF", -50);
+        ScanUiState state = ScanUiMapper.mapState(
+                new ScanPhase.Connecting("AA:BB:CC:DD:EE:FF"), "M01", OPTIONS, List.of(result));
 
-        assertEquals(ScanConnectPhase.CONNECTING, state.connectPhase());
-        assertEquals("AA:BB:CC:DD:EE:FF", state.connectingAddress());
-    }
-
-    @Test
-    public void emptyStateWhenFilterHasNoMatchYieldsFilterEmptyStrings() {
-        assertEquals(R.string.device_scan_filter_empty_title,
-                ScanUiMapper.emptyTitleRes(false, true, 3));
-        assertEquals(R.string.device_scan_filter_empty_body,
-                ScanUiMapper.emptyBodyRes(false, true, 3));
+        assertEquals("AA:BB:CC:DD:EE:FF", state.phase().connectingAddress());
+        assertTrue(state.phase().connecting());
+        assertTrue(state.results().get(0).connecting());
     }
 
     @Test
     public void emptyStateWhenScanningYieldsSearchingStrings() {
         assertEquals(R.string.device_scan_searching,
-                ScanUiMapper.emptyTitleRes(true, true, 0));
+                ScanUiMapper.emptyTitleRes(new ScanPhase.Scanning(), OPTIONS));
         assertEquals(R.string.device_scan_searching_hint,
-                ScanUiMapper.emptyBodyRes(true, true, 0));
+                ScanUiMapper.emptyBodyRes(new ScanPhase.Scanning(), OPTIONS));
     }
 
     @Test
     public void emptyStateWhenIdleNotScannedYieldsIdleStrings() {
         assertEquals(R.string.device_scan_idle_title,
-                ScanUiMapper.emptyTitleRes(false, false, 0));
+                ScanUiMapper.emptyTitleRes(new ScanPhase.Idle(), OPTIONS));
         assertEquals(R.string.device_scan_idle_body,
-                ScanUiMapper.emptyBodyRes(false, false, 0));
+                ScanUiMapper.emptyBodyRes(new ScanPhase.Idle(), OPTIONS));
     }
 
     @Test
     public void emptyStateWhenScannedAndNothingFoundYieldsEmptyStrings() {
         assertEquals(R.string.device_scan_empty_title,
-                ScanUiMapper.emptyTitleRes(false, true, 0));
+                ScanUiMapper.emptyTitleRes(new ScanPhase.Stopped(), OPTIONS));
         assertEquals(R.string.device_scan_empty_body,
-                ScanUiMapper.emptyBodyRes(false, true, 0));
+                ScanUiMapper.emptyBodyRes(new ScanPhase.Stopped(), OPTIONS));
+    }
+
+    @Test
+    public void emptyDirectoryYieldsNoModelStateRegardlessOfPhase() {
+        assertEquals(R.string.device_scan_no_model_title,
+                ScanUiMapper.emptyTitleRes(new ScanPhase.Idle(), List.of()));
+        assertEquals(R.string.device_scan_no_model_body,
+                ScanUiMapper.emptyBodyRes(new ScanPhase.Scanning(), List.of()));
     }
 
     @Test
     public void statusAndActionTextReflectScanningState() {
-        assertEquals(R.string.device_scan_searching, ScanUiMapper.statusTextRes(true));
-        assertEquals(R.string.device_scan_stop, ScanUiMapper.actionTextRes(true));
+        assertEquals(R.string.device_scan_searching,
+                ScanUiMapper.statusTextRes(new ScanPhase.Scanning()));
+        assertEquals(R.string.device_scan_stop,
+                ScanUiMapper.actionTextRes(new ScanPhase.Scanning()));
 
-        assertEquals(R.string.device_scan_found_count, ScanUiMapper.statusTextRes(false));
-        assertEquals(R.string.device_scan_start, ScanUiMapper.actionTextRes(false));
+        assertEquals(R.string.device_scan_found_count,
+                ScanUiMapper.statusTextRes(new ScanPhase.Stopped()));
+        assertEquals(R.string.device_scan_start,
+                ScanUiMapper.actionTextRes(new ScanPhase.Stopped()));
     }
 
     @Test
     public void mapStatePopulatesCalculatedFields() {
-        ScanResult r1 = new ScanResult("HS01", "Buds", "11:22:33:44:55:66", -55);
+        ScanResult result = new ScanResult("M01", "Buds", "11:22:33:44:55:66", -55);
         ScanUiState state = ScanUiMapper.mapState(
-                false,
-                true,
-                "HS01",
-                List.of(new ScanFilterOption("HS01", "HS01")),
-                List.of(r1),
-                ScanConnectPhase.IDLE,
-                "");
+                new ScanPhase.Stopped(), "M01", OPTIONS, List.of(result));
 
-        assertFalse(state.scanning());
-        assertTrue(state.hasScanned());
+        assertFalse(state.phase().scanning());
+        assertEquals("M01", state.selectedFilterModelId());
         assertEquals(1, state.results().size());
-        assertEquals(1, state.totalDiscoveredCount());
-        assertEquals(R.string.device_scan_filter_empty_title, state.emptyTitleRes());
-        assertEquals(R.string.device_scan_filter_empty_body, state.emptyBodyRes());
         assertEquals(R.string.device_scan_found_count, state.statusTextRes());
         assertEquals(1, state.statusCount());
         assertEquals(R.string.device_scan_start, state.actionTextRes());
+    }
+
+    @Test
+    public void mapStateHidesCountWhileScanning() {
+        ScanResult result = new ScanResult("M01", "Buds", "11:22:33:44:55:66", -55);
+        ScanUiState state = ScanUiMapper.mapState(
+                new ScanPhase.Scanning(), "M01", OPTIONS, List.of(result));
+
+        assertEquals(1, state.results().size());
+        assertEquals(0, state.statusCount());
+    }
+
+    @Test
+    public void idleStateHasNoBuiltInModelTable() {
+        ScanUiState idle = ScanUiState.idle();
+
+        assertTrue(idle.filterOptions().isEmpty());
+        assertEquals("", idle.selectedFilterModelId());
+        assertTrue(idle.results().isEmpty());
+    }
+
+    @Test
+    public void stateRejectsUnsetStringResources() {
+        assertThrows(IllegalArgumentException.class, () -> new ScanUiState(
+                new ScanPhase.Idle(), "", List.of(), List.of(), 0,
+                R.string.device_scan_empty_body, R.string.device_scan_start,
+                0, R.string.device_scan_start));
     }
 }

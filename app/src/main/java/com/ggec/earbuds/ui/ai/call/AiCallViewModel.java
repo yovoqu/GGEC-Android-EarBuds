@@ -1,6 +1,5 @@
 package com.ggec.earbuds.ui.ai.call;
 
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
@@ -12,7 +11,6 @@ import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleMapper;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -20,14 +18,26 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 通话页 ViewModel：严格单向数据流驱动，直接消费 {@link AiVoiceSession} 快照，
- * 不再重复加载设置、不维护多份双工/静音副本。
+ * 通话页 ViewModel：严格单向数据流，{@link AiCallUiState} 是通话的唯一状态真源。
+ *
+ * <p>本类不持业务字段副本：用户意图读当前 {@code uiState} 算出下一帧再发布，快照回调也只在
+ * 同一帧上叠加本地视角；{@code live/ended} 由 {@code Phase} 派生，权限拒绝也是一个
+ * {@code Phase}。唯一的非渲染态字段是会话句柄与「会话建立前暂存的输入源指令」。</p>
  */
 public final class AiCallViewModel extends ViewModel {
 
     public interface Ticker {
         void postDelayed(@NonNull Runnable r, long delayMs);
         void removeCallbacks(@NonNull Runnable r);
+    }
+
+    /** 会话建立前暂存的输入源指令：会话一建立就整体下发，之后直接转给会话。 */
+    private sealed interface SourceRequest {
+        record Id(@NonNull String sourceId) implements SourceRequest {
+        }
+
+        record Custom(@NonNull AiAudioSource source) implements SourceRequest {
+        }
     }
 
     private final AiVoiceSessionFactory factory;
@@ -38,22 +48,10 @@ public final class AiCallViewModel extends ViewModel {
     /** 一次性提示（当前只有双工切换的说明文案），由页面消费后清空。 */
     private final OneShotLiveData<Integer> toasts = new OneShotLiveData<>();
 
-    private final Object stateLock = new Object();
-    private final Object timerLock = new Object();
-    private int durationSeconds;
-    private boolean timerRunning;
-    private boolean captionsVisible = true;
-    private boolean speakerOn = true;
-    private boolean micMuted;
-    private VoiceDuplex duplex = VoiceDuplex.defaultMode();
-    private boolean duplexPinned;
+    private final Object sessionLock = new Object();
+
     @Nullable
-    private String pendingSourceId;
-    @Nullable
-    private AiAudioSource pendingSource;
-    private float publishedLevel;
-    private List<AiSubtitleItem> publishedItems = List.of();
-    private long lastMeterAt;
+    private SourceRequest pendingSource;
 
     @Nullable
     private AiVoiceSession session;
@@ -61,20 +59,11 @@ public final class AiCallViewModel extends ViewModel {
     private final Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
-            int nextDuration;
-            synchronized (timerLock) {
-                if (!timerRunning) {
-                    return;
-                }
+            AiCallUiState current = requireState(uiState.getValue());
+            if (!current.live()) {
+                return;
             }
-            AiCallUiState current = uiState.getValue();
-            synchronized (stateLock) {
-                durationSeconds++;
-                nextDuration = durationSeconds;
-            }
-            if (current != null) {
-                uiState.setValue(current.withDurationSeconds(nextDuration));
-            }
+            uiState.setValue(current.withDurationSeconds(current.durationSeconds() + 1));
             ticker.postDelayed(this, 1000L);
         }
     };
@@ -103,150 +92,110 @@ public final class AiCallViewModel extends ViewModel {
 
     /** 起一路通话会话。 */
     public void start() {
-        VoiceDuplex initialDuplex;
-        boolean pinned;
-        boolean initialMuted;
-        boolean initialSpeaker;
-        boolean initialCaptions;
-        String initialSourceId;
-        AiAudioSource initialSource;
+        AiCallUiState current = requireState(uiState.getValue());
         AiVoiceSession created;
-
-        synchronized (stateLock) {
+        SourceRequest source;
+        synchronized (sessionLock) {
             if (session != null) {
                 return;
             }
-            durationSeconds = 0;
-            initialDuplex = duplex;
-            pinned = duplexPinned;
-            initialMuted = micMuted;
-            initialSpeaker = speakerOn;
-            initialCaptions = captionsVisible;
-            initialSourceId = pendingSourceId;
-            initialSource = pendingSource;
             created = factory.create();
             session = created;
+            source = pendingSource;
         }
 
-        publishedItems = List.of();
-        uiState.setValue(AiCallUiState.connecting(initialDuplex)
-                .withMicMuted(initialMuted)
-                .withSpeakerOn(initialSpeaker)
-                .withCaptionsVisible(initialCaptions)
+        uiState.setValue(AiCallUiState.connecting(current.duplex())
+                .withMicMuted(current.micMuted())
+                .withSpeakerOn(current.speakerOn())
+                .withCaptionsVisible(current.captionsVisible())
+                .withRequestedDuplex(current.requestedDuplex())
                 .withDurationSeconds(0)
                 .withMeter(0f)
                 .withSubtitleItems(List.of()));
 
-        if (pinned) {
-            created.setDuplex(initialDuplex);
+        VoiceDuplex requested = current.requestedDuplex();
+        if (requested != null) {
+            created.setDuplex(requested);
         }
-        if (initialMuted) {
+        if (current.micMuted()) {
             created.setMicMuted(true);
         }
-        if (initialSource != null) {
-            created.setAudioSource(initialSource);
-        } else if (initialSourceId != null) {
-            created.selectAudioSource(initialSourceId);
+        if (source != null) {
+            switch (source) {
+                case SourceRequest.Id id -> created.selectAudioSource(id.sourceId());
+                case SourceRequest.Custom custom -> created.setAudioSource(custom.source());
+            }
         }
         created.start(this::publishSnapshot);
-        created.setSpeakerphone(initialSpeaker);
+        created.setSpeakerphone(current.speakerOn());
+        startTimer();
     }
 
     public boolean isStarted() {
-        synchronized (stateLock) {
+        synchronized (sessionLock) {
             return session != null;
         }
     }
 
+    /**
+     * 麦克风权限被拒：通话根本不存在，界面进入显式的不可用阶段。
+     *
+     * <p>这不是「错误兜底」：调用方拿不到音频就不会起会话，页面必须能渲染出这一事实，
+     * 而不是靠视图层用一个布尔量记住「别渲染了」。</p>
+     */
     public void permissionDenied() {
-        VoiceDuplex activeDuplex;
-        boolean currentMuted;
-        boolean currentSpeaker;
-        boolean currentCaptions;
-        int currentDuration;
-        synchronized (stateLock) {
-            activeDuplex = duplex;
-            currentMuted = micMuted;
-            currentSpeaker = speakerOn;
-            currentCaptions = captionsVisible;
-            currentDuration = durationSeconds;
-        }
-        uiState.setValue(AiCallUiState.permissionDenied(activeDuplex)
-                .withMicMuted(currentMuted)
-                .withSpeakerOn(currentSpeaker)
-                .withCaptionsVisible(currentCaptions)
-                .withDurationSeconds(currentDuration)
+        AiCallUiState current = requireState(uiState.getValue());
+        stopTimer();
+        uiState.setValue(AiCallUiState.permissionDenied(current.duplex())
+                .withMicMuted(current.micMuted())
+                .withSpeakerOn(current.speakerOn())
+                .withCaptionsVisible(current.captionsVisible())
+                .withRequestedDuplex(current.requestedDuplex())
+                .withDurationSeconds(current.durationSeconds())
                 .withMeter(0f)
                 .withSubtitleItems(List.of()));
-        stopTimer();
     }
 
     /** 本地输入静音门禁切换操作。 */
     public void setMicMuted(boolean muted) {
         AiVoiceSession running;
-        synchronized (stateLock) {
-            this.micMuted = muted;
+        synchronized (sessionLock) {
             running = session;
         }
+        uiState.setValue(requireState(uiState.getValue()).withMicMuted(muted));
         if (running != null) {
             running.setMicMuted(muted);
-        }
-        AiCallUiState currentUi = uiState.getValue();
-        if (currentUi != null) {
-            uiState.setValue(currentUi.withMicMuted(muted));
         }
     }
 
     public void toggleMicMute() {
-        AiCallUiState current = uiState.getValue();
-        if (current != null) {
-            setMicMuted(!current.micMuted());
-        } else {
-            boolean next;
-            synchronized (stateLock) {
-                next = !micMuted;
-            }
-            setMicMuted(next);
-        }
+        setMicMuted(!requireState(uiState.getValue()).micMuted());
     }
 
     /** 扬声器 / 听筒（或耳机）输出路由切换。 */
     public void setSpeakerphone(boolean speaker) {
         AiVoiceSession running;
-        synchronized (stateLock) {
-            speakerOn = speaker;
+        synchronized (sessionLock) {
             running = session;
         }
-        AiCallUiState current = uiState.getValue();
-        if (current != null) {
-            uiState.setValue(current.withSpeakerOn(speaker));
-        }
+        uiState.setValue(requireState(uiState.getValue()).withSpeakerOn(speaker));
         if (running != null) {
             running.setSpeakerphone(speaker);
         }
     }
 
     public void toggleSpeaker() {
-        boolean currentSpeaker;
-        synchronized (stateLock) {
-            currentSpeaker = speakerOn;
-        }
-        setSpeakerphone(!currentSpeaker);
+        setSpeakerphone(!requireState(uiState.getValue()).speakerOn());
     }
 
     /** 双工通信方式切换操作（全双工/半双工，严格单点控制）。 */
     public void setDuplex(@NonNull VoiceDuplex mode) {
         Objects.requireNonNull(mode, "mode");
         AiVoiceSession running;
-        synchronized (stateLock) {
-            duplexPinned = true;
-            duplex = mode;
+        synchronized (sessionLock) {
             running = session;
         }
-        AiCallUiState current = uiState.getValue();
-        if (current != null) {
-            uiState.setValue(current.withDuplex(mode));
-        }
+        uiState.setValue(requireState(uiState.getValue()).withDuplex(mode));
         if (running != null) {
             running.setDuplex(mode);
         }
@@ -262,22 +211,15 @@ public final class AiCallViewModel extends ViewModel {
 
     @NonNull
     public VoiceDuplex duplex() {
-        AiCallUiState current = uiState.getValue();
-        if (current != null) {
-            return current.duplex();
-        }
-        synchronized (stateLock) {
-            return duplex;
-        }
+        return requireState(uiState.getValue()).duplex();
     }
 
     /** 按输入源 id 热切换音频流源（内置麦 / 蓝牙 / USB / 外部注册源）。 */
     public void selectAudioSource(@NonNull String sourceId) {
         Objects.requireNonNull(sourceId, "sourceId");
         AiVoiceSession running;
-        synchronized (stateLock) {
-            pendingSourceId = sourceId;
-            pendingSource = null;
+        synchronized (sessionLock) {
+            pendingSource = new SourceRequest.Id(sourceId);
             running = session;
         }
         if (running != null) {
@@ -289,9 +231,8 @@ public final class AiCallViewModel extends ViewModel {
     public void setAudioSource(@NonNull AiAudioSource source) {
         Objects.requireNonNull(source, "source");
         AiVoiceSession running;
-        synchronized (stateLock) {
-            pendingSource = source;
-            pendingSourceId = null;
+        synchronized (sessionLock) {
+            pendingSource = new SourceRequest.Custom(source);
             running = session;
         }
         if (running != null) {
@@ -301,21 +242,14 @@ public final class AiCallViewModel extends ViewModel {
 
     /** 实时字幕浮层卡片显示/隐藏切换。 */
     public void toggleCaptions() {
-        boolean visible;
-        synchronized (stateLock) {
-            captionsVisible = !captionsVisible;
-            visible = captionsVisible;
-        }
-        AiCallUiState current = uiState.getValue();
-        if (current != null) {
-            uiState.setValue(current.withCaptionsVisible(visible));
-        }
+        AiCallUiState current = requireState(uiState.getValue());
+        uiState.setValue(current.withCaptionsVisible(!current.captionsVisible()));
     }
 
     /** 用户轻触光晕或按键插话打断。 */
     public void interrupt() {
         AiVoiceSession current;
-        synchronized (stateLock) {
+        synchronized (sessionLock) {
             current = session;
         }
         if (current != null) {
@@ -337,7 +271,7 @@ public final class AiCallViewModel extends ViewModel {
 
     private void release() {
         AiVoiceSession current;
-        synchronized (stateLock) {
+        synchronized (sessionLock) {
             current = session;
             session = null;
         }
@@ -346,63 +280,47 @@ public final class AiCallViewModel extends ViewModel {
         }
     }
 
+    /**
+     * 会话快照 → 下一帧：阶段/双工/输入源/电平/字幕来自会话，本地视角（扬声器、字幕开关、
+     * 计时、用户选过的双工）由当前帧携带，两者叠成同一份状态，不再各存一份。
+     */
     private void publishSnapshot(@NonNull AiVoiceSnapshot snapshot) {
-        boolean currentSpeaker;
-        int currentDuration;
-        boolean currentCaptions;
-        synchronized (stateLock) {
-            this.duplex = snapshot.duplex();
-            this.micMuted = snapshot.micMuted();
-            currentSpeaker = speakerOn;
-            currentDuration = durationSeconds;
-            currentCaptions = captionsVisible;
-        }
-
-        AiCallUiState mapped = AiCallUiState.fromSnapshot(snapshot)
-                .withSpeakerOn(currentSpeaker)
-                .withDurationSeconds(currentDuration)
-                .withCaptionsVisible(currentCaptions);
-
+        AiCallUiState previous = requireState(uiState.getValue());
         float level = snapshot.state() == AiVoiceSnapshot.State.LISTENING
                 ? snapshot.inputLevel() : 0f;
-        long now = System.currentTimeMillis();
-        if (now - lastMeterAt >= 45L || Math.abs(level - publishedLevel) >= 0.04f) {
-            lastMeterAt = now;
-            publishedLevel = level;
-        }
-        mapped = mapped.withMeter(publishedLevel);
+        AiCallUiState mapped = AiCallUiState.fromSnapshot(snapshot)
+                .withSpeakerOn(previous.speakerOn())
+                .withCaptionsVisible(previous.captionsVisible())
+                .withDurationSeconds(previous.durationSeconds())
+                .withRequestedDuplex(previous.requestedDuplex())
+                .withMeter(level)
+                .withSubtitleItems(AiSubtitleMapper.fromDomainTurns(snapshot.turns()));
 
-        List<AiSubtitleItem> items = AiSubtitleMapper.fromDomainTurns(snapshot.turns());
-        if (!items.equals(publishedItems)) {
-            publishedItems = items;
-        }
-        mapped = mapped.withSubtitleItems(publishedItems);
-
-        if (!Objects.equals(uiState.getValue(), mapped)) {
-            uiState.postValue(mapped);
-        }
-
-        if (mapped.live() && !mapped.ended()) {
-            startTimer();
-        } else if (mapped.ended()) {
+        if (!mapped.live()) {
             stopTimer();
+        } else if (!previous.live()) {
+            // 重新进入推进阶段（例如失败后同一条会话恢复）时续上计时；已在计时的不重置倒计时。
+            startTimer();
+        }
+        if (!Objects.equals(previous, mapped)) {
+            uiState.postValue(mapped);
         }
     }
 
     private void startTimer() {
-        synchronized (timerLock) {
-            if (timerRunning) {
-                return;
-            }
-            timerRunning = true;
-        }
+        ticker.removeCallbacks(timerRunnable);
         ticker.postDelayed(timerRunnable, 1000L);
     }
 
     private void stopTimer() {
-        synchronized (timerLock) {
-            timerRunning = false;
-        }
         ticker.removeCallbacks(timerRunnable);
+    }
+
+    @NonNull
+    private static AiCallUiState requireState(@Nullable AiCallUiState state) {
+        if (state == null) {
+            throw new IllegalStateException("uiState 由构造期初始化，必不为空");
+        }
+        return state;
     }
 }

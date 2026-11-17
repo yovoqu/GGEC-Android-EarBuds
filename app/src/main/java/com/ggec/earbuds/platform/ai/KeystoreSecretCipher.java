@@ -3,7 +3,7 @@ package com.ggec.earbuds.platform.ai;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 
-import com.ggec.earbuds.data.ai.store.AiStorageException;
+import com.ggec.earbuds.data.ai.store.SecretCipherException;
 import com.ggec.earbuds.data.ai.store.SecretCipher;
 
 import java.io.IOException;
@@ -44,7 +44,7 @@ public final class KeystoreSecretCipher implements SecretCipher {
             System.arraycopy(sealed, 0, packed, iv.length, sealed.length);
             return Base64.getEncoder().encodeToString(packed);
         } catch (GeneralSecurityException failure) {
-            throw new AiStorageException("Failed to encrypt a secret", failure);
+            throw new SecretCipherException("Failed to encrypt a secret", failure);
         }
     }
 
@@ -53,14 +53,14 @@ public final class KeystoreSecretCipher implements SecretCipher {
         try {
             byte[] packed = Base64.getDecoder().decode(encoded);
             if (packed.length <= IV_BYTES) {
-                throw new AiStorageException("Secret is truncated");
+                throw new SecretCipherException("Secret is truncated");
             }
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key(),
                     new GCMParameterSpec(TAG_BITS, Arrays.copyOfRange(packed, 0, IV_BYTES)));
             return new String(cipher.doFinal(packed, IV_BYTES, packed.length - IV_BYTES), StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException failure) {
-            throw new AiStorageException("Failed to decrypt a secret", failure);
+            throw new SecretCipherException("Failed to decrypt a secret", failure);
         }
     }
 

@@ -202,7 +202,6 @@ public final class AiPlatformViewModel extends ViewModel {
     // ---- 连接 ----
 
     /** 测试连接 = 只测当前选中模型，等价于一次真实的最小请求。 */
-    @androidx.annotation.Nullable
     public void testConnection() {
         AiPlatformConfig platform = platform();
         if (platform == null || speed.running()) {

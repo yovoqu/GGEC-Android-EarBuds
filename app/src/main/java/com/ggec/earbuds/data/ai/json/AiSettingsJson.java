@@ -1,8 +1,12 @@
 package com.ggec.earbuds.data.ai.json;
 
+import androidx.annotation.Nullable;
+
 import com.ggec.earbuds.data.json.JsonValues;
+import com.ggec.earbuds.data.store.DocumentFormatException;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
+import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 import com.ggec.earbuds.domain.ai.model.AiModelFeature;
@@ -16,8 +20,6 @@ import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.model.AiVoiceProvider;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
-import androidx.annotation.Nullable;
-
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -29,26 +31,28 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
- * 设置文档的编解码。密钥不在这里：文档里只有平台的连接参数、模型缓存和语音模式选了哪家预设。
+ * 设置文档的编解码，严格版本化。密钥不在这里：文档里只有平台的连接参数、模型缓存、
+ * 语音每一家的状态、对话偏好（含设置页当前分段）。
  *
- * <p>v4 移除了 {@code mode}：设置页当前分段是视图偏好，存 {@code AiUiPreferences}，
- * 不再进入配置文档。v3 的语音预设 id（{@code chatgpt} / {@code qwen}）保持不变。
- * v5 把语音配置从"一组公共字段"改成按服务商分组的 {@code providers}：每家自己的地址、
- * 选中模型、方言和已拉列表互不影响；旧文档的单组字段在解码时迁移到当前那一家的名下。</p>
+ * <p>解码规则：第一步读 {@code v}，不等于 {@link #VERSION} 直接抛
+ * {@link DocumentFormatException}；没有迁移分支，也不读旧键名。之后每个字段只有两种语义
+ * （见 {@link JsonValues}）：必填缺一即损坏，可选为空即 {@code Optional} / {@code null}。
+ * 未知枚举值同样是损坏——它不会被折成某个合法值。</p>
  */
 public final class AiSettingsJson {
 
-    static final int VERSION = 5;
+    static final int VERSION = 6;
 
     public String encode(AiSettings settings) {
         JSONObject root = new JSONObject();
         JsonValues.put(root, "v", VERSION);
         JsonValues.put(root, "preferences", encodePreferences(settings.preferences()));
-        putSelection(root, "textSelection", settings.textSelection());
-        putVoice(root, settings.voice());
+        putSelection(root, settings.textSelection());
+        JsonValues.put(root, "voice", encodeVoice(settings.voice()));
         JSONArray platforms = new JSONArray();
         for (AiPlatformConfig platform : settings.platforms()) {
             platforms.put(encodePlatform(platform));
@@ -58,177 +62,171 @@ public final class AiSettingsJson {
     }
 
     /**
-     * @throws JSONException 文档不是合法的 JSON 对象
+     * @throws DocumentFormatException 文档不是合法 JSON 对象、版本不符、必填字段缺失、
+     *                                类型不符或枚举值未知
      */
-    public AiSettings decode(String text) throws JSONException {
-        JSONObject root = new JSONObject(text);
+    public AiSettings decode(String text) {
+        JSONObject root = root(text);
+        requireVersion(root);
         List<AiPlatformConfig> platforms = new ArrayList<>();
-        JSONArray array = root.optJSONArray("platforms");
-        for (int i = 0; array != null && i < array.length(); i++) {
-            JSONObject entry = array.optJSONObject(i);
-            AiPlatformConfig platform = entry == null ? null : decodePlatform(entry);
-            if (platform != null) {
-                platforms.add(platform);
-            }
+        JSONArray array = requiredArray(root, "platforms");
+        for (int i = 0; i < array.length(); i++) {
+            platforms.add(decodePlatform(requiredEntry(array, i, "platforms")));
         }
-        AiSelection textSelection = readSelection(root.optJSONObject("textSelection"));
         return new AiSettings(platforms,
-                textSelection,
-                decodeVoice(root),
-                decodePreferences(root.optJSONObject("preferences")));
+                decodeSelection(root),
+                decodeVoice(requiredObject(root, "voice")),
+                decodePreferences(requiredObject(root, "preferences")));
     }
 
-    private static void putSelection(JSONObject root, String key, @Nullable AiSelection selection) {
+    private void requireVersion(JSONObject root) {
+        int version = JsonValues.requiredInt(root, "v");
+        if (version != VERSION) {
+            throw new DocumentFormatException("v",
+                    "settings document has unsupported version " + version);
+        }
+    }
+
+    private static JSONObject root(String text) {
+        try {
+            return new JSONObject(text);
+        } catch (JSONException malformed) {
+            throw new DocumentFormatException("document",
+                    "settings document is not a JSON object", malformed);
+        }
+    }
+
+    private static JSONObject requiredObject(JSONObject json, String key) {
+        JSONObject value = json.optJSONObject(key);
+        if (value == null) {
+            throw new DocumentFormatException(key, "missing required object " + key);
+        }
+        return value;
+    }
+
+    private static JSONArray requiredArray(JSONObject json, String key) {
+        JSONArray value = json.optJSONArray(key);
+        if (value == null) {
+            throw new DocumentFormatException(key, "missing required array " + key);
+        }
+        return value;
+    }
+
+    private static JSONObject requiredEntry(JSONArray array, int index, String path) {
+        JSONObject entry = array.optJSONObject(index);
+        if (entry == null) {
+            throw new DocumentFormatException(path + "[" + index + "]",
+                    path + "[" + index + "] is not an object");
+        }
+        return entry;
+    }
+
+    private static void putSelection(JSONObject root, @Nullable AiSelection selection) {
         if (selection == null) {
             return;
         }
         JSONObject json = new JSONObject();
         JsonValues.put(json, "platformId", selection.platformId());
         JsonValues.put(json, "modelId", selection.modelId());
-        JsonValues.put(root, key, json);
+        JsonValues.put(root, "textSelection", json);
     }
 
     @Nullable
-    private static AiSelection readSelection(@Nullable JSONObject json) {
+    private static AiSelection decodeSelection(JSONObject root) {
+        JSONObject json = root.optJSONObject("textSelection");
         if (json == null) {
             return null;
         }
-        String platformId = JsonValues.string(json, "platformId");
-        String modelId = JsonValues.string(json, "modelId");
-        return platformId != null && modelId != null ? new AiSelection(platformId, modelId) : null;
+        return new AiSelection(JsonValues.requiredString(json, "platformId"),
+                JsonValues.requiredString(json, "modelId"));
     }
 
-    /**
-     * 厂商 id 一定写；每一家的地址、选中模型、方言和已拉列表都在 {@code providers} 里各存一份。
-     * 只写非默认值，Key 仍只在加密存储里。
-     */
-    private static void putVoice(JSONObject root, AiVoiceConfig voice) {
+    private static JSONObject encodeVoice(AiVoiceConfig voice) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "model", voice.model().id());
-        if (voice.defaultDuplex() != VoiceDuplex.defaultMode()) {
-            JsonValues.put(json, "defaultDuplex", voice.defaultDuplex().id());
-        }
+        JsonValues.put(json, "defaultDuplex", voice.defaultDuplex().id());
         JSONObject providers = new JSONObject();
         for (Map.Entry<AiVoiceModel, AiVoiceProvider> entry : voice.providers().entrySet()) {
-            JSONObject state = encodeProvider(entry.getValue());
-            if (state.length() > 0) {
-                JsonValues.put(providers, entry.getKey().id(), state);
-            }
+            JsonValues.put(providers, entry.getKey().id(), encodeProvider(entry.getValue()));
         }
-        if (providers.length() > 0) {
-            JsonValues.put(json, "providers", providers);
-        }
-        JsonValues.put(root, "voice", json);
+        JsonValues.put(json, "providers", providers);
+        return json;
     }
 
     private static JSONObject encodeProvider(AiVoiceProvider state) {
         JSONObject json = new JSONObject();
-        if (!state.baseUrl().isEmpty()) {
-            JsonValues.put(json, "baseUrl", state.baseUrl());
+        JsonValues.put(json, "baseUrl", state.baseUrl());
+        JsonValues.put(json, "realtimeModel", state.realtimeModelId());
+        JSONArray models = new JSONArray();
+        for (AiModel listed : state.realtimeModels()) {
+            StoredModel stored = StoredModel.of(listed);
+            JSONObject item = new JSONObject();
+            JsonValues.put(item, "id", stored.id());
+            JsonValues.put(item, "category", stored.categoryId());
+            models.put(item);
         }
-        if (!state.realtimeModelId().isEmpty()) {
-            JsonValues.put(json, "realtimeModel", state.realtimeModelId());
-        }
-        if (!state.realtimeModels().isEmpty()) {
-            JSONArray models = new JSONArray();
-            for (AiModel listed : state.realtimeModels()) {
-                StoredModel stored = StoredModel.of(listed);
-                JSONObject item = new JSONObject();
-                JsonValues.put(item, "id", stored.id());
-                JsonValues.put(item, "category", stored.categoryId());
-                models.put(item);
-            }
-            JsonValues.put(json, "models", models);
-        }
+        JsonValues.put(json, "models", models);
         return json;
     }
 
-    private static AiVoiceConfig decodeVoice(@Nullable JSONObject root) {
-        JSONObject json = root == null ? null : root.optJSONObject("voice");
-        AiVoiceModel model = json == null ? null : AiVoiceModel.fromId(JsonValues.string(json, "model"));
-        if (model == null) {
-            model = AiVoiceModel.defaultModel();
-        }
-        if (json == null) {
-            return AiVoiceConfig.DEFAULT;
-        }
+    private static AiVoiceConfig decodeVoice(JSONObject json) {
+        AiVoiceModel model = AiVoiceModel.fromId(JsonValues.requiredString(json, "model"))
+                .orElseThrow(() -> new DocumentFormatException("voice.model",
+                        "unknown voice model in the settings document"));
+        VoiceDuplex defaultDuplex = VoiceDuplex.fromId(JsonValues.requiredString(json, "defaultDuplex"))
+                .orElseThrow(() -> new DocumentFormatException("voice.defaultDuplex",
+                        "unknown duplex mode in the settings document"));
         Map<AiVoiceModel, AiVoiceProvider> providers = new EnumMap<>(AiVoiceModel.class);
-        JSONObject grouped = json.optJSONObject("providers");
-        if (grouped != null) {
-            for (Iterator<String> keys = grouped.keys(); keys.hasNext(); ) {
-                String id = keys.next();
-                AiVoiceModel owner = AiVoiceModel.fromId(id);
-                JSONObject state = grouped.optJSONObject(id);
-                if (owner == null || state == null) {
-                    continue;
-                }
-                AiVoiceProvider decoded = decodeProvider(state);
-                if (!decoded.isEmpty()) {
-                    providers.put(owner, decoded);
-                }
+        JSONObject grouped = requiredObject(json, "providers");
+        for (Iterator<String> keys = grouped.keys(); keys.hasNext(); ) {
+            String id = keys.next();
+            AiVoiceModel owner = AiVoiceModel.fromId(id)
+                    .orElseThrow(() -> new DocumentFormatException("voice.providers." + id,
+                            "unknown voice provider key " + id));
+            AiVoiceProvider decoded = decodeProvider(requiredEntry(grouped, id));
+            if (!decoded.isEmpty()) {
+                providers.put(owner, decoded);
             }
-        } else {
-            // v4 及更早：一组公共字段，迁移到当前选中的那一家的名下。
-            AiVoiceProvider legacy = decodeProvider(json);
-            if (!legacy.isEmpty()) {
-                providers.put(model, legacy);
-            }
-        }
-        VoiceDuplex defaultDuplex = VoiceDuplex.fromId(JsonValues.string(json, "defaultDuplex"));
-        if (defaultDuplex == null) {
-            defaultDuplex = VoiceDuplex.defaultMode();
         }
         return new AiVoiceConfig(model, Set.of(), providers, defaultDuplex);
     }
 
-    private static AiVoiceProvider decodeProvider(@Nullable JSONObject json) {
-        if (json == null) {
-            return AiVoiceProvider.EMPTY;
-        }
+    private static AiVoiceProvider decodeProvider(JSONObject json) {
         List<AiModel> models = new ArrayList<>();
-        JSONArray listed = json.optJSONArray("models");
-        if (listed == null) {
-            // v4 及更早把这一份列表叫 realtimeModels。
-            listed = json.optJSONArray("realtimeModels");
+        JSONArray listed = requiredArray(json, "models");
+        for (int i = 0; i < listed.length(); i++) {
+            JSONObject item = requiredEntry(listed, i, "voice.providers.models");
+            models.add(new StoredModel(JsonValues.requiredString(item, "id"),
+                    JsonValues.optionalString(item, "category").orElse(null)).toDomain());
         }
-        for (int i = 0; listed != null && i < listed.length(); i++) {
-            JSONObject object = listed.optJSONObject(i);
-            if (object == null) {
-                continue;
-            }
-            StoredModel stored = new StoredModel(JsonValues.string(object, "id", ""),
-                    JsonValues.string(object, "category"));
-            AiModel item = stored.toDomain();
-            if (item != null) {
-                models.add(item);
-            }
+        return new AiVoiceProvider(JsonValues.requiredString(json, "baseUrl"),
+                JsonValues.requiredString(json, "realtimeModel"), models);
+    }
+
+    private static JSONObject requiredEntry(JSONObject grouped, String key) {
+        JSONObject value = grouped.optJSONObject(key);
+        if (value == null) {
+            throw new DocumentFormatException("voice.providers." + key,
+                    "voice provider " + key + " is not an object");
         }
-        String selected = JsonValues.string(json, "realtimeModel", "");
-        String baseUrl = JsonValues.string(json, "baseUrl", "");
-        if (!baseUrl.isEmpty() && !baseUrl.startsWith("https://") && !baseUrl.startsWith("http://")) {
-            baseUrl = "";
-        }
-        return new AiVoiceProvider(baseUrl, selected, models);
+        return value;
     }
 
     private static JSONObject encodePreferences(AiChatPreferences preferences) {
         JSONObject json = new JSONObject();
         JsonValues.put(json, "systemPrompt", preferences.systemPrompt());
         JsonValues.put(json, "showReasoning", preferences.showReasoning());
+        JsonValues.put(json, "lastSettingsMode", preferences.lastSettingsMode().name());
         return json;
     }
 
-    private static AiChatPreferences decodePreferences(@Nullable JSONObject json) {
-        if (json == null) {
-            return AiChatPreferences.DEFAULT;
-        }
-        try {
-            return new AiChatPreferences(
-                    JsonValues.string(json, "systemPrompt", AiChatPreferences.DEFAULT_SYSTEM_PROMPT),
-                    JsonValues.flag(json, "showReasoning", true));
-        } catch (IllegalArgumentException invalid) {
-            return AiChatPreferences.DEFAULT;
-        }
+    private static AiChatPreferences decodePreferences(JSONObject json) {
+        AiInteractionMode mode = AiInteractionMode.fromName(
+                        JsonValues.requiredString(json, "lastSettingsMode"))
+                .orElseThrow(() -> new DocumentFormatException("preferences.lastSettingsMode",
+                        "unknown settings mode in the settings document"));
+        return new AiChatPreferences(JsonValues.requiredString(json, "systemPrompt"),
+                JsonValues.requiredBoolean(json, "showReasoning"), mode);
     }
 
     private static JSONObject encodePlatform(AiPlatformConfig platform) {
@@ -253,38 +251,31 @@ public final class AiSettingsJson {
     }
 
     private static AiPlatformConfig decodePlatform(JSONObject json) {
-        String id = JsonValues.string(json, "id");
-        String templateId = JsonValues.string(json, "templateId");
-        if (id == null || templateId == null) {
-            return null;
-        }
+        String id = JsonValues.requiredString(json, "id");
+        String templateId = JsonValues.requiredString(json, "templateId");
+        AiProtocol protocol = AiProtocol.fromId(JsonValues.requiredString(json, "protocol"))
+                .orElseThrow(() -> new DocumentFormatException("platforms." + id + ".protocol",
+                        "unknown protocol in the settings document"));
         List<AiModel> models = new ArrayList<>();
-        JSONArray modelArray = json.optJSONArray("models");
-        for (int i = 0; modelArray != null && i < modelArray.length(); i++) {
-            JSONObject entry = modelArray.optJSONObject(i);
-            AiModel model = entry == null ? null : decodeModel(entry);
-            if (model != null) {
-                models.add(model);
-            }
+        JSONArray modelArray = requiredArray(json, "models");
+        for (int i = 0; i < modelArray.length(); i++) {
+            models.add(decodeModel(requiredEntry(modelArray, i, "platforms.models")));
         }
         Map<String, AiSpeedResult> speed = new LinkedHashMap<>();
-        JSONArray speedArray = json.optJSONArray("speed");
-        for (int i = 0; speedArray != null && i < speedArray.length(); i++) {
-            JSONObject entry = speedArray.optJSONObject(i);
-            AiSpeedResult result = entry == null ? null : decodeSpeed(entry);
-            if (result != null) {
-                speed.put(result.modelId(), result);
-            }
+        JSONArray speedArray = requiredArray(json, "speed");
+        for (int i = 0; i < speedArray.length(); i++) {
+            AiSpeedResult result = decodeSpeed(requiredEntry(speedArray, i, "platforms.speed"));
+            speed.put(result.modelId(), result);
         }
         return new AiPlatformConfig(
                 id,
                 templateId,
-                JsonValues.string(json, "name", id),
-                JsonValues.string(json, "baseUrl"),
+                JsonValues.requiredString(json, "name"),
+                JsonValues.optionalString(json, "baseUrl").orElse(null),
                 false,
-                AiProtocol.fromId(JsonValues.string(json, "protocol"), AiProtocol.CHAT_COMPLETIONS),
+                protocol,
                 models,
-                JsonValues.number(json, "fetchedAt", 0L),
+                JsonValues.requiredLong(json, "fetchedAt"),
                 speed);
     }
 
@@ -300,30 +291,49 @@ public final class AiSettingsJson {
         }
         JsonValues.put(json, "features", features);
         JsonValues.put(json, "manual", model.manual());
-        if (model.category() != null) {
-            JsonValues.put(json, "category", model.category().id());
-        }
+        JsonValues.put(json, "category", model.category() == null ? null : model.category().id());
         return json;
     }
 
     private static AiModel decodeModel(JSONObject json) {
-        String id = JsonValues.string(json, "id");
-        if (id == null || id.isBlank()) {
-            return null;
+        String id = JsonValues.requiredString(json, "id");
+        if (id.isBlank()) {
+            throw new DocumentFormatException("id", "model id is blank in the settings document");
         }
         Set<AiModelFeature> features = EnumSet.noneOf(AiModelFeature.class);
-        JSONArray array = json.optJSONArray("features");
-        for (int i = 0; array != null && i < array.length(); i++) {
-            String name = array.optString(i, "");
-            for (AiModelFeature feature : AiModelFeature.values()) {
-                if (feature.name().equals(name)) {
-                    features.add(feature);
+        JSONArray array = requiredArray(json, "features");
+        for (int i = 0; i < array.length(); i++) {
+            String name = array.optString(i, null);
+            AiModelFeature feature = null;
+            for (AiModelFeature candidate : AiModelFeature.values()) {
+                if (candidate.name().equals(name)) {
+                    feature = candidate;
+                    break;
                 }
             }
+            if (feature == null) {
+                throw new DocumentFormatException("features[" + i + "]",
+                        "unknown model feature " + name + " in the settings document");
+            }
+            features.add(feature);
         }
-        return new AiModel(id, JsonValues.string(json, "name", id), JsonValues.integer(json, "context"),
-                JsonValues.integer(json, "maxOutput"), features, JsonValues.flag(json, "manual", false),
-                AiModelCategory.fromId(JsonValues.string(json, "category")));
+        return new AiModel(id,
+                JsonValues.optionalString(json, "name").orElse(id),
+                JsonValues.optionalInt(json, "context").orElse(null),
+                JsonValues.optionalInt(json, "maxOutput").orElse(null),
+                features,
+                JsonValues.requiredBoolean(json, "manual"),
+                decodeCategory(JsonValues.optionalString(json, "category").orElse(null)));
+    }
+
+    @Nullable
+    private static AiModelCategory decodeCategory(@Nullable String id) {
+        if (id == null) {
+            return null;
+        }
+        Optional<AiModelCategory> category = Optional.ofNullable(AiModelCategory.fromId(id));
+        return category.orElseThrow(() -> new DocumentFormatException("category",
+                "unknown model category " + id + " in the settings document"));
     }
 
     private static JSONObject encodeSpeed(AiSpeedResult result) {
@@ -340,21 +350,32 @@ public final class AiSettingsJson {
     }
 
     private static AiSpeedResult decodeSpeed(JSONObject json) {
-        String modelId = JsonValues.string(json, "modelId");
-        String status = JsonValues.string(json, "status");
-        if (modelId == null || status == null) {
-            return null;
+        String modelId = JsonValues.requiredString(json, "modelId");
+        String status = JsonValues.requiredString(json, "status");
+        AiSpeedResult.Status parsed = null;
+        for (AiSpeedResult.Status candidate : AiSpeedResult.Status.values()) {
+            if (candidate.name().equals(status)) {
+                parsed = candidate;
+                break;
+            }
         }
-        AiSpeedResult.Status parsed;
-        try {
-            parsed = AiSpeedResult.Status.valueOf(status);
-        } catch (IllegalArgumentException unknown) {
-            return null;
+        if (parsed == null) {
+            throw new DocumentFormatException("status",
+                    "unknown speed status " + status + " in the settings document");
         }
-        String failure = JsonValues.string(json, "failure");
-        return new AiSpeedResult(modelId, parsed, JsonValues.number(json, "first", -1L),
-                JsonValues.number(json, "total", 0L), failure == null ? null : AiFailureKind.fromName(failure),
-                JsonValues.string(json, "message"), JsonValues.number(json, "at", 0L),
-                (int) JsonValues.number(json, "tokens", -1));
+        AiFailureKind failure = null;
+        Optional<String> failureName = JsonValues.optionalString(json, "failure");
+        if (failureName.isPresent()) {
+            failure = AiFailureKind.fromName(failureName.get())
+                    .orElseThrow(() -> new DocumentFormatException("failure",
+                            "unknown failure kind " + failureName.get() + " in the settings document"));
+        }
+        return new AiSpeedResult(modelId, parsed,
+                JsonValues.requiredLong(json, "first"),
+                JsonValues.requiredLong(json, "total"),
+                failure,
+                JsonValues.optionalString(json, "message").orElse(null),
+                JsonValues.requiredLong(json, "at"),
+                JsonValues.requiredInt(json, "tokens"));
     }
 }

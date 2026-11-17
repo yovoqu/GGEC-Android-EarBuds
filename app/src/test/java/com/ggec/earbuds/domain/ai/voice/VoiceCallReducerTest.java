@@ -2,8 +2,11 @@ package com.ggec.earbuds.domain.ai.voice;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 
 import org.junit.Test;
@@ -285,6 +288,105 @@ public class VoiceCallReducerTest {
         assertTrue(has(toHalf, VoiceCallEffect.SetUplinkEnabled.class));
         assertTrue(has(toHalf, VoiceCallEffect.Publish.class));
         assertTrue(send(new VoiceCallEvent.SpeechStarted(), 1550).effects().isEmpty());
+    }
+
+    @Test
+    public void startStopsAssistantAndResetsPlayback() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
+        send(new VoiceCallEvent.AssistantText("上一轮"), 1100);
+        send(new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1200);
+        assertEquals(VoiceCallState.SPEAKING, model.state());
+        assertTrue(model.playbackStarted());
+
+        VoiceCallReducer.Transition restart = send(new VoiceCallEvent.Start(), 1300);
+
+        assertEquals(VoiceCallState.CONNECTING, model.state());
+        assertTrue("重开一路通话必须先停掉上一路的助手发言",
+                has(restart, VoiceCallEffect.StopAssistant.class));
+        assertTrue("生成还没结束，必须让服务端取消", stopAssistantCancels(restart));
+        assertTrue("播放通道必须显式关掉", has(restart, VoiceCallEffect.StopPlayback.class));
+        assertFalse("播放状态必须复位", model.playbackStarted());
+        assertEquals(0, model.playbackSampleRateHz());
+        assertEquals(0L, model.audioMicros());
+        assertNull(model.assistantTurnId());
+        assertFalse(model.uplinkEnabled());
+        assertTrue("上一轮的回合要被定稿，不能一直挂在流式态",
+                model.turns().get(0).finalTranscript());
+    }
+
+    @Test
+    public void assistantTextAndAudioBeforeOpenedAreIgnored() {
+        send(new VoiceCallEvent.Start(), 1000);
+
+        VoiceCallReducer.Transition text = send(new VoiceCallEvent.AssistantText("提前到达"), 1050);
+        VoiceCallReducer.Transition audio = send(
+                new VoiceCallEvent.AssistantAudio(new byte[480], 24_000, ITEM, 0), 1060);
+
+        assertEquals("链路没开，状态不许被下行数据推动", VoiceCallState.CONNECTING, model.state());
+        assertTrue(text.effects().isEmpty());
+        assertTrue(audio.effects().isEmpty());
+        assertTrue(model.turns().isEmpty());
+        assertFalse(model.playbackStarted());
+        assertEquals(0L, model.audioMicros());
+    }
+
+    @Test
+    public void idleStateAlsoRejectsAssistantOutput() {
+        VoiceCallReducer.Transition text = send(new VoiceCallEvent.AssistantText("没有会话"), 900);
+
+        assertEquals(VoiceCallState.IDLE, model.state());
+        assertTrue(text.effects().isEmpty());
+        assertTrue(model.turns().isEmpty());
+    }
+
+    @Test
+    public void thinkingTimeoutCancelsGenerationAndReturnsToListening() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
+        send(new VoiceCallEvent.SpeechStopped(), 1100);
+        assertEquals(VoiceCallState.THINKING, model.state());
+        assertFalse("半双工思考期间上行是关的", model.uplinkEnabled());
+
+        VoiceCallReducer.Transition timeout = send(new VoiceCallEvent.Timeout(), 16_100);
+
+        assertEquals(VoiceCallState.LISTENING, model.state());
+        assertTrue(has(timeout, VoiceCallEffect.StopAssistant.class));
+        assertTrue("等不到回答就要让服务端停止生成", stopAssistantCancels(timeout));
+        assertTrue(has(timeout, VoiceCallEffect.Publish.class));
+        assertNotNull(model.failure());
+        assertEquals(AiFailureKind.TIMEOUT, model.failure().kind());
+        assertTrue("回到聆听要重新开麦", model.uplinkEnabled());
+    }
+
+    @Test
+    public void staleTimeoutOutsideThinkingChangesNothing() {
+        send(new VoiceCallEvent.Start(), 1000);
+        send(new VoiceCallEvent.Opened(24_000), 1000);
+
+        VoiceCallReducer.Transition stale = send(new VoiceCallEvent.Timeout(), 20_000);
+
+        assertEquals("聆听期收到过期定时不许动状态", VoiceCallState.LISTENING, model.state());
+        assertTrue(stale.effects().isEmpty());
+        assertNull(model.failure());
+    }
+
+    @Test
+    public void assistantTextWithoutMatchingTurnFailsInsteadOfDroppingText() {
+        // 人为造出"assistantTurnId 指向一条不存在的回合"的错位：正是过去静默丢文本的那种现场。
+        VoiceCallReducer.Model mismatched = new VoiceCallReducer.Model(
+                VoiceCallState.THINKING, List.of(), 0f, null, "turn-99", 0L, 24_000,
+                false, true, 99, VoiceDuplex.HALF_DUPLEX, false, null, List.of());
+        model = mismatched;
+
+        VoiceCallReducer.Transition transition =
+                send(new VoiceCallEvent.AssistantText("这段文字不能被吞"), 1500);
+
+        assertEquals(VoiceCallState.FAILED, transition.model().state());
+        assertNotNull(transition.model().failure());
+        assertEquals(AiFailureKind.PROTOCOL, transition.model().failure().kind());
+        assertTrue(has(transition, VoiceCallEffect.CloseLink.class));
+        assertTrue(has(transition, VoiceCallEffect.Publish.class));
     }
 
     private static boolean stopAssistantCancels(VoiceCallReducer.Transition transition) {

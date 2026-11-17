@@ -1,106 +1,98 @@
 package com.ggec.earbuds.ui.device.record;
 
-import android.os.SystemClock;
-
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
-import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.RecordMode;
+import com.ggec.earbuds.domain.device.model.RecordOutcome;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 import com.ggec.earbuds.domain.device.model.SyncProgressState;
 import com.ggec.earbuds.domain.device.port.PcmPlaybackPort;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.Subscription;
+import com.ggec.earbuds.domain.device.record.RecordEffect;
+import com.ggec.earbuds.domain.device.record.RecordEvent;
+import com.ggec.earbuds.domain.device.record.RecordFailure;
+import com.ggec.earbuds.domain.device.record.RecordMachine;
+import com.ggec.earbuds.domain.device.record.RecordState;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.yovo.lib_common.event.OneShotLiveData;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
-import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 /**
- * 录音功能 ViewModel：驱动随录随传和耳机本地录音业务流程。
+ * 录音功能的 ViewModel：只做「意图 → 事件 → 状态机 → 效果执行 + 状态发布」。
+ *
+ * <p>本类不持业务判定、不持可变业务字段、不读时钟、不拼用户文案：</p>
+ * <ul>
+ *   <li>所有业务决策在 {@link RecordMachine}（domain，纯函数）；</li>
+ *   <li>所有渲染字段由 {@link RecordUiMapper} 从 {@link RecordState} 派生；</li>
+ *   <li>计时用注入的 {@link LongSupplier}（真实时间）与 {@link Ticker}（调度），
+ *       当前时间只作为事件载荷进入状态机；</li>
+ *   <li>要给用户看的提示只以 {@link RecordEffect.Notice} 分类上抛，由 Activity 映射到
+ *       {@code strings.xml}。</li>
+ * </ul>
  */
 public final class RecordViewModel extends ViewModel {
 
+    /** 调度抽象：平台实现（Handler）留在装配层。 */
     public interface Ticker {
         void postDelayed(@NonNull Runnable runnable, long delayMs);
+
         void removeCallbacks(@NonNull Runnable runnable);
     }
 
+    /** 耳机本地录音计时的节拍。 */
+    private static final long TICK_INTERVAL_MS = 1000L;
+
     private final RecordPort recordPort;
     private final ObserveDevice observeDevice;
-    private final PcmPlaybackPort pcmPlaybackPort;
+    private final PcmPlaybackPort playbackPort;
     private final Ticker ticker;
+    private final LongSupplier clock;
+    private final RecordUiMapper mapper = new RecordUiMapper();
 
-    private final MutableLiveData<RecordUiState> uiState = new MutableLiveData<>(RecordUiState.initial());
-    private final OneShotLiveData<RecordEvent> events = new OneShotLiveData<>();
+    private final MutableLiveData<RecordUiState> uiState;
+    private final OneShotLiveData<RecordEffect.Notice> notices = new OneShotLiveData<>();
 
     private final Subscription deviceSubscription;
+    private final RecordPort.StreamRecordObserver streamObserver = new PortStreamObserver();
 
-    private RecordMode currentMode = RecordMode.STREAM;
-    private Set<RecordMode> supportedModes = Set.of(RecordMode.STREAM, RecordMode.LOCAL);
-    private boolean isConnected = false;
-    private String deviceName = "";
+    private RecordState state = RecordState.initial();
+    private boolean ticking;
 
-    // 随录随传
-    private boolean isStreamRecording = false;
-    private boolean isStreamDataReceiving = false;
-    private long streamDataStartWallTime = 0L;
-    private long streamDurationMs = 0L;
-    private float streamAmplitude = 0f;
-
-    // 本地已存文件
-    private List<SavedRecordItem> localFiles = new ArrayList<>();
-    private String playingFilePath = null;
-
-    // 耳机端本地录音
-    private List<RecordFileView> deviceFiles = new ArrayList<>();
-    private boolean isDeviceRecording = false;
-    private long deviceRecordStartTime = 0L;
-    private long deviceRecordDurationMs = 0L;
-    private boolean isRefreshingDevice = false;
-
-    // 定时器 Runnable
-    private final Runnable deviceRecordTick = new Runnable() {
+    private final Runnable tickTask = new Runnable() {
         @Override
         public void run() {
-            if (isDeviceRecording) {
-                deviceRecordDurationMs = SystemClock.elapsedRealtime() - deviceRecordStartTime;
-                publish();
-                ticker.postDelayed(this, 1000L);
+            synchronized (RecordViewModel.this) {
+                ticking = false;
             }
+            dispatch(new RecordEvent.DeviceRecordTicked(clock.getAsLong()));
         }
     };
 
-    // 同步传输
-    private boolean isSyncing = false;
-    private String syncingFileId = null;
-    private int syncProgressPercent = 0;
-    private long syncTransferredBytes = 0;
-    private long syncTotalBytes = 0;
-
     public RecordViewModel(@NonNull RecordPort recordPort,
                            @NonNull ObserveDevice observeDevice,
-                           @NonNull PcmPlaybackPort pcmPlaybackPort,
-                           @NonNull Ticker ticker) {
+                           @NonNull PcmPlaybackPort playbackPort,
+                           @NonNull Ticker ticker,
+                           @NonNull LongSupplier clock) {
         this.recordPort = Objects.requireNonNull(recordPort, "recordPort");
         this.observeDevice = Objects.requireNonNull(observeDevice, "observeDevice");
-        this.pcmPlaybackPort = Objects.requireNonNull(pcmPlaybackPort, "pcmPlaybackPort");
+        this.playbackPort = Objects.requireNonNull(playbackPort, "playbackPort");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
-        this.supportedModes = recordPort.supportedModes();
-
-        reloadLocalFiles();
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.uiState = new MutableLiveData<>(mapper.map(state));
 
         this.deviceSubscription = observeDevice.execute(this::onDeviceSnapshot);
         onDeviceSnapshot(observeDevice.current());
+        dispatch(new RecordEvent.LocalFilesReloadRequested());
     }
 
     @NonNull
@@ -108,310 +100,210 @@ public final class RecordViewModel extends ViewModel {
         return uiState;
     }
 
+    /** 一次性通知分类：观察者翻成文案后立即清空，旋转不重放。 */
     @NonNull
-    public LiveData<RecordEvent> events() {
-        return events;
+    public LiveData<RecordEffect.Notice> notices() {
+        return notices;
     }
 
-    private void onDeviceSnapshot(@NonNull DeviceSnapshot snapshot) {
-        this.isConnected = snapshot.isConnected();
-        this.deviceName = snapshot.displayName().isEmpty() ? "蓝牙耳机" : snapshot.displayName();
-        this.supportedModes = recordPort.supportedModes();
-        if (!supportedModes.contains(currentMode)) {
-            currentMode = supportedModes.contains(RecordMode.STREAM)
-                    ? RecordMode.STREAM
-                    : supportedModes.iterator().next();
-        }
-        if (snapshot.recordFiles() != null && !snapshot.recordFiles().isEmpty()) {
-            this.deviceFiles = new ArrayList<>(snapshot.recordFiles());
-        }
-        publish();
-    }
-
-    private void publish() {
-        uiState.postValue(new RecordUiState(
-                currentMode,
-                supportedModes,
-                isConnected,
-                deviceName,
-                isStreamRecording,
-                isStreamDataReceiving,
-                streamDurationMs,
-                streamAmplitude,
-                localFiles,
-                playingFilePath,
-                deviceFiles,
-                isDeviceRecording,
-                deviceRecordDurationMs,
-                isRefreshingDevice,
-                isSyncing,
-                syncingFileId,
-                syncProgressPercent,
-                syncTransferredBytes,
-                syncTotalBytes
-        ));
-    }
+    // ==================== 意图转发 ====================
 
     public void setMode(@NonNull RecordMode mode) {
-        if (!supportedModes.contains(mode)) {
-            return;
-        }
-        if (this.currentMode != mode) {
-            this.currentMode = mode;
-            publish();
-        }
+        dispatch(new RecordEvent.ModeSelected(mode));
     }
 
-    // ==================== 随录随传 ====================
-
     public void startStreamRecord() {
-        if (isStreamRecording) {
-            return;
-        }
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接，无法开始录音"));
-            return;
-        }
-
-        isStreamRecording = true;
-        isStreamDataReceiving = false;
-        streamDataStartWallTime = 0L;
-        streamDurationMs = 0L;
-        streamAmplitude = 0f;
-        publish();
-
-        recordPort.startStreamRecord(null, null, new RecordPort.StreamRecordObserver() {
-            @Override
-            public void onStateChanged(@NonNull StreamAudioSessionState state) {
-                isStreamRecording = state.status() == StreamAudioSessionState.Status.RECORDING;
-                if (!isStreamDataReceiving && state.durationMs() > 0) {
-                    isStreamDataReceiving = true;
-                    streamDataStartWallTime = SystemClock.elapsedRealtime();
-                }
-                if (isStreamDataReceiving) {
-                    streamDurationMs = SystemClock.elapsedRealtime() - streamDataStartWallTime;
-                } else {
-                    streamDurationMs = 0L;
-                }
-                streamAmplitude = state.currentAmplitude();
-                publish();
-            }
-
-            @Override
-            public void onFileSaved(@NonNull SavedRecordItem item) {
-                isStreamRecording = false;
-                isStreamDataReceiving = false;
-                streamDurationMs = 0L;
-                streamAmplitude = 0f;
-                reloadLocalFiles();
-                events.postValue(new RecordEvent.ToastMessage("录音已保存: " + item.fileName()));
-            }
-
-            @Override
-            public void onError(@NonNull String message) {
-                isStreamRecording = false;
-                isStreamDataReceiving = false;
-                streamDurationMs = 0L;
-                streamAmplitude = 0f;
-                publish();
-                events.postValue(new RecordEvent.ToastMessage("录音异常: " + message));
-            }
-        });
+        dispatch(new RecordEvent.StreamStartRequested());
     }
 
     public void stopStreamRecord() {
-        if (!isStreamRecording) {
-            return;
-        }
-        recordPort.stopStreamRecord(success -> {
-            if (!success) {
-                events.postValue(new RecordEvent.ToastMessage("停止录音指令发送失败"));
-            }
-        });
+        dispatch(new RecordEvent.StreamStopRequested());
     }
-
-    // ==================== 本地已存录音管理 ====================
-
-    public void reloadLocalFiles() {
-        this.localFiles = recordPort.listLocalSavedFiles();
-        publish();
-    }
-
-    public void togglePlayLocalFile(@NonNull SavedRecordItem item) {
-        if (playingFilePath != null && playingFilePath.equals(item.filePath())) {
-            stopPlayback();
-            return;
-        }
-
-        stopPlayback();
-
-        playingFilePath = item.filePath();
-        publish();
-
-        pcmPlaybackPort.play(item.filePath(), () -> {
-            playingFilePath = null;
-            publish();
-        });
-    }
-
-    private void stopPlayback() {
-        pcmPlaybackPort.stop();
-        playingFilePath = null;
-        publish();
-    }
-
-    public void deleteLocalFile(@NonNull SavedRecordItem item) {
-        if (playingFilePath != null && playingFilePath.equals(item.filePath())) {
-            stopPlayback();
-        }
-        boolean deleted = recordPort.deleteLocalSavedFile(item.filePath());
-        if (deleted) {
-            reloadLocalFiles();
-            events.postValue(new RecordEvent.ToastMessage("已删除录音文件"));
-        } else {
-            events.postValue(new RecordEvent.ToastMessage("删除失败"));
-        }
-    }
-
-    // ==================== 耳机本地录音控制 ====================
 
     public void startDeviceRecord() {
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接"));
-            return;
-        }
-        recordPort.startDeviceRecord(success -> {
-            if (success) {
-                isDeviceRecording = true;
-                deviceRecordStartTime = SystemClock.elapsedRealtime();
-                deviceRecordDurationMs = 0L;
-                ticker.removeCallbacks(deviceRecordTick);
-                ticker.postDelayed(deviceRecordTick, 1000L);
-                publish();
-                events.postValue(new RecordEvent.ToastMessage("耳机已开始本地录制"));
-            } else {
-                events.postValue(new RecordEvent.ToastMessage("启动耳机录音失败"));
-            }
-        });
+        dispatch(new RecordEvent.DeviceRecordStartRequested());
     }
 
     public void stopDeviceRecord() {
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接"));
-            return;
-        }
-        recordPort.stopDeviceRecord(success -> {
-            if (success) {
-                isDeviceRecording = false;
-                ticker.removeCallbacks(deviceRecordTick);
-                deviceRecordDurationMs = 0L;
-                publish();
-                events.postValue(new RecordEvent.ToastMessage("耳机已停止本地录制"));
-                // 停止后主动拉取刷新一次耳机文件列表
-                refreshDeviceRecords();
-            } else {
-                events.postValue(new RecordEvent.ToastMessage("停止耳机录音失败"));
-            }
-        });
+        dispatch(new RecordEvent.DeviceRecordStopRequested());
     }
 
-    /**
-     * 手动刷新耳机内录音列表（根据规范，严禁自动调用）。
-     */
     public void refreshDeviceRecords() {
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接"));
-            return;
-        }
-        isRefreshingDevice = true;
-        publish();
-
-        recordPort.refreshDeviceRecords(success -> {
-            isRefreshingDevice = false;
-            publish();
-            if (!success) {
-                events.postValue(new RecordEvent.ToastMessage("刷新耳机录音列表失败"));
-            }
-        });
+        dispatch(new RecordEvent.RefreshRequested());
     }
 
     public void syncDeviceRecord(@NonNull String fileId) {
-        if (isSyncing) {
-            events.postValue(new RecordEvent.ToastMessage("已有同步任务正在进行中"));
-            return;
-        }
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接"));
-            return;
-        }
-
-        isSyncing = true;
-        syncingFileId = fileId;
-        syncProgressPercent = 0;
-        syncTransferredBytes = 0;
-        syncTotalBytes = 0;
-        publish();
-
-        recordPort.syncDeviceRecord(fileId, new RecordPort.SyncProgressObserver() {
-            @Override
-            public void onProgress(@NonNull SyncProgressState progress) {
-                syncProgressPercent = progress.percentage();
-                syncTransferredBytes = progress.bytesReceived();
-                syncTotalBytes = progress.totalBytes();
-                publish();
-            }
-
-            @Override
-            public void onSuccess(@NonNull SavedRecordItem savedFile) {
-                isSyncing = false;
-                syncingFileId = null;
-                reloadLocalFiles();
-                events.postValue(new RecordEvent.ToastMessage("文件同步成功: " + savedFile.fileName()));
-            }
-
-            @Override
-            public void onError(@NonNull String message) {
-                isSyncing = false;
-                syncingFileId = null;
-                publish();
-                events.postValue(new RecordEvent.ToastMessage("文件同步失败: " + message));
-            }
-        });
+        dispatch(new RecordEvent.SyncRequested(fileId));
     }
 
     public void cancelSync() {
-        if (!isSyncing) {
-            return;
-        }
-        recordPort.cancelSyncDeviceRecord(success -> {
-            isSyncing = false;
-            syncingFileId = null;
-            publish();
-            events.postValue(new RecordEvent.ToastMessage("已取消文件同步"));
-        });
+        dispatch(new RecordEvent.SyncCancelRequested());
     }
 
     public void deleteDeviceRecord(@NonNull String fileId) {
-        if (!isConnected) {
-            events.postValue(new RecordEvent.ToastMessage("耳机未连接"));
+        dispatch(new RecordEvent.DeviceDeleteRequested(fileId));
+    }
+
+    public void reloadLocalFiles() {
+        dispatch(new RecordEvent.LocalFilesReloadRequested());
+    }
+
+    public void togglePlayLocalFile(@NonNull SavedRecordItem item) {
+        dispatch(new RecordEvent.PlayRequested(item));
+    }
+
+    public void stopPlayback() {
+        dispatch(new RecordEvent.PlaybackStopRequested());
+    }
+
+    public void deleteLocalFile(@NonNull SavedRecordItem item) {
+        dispatch(new RecordEvent.LocalDeleteRequested(item));
+    }
+
+    // ==================== 状态机驱动 ====================
+
+    private void dispatch(@NonNull RecordEvent event) {
+        RecordMachine.Transition transition;
+        synchronized (this) {
+            transition = RecordMachine.reduce(state, event);
+            state = transition.state();
+            uiState.postValue(mapper.map(state));
+        }
+        for (RecordEffect effect : transition.effects()) {
+            execute(effect);
+        }
+        syncTicker();
+    }
+
+    private synchronized void syncTicker() {
+        boolean active = state.deviceRecord().phase() == RecordState.DeviceRecordPhase.ACTIVE;
+        if (active == ticking) {
             return;
         }
-        recordPort.deleteDeviceRecord(fileId, success -> {
-            if (success) {
-                events.postValue(new RecordEvent.ToastMessage("已发送删除指令"));
-                refreshDeviceRecords();
-            } else {
-                events.postValue(new RecordEvent.ToastMessage("删除耳机文件失败"));
-            }
-        });
+        ticking = active;
+        if (active) {
+            ticker.postDelayed(tickTask, TICK_INTERVAL_MS);
+            return;
+        }
+        ticker.removeCallbacks(tickTask);
+    }
+
+    private void execute(@NonNull RecordEffect effect) {
+        switch (effect) {
+            case RecordEffect.StartStream ignored -> recordPort.startStreamRecord(streamObserver);
+            case RecordEffect.StopStream ignored -> recordPort.stopStreamRecord(outcome -> onOutcome(outcome,
+                    () -> dispatch(new RecordEvent.StreamStopSucceeded()),
+                    failure -> dispatch(new RecordEvent.StreamStopFailed(failure))));
+            case RecordEffect.StartDeviceRecord ignored -> recordPort.startDeviceRecord(outcome -> onOutcome(
+                    outcome,
+                    () -> dispatch(new RecordEvent.DeviceRecordStarted(clock.getAsLong())),
+                    failure -> dispatch(new RecordEvent.DeviceRecordStartFailed(failure))));
+            case RecordEffect.StopDeviceRecord ignored -> recordPort.stopDeviceRecord(outcome -> onOutcome(
+                    outcome,
+                    () -> dispatch(new RecordEvent.DeviceRecordStopped()),
+                    failure -> dispatch(new RecordEvent.DeviceRecordStopFailed(failure))));
+            case RecordEffect.RefreshDeviceFiles ignored -> recordPort.refreshDeviceRecords(outcome ->
+                    onOutcome(outcome,
+                            () -> dispatch(new RecordEvent.RefreshSucceeded()),
+                            failure -> dispatch(new RecordEvent.RefreshFailed(failure))));
+            case RecordEffect.SyncFile sync ->
+                    recordPort.syncDeviceRecord(sync.fileId(), new PortSyncObserver(sync.fileId()));
+            case RecordEffect.CancelSync ignored -> recordPort.cancelSyncDeviceRecord(outcome ->
+                    onOutcome(outcome,
+                            () -> dispatch(new RecordEvent.SyncCancelSucceeded()),
+                            failure -> dispatch(new RecordEvent.SyncCancelFailed(failure))));
+            case RecordEffect.DeleteDeviceFile delete ->
+                    recordPort.deleteDeviceRecord(delete.fileId(), outcome -> onOutcome(outcome,
+                            () -> dispatch(new RecordEvent.DeviceDeleteSucceeded(delete.fileId())),
+                            failure -> dispatch(new RecordEvent.DeviceDeleteFailed(
+                                    delete.fileId(), failure))));
+            case RecordEffect.DeleteLocalFile delete -> onOutcome(
+                    recordPort.deleteLocalSavedFile(delete.filePath()),
+                    () -> dispatch(new RecordEvent.LocalDeleteSucceeded(delete.filePath())),
+                    failure -> dispatch(new RecordEvent.LocalDeleteFailed(
+                            delete.filePath(), failure)));
+            case RecordEffect.Play play ->
+                    playbackPort.play(play.filePath(), () -> dispatch(new RecordEvent.PlaybackFinished()));
+            case RecordEffect.StopPlayback ignored -> playbackPort.stop();
+            case RecordEffect.ReloadLocal ignored ->
+                    dispatch(new RecordEvent.LocalFilesReloaded(recordPort.listLocalSavedFiles()));
+            case RecordEffect.Notify notification -> notices.postValue(notification.notice());
+        }
+    }
+
+    /**
+     * 端口结果的唯一次分派：成功 / 失败各走一个事件，不把 {@code null} 或布尔哨兵放进状态机。
+     */
+    private static void onOutcome(@NonNull RecordOutcome outcome, @NonNull Runnable onSuccess,
+                                  @NonNull Consumer<RecordFailure> onFailure) {
+        switch (outcome) {
+            case RecordOutcome.Ok ignored -> onSuccess.run();
+            case RecordOutcome.Failed failed -> onFailure.accept(failed.failure());
+        }
+    }
+
+    private void onDeviceSnapshot(@NonNull DeviceSnapshot snapshot) {
+        switch (snapshot.connection()) {
+            case READY -> dispatch(new RecordEvent.Connected(
+                    recordPort.supportedModes(), snapshot.recordFiles()));
+            case IDLE, CONNECTING, DISCONNECTED -> dispatch(new RecordEvent.Disconnected());
+        }
     }
 
     @Override
     protected void onCleared() {
-        super.onCleared();
-        ticker.removeCallbacks(deviceRecordTick);
-        stopPlayback();
-        pcmPlaybackPort.release();
+        ticker.removeCallbacks(tickTask);
+        synchronized (this) {
+            ticking = false;
+        }
+        playbackPort.stop();
+        playbackPort.release();
         deviceSubscription.unsubscribe();
+        super.onCleared();
+    }
+
+    /** 端口 → 事件：随录随传。 */
+    private final class PortStreamObserver implements RecordPort.StreamRecordObserver {
+
+        @Override
+        public void onStateChanged(@NonNull StreamAudioSessionState reported) {
+            dispatch(new RecordEvent.StreamState(reported));
+        }
+
+        @Override
+        public void onFileSaved(@NonNull SavedRecordItem item) {
+            dispatch(new RecordEvent.StreamSaved(item));
+        }
+
+        @Override
+        public void onError(@NonNull RecordFailure failure) {
+            dispatch(new RecordEvent.StreamFailed(failure));
+        }
+    }
+
+    /** 端口 → 事件：文件同步。文件 id 由发起方携带，不依赖回调里的可空字段。 */
+    private final class PortSyncObserver implements RecordPort.SyncProgressObserver {
+
+        private final String fileId;
+
+        private PortSyncObserver(@NonNull String fileId) {
+            this.fileId = fileId;
+        }
+
+        @Override
+        public void onProgress(@NonNull SyncProgressState progress) {
+            dispatch(new RecordEvent.SyncProgress(fileId, progress.percentage(),
+                    progress.bytesReceived(), progress.totalBytes()));
+        }
+
+        @Override
+        public void onSuccess(@NonNull SavedRecordItem savedFile) {
+            dispatch(new RecordEvent.SyncSucceeded(savedFile));
+        }
+
+        @Override
+        public void onError(@NonNull RecordFailure failure) {
+            dispatch(new RecordEvent.SyncFailed(failure));
+        }
     }
 }

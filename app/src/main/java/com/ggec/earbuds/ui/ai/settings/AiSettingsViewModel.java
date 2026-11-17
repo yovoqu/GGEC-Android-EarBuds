@@ -16,7 +16,6 @@ import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
 import com.ggec.earbuds.domain.ai.model.AiValidationException;
 import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
-import com.ggec.earbuds.domain.ai.port.AiUiPreferences;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.FetchVoiceModels;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
@@ -40,7 +39,7 @@ import java.util.function.UnaryOperator;
  * 第二份草稿，也不自己排队落盘。一次操作就是 {@code SaveAiSettings.execute(change)}：
  * 仓库在内存里同步提交并通知，界面状态从这条通知重算；磁盘写由仓库自己的串行执行器合并完成。</p>
  *
- * <p><b>视图偏好分离</b>：当前分段只存 {@code AiUiPreferences}，切换不写配置文档。</p>
+ * <p><b>视图偏好同源</b>：设置页当前分段存在设置文档的 {@code preferences} 里，切分段走同一条提交通道，不另有偏好存储。</p>
  *
  * <p><b>单一状态流</b>：持久化状态（保存中/失败/已恢复）与「可添加的平台模板」都并入
  * {@link AiSettingsUiState}，页面只观察一条 LiveData；一次性提示仍走独立事件流。</p>
@@ -54,7 +53,6 @@ public final class AiSettingsViewModel extends ViewModel {
     private final SaveAiSettings saveSettings;
     private final Executor io;
     private final LoadPlatformTemplates loadTemplates;
-    private final AiUiPreferences uiPreferences;
     private final SaveVoiceApiKey saveVoiceKey;
     private final AiSettingsUiMapper mapper;
 
@@ -66,7 +64,6 @@ public final class AiSettingsViewModel extends ViewModel {
     private volatile List<AiPlatformTemplate> templates = List.of();
 
     private volatile AiSettings latest = AiSettings.EMPTY;
-    private AiInteractionMode displayMode = AiInteractionMode.defaultMode();
     private boolean started;
     private boolean loaded;
     private boolean loadFailed;
@@ -81,7 +78,6 @@ public final class AiSettingsViewModel extends ViewModel {
                                @NonNull SaveAiSettings saveSettings,
                                @NonNull Executor io,
                                @NonNull LoadPlatformTemplates loadTemplates,
-                               @NonNull AiUiPreferences uiPreferences,
                                @NonNull SaveVoiceApiKey saveVoiceKey,
                                @NonNull AiSettingsUiMapper mapper) {
         this.loadSettings = Objects.requireNonNull(loadSettings, "loadSettings");
@@ -91,7 +87,6 @@ public final class AiSettingsViewModel extends ViewModel {
         this.saveSettings = Objects.requireNonNull(saveSettings, "saveSettings");
         this.io = Objects.requireNonNull(io, "io");
         this.loadTemplates = Objects.requireNonNull(loadTemplates, "loadTemplates");
-        this.uiPreferences = Objects.requireNonNull(uiPreferences, "uiPreferences");
         this.saveVoiceKey = Objects.requireNonNull(saveVoiceKey, "saveVoiceKey");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -131,7 +126,6 @@ public final class AiSettingsViewModel extends ViewModel {
                 return;
             }
             onSettings(settings);
-            displayMode = uiPreferences.lastSettingsMode(AiInteractionMode.defaultMode());
             publish();
         });
         io.execute(this::loadTemplates);
@@ -146,21 +140,17 @@ public final class AiSettingsViewModel extends ViewModel {
         publish();
     }
 
-    /** 切分段只改视图偏好：不碰设置文档、不触发保存。 */
+    /** 切分段：写的是设置文档里的视图偏好，走同一条提交通道，不另存一份。 */
     public void selectMode(@NonNull AiInteractionMode mode) {
         Objects.requireNonNull(mode, "mode");
-        if (displayMode == mode) {
+        if (displayMode() == mode) {
             return;
         }
-        displayMode = mode;
-        uiPreferences.setLastSettingsMode(mode);
-        AiSettingsUiState current = uiState.getValue();
-        if (current != null && current.loaded()) {
-            AiSettingsUiState next = current.withMode(mode);
-            if (!Objects.equals(current, next)) {
-                uiState.postValue(next);
-            }
-        }
+        apply(AiSettingsChanges.settingsMode(mode));
+    }
+
+    private AiInteractionMode displayMode() {
+        return latest.preferences().lastSettingsMode();
     }
 
     public void saveSystemPrompt(@NonNull String systemPrompt) {
@@ -168,7 +158,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     public void selectVoiceModel(@NonNull String modelId) {
-        AiVoiceModel model = AiVoiceModel.fromId(modelId);
+        AiVoiceModel model = AiVoiceModel.fromId(modelId).orElse(null);
         if (model == null) {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
@@ -189,7 +179,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     public void selectDefaultDuplex(@NonNull String duplexId) {
-        VoiceDuplex duplex = VoiceDuplex.fromId(duplexId);
+        VoiceDuplex duplex = VoiceDuplex.fromId(duplexId).orElse(null);
         if (duplex == null) {
             events.postValue(AiSettingsEvent.toast(R.string.ai_settings_value_invalid));
             return;
@@ -247,7 +237,7 @@ public final class AiSettingsViewModel extends ViewModel {
     }
 
     private void publish() {
-        AiSettingsUiState mapped = mapper.map(latest, displayMode, loaded)
+        AiSettingsUiState mapped = mapper.map(latest, displayMode(), loaded)
                 .withPersistence(persistence)
                 .withTemplates(templates);
         if (fetchingVoice) {

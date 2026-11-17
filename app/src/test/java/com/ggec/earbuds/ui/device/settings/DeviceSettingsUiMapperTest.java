@@ -2,8 +2,10 @@ package com.ggec.earbuds.ui.device.settings;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityKind;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
@@ -20,27 +22,40 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** 快照 + 描述 → 设置页状态：一页一分组、事实行与能力行分区、列表数据随快照传递。 */
+/** 快照 + 描述 → 设置页状态：一页一分组、事实行与能力行分区、写入槽随状态传递。 */
 public final class DeviceSettingsUiMapperTest {
 
     private final DeviceSettingsUiMapper mapper =
             new DeviceSettingsUiMapper(new SettingsSectionFactory());
 
     @Test
-    public void disconnectedOrMissingProfileMapsToUnconnectedStateWithoutNpe() {
+    public void missingDescriptorIsAnExplicitEmptyStateNotASilentBlankPage() {
+        for (DeviceCapabilityGroup group : DeviceCapabilityGroup.values()) {
+            DeviceSettingsUiState state = mapper.map(group, Optional.empty(),
+                    DeviceProfileFixtures.ready("HS01", emptyState()), Map.of());
+
+            assertTrue("已连接就是已连接", state.connected());
+            assertTrue(state.interactive());
+            assertEquals(group, state.group());
+            assertEquals(1, state.rows().size());
+            DeviceSettingRow.Notice notice = (DeviceSettingRow.Notice) state.rows().get(0);
+            assertEquals("缺描述必须显式说出来",
+                    com.ggec.earbuds.R.string.device_settings_descriptor_missing,
+                    notice.textRes());
+        }
+    }
+
+    @Test
+    public void notConnectedMapsToTheUnconnectedState() {
         DeviceProfileView profile = DeviceProfileFixtures.profile("HS01", "HS01");
 
         for (DeviceCapabilityGroup group : DeviceCapabilityGroup.values()) {
-            DeviceSettingsUiState missingProfile = mapper.map(group, null,
-                    DeviceProfileFixtures.ready("HS01", emptyState()));
-            assertFalse(missingProfile.connected());
-            assertFalse(missingProfile.interactive());
-            assertTrue(missingProfile.rows().isEmpty());
-            assertEquals(group, missingProfile.group());
-
-            DeviceSettingsUiState idle = mapper.map(group, profile, DeviceProfileFixtures.idle());
+            DeviceSettingsUiState idle = mapper.map(group, Optional.of(profile),
+                    DeviceProfileFixtures.idle(), Map.of());
             assertFalse(idle.connected());
+            assertFalse(idle.interactive());
             assertTrue(idle.rows().isEmpty());
+            assertEquals(group, idle.group());
         }
     }
 
@@ -50,8 +65,8 @@ public final class DeviceSettingsUiMapperTest {
                 DeviceProfileFixtures.capability("CLEAR_PAIRING", "清除配对",
                         DeviceCapabilityGroup.ABOUT, DeviceCapabilityKind.ACTION));
 
-        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.ABOUT, profile,
-                DeviceProfileFixtures.ready("HS02", emptyState()));
+        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.ABOUT,
+                Optional.of(profile), DeviceProfileFixtures.ready("HS02", emptyState()), Map.of());
 
         assertTrue(state.connected());
         assertTrue(state.interactive());
@@ -68,8 +83,8 @@ public final class DeviceSettingsUiMapperTest {
                 DeviceProfileFixtures.capability("CLEAR_PAIRING", "清除配对",
                         DeviceCapabilityGroup.ABOUT, DeviceCapabilityKind.ACTION));
 
-        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.MUSIC, profile,
-                DeviceProfileFixtures.ready("HS02", emptyState()));
+        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.MUSIC,
+                Optional.of(profile), DeviceProfileFixtures.ready("HS02", emptyState()), Map.of());
 
         assertEquals(1, state.rows().size());
         assertTrue(state.rows().get(0) instanceof DeviceSettingRow.Choice);
@@ -90,8 +105,10 @@ public final class DeviceSettingsUiMapperTest {
                         PairedDeviceView.PairedBusiness.MUSIC, true, true)));
         List<RecordFileView> files = List.of(new RecordFileView("f1", "录音 1", 12, 2048L));
 
-        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.DUAL_CONNECTION, profile,
-                DeviceProfileFixtures.ready("HS02", emptyState(), Optional.of(dual), files));
+        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.DUAL_CONNECTION,
+                Optional.of(profile),
+                DeviceProfileFixtures.ready("HS02", emptyState(), Optional.of(dual), files),
+                Map.of());
 
         assertEquals(Optional.of(dual), state.dualConnection());
         assertEquals(files, state.recordFiles());
@@ -103,13 +120,31 @@ public final class DeviceSettingsUiMapperTest {
     }
 
     @Test
+    public void writeSlotsAreCarriedThroughUntouched() {
+        DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
+                DeviceProfileFixtures.capability("ANC", "降噪",
+                        DeviceCapabilityGroup.CONTROL, DeviceCapabilityKind.TOGGLE));
+        DeviceSettingsUiState.WriteSlot slot = new DeviceSettingsUiState.WriteSlot(
+                DeviceSettingsUiState.WriteState.CONFIRMED,
+                Optional.of(new ControlValue.Toggle(true)));
+
+        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.CONTROL,
+                Optional.of(profile), DeviceProfileFixtures.ready("HS02", emptyState()),
+                Map.of("ANC", slot));
+
+        assertSame(slot, state.writeOf("ANC"));
+        assertEquals(Optional.of(Boolean.TRUE), state.writeOf("ANC").toggleValue());
+        assertSame(DeviceSettingsUiState.WriteState.IDLE, state.writeOf("unknown").state());
+    }
+
+    @Test
     public void notReadyConnectionIsReadOnly() {
         DeviceProfileView profile = DeviceProfileFixtures.profile("HS02", "HS02",
                 DeviceProfileFixtures.capability("EQ_MODE", "均衡器",
                         DeviceCapabilityGroup.MUSIC, DeviceCapabilityKind.CHOICE));
 
-        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.MUSIC, profile,
-                DeviceProfileFixtures.connecting("HS02"));
+        DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.MUSIC,
+                Optional.of(profile), DeviceProfileFixtures.connecting("HS02"), Map.of());
 
         assertTrue(state.connected());
         assertFalse(state.interactive());

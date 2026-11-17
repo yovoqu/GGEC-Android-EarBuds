@@ -34,9 +34,10 @@ public class AiCallUiStateTest {
         assertTrue(connecting.availableSources().isEmpty());
 
         AiCallUiState denied = AiCallUiState.permissionDenied();
-        assertEquals(AiCallUiState.Phase.OFFLINE, denied.phase());
+        assertEquals(AiCallUiState.Phase.PERMISSION_DENIED, denied.phase());
         assertEquals(R.string.ai_call_no_permission, denied.title());
         assertFalse(denied.live());
+        assertFalse("权限被拒不是「已结束」，会话从未开始", denied.ended());
     }
 
     @Test

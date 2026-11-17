@@ -196,6 +196,8 @@ public final class AiCallScreen {
             case THINKING -> AiFluidVisualizerView.VisualPhase.THINKING;
             case SPEAKING -> AiFluidVisualizerView.VisualPhase.SPEAKING;
             case OFFLINE -> AiFluidVisualizerView.VisualPhase.OFFLINE;
+            // 没有麦克风权限时链路根本没建立：光晕按离线静止渲染，不再是「正在连接」的假动作。
+            case PERMISSION_DENIED -> AiFluidVisualizerView.VisualPhase.OFFLINE;
         };
         visualizerView.setPhase(vPhase);
         visualizerView.setAudioLevel(state.meter());

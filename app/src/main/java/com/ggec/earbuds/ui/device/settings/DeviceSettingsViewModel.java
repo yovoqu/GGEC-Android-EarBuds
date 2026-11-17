@@ -11,30 +11,38 @@ import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
+import com.ggec.earbuds.domain.device.model.DeviceId;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
+import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.Subscription;
-import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
-import com.ggec.earbuds.domain.device.model.DeviceId;
 import com.ggec.earbuds.domain.device.usecase.ForgetDevice;
+import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
 import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.yovo.lib_common.event.OneShotLiveData;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
  * 设置页状态机：订阅快照、从能力目录取描述、把界面的类型化意图交给用例。
  *
  * <p>写入只走 {@link WriteDeviceControl}（{@code DevicePort.write}），动作只走
  * {@link RunDeviceAction}（{@code DevicePort.perform}）。本类不拼协议字节、不推导值域、
- * 不吞失败：失败分类经 {@link #failures()} 交给宿主播文案。</p>
+ * 不吞失败：失败分类经 {@link #events()} 交给宿主播文案。</p>
+ *
+ * <p><b>写入状态的唯一来源</b>是 {@link #writes}：每次写入先落 {@code IN_FLIGHT}（带本次值），
+ * 端口结果落 {@code CONFIRMED}（保留本次值，设备不回读也能显示）或 {@code FAILED}
+ * （丢弃本次值 → 呈现自动回退到设备上报值）。视图层不再保存任何「未确认」副本。</p>
  */
 public final class DeviceSettingsViewModel extends ViewModel implements SettingsInteractionListener {
 
@@ -50,6 +58,9 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
     private final MutableLiveData<DeviceSettingsUiState> uiState = new MutableLiveData<>();
     private final OneShotLiveData<DeviceSettingsEvent> events = new OneShotLiveData<>();
 
+    /** 本次连接内的写入槽，按能力 id 索引。 */
+    private final Map<String, DeviceSettingsUiState.WriteSlot> writes = new LinkedHashMap<>();
+
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private Subscription subscription;
     private boolean listDataRequested;
@@ -62,14 +73,14 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
                                    @NonNull ForgetDevice forgetDevice,
                                    @NonNull ObserveDeviceRoster observeRoster,
                                    @NonNull DeviceSettingsUiMapper mapper) {
-        this.group = group;
-        this.catalog = catalog;
-        this.observeDevice = observeDevice;
-        this.writeControl = writeControl;
-        this.runAction = runAction;
-        this.forgetDevice = forgetDevice;
-        this.observeRoster = observeRoster;
-        this.mapper = mapper;
+        this.group = Objects.requireNonNull(group, "group");
+        this.catalog = Objects.requireNonNull(catalog, "catalog");
+        this.observeDevice = Objects.requireNonNull(observeDevice, "observeDevice");
+        this.writeControl = Objects.requireNonNull(writeControl, "writeControl");
+        this.runAction = Objects.requireNonNull(runAction, "runAction");
+        this.forgetDevice = Objects.requireNonNull(forgetDevice, "forgetDevice");
+        this.observeRoster = Objects.requireNonNull(observeRoster, "observeRoster");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
     @NonNull
@@ -77,7 +88,7 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         return uiState;
     }
 
-    /** 写入失败与落地结果：一次性事件，页面消费后立即清空。 */
+    /** 写入失败、动作结果与页面级通知：一次性事件，页面消费后立即清空。 */
     @NonNull
     public LiveData<DeviceSettingsEvent> events() {
         return events;
@@ -102,7 +113,11 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         if (!isWritable()) {
             return;
         }
-        writeControl.execute(capabilityId, value, result -> onResult(capabilityId, result));
+        putWrite(capabilityId,
+                new DeviceSettingsUiState.WriteSlot(
+                        DeviceSettingsUiState.WriteState.IN_FLIGHT, Optional.of(value)));
+        publish();
+        writeControl.execute(capabilityId, value, result -> onWriteResult(capabilityId, value, result));
     }
 
     /** 类型化动作：重启、清除配对、查找耳机、录音等。 */
@@ -110,7 +125,7 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         if (!isWritable()) {
             return;
         }
-        runAction.execute(action, result -> onResult(null, result));
+        runAction.execute(action, this::onActionResult);
     }
 
     @Override
@@ -133,15 +148,29 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         write(capabilityId, new ControlValue.Curve(points));
     }
 
+    /**
+     * 行级动作。穷尽 {@link DeviceSettingRow.ActionKind}，没有 {@code default} 空分支：
+     *
+     * <ul>
+     *   <li>无载荷的动作直接路由到对应的 {@link DeviceAction}；</li>
+     *   <li>{@code RENAME} / {@code RECORD_LOCAL} / {@code RECORD_STREAM} 必须带载荷
+     *       （名称、开始或结束），行级通道无法表达，落成显式
+     *       {@link DeviceSettingsEvent.ActionUnsupported}，由宿主提示；载荷版本分别由
+     *       {@link #onRename} / {@link #onStartRecordLocal} / {@link #onStopRecordLocal} /
+     *       {@link #onStartRecordStream} / {@link #onStopRecordStream} 承担。</li>
+     * </ul>
+     */
     @Override
     public void onAction(@NonNull DeviceSettingRow.ActionKind kind) {
         switch (kind) {
-            case REBOOT -> onReboot();
-            case CLEAR_PAIRING -> onClearPairing();
-            case RESET_CONTROL -> onResetControl();
-            case DEVICE_MANAGEMENT -> onForgetActive();
-            default -> {
-            }
+            case REBOOT -> run(new DeviceAction.Reboot());
+            case CLEAR_PAIRING -> run(new DeviceAction.ClearPairing());
+            case RESET_CONTROL -> run(new DeviceAction.ResetControl());
+            case DEVICE_MANAGEMENT -> forgetActive();
+            case FIND_EAR -> run(new DeviceAction.FindEar(DeviceAction.FindEar.Side.BOTH));
+            case RECORD_TRANSFER -> transferNewestRecord();
+            case RENAME, RECORD_LOCAL, RECORD_STREAM ->
+                    events.postValue(new DeviceSettingsEvent.ActionUnsupported(kind));
         }
     }
 
@@ -250,43 +279,79 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
     }
 
     private boolean isWritable() {
-        DeviceSnapshot current;
-        synchronized (this) {
-            current = snapshot;
-        }
-        return current.connection() == ConnectionState.READY;
+        return currentSnapshot().connection() == ConnectionState.READY;
     }
 
-    private void onResult(@Nullable String capabilityId, DeviceWriteResult result) {
-        if (result instanceof DeviceWriteResult.Failed failed) {
-            events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
-            if (capabilityId != null) {
-                events.postValue(new DeviceSettingsEvent.ControlOutcome(
-                        DeviceControlOutcome.failed(capabilityId)));
-            }
+    /** 行级「同步最后一条」：载荷取当前快照里的第一条录音；没有录音时显式拒绝，不发空指令。 */
+    private void transferNewestRecord() {
+        List<RecordFileView> files = currentSnapshot().recordFiles();
+        if (files.isEmpty()) {
+            events.postValue(
+                    new DeviceSettingsEvent.ActionUnsupported(
+                            DeviceSettingRow.ActionKind.RECORD_TRANSFER));
             return;
         }
-        if (capabilityId != null) {
-            events.postValue(new DeviceSettingsEvent.ControlOutcome(
-                    DeviceControlOutcome.ok(capabilityId)));
+        run(new DeviceAction.TransferRecord(files.get(0).fileId(), true));
+    }
+
+    /** 写入落地：成功保留本次值（设备不回读时界面仍有确定呈现），失败丢弃本次值。 */
+    private void onWriteResult(@NonNull String capabilityId, @NonNull ControlValue value,
+                               @NonNull DeviceWriteResult result) {
+        DeviceSettingsUiState.WriteSlot slot = switch (result) {
+            case DeviceWriteResult.Ok ignored -> new DeviceSettingsUiState.WriteSlot(
+                    DeviceSettingsUiState.WriteState.CONFIRMED, Optional.of(value));
+            case DeviceWriteResult.Failed failed -> failedSlot(failed.failure());
+        };
+        putWrite(capabilityId, slot);
+        publish();
+    }
+
+    private void onActionResult(@NonNull DeviceWriteResult result) {
+        switch (result) {
+            case DeviceWriteResult.Ok ignored -> {
+            }
+            case DeviceWriteResult.Failed failed ->
+                    events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
         }
+    }
+
+    @NonNull
+    private DeviceSettingsUiState.WriteSlot failedSlot(@NonNull DeviceFailure failure) {
+        events.postValue(new DeviceSettingsEvent.Failure(failure));
+        return new DeviceSettingsUiState.WriteSlot(
+                DeviceSettingsUiState.WriteState.FAILED, Optional.empty());
+    }
+
+    private synchronized void putWrite(@NonNull String capabilityId,
+                                       @NonNull DeviceSettingsUiState.WriteSlot slot) {
+        writes.put(capabilityId, slot);
+    }
+
+    private synchronized Map<String, DeviceSettingsUiState.WriteSlot> currentWrites() {
+        return Map.copyOf(writes);
+    }
+
+    private synchronized DeviceSnapshot currentSnapshot() {
+        return snapshot;
     }
 
     private void onSnapshot(DeviceSnapshot next) {
         synchronized (this) {
             snapshot = next;
+            if (next.connection() != ConnectionState.READY) {
+                // 写入事实属于当前连接：连接不在就绪态时，旧槽不得在新设备上复活。
+                writes.clear();
+            }
         }
         publish();
     }
 
     private void publish() {
-        DeviceSnapshot current;
-        synchronized (this) {
-            current = snapshot;
-        }
-        DeviceProfileView profile = current.modelId() == null ? null
-                : catalog.model(current.modelId()).orElse(null);
-        uiState.postValue(mapper.map(group, profile, current));
+        DeviceSnapshot current = currentSnapshot();
+        Optional<DeviceProfileView> profile = current.modelId() == null
+                ? Optional.empty()
+                : catalog.model(current.modelId());
+        uiState.postValue(mapper.map(group, profile, current, currentWrites()));
         requestListData(profile, current);
     }
 
@@ -294,8 +359,9 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
      * 列表类组件的数据不在能力状态里：进页（连接就绪后）主动读一次，
      * 之后随设备事件更新快照。每次连接只读一次。
      */
-    private void requestListData(DeviceProfileView profile, DeviceSnapshot current) {
-        if (profile == null || current.connection() != ConnectionState.READY) {
+    private void requestListData(@NonNull Optional<DeviceProfileView> profile,
+                                 @NonNull DeviceSnapshot current) {
+        if (profile.isEmpty() || current.connection() != ConnectionState.READY) {
             listDataRequested = false;
             return;
         }
@@ -305,13 +371,14 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         listDataRequested = true;
         switch (group) {
             case DUAL_CONNECTION -> {
-                if (profile.supports(DeviceCapabilityIds.DUAL_CONNECTION_DEVICES)) {
-                    runAction.execute(new DeviceAction.ReadPairedDevices(), result -> onResult(null, result));
+                if (profile.get().supports(DeviceCapabilityIds.DUAL_CONNECTION_DEVICES)) {
+                    runAction.execute(new DeviceAction.ReadPairedDevices(),
+                            this::onActionResult);
                 }
             }
             case RECORD -> {
-                if (profile.supports(DeviceCapabilityIds.RECORD_LIST)) {
-                    runAction.execute(new DeviceAction.ReadRecordList(), result -> onResult(null, result));
+                if (profile.get().supports(DeviceCapabilityIds.RECORD_LIST)) {
+                    runAction.execute(new DeviceAction.ReadRecordList(), this::onActionResult);
                 }
             }
             case MUSIC, CONTROL, FUNCTION, ABOUT -> {

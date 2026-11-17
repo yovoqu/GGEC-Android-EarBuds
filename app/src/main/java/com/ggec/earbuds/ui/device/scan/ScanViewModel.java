@@ -1,8 +1,6 @@
 package com.ggec.earbuds.ui.device.scan;
 
-
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
@@ -22,16 +20,22 @@ import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * 扫描页状态机。只通过扫描与打开设备用例表达意图，不调用项目 SDK，也不另存一套设备表。
+ *
+ * <p><b>单一阶段字段：</b>{@link #phase} 取代过去的 {@code scanning}/{@code hasScanned}/
+ * {@code connectPhase} 三源；代际丢弃仍由 {@code scanToken}/{@code connectEpoch} 保证。</p>
+ *
+ * <p><b>机型筛选来自目录：</b>默认筛选是目录首项，目录为空时不限制（空集）。切换筛选只把
+ * 新规则下发给端口，<b>不</b>停止或重启扫描。</p>
  */
 public final class ScanViewModel extends ViewModel {
 
     private final ScanDevices scanDevices;
     private final OpenDevice openDevice;
-    private final DeviceCapabilityCatalog catalog;
     private final ScanPermissionPort scanPermission;
     private final List<ScanFilterOption> filterOptions;
 
@@ -39,15 +43,12 @@ public final class ScanViewModel extends ViewModel {
     private final MutableLiveData<ScanUiState> uiState;
     private final OneShotLiveData<ScanEvent> events = new OneShotLiveData<>();
     private final OneShotLiveData<ScanConnectOutcome> connectOutcomes = new OneShotLiveData<>();
-    private List<ScanResult> visible = List.of();
 
-    private boolean scanning;
-    private boolean hasScanned;
+    private List<ScanResult> visible = List.of();
+    private ScanPhase phase = new ScanPhase.Idle();
     private long scanToken;
     private int connectEpoch;
-    private ScanConnectPhase connectPhase = ScanConnectPhase.IDLE;
-    private String connectingAddress = "";
-    private String selectedFilterModelId = "HS02";
+    private String selectedFilterModelId;
 
     public ScanViewModel(@NonNull ScanDevices scanDevices,
                          @NonNull OpenDevice openDevice,
@@ -55,14 +56,11 @@ public final class ScanViewModel extends ViewModel {
                          @NonNull ScanPermissionPort scanPermission) {
         this.scanDevices = scanDevices;
         this.openDevice = openDevice;
-        this.catalog = catalog;
         this.scanPermission = scanPermission;
         this.filterOptions = buildFilterOptions(catalog);
         this.selectedFilterModelId = defaultModelId(this.filterOptions);
-        this.scanDevices.filterModels(Set.of(this.selectedFilterModelId));
-        this.uiState = new MutableLiveData<>(ScanUiMapper.mapState(
-                false, false, selectedFilterModelId, this.filterOptions, List.of(),
-                ScanConnectPhase.IDLE, ""));
+        this.scanDevices.filterModels(selectedFilterSet());
+        this.uiState = new MutableLiveData<>(buildStateLocked());
     }
 
     @NonNull
@@ -81,19 +79,19 @@ public final class ScanViewModel extends ViewModel {
 
     public boolean isConnecting() {
         synchronized (lock) {
-            return connectPhase == ScanConnectPhase.CONNECTING;
+            return phase.connecting();
         }
     }
 
     public void toggleScan() {
-        if (isConnecting()) {
-            return;
-        }
-        boolean currentlyScanning;
+        boolean scanning;
         synchronized (lock) {
-            currentlyScanning = scanning;
+            if (phase.connecting()) {
+                return;
+            }
+            scanning = phase.scanning();
         }
-        if (currentlyScanning) {
+        if (scanning) {
             stopScan();
             return;
         }
@@ -104,9 +102,10 @@ public final class ScanViewModel extends ViewModel {
         startScan();
     }
 
+    /** 进页调用：本轮还没开始过才开扫；正在扫/已扫过/连接中都不重复开。 */
     public void enterScan() {
         synchronized (lock) {
-            if (hasScanned) {
+            if (!(phase instanceof ScanPhase.Idle)) {
                 return;
             }
         }
@@ -123,21 +122,26 @@ public final class ScanViewModel extends ViewModel {
         }
     }
 
-    public void selectFilter(@Nullable String modelId) {
-        String normalized = (modelId == null || modelId.trim().isEmpty())
-                ? "HS02" : modelId.trim();
+    /**
+     * 切换机型筛选：只把新规则下发到端口，扫描继续跑，不重启。
+     *
+     * @param modelId 目录里的机型 id，不接受空串（默认值由构造函数按目录首项决定）
+     */
+    public void selectFilter(@NonNull String modelId) {
+        String normalized = Objects.requireNonNull(modelId, "modelId").trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("selectFilter requires a model id");
+        }
+        ScanUiState snapshot;
         synchronized (lock) {
             if (selectedFilterModelId.equals(normalized)) {
                 return;
             }
             selectedFilterModelId = normalized;
             visible = List.of();
-        }
-        scanDevices.filterModels(Set.of(normalized));
-        ScanUiState snapshot;
-        synchronized (lock) {
             snapshot = buildStateLocked();
         }
+        scanDevices.filterModels(Set.of(normalized));
         publish(snapshot);
     }
 
@@ -145,13 +149,11 @@ public final class ScanViewModel extends ViewModel {
         final long token;
         ScanUiState startingState;
         synchronized (lock) {
-            if (scanning || scanDevices.isScanning()) {
+            if (phase.scanning() || scanDevices.isScanning()) {
                 return;
             }
-            hasScanned = true;
-            scanning = true;
-            scanToken++;
-            token = scanToken;
+            phase = new ScanPhase.Scanning();
+            token = ++scanToken;
             startingState = buildStateLocked();
         }
         publish(startingState);
@@ -159,15 +161,14 @@ public final class ScanViewModel extends ViewModel {
                 batch -> onScanBatch(token, batch),
                 failure -> onScanFailure(token, failure),
                 () -> onScanFinished(token),
-                removed -> {
-                });
+                removed -> onScanRemoved(token, removed));
     }
 
     private void stopScan() {
         ScanUiState stoppedState;
         synchronized (lock) {
             scanToken++;
-            scanning = false;
+            phase = new ScanPhase.Stopped();
             stoppedState = buildStateLocked();
         }
         scanDevices.stop();
@@ -178,14 +179,12 @@ public final class ScanViewModel extends ViewModel {
         final int epoch;
         ScanUiState connecting;
         synchronized (lock) {
-            if (connectPhase == ScanConnectPhase.CONNECTING) {
+            if (phase.connecting()) {
                 return;
             }
             scanToken++;
-            scanning = false;
             epoch = ++connectEpoch;
-            connectPhase = ScanConnectPhase.CONNECTING;
-            connectingAddress = item.address();
+            phase = new ScanPhase.Connecting(item.address());
             connecting = buildStateLocked();
         }
         scanDevices.stop();
@@ -203,11 +202,10 @@ public final class ScanViewModel extends ViewModel {
     private void onConnectSettled(int epoch, ConnectSettlement settlement) {
         ScanUiState next;
         synchronized (lock) {
-            if (epoch != connectEpoch || connectPhase != ScanConnectPhase.CONNECTING) {
+            if (epoch != connectEpoch || !phase.connecting()) {
                 return;
             }
-            connectPhase = ScanConnectPhase.IDLE;
-            connectingAddress = "";
+            phase = new ScanPhase.Idle();
             next = buildStateLocked();
         }
         publish(next);
@@ -227,22 +225,17 @@ public final class ScanViewModel extends ViewModel {
     protected void onCleared() {
         synchronized (lock) {
             scanToken++;
-            scanning = false;
             connectEpoch++;
-            connectPhase = ScanConnectPhase.IDLE;
-            connectingAddress = "";
+            phase = new ScanPhase.Idle();
         }
         scanDevices.stop();
         super.onCleared();
     }
 
-    private void onScanBatch(long token, @Nullable List<ScanResult> batch) {
-        if (batch == null) {
-            return;
-        }
+    private void onScanBatch(long token, @NonNull List<ScanResult> batch) {
         ScanUiState snapshot;
         synchronized (lock) {
-            if (token != scanToken || !scanning) {
+            if (token != scanToken || !phase.scanning()) {
                 return;
             }
             visible = List.copyOf(batch);
@@ -251,16 +244,38 @@ public final class ScanViewModel extends ViewModel {
         uiState.postValue(snapshot);
     }
 
-    private void onScanFailure(long token, @Nullable DeviceFailure failure) {
-        if (failure == null) {
-            return;
+    /**
+     * 设备过期（{@code onLost}）：按地址把它从当前列表里摘掉并重发状态。
+     * 摘不到说明这一条早就不在列表里，此时不改状态、也不多发一次。
+     */
+    private void onScanRemoved(long token, @NonNull ScanResult removed) {
+        ScanUiState snapshot;
+        synchronized (lock) {
+            if (token != scanToken || !phase.scanning()) {
+                return;
+            }
+            List<ScanResult> remaining = new ArrayList<>(visible.size());
+            for (ScanResult candidate : visible) {
+                if (!candidate.address().equalsIgnoreCase(removed.address())) {
+                    remaining.add(candidate);
+                }
+            }
+            if (remaining.size() == visible.size()) {
+                return;
+            }
+            visible = List.copyOf(remaining);
+            snapshot = buildStateLocked();
         }
+        uiState.postValue(snapshot);
+    }
+
+    private void onScanFailure(long token, @NonNull DeviceFailure failure) {
         ScanUiState nextState;
         synchronized (lock) {
             if (token != scanToken) {
                 return;
             }
-            scanning = false;
+            phase = new ScanPhase.Failed(failure);
             nextState = buildStateLocked();
         }
         uiState.postValue(nextState);
@@ -284,10 +299,10 @@ public final class ScanViewModel extends ViewModel {
     private void onScanFinished(long token) {
         ScanUiState nextState;
         synchronized (lock) {
-            if (token != scanToken) {
+            if (token != scanToken || !phase.scanning()) {
                 return;
             }
-            scanning = false;
+            phase = new ScanPhase.Stopped();
             nextState = buildStateLocked();
         }
         uiState.postValue(nextState);
@@ -295,14 +310,7 @@ public final class ScanViewModel extends ViewModel {
 
     @NonNull
     private ScanUiState buildStateLocked() {
-        return ScanUiMapper.mapState(
-                scanning,
-                hasScanned,
-                selectedFilterModelId,
-                filterOptions,
-                visible,
-                connectPhase,
-                connectingAddress);
+        return ScanUiMapper.mapState(phase, selectedFilterModelId, filterOptions, visible);
     }
 
     /** 一律 postValue：状态可能从扫描回调线程来，ViewModel 不判断自己在哪个线程上。 */
@@ -314,6 +322,12 @@ public final class ScanViewModel extends ViewModel {
         connectOutcomes.postValue(outcome);
     }
 
+    /** 当前筛选对应的下发集合：空串（目录为空）表示不限。 */
+    @NonNull
+    private Set<String> selectedFilterSet() {
+        return selectedFilterModelId.isEmpty() ? Set.of() : Set.of(selectedFilterModelId);
+    }
+
     @NonNull
     private static List<ScanFilterOption> buildFilterOptions(@NonNull DeviceCapabilityCatalog catalog) {
         List<ScanFilterOption> options = new ArrayList<>();
@@ -323,13 +337,9 @@ public final class ScanViewModel extends ViewModel {
         return List.copyOf(options);
     }
 
+    /** 默认筛选 = 目录首项；目录为空时没有筛选值（空集 = 不限）。 */
     @NonNull
     private static String defaultModelId(@NonNull List<ScanFilterOption> options) {
-        for (ScanFilterOption opt : options) {
-            if ("HS02".equalsIgnoreCase(opt.modelId())) {
-                return opt.modelId();
-            }
-        }
-        return options.isEmpty() ? "HS02" : options.get(0).modelId();
+        return options.isEmpty() ? "" : options.get(0).modelId();
     }
 }

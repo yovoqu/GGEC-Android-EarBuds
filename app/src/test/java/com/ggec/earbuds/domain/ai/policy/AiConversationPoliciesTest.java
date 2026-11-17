@@ -27,7 +27,7 @@ public class AiConversationPoliciesTest {
 
     @Test
     public void contextKeepsFinishedAndStoppedMessagesOnly() {
-        AiMessage failed = assistant("a2", "half").fail(AiFailureKind.NETWORK, "x", 5);
+        AiMessage failed = assistant("a2", "half").fail(AiFailureKind.NETWORK, 5);
         List<AiChatTurn> turns = context.window(List.of(
                 user("u1", "hi"),
                 assistant("a1", "hello").complete(AiFinishReason.STOP, null, 3),

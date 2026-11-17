@@ -269,8 +269,9 @@ public final class AiChatSession {
                     AiGenerationDefaults.CONTEXT_MESSAGES);
             String system = preferences.systemPrompt().isBlank() ? null : preferences.systemPrompt();
             request = new AiChatRequest(active.platform(), active.model().id(), system, turns);
-        } catch (IllegalStateException unusable) {
-            failRun(messageId, AiFailureKind.UNKNOWN, unusable.getMessage());
+        } catch (IllegalStateException ignored) {
+            // 载荷只放分类：请求为什么不可用由分支本身决定，技术说明不进领域状态。
+            failRun(messageId, AiFailureKind.UNKNOWN);
             return;
         }
         long token = ++generation;
@@ -301,11 +302,11 @@ public final class AiChatSession {
             });
         } catch (AiFailure failure) {
             activeToken = 0;
-            failRun(messageId, failure.kind(), failure.getMessage());
+            failRun(messageId, failure.kind());
             return;
-        } catch (RuntimeException unexpected) {
+        } catch (RuntimeException ignored) {
             activeToken = 0;
-            failRun(messageId, AiFailureKind.UNKNOWN, unexpected.getMessage());
+            failRun(messageId, AiFailureKind.UNKNOWN);
             return;
         }
         if (activeToken == token) {
@@ -314,8 +315,8 @@ public final class AiChatSession {
         publish();
     }
 
-    private void failRun(String messageId, AiFailureKind kind, @Nullable String detail) {
-        replace(messageId, message -> message.fail(kind, detail, 0L));
+    private void failRun(String messageId, AiFailureKind kind) {
+        replace(messageId, message -> message.fail(kind, 0L));
         persist();
         publish();
     }
@@ -357,7 +358,7 @@ public final class AiChatSession {
         activeToken = 0;
         running = null;
         long elapsed = clock.now() - runStartedAt;
-        replace(messageId, message -> message.fail(failure.kind(), failure.getMessage(), elapsed));
+        replace(messageId, message -> message.fail(failure.kind(), elapsed));
         touch();
         persist();
         publish();

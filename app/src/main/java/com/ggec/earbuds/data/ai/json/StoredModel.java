@@ -3,6 +3,7 @@ package com.ggec.earbuds.data.ai.json;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.data.store.DocumentFormatException;
 import com.ggec.earbuds.domain.ai.model.AiModel;
 import com.ggec.earbuds.domain.ai.model.AiModelCategory;
 
@@ -15,14 +16,13 @@ import java.util.Set;
  * 由厂商返回的，落盘反而会让旧数据冒充新数据。所以磁盘上用这份最小记录，读写都在本包内完成，
  * 领域模型不参与序列化。</p>
  *
- * @param id         模型 id，空串视为无效
- * @param categoryId 类别 id；读回时无法识别则整条丢弃（不猜类别）
+ * <p>类别 id 认不出来就是文档损坏（{@link DocumentFormatException}），不猜类别：
+ * 猜错会让实时链路拿一个文本模型去连 realtime 端点。</p>
+ *
+ * @param id         模型 id
+ * @param categoryId 类别 id；未记录时为 {@code null}
  */
 record StoredModel(@NonNull String id, @Nullable String categoryId) {
-
-    StoredModel {
-        id = id == null ? "" : id;
-    }
 
     @NonNull
     static StoredModel of(@NonNull AiModel model) {
@@ -30,12 +30,19 @@ record StoredModel(@NonNull String id, @Nullable String categoryId) {
         return new StoredModel(model.id(), category == null ? null : category.id());
     }
 
-    /** 还原成领域值；id 为空或类别无法识别时返回 null，由调用方跳过这一条。 */
-    @Nullable
+    /** 还原成领域值。 */
+    @NonNull
     AiModel toDomain() {
+        if (id.isBlank()) {
+            throw new DocumentFormatException("id", "realtime model id is blank");
+        }
+        if (categoryId == null) {
+            return new AiModel(id, id, null, null, Set.of(), false, null);
+        }
         AiModelCategory category = AiModelCategory.fromId(categoryId);
-        if (id.isEmpty() || category == null) {
-            return null;
+        if (category == null) {
+            throw new DocumentFormatException("category",
+                    "unknown realtime model category " + categoryId);
         }
         return new AiModel(id, id, null, null, Set.of(), false, category);
     }

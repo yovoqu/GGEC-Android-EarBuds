@@ -20,11 +20,12 @@ import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettingsPersistence;
 import com.ggec.earbuds.domain.ai.usecase.SaveAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.SaveVoiceApiKey;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.data.ai.store.EncryptedCredentialStore;
 import com.ggec.earbuds.testing.ai.AiFixtures;
 import com.ggec.earbuds.testing.ai.FakeCredentialStore;
 import com.ggec.earbuds.testing.ai.DeferredSettingsRepository;
 import com.ggec.earbuds.testing.ai.FakeCatalog;
-import com.ggec.earbuds.testing.ai.MemoryAiUiPreferences;
+import com.ggec.earbuds.testing.ai.MemorySecretStore;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 
 import org.junit.Before;
@@ -36,28 +37,29 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 设置页 ViewModel：单一数据源（设置仓库）+ 视图偏好分离。
+ * 设置页 ViewModel：单一数据源（设置仓库），视图偏好也在这份文档里。
  */
 public class AiSettingsViewModelTest {
 
     @Rule
     public final InstantTaskExecutorRule tasks = new InstantTaskExecutorRule();
 
-    private final MemorySettingsRepository settings = new MemorySettingsRepository(AiFixtures.readySettings());
+    private final MemorySecretStore secrets = new MemorySecretStore();
+    private final MemorySettingsRepository settings =
+            new MemorySettingsRepository(AiFixtures.readySettings(), secrets);
     private final FakeCatalog catalog = new FakeCatalog();
     private final List<AiModel> voiceCatalog = new ArrayList<>();
-    private final MemoryAiUiPreferences uiPreferences = new MemoryAiUiPreferences();
-    private final FakeCredentialStore credentials = new FakeCredentialStore();
+    /** 与仓库共用同一份密钥库：仓库写、网关读，和生产同形。 */
+    private final EncryptedCredentialStore credentials = new EncryptedCredentialStore(secrets);
     private AiSettingsViewModel viewModel;
 
     @Before
     public void setUp() {
-        viewModel = newViewModel(settings, uiPreferences);
+        viewModel = newViewModel(settings);
         viewModel.start();
     }
 
-    private AiSettingsViewModel newViewModel(MemorySettingsRepository repository,
-                                             MemoryAiUiPreferences preferences) {
+    private AiSettingsViewModel newViewModel(MemorySettingsRepository repository) {
         return new AiSettingsViewModel(
                 new LoadAiSettings(repository),
                 new ObserveAiSettings(repository),
@@ -66,8 +68,7 @@ public class AiSettingsViewModelTest {
                 new SaveAiSettings(repository),
                 Runnable::run,
                 new LoadPlatformTemplates(catalog),
-                preferences,
-                new SaveVoiceApiKey(repository, credentials),
+                new SaveVoiceApiKey(repository),
                 new AiSettingsUiMapper());
     }
 
@@ -82,24 +83,23 @@ public class AiSettingsViewModelTest {
     }
 
     /**
-     * 核心回归：切分段只改视图偏好，绝不写设置文档。
+     * 核心回归：切分段写的是设置文档里的视图偏好，没有第二份偏好存储。
      */
     @Test
-    public void switchingTheModeNeverTouchesTheSettingsDocument() {
-        AiSettings before = settings.load();
-
+    public void switchingTheModeLandsInTheSameSettingsDocument() {
         viewModel.selectMode(AiInteractionMode.VOICE);
 
         assertEquals("ui state follows the toggle", AiInteractionMode.VOICE,
                 viewModel.uiState().getValue().mode());
-        assertEquals("view preference is stored", AiInteractionMode.VOICE,
-                uiPreferences.lastSettingsMode(AiInteractionMode.TEXT));
-        assertEquals("settings document is untouched", before, settings.load());
+        assertEquals("view preference lives in the settings document", AiInteractionMode.VOICE,
+                settings.load().preferences().lastSettingsMode());
     }
 
     @Test
     public void theStoredViewPreferenceDecidesTheOpeningSegment() {
-        AiSettingsViewModel fresh = newViewModel(settings, new MemoryAiUiPreferences(AiInteractionMode.VOICE));
+        settings.update(s -> s.withPreferences(
+                s.preferences().withLastSettingsMode(AiInteractionMode.VOICE)));
+        AiSettingsViewModel fresh = newViewModel(settings);
 
         fresh.start();
 
@@ -241,8 +241,7 @@ public class AiSettingsViewModelTest {
                 new ObserveAiSettingsPersistence(deferred),
                 new FetchVoiceModels(deferred, (baseUrl, apiKey) -> List.of(), new FakeCredentialStore()),
                 new SaveAiSettings(deferred), Runnable::run, new LoadPlatformTemplates(catalog),
-                new MemoryAiUiPreferences(),
-                new SaveVoiceApiKey(deferred, new FakeCredentialStore()),
+                new SaveVoiceApiKey(deferred),
                 new AiSettingsUiMapper());
 
         loading.start();

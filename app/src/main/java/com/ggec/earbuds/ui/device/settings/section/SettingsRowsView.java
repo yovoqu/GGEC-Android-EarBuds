@@ -8,13 +8,11 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.CapabilityOption;
-import com.ggec.earbuds.ui.device.CurveEditorSeed;
-import com.ggec.earbuds.ui.device.DeviceControlOutcome;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.ggec.earbuds.ui.device.TogglePresentation;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingRow;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.containers.YoList;
 import com.yohu.youi.api.containers.list.ListPrefixSpec;
 import com.yohu.youi.api.containers.list.ListSuffixSpec;
@@ -23,9 +21,7 @@ import com.yohu.youi.api.controls.YoSwitch;
 import com.yohu.youi.api.navigation.YoMenu;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -35,8 +31,10 @@ import java.util.Optional;
  * 交给自己的专门组件（滑杆 / 动作卡 / 录音列表 / 双连接设备列表）。本类不判断能力 id，
  * 路由已在 {@code SettingsSectionFactory} 完成。</p>
  *
- * <p>与「值未知」相关的裁定统一在此落地：开关、开关位置、曲线入口都**不因值未知而消失或禁用**；
- * 用户本次的选择/编辑结果作为视图层「未确认」状态保存，写入失败时丢弃并重建呈现。</p>
+ * <p>本类<b>不持有任何业务状态</b>：开关位置、滑杆位置、曲线是否已保存全部来自
+ * {@link DeviceSettingsUiState#writeOf(String)} 与行上的设备事实；「未确认」值、写入中、失败回退
+ * 都由 ViewModel 的状态驱动，视图只做投影。重建判据是整份状态的<b>结构等价</b>
+ * （{@link DeviceSettingsUiState} 是记录，含行、写入槽与列表事实），不再拼字符串签名。</p>
  */
 public final class SettingsRowsView implements SettingsSectionView {
 
@@ -48,18 +46,13 @@ public final class SettingsRowsView implements SettingsSectionView {
     private final List<Runnable> releases = new ArrayList<>();
     /** 本视图自己创建、需要随视图释放的 YoUI 组件（选项菜单）。 */
     private final YoComponents components = new YoComponents();
-    /** 上次真正重建时的输入签名：相同输入不再拆掉整棵控件树。 */
-    private String renderedSignature = "";
-    /** 设备未上报时用户在视图层的未确认开关位置；不写回设备状态。 */
-    private final Map<String, Boolean> pendingToggles = new HashMap<>();
-    /** 设备未上报时用户在视图层的未确认曲线；仅用于「已保存」呈现与编辑器回填。 */
-    private final Map<String, List<Integer>> curveDrafts = new HashMap<>();
-    private final List<ControlOutcomeSink> outcomeSinks = new ArrayList<>();
+
+    /** 上次真正渲染的输入：结构等价即不重建控件树。 */
+    private DeviceSettingsUiState rendered;
 
     private YoList.Builder pendingBuilder;
     private List<DeviceSettingRow.Entry> pendingRows = new ArrayList<>();
     private CustomEqSheet customEqSheet;
-    private DeviceSettingsUiState lastState;
 
     public SettingsRowsView(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
                             @NonNull SettingsInteractionListener listener) {
@@ -78,17 +71,15 @@ public final class SettingsRowsView implements SettingsSectionView {
 
     @Override
     public void render(@NonNull DeviceSettingsUiState state) {
-        lastState = state;
-        String signature = signatureOf(state);
-        if (signature.equals(renderedSignature)) {
+        if (state.equals(rendered)) {
             return;
         }
-        renderedSignature = signature;
+        rendered = state;
         content.removeAllViews();
         release();
         for (DeviceSettingRow row : state.rows()) {
             switch (row) {
-                case DeviceSettingRow.Entry entry -> appendEntry(entry, state.interactive());
+                case DeviceSettingRow.Entry entry -> appendEntry(entry, state);
                 case DeviceSettingRow.Component component -> {
                     flushPending(state.interactive());
                     addComponent(component, state);
@@ -96,21 +87,6 @@ public final class SettingsRowsView implements SettingsSectionView {
             }
         }
         flushPending(state.interactive());
-    }
-
-    /** 写入落地结果：失败时丢弃未确认状态并重建，控件回到「未上报」呈现。 */
-    public void onControlOutcome(@NonNull DeviceControlOutcome outcome) {
-        if (outcome.succeeded()) {
-            return;
-        }
-        boolean touched = pendingToggles.remove(outcome.capabilityId()) != null;
-        touched |= curveDrafts.remove(outcome.capabilityId()) != null;
-        for (ControlOutcomeSink sink : outcomeSinks) {
-            touched |= sink.onControlOutcome(outcome);
-        }
-        if (touched && lastState != null) {
-            render(lastState);
-        }
     }
 
     @Override
@@ -122,36 +98,34 @@ public final class SettingsRowsView implements SettingsSectionView {
         components.close();
         content.removeAllViews();
         release();
-    }
-
-    /** 行数据 + 可交互 + 视图层「未确认」状态任何一项变了才重建。 */
-    @NonNull
-    private String signatureOf(@NonNull DeviceSettingsUiState state) {
-        return state.rows() + "\u0001" + state.interactive() + "\u0001"
-                + pendingToggles + "\u0001" + curveDrafts;
+        rendered = null;
     }
 
     private void release() {
         chrome.releaseAll(releases);
-        outcomeSinks.clear();
         pendingBuilder = null;
         pendingRows = new ArrayList<>();
     }
 
     // ---- 轻行 ----
 
-    private void appendEntry(@NonNull DeviceSettingRow.Entry row, boolean interactive) {
+    private void appendEntry(@NonNull DeviceSettingRow.Entry row,
+                             @NonNull DeviceSettingsUiState state) {
         if (pendingBuilder == null) {
             pendingBuilder = YoList.create(activity);
             pendingRows = new ArrayList<>();
         }
+        boolean interactive = state.interactive();
         switch (row) {
-            case DeviceSettingRow.Toggle toggle -> addToggle(toggle, interactive);
+            case DeviceSettingRow.Toggle toggle -> addToggle(toggle, state);
             case DeviceSettingRow.Choice choice -> addChoice(choice, interactive);
-            case DeviceSettingRow.Curve curve -> addCurve(curve, interactive);
+            case DeviceSettingRow.Curve curve -> addCurve(curve, state);
             case DeviceSettingRow.Info info -> pendingBuilder.addItem(ListPrefixSpec.none(),
                     ListTextSpec.of(activity.getString(info.titleRes())),
                     ListSuffixSpec.text(info.value()));
+            case DeviceSettingRow.Notice notice -> pendingBuilder.addItem(ListPrefixSpec.none(),
+                    ListTextSpec.colored(activity.getString(notice.textRes()), theme.text3),
+                    ListSuffixSpec.none());
             case DeviceSettingRow.Unsupported unsupported -> pendingBuilder.addItem(
                     ListPrefixSpec.none(),
                     ListTextSpec.colored(unsupported.title(), theme.text3),
@@ -162,18 +136,18 @@ public final class SettingsRowsView implements SettingsSectionView {
         pendingRows.add(row);
     }
 
-    private void addToggle(@NonNull DeviceSettingRow.Toggle row, boolean interactive) {
-        TogglePresentation presentation = TogglePresentation.of(row.checked(),
-                Optional.ofNullable(pendingToggles.get(row.capabilityId())), interactive);
+    private void addToggle(@NonNull DeviceSettingRow.Toggle row,
+                           @NonNull DeviceSettingsUiState state) {
+        DeviceSettingsUiState.WriteSlot slot = state.writeOf(row.capabilityId());
+        TogglePresentation presentation = TogglePresentation.of(slot.state(), row.checked(),
+                slot.toggleValue(), state.interactive());
         ListTextSpec text = presentation.unknown()
                 ? ListTextSpec.of(row.title(), activity.getString(R.string.device_value_unknown))
                 : ListTextSpec.of(row.title());
         if (presentation.enabled()) {
             pendingBuilder.addItem(ListPrefixSpec.none(), text,
-                    ListSuffixSpec.switch_(presentation.position(), next -> {
-                        pendingToggles.put(row.capabilityId(), next);
-                        listener.onToggle(row.capabilityId(), next);
-                    }));
+                    ListSuffixSpec.switch_(presentation.position(),
+                            next -> listener.onToggle(row.capabilityId(), next)));
             return;
         }
         YoSwitch readOnly = YoSwitch.create(activity)
@@ -199,13 +173,18 @@ public final class SettingsRowsView implements SettingsSectionView {
                 ListSuffixSpec.text(value, theme.text3));
     }
 
-    /** 曲线入口恒定可点：编辑器自带给初值，不依赖设备是否上报过曲线。 */
-    private void addCurve(@NonNull DeviceSettingRow.Curve row, boolean interactive) {
-        boolean saved = row.points().isPresent() || curveDrafts.containsKey(row.capabilityId());
+    /**
+     * 曲线入口恒定可点：编辑器初值由描述符派生（段数 = 频段 options，平直值 = range 下界），
+     * 不依赖设备是否上报过曲线。描述符缺频段表或值域时工厂根本不会生成该行。
+     */
+    private void addCurve(@NonNull DeviceSettingRow.Curve row,
+                          @NonNull DeviceSettingsUiState state) {
+        DeviceSettingsUiState.WriteSlot slot = state.writeOf(row.capabilityId());
+        boolean saved = row.points().isPresent() || slot.curveValue().isPresent();
         String value = saved
                 ? activity.getString(R.string.device_eq_custom)
                 : activity.getString(R.string.device_value_unknown);
-        if (interactive) {
+        if (state.interactive()) {
             pendingBuilder.addItem(ListPrefixSpec.none(),
                     ListTextSpec.of(row.title()),
                     ListSuffixSpec.textAndArrow(value));
@@ -248,6 +227,8 @@ public final class SettingsRowsView implements SettingsSectionView {
             }
             case DeviceSettingRow.Info info -> {
             }
+            case DeviceSettingRow.Notice notice -> {
+            }
             case DeviceSettingRow.Unsupported unsupported -> {
             }
         }
@@ -283,20 +264,22 @@ public final class SettingsRowsView implements SettingsSectionView {
         if (customEqSheet != null) {
             return;
         }
-        List<Integer> seed = CurveEditorSeed.of(row.points(),
-                Optional.ofNullable(curveDrafts.get(row.capabilityId())));
-        customEqSheet = CustomEqSheet.show(activity, theme, seed, new CustomEqSheet.Listener() {
-            @Override
-            public void onSaved(@NonNull List<Integer> edited) {
-                curveDrafts.put(row.capabilityId(), edited);
-                listener.onCurve(row.capabilityId(), edited);
-            }
+        Optional<List<Integer>> pending = rendered == null
+                ? Optional.empty()
+                : rendered.writeOf(row.capabilityId()).curveValue();
+        // 段数/值域/编辑起点全部由描述符决定：描述符缺频段表或增益值域时面板不打开（不可用）。
+        customEqSheet = CustomEqSheet.show(activity, theme, row.options(), row.range(),
+                row.points(), pending, new CustomEqSheet.Listener() {
+                    @Override
+                    public void onSaved(@NonNull List<Integer> edited) {
+                        listener.onCurve(row.capabilityId(), edited);
+                    }
 
-            @Override
-            public void onDismissed() {
-                customEqSheet = null;
-            }
-        });
+                    @Override
+                    public void onDismissed() {
+                        customEqSheet = null;
+                    }
+                }).orElse(null);
     }
 
     // ---- 专门组件 ----
@@ -308,8 +291,7 @@ public final class SettingsRowsView implements SettingsSectionView {
                 SliderCardView card = new SliderCardView(activity, theme, listener,
                         level.capabilityId());
                 releases.add(card::destroy);
-                outcomeSinks.add(card);
-                card.bind(level, state.interactive());
+                card.bind(level, state.writeOf(level.capabilityId()), state.interactive());
                 chrome.addCard(content, card.view());
             }
             case DeviceSettingRow.Action action -> {

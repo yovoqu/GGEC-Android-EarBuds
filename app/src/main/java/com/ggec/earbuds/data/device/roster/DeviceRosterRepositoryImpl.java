@@ -1,13 +1,15 @@
 package com.ggec.earbuds.data.device.roster;
 
 import com.ggec.earbuds.data.device.json.DeviceRosterJson;
+import com.ggec.earbuds.data.store.DocumentFormatException;
+import com.ggec.earbuds.data.store.DocumentStore;
+import com.ggec.earbuds.data.store.FileDocumentStore.DocumentReadException;
+import com.ggec.earbuds.data.store.FileDocumentStore.DocumentWriteException;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
 import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;
 import com.ggec.earbuds.domain.device.port.Subscription;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -23,13 +25,12 @@ import java.util.function.UnaryOperator;
  * <p>变更在调用线程上原子生效并立即通知观察者（观察者应快速返回，不得回调仓库）；
  * 落盘交给我们注入的串行执行器，多次变更只写最后一次，主线程不碰 JSON/文件/fsync。</p>
  *
- * <p>冷启动读失败：台账以空集启动，坏文件挪到 {@code .bad} 保留现场，
- * 失败经 {@link #startupFailure()} 与 {@link #observeFailures(Consumer)} 上报，
+ * <p>冷启动读失败：台账以空集启动，坏文件由 {@link DeviceRosterJson} 挪到 {@code .bad}
+ * 保留现场，失败经 {@link #startupFailure()} 与 {@link #observeFailures(Consumer)} 上报，
  * 绝不静默清空。</p>
  */
 public final class DeviceRosterRepositoryImpl implements DeviceRosterRepository {
 
-    private final File file;
     private final DeviceRosterJson json;
     private final Executor io;
     private final Object lock = new Object();
@@ -43,17 +44,15 @@ public final class DeviceRosterRepositoryImpl implements DeviceRosterRepository 
     private volatile DeviceRoster current;
     private final DeviceFailure startupFailure;
 
-    public DeviceRosterRepositoryImpl(File file, DeviceRosterJson json, Executor io) {
-        this.file = Objects.requireNonNull(file, "file");
-        this.json = Objects.requireNonNull(json, "json");
+    public DeviceRosterRepositoryImpl(DocumentStore documents, String document, Executor io) {
+        this.json = new DeviceRosterJson(documents, document);
         this.io = Objects.requireNonNull(io, "io");
         DeviceRoster loaded = DeviceRoster.empty();
         DeviceFailure failure = null;
         try {
-            loaded = json.read(file);
-        } catch (IOException broken) {
+            loaded = json.read().orElse(DeviceRoster.empty());
+        } catch (DocumentFormatException | DocumentReadException | DocumentWriteException broken) {
             failure = DeviceFailure.STORE_FAILED;
-            json.quarantine(file);
         }
         this.current = loaded;
         this.startupFailure = failure;
@@ -115,8 +114,8 @@ public final class DeviceRosterRepositoryImpl implements DeviceRosterRepository 
             return;
         }
         try {
-            json.write(file, target);
-        } catch (IOException failure) {
+            json.write(target);
+        } catch (DocumentWriteException unwritable) {
             for (Consumer<DeviceFailure> listener : failureListeners) {
                 listener.accept(DeviceFailure.STORE_FAILED);
             }

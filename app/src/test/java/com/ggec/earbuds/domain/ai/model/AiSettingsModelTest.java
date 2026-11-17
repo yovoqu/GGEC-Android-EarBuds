@@ -225,7 +225,7 @@ public class AiSettingsModelTest {
         assertEquals(321, done.elapsedMillis());
         assertEquals("a1", done.id());
 
-        AiMessage failed = streaming.fail(AiFailureKind.NETWORK, "reset", 50);
+        AiMessage failed = streaming.fail(AiFailureKind.NETWORK, 50);
         assertEquals(AiMessageStatus.ERROR, failed.status());
         assertEquals(AiFailureKind.NETWORK, failed.failure().kind());
         assertEquals("Hello", failed.text());
