@@ -1,3 +1,25 @@
+# ============================================================================
+# Git LFS 追踪规则
+#
+# 背景：sherpa-onnx 语音模型单文件可达 150MB+，超过 GitHub 100MB 单文件上限，
+# 会导致推送被 pre-receive hook 拒绝（GH001）。以下二进制资产纳入 LFS，
+# 仓库里只存指针，实体走 LFS 存储。
+# 注意：本文件只影响「新增/重新加入索引」的文件；历史提交里的既有 blob 不变。
+
+# --- sherpa-onnx 语音模型（体积最大，必须 LFS） -----------------------------
+*.onnx          filter=lfs diff=lfs merge=lfs -text
+*.ort           filter=lfs diff=lfs merge=lfs -text
+# --- 预编译二进制库（aar/jar 里的 so 无法再压缩，体积大） -------------------
+*.aar           filter=lfs diff=lfs merge=lfs -text
+*.so            filter=lfs diff=lfs merge=lfs -text
+# --- 音视频录制产物 / 素材（避免误提交大文件） ------------------------------
+*.wav           filter=lfs diff=lfs merge=lfs -text
+*.mp3           filter=lfs diff=lfs merge=lfs -text
+*.mp4           filter=lfs diff=lfs merge=lfs -text
+*.pcm           filter=lfs diff=lfs merge=lfs -text
+# --- 打包产物 ---------------------------------------------------------------
+*.apk           filter=lfs diff=lfs merge=lfs -text
+*.aab           filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.aar filter=lfs diff=lfs merge=lfs -text
 *.so filter=lfs diff=lfs merge=lfs -text
