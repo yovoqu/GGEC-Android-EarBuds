@@ -1,0 +1,2 @@
+-keep class com.yovo.lib_ggec_audio.** { public *; }
+-keep interface com.yovo.lib_ggec_audio.** { *; }

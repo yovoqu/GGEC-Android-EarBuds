@@ -1,0 +1,105 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.yovo.lib_ggec_audio'
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
+
+    defaultConfig {
+        minSdk 24
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    // 唯一允许的模块依赖：帧几何与 Opus 单帧字节数必须和 codec 模块同一套取值。
+    // 本模块的 AudioFrameContract 直接从 lib_ggec_opus 的 api.YoOpusAudioContract 推导，
+    // 因此这是活依赖（不是「声明了但没人用」）。
+    implementation project(':lib_ggec_opus')
+    implementation 'androidx.annotation:annotation:1.9.1'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def libGgecAudioRoot = project.projectDir
+
+/**
+ * 结构性边界门禁（无类名/文件名白名单）：
+ *
+ *  - 依赖集合只有 lib_ggec_opus 的公开面：src 里除 com.yovo.lib_ggec_audio 自身外，
+ *    只允许 com.yovo.lib_ggec_opus.YoOpusSdk 与 com.yovo.lib_ggec_opus.api.**；
+ *    显式禁止 com.yovo.lib_ggec_opus.internal.**（实现细节不得跨模块引用）；
+ *  - 不知道产品：modelId / projectId / deviceType / HS0 / WY0 关键字零命中；
+ *  - 不打散点日志：禁止 android.util.Log 与 printStackTrace，观测只能经 AudioFrameTrace 出模块；
+ *  - 不吞异常：禁止 catch (Throwable / Exception ignored)。
+ */
+tasks.register('checkLibGgecAudioBoundary') {
+    group = 'verification'
+    description = 'Structural layering gate for lib_ggec_audio (no allow lists).'
+    doLast {
+        def offenders = []
+        def productKeywords = ['modelId', 'projectId', 'deviceType', 'HS0', 'WY0']
+        fileTree(libGgecAudioRoot) {
+            include 'src/main/java/**/*.java'
+            include 'src/test/java/**/*.java'
+        }.each { file ->
+            def path = '/' + project.rootDir.relativePath(file).replace('\\', '/')
+            file.eachLine { line, index ->
+                def location = "${path}:${index}"
+                def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
+                if (imported.find()) {
+                    def target = imported.group(1)
+                    if (target.startsWith('com.yovo.')
+                            && !target.startsWith('com.yovo.lib_ggec_audio.')) {
+                        def allowedOpus = target.startsWith('com.yovo.lib_ggec_opus.api.')
+                                || target == 'com.yovo.lib_ggec_opus.YoOpusSdk'
+                        if (!allowedOpus) {
+                            offenders << "${location}: 本模块只能用 lib_ggec_opus 的 api/** 与门面"
+                                    + " -> ${target}"
+                        }
+                    }
+                }
+                if (line.trim().contains('import android.util.Log')) {
+                    offenders << "${location}: 禁止散点日志，观测点只能是 AudioFrameTrace"
+                }
+                if (line.contains('printStackTrace')
+                        || line =~ /catch\s*\(\s*(Throwable|Exception)\s+ignored\s*\)/) {
+                    offenders << "${location}: 禁止吞异常"
+                }
+                productKeywords.each { keyword ->
+                    if (line.contains(keyword)) {
+                        offenders << "${location}: lib 层不得携带产品知识 -> ${keyword}"
+                    }
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('lib_ggec_audio 边界被打破：\n' + offenders.join('\n'))
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkLibGgecAudioBoundary'
+}
