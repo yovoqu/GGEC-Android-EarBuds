@@ -11,7 +11,6 @@ import android.widget.BaseAdapter;
 import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -24,6 +23,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.provider.lib_common.permission.PermissionProvider;
 import com.ggec.earbuds.record.wiring.RecordGraph;
 import com.google.android.material.button.MaterialButton;
+import com.yohu.youi.api.feedback.YoToast;
 import com.yovo.biz_ggec_record.api.RecordConnectionObserver;
 import com.yovo.biz_ggec_record.api.RecordNearbyObserver;
 import com.yovo.biz_ggec_record.api.RecordSessionObserver;
@@ -57,6 +57,7 @@ public final class RecordMainActivity extends AppCompatActivity {
     private MaterialButton asrModelButton;
     private MaterialButton codecH264;
     private MaterialButton codecH265;
+    private MaterialButton captureButton;
     private ListView deviceList;
     private DeviceAdapter adapter;
     private final List<RecordNearbyDevice> devices = new ArrayList<>();
@@ -98,6 +99,7 @@ public final class RecordMainActivity extends AppCompatActivity {
         asrModelButton = findViewById(R.id.record_asr_model);
         codecH264 = findViewById(R.id.record_codec_h264);
         codecH265 = findViewById(R.id.record_codec_h265);
+        captureButton = findViewById(R.id.record_capture);
         deviceList = findViewById(R.id.record_device_list);
 
         adapter = new DeviceAdapter();
@@ -149,6 +151,14 @@ public final class RecordMainActivity extends AppCompatActivity {
             subtitleFinalView.setText("");
             subtitlePartialView.setText("");
         });
+        captureButton.setOnClickListener(v -> {
+            if (graph.client().isRecording()) {
+                graph.client().stopRecording();
+            } else {
+                graph.client().startRecording();
+            }
+        });
+        resetCaptureButton();
 
         videoView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
@@ -189,6 +199,7 @@ public final class RecordMainActivity extends AppCompatActivity {
                 videoPlaceholder.setVisibility(playing ? View.GONE : View.VISIBLE);
                 if (!playing) {
                     statsView.setText(R.string.record_stats_idle);
+                    resetCaptureButton();
                 }
                 if (state == RecordConnectionState.READY
                         || state == RecordConnectionState.CONNECTING
@@ -237,7 +248,39 @@ public final class RecordMainActivity extends AppCompatActivity {
             public void onSessionError(@NonNull String message) {
                 statusView.setText(getString(R.string.record_status_failed, message));
             }
+
+            @Override
+            public void onRecordingStarted(@NonNull String path) {
+                captureButton.setText(R.string.record_capture_stop);
+                captureButton.setBackgroundTintList(
+                        android.content.res.ColorStateList.valueOf(getColor(R.color.record_danger)));
+                statusView.setText(R.string.record_capture_started);
+            }
+
+            @Override
+            public void onRecordingFinished(@NonNull String path, long bytes, long durationMs) {
+                resetCaptureButton();
+                long kb = Math.max(1L, bytes / 1024L);
+                long sec = Math.max(1L, durationMs / 1000L);
+                int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+                String name = slash >= 0 && slash + 1 < path.length() ? path.substring(slash + 1) : path;
+                String msg = getString(R.string.record_capture_saved, name, kb, sec);
+                statusView.setText(msg);
+                YoToast.show(RecordMainActivity.this, msg);
+            }
+
+            @Override
+            public void onRecordingFailed(@NonNull String message) {
+                resetCaptureButton();
+                statusView.setText(getString(R.string.record_capture_failed, message));
+            }
         });
+    }
+
+    private void resetCaptureButton() {
+        captureButton.setText(R.string.record_capture_start);
+        captureButton.setBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(getColor(R.color.record_accent)));
     }
 
     @Override

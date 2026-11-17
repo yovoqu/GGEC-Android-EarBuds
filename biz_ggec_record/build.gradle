@@ -67,6 +67,7 @@ tasks.register('checkBizGgecRecordBoundary') {
             def inInternalMedia = path.contains('/internal/video/') ||
                     path.contains('/internal/audio/') ||
                     path.contains('/internal/asr/') ||
+                    path.contains('/internal/mux/') ||
                     path.contains('/internal/link/')
             file.eachLine { line, index ->
                 if (line =~ /import\s+com\.yovo\.lib_bluetooth\.internal\./) {

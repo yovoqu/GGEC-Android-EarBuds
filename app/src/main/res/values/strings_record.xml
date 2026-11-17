@@ -29,4 +29,9 @@
     <string name="record_asr_model_zipformer">Zipformer</string>
     <string name="record_asr_model_paraformer">Paraformer</string>
     <string name="record_asr_clear">清空字幕</string>
+    <string name="record_capture_start">录制</string>
+    <string name="record_capture_stop">停止录制</string>
+    <string name="record_capture_started">正在录制 MP4…</string>
+    <string name="record_capture_saved">已保存 %1$s（%2$d KB · %3$d 秒）</string>
+    <string name="record_capture_failed">录制失败: %1$s</string>
 </resources>

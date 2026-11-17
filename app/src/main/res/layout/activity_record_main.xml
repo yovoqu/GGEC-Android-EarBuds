@@ -9,7 +9,7 @@
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginBottom="210dp"
+        android:layout_marginBottom="260dp"
         android:background="@color/record_video_placeholder">
 
         <TextureView
@@ -180,6 +180,13 @@
                     android:text="@string/record_asr_clear" />
             </LinearLayout>
         </HorizontalScrollView>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/record_capture"
+            style="@style/Widget.Record.Primary"
+            android:layout_width="match_parent"
+            android:layout_marginTop="10dp"
+            android:text="@string/record_capture_start" />
 
         <LinearLayout
             android:layout_width="match_parent"

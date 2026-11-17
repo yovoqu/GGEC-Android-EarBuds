@@ -42,4 +42,22 @@ public interface YoRecordClient {
 
     /** 向设备 RX 特征写入 US-ASCII 文本。未就绪时忽略。 */
     void sendText(@NonNull String text);
+
+    /**
+     * 边预览边录制：旁路封装当前压缩码流为 MP4。
+     * 默认写入应用专属目录 {@code record/ble_av_<ts>.mp4}。
+     * 未就绪或已在录制时通过 {@link RecordSessionObserver#onRecordingFailed} 回报。
+     */
+    void startRecording();
+
+    /**
+     * 录制到指定绝对路径；父目录不存在时会尝试创建。
+     *
+     * @param absolutePath 目标文件绝对路径（建议以 .mp4 结尾）
+     */
+    void startRecording(@NonNull String absolutePath);
+
+    void stopRecording();
+
+    boolean isRecording();
 }
