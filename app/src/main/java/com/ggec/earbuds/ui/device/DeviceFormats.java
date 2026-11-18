@@ -56,4 +56,22 @@ public final class DeviceFormats {
         long rest = seconds % 60L;
         return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, rest);
     }
+
+    /**
+     * 播放进度时间轴展示：不足 1 小时用 {@code MM:SS}，超过用 {@code H:MM:SS}。
+     * 未知（负数）走 {@link #UNKNOWN}。
+     */
+    public static String clock(long durationMs) {
+        if (durationMs < 0) {
+            return UNKNOWN;
+        }
+        long seconds = durationMs / 1000L;
+        long hours = seconds / 3600L;
+        long minutes = (seconds % 3600L) / 60L;
+        long rest = seconds % 60L;
+        if (hours > 0L) {
+            return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, rest);
+        }
+        return String.format(Locale.US, "%02d:%02d", minutes, rest);
+    }
 }

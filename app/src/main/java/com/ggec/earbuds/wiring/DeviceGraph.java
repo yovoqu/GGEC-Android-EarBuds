@@ -66,6 +66,7 @@ public final class DeviceGraph {
     private final DeviceEndpoints endpoints;
     private final DeviceGateway gateway;
     private final DeviceSession session;
+    private final Context appContext;
     private final SyncActiveDevice syncActiveDevice;
     private final DeviceCapabilityCatalog catalog;
     private final DeviceRosterRepository roster;
@@ -86,6 +87,7 @@ public final class DeviceGraph {
     public DeviceGraph(@NonNull Context appContext, @NonNull Executor storeExecutor,
                        @NonNull LongSupplier clock) {
         Context app = appContext.getApplicationContext();
+        this.appContext = app;
         this.endpoints = new DeviceEndpoints(List.<DeviceEndpoint>of(
                 new HsDeviceEndpoint(app), new WyDeviceEndpoint(app)));
         this.gateway = new DeviceGateway(endpoints);
@@ -133,7 +135,7 @@ public final class DeviceGraph {
     public ViewModelProvider.Factory recordFactory() {
         return new Factory<>(RecordViewModel.class,
                 () -> new RecordViewModel(recordPort, observeDevice,
-                        new AndroidPcmPlayback(), new MainThreadTicker(),
+                        new AndroidPcmPlayback(appContext), new MainThreadTicker(),
                         SystemClock::elapsedRealtime));
     }
 

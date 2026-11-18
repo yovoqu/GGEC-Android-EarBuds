@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.domain.device.model.DeviceState;
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.RecordOutcome;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
@@ -229,6 +230,31 @@ public final class RecordViewModelTest {
         @Override
         public String playingFilePath() {
             return null;
+        }
+
+        @Override
+        public long positionMs() {
+            return 0L;
+        }
+
+        @Override
+        public long durationMs() {
+            return 0L;
+        }
+
+        @Override
+        public List<PlaybackOutput> availableOutputs() {
+            return List.of();
+        }
+
+        @Override
+        public PlaybackOutput currentOutput() {
+            return null;
+        }
+
+        @Override
+        public boolean selectOutput(String outputId) {
+            return false;
         }
 
         @Override

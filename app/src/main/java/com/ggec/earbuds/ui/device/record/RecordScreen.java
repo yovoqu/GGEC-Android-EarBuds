@@ -34,6 +34,7 @@ public final class RecordScreen {
         void onStopStreamRecord();
         void onTogglePlay(@NonNull SavedRecordItem item);
         void onDeleteLocalFile(@NonNull SavedRecordItem item);
+        void onSelectPlaybackOutput(@NonNull String outputId);
         void onStartDeviceRecord();
         void onStopDeviceRecord();
         void onRefreshDeviceRecords();
@@ -154,6 +155,11 @@ public final class RecordScreen {
             public void onDeleteLocalFile(@NonNull SavedRecordItem item) {
                 listener.onDeleteLocalFile(item);
             }
+
+            @Override
+            public void onSelectPlaybackOutput(@NonNull String outputId) {
+                listener.onSelectPlaybackOutput(outputId);
+            }
         });
 
         localPanel = new LocalRecordPanel(activity, theme, new LocalRecordPanel.Listener() {
@@ -252,6 +258,7 @@ public final class RecordScreen {
     }
 
     public void destroy() {
+        streamPanel.destroy();
         components.close();
     }
 

@@ -24,6 +24,7 @@ import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
@@ -52,6 +53,9 @@ public final class RecordViewModel extends ViewModel {
     /** 耳机本地录音计时的节拍。 */
     private static final long TICK_INTERVAL_MS = 1000L;
 
+    /** 本地录音播放进度的刷新节拍：足够顺滑，又不至于每帧重建列表。 */
+    private static final long PLAYBACK_TICK_MS = 500L;
+
     private final RecordPort recordPort;
     private final ObserveDevice observeDevice;
     private final PcmPlaybackPort playbackPort;
@@ -66,15 +70,27 @@ public final class RecordViewModel extends ViewModel {
     private final RecordPort.StreamRecordObserver streamObserver = new PortStreamObserver();
 
     private RecordState state = RecordState.initial();
-    private boolean ticking;
+    private boolean deviceTicking;
+    private boolean playbackTicking;
 
     private final Runnable tickTask = new Runnable() {
         @Override
         public void run() {
             synchronized (RecordViewModel.this) {
-                ticking = false;
+                deviceTicking = false;
             }
             dispatch(new RecordEvent.DeviceRecordTicked(clock.getAsLong()));
+        }
+    };
+
+    private final Runnable playbackTickTask = new Runnable() {
+        @Override
+        public void run() {
+            synchronized (RecordViewModel.this) {
+                playbackTicking = false;
+            }
+            dispatch(new RecordEvent.PlaybackProgress(
+                    playbackPort.positionMs(), playbackPort.durationMs()));
         }
     };
 
@@ -156,6 +172,11 @@ public final class RecordViewModel extends ViewModel {
         dispatch(new RecordEvent.PlaybackStopRequested());
     }
 
+    /** 切换正在播放的物理输出设备（播放源）。 */
+    public void selectPlaybackOutput(@NonNull String outputId) {
+        dispatch(new RecordEvent.PlaybackOutputSelectRequested(outputId));
+    }
+
     public void deleteLocalFile(@NonNull SavedRecordItem item) {
         dispatch(new RecordEvent.LocalDeleteRequested(item));
     }
@@ -176,16 +197,25 @@ public final class RecordViewModel extends ViewModel {
     }
 
     private synchronized void syncTicker() {
-        boolean active = state.deviceRecord().phase() == RecordState.DeviceRecordPhase.ACTIVE;
-        if (active == ticking) {
-            return;
+        boolean deviceActive = state.deviceRecord().phase() == RecordState.DeviceRecordPhase.ACTIVE;
+        if (deviceActive != deviceTicking) {
+            deviceTicking = deviceActive;
+            if (deviceActive) {
+                ticker.postDelayed(tickTask, TICK_INTERVAL_MS);
+            } else {
+                ticker.removeCallbacks(tickTask);
+            }
         }
-        ticking = active;
-        if (active) {
-            ticker.postDelayed(tickTask, TICK_INTERVAL_MS);
-            return;
+
+        boolean playbackActive = state.playback().active();
+        if (playbackActive != playbackTicking) {
+            playbackTicking = playbackActive;
+            if (playbackActive) {
+                ticker.postDelayed(playbackTickTask, PLAYBACK_TICK_MS);
+            } else {
+                ticker.removeCallbacks(playbackTickTask);
+            }
         }
-        ticker.removeCallbacks(tickTask);
     }
 
     private void execute(@NonNull RecordEffect effect) {
@@ -222,13 +252,26 @@ public final class RecordViewModel extends ViewModel {
                     () -> dispatch(new RecordEvent.LocalDeleteSucceeded(delete.filePath())),
                     failure -> dispatch(new RecordEvent.LocalDeleteFailed(
                             delete.filePath(), failure)));
-            case RecordEffect.Play play ->
-                    playbackPort.play(play.filePath(), () -> dispatch(new RecordEvent.PlaybackFinished()));
+            case RecordEffect.Play play -> {
+                playbackPort.play(play.filePath(), () -> dispatch(new RecordEvent.PlaybackFinished()));
+                publishPlaybackRoute();
+            }
             case RecordEffect.StopPlayback ignored -> playbackPort.stop();
+            case RecordEffect.SelectPlaybackOutput select -> {
+                playbackPort.selectOutput(select.outputId());
+                publishPlaybackRoute();
+            }
             case RecordEffect.ReloadLocal ignored ->
                     dispatch(new RecordEvent.LocalFilesReloaded(recordPort.listLocalSavedFiles()));
             case RecordEffect.Notify notification -> notices.postValue(notification.notice());
         }
+    }
+
+    /** 把端口此刻的输出设备事实回灌状态机：当前设备 + 可选设备列表。 */
+    private void publishPlaybackRoute() {
+        dispatch(new RecordEvent.PlaybackRouteChanged(
+                Optional.ofNullable(playbackPort.currentOutput()),
+                playbackPort.availableOutputs()));
     }
 
     /**
@@ -253,8 +296,10 @@ public final class RecordViewModel extends ViewModel {
     @Override
     protected void onCleared() {
         ticker.removeCallbacks(tickTask);
+        ticker.removeCallbacks(playbackTickTask);
         synchronized (this) {
-            ticking = false;
+            deviceTicking = false;
+            playbackTicking = false;
         }
         playbackPort.stop();
         playbackPort.release();

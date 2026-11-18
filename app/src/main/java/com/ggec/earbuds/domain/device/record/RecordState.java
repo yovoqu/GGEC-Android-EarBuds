@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.device.record;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
@@ -31,7 +32,7 @@ public record RecordState(
         Sync sync,
         List<SavedRecordItem> localFiles,
         List<RecordFileView> deviceFiles,
-        Optional<String> playingFile) {
+        Playback playback) {
 
     public RecordState {
         Objects.requireNonNull(mode, "mode");
@@ -41,7 +42,7 @@ public record RecordState(
         Objects.requireNonNull(sync, "sync");
         localFiles = List.copyOf(Objects.requireNonNull(localFiles, "localFiles"));
         deviceFiles = List.copyOf(Objects.requireNonNull(deviceFiles, "deviceFiles"));
-        playingFile = Objects.requireNonNull(playingFile, "playingFile");
+        playback = Objects.requireNonNull(playback, "playback");
     }
 
     /**
@@ -61,7 +62,13 @@ public record RecordState(
                 Sync.idle(),
                 List.of(),
                 List.of(),
-                Optional.empty());
+                Playback.idle());
+    }
+
+    /** 兼容读取：当前正在播放的文件路径（来自 {@link Playback#filePath()}）。 */
+    @NonNull
+    public Optional<String> playingFile() {
+        return playback.filePath();
     }
 
     // ---- 单字段迁移：状态机只换被事件影响的那一个字段 ----
@@ -69,47 +76,47 @@ public record RecordState(
     @NonNull
     public RecordState withMode(@NonNull RecordMode next) {
         return new RecordState(next, supported, connected, stream, deviceRecord, sync,
-                localFiles, deviceFiles, playingFile);
+                localFiles, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withConnection(boolean nextConnected, @NonNull Set<RecordMode> nextSupported) {
         return new RecordState(mode, nextSupported, nextConnected, stream, deviceRecord, sync,
-                localFiles, deviceFiles, playingFile);
+                localFiles, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withStream(@NonNull Stream next) {
         return new RecordState(mode, supported, connected, next, deviceRecord, sync,
-                localFiles, deviceFiles, playingFile);
+                localFiles, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withDeviceRecord(@NonNull DeviceRecord next) {
         return new RecordState(mode, supported, connected, stream, next, sync,
-                localFiles, deviceFiles, playingFile);
+                localFiles, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withSync(@NonNull Sync next) {
         return new RecordState(mode, supported, connected, stream, deviceRecord, next,
-                localFiles, deviceFiles, playingFile);
+                localFiles, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withLocalFiles(@NonNull List<SavedRecordItem> next) {
         return new RecordState(mode, supported, connected, stream, deviceRecord, sync,
-                next, deviceFiles, playingFile);
+                next, deviceFiles, playback);
     }
 
     @NonNull
     public RecordState withDeviceFiles(@NonNull List<RecordFileView> next) {
         return new RecordState(mode, supported, connected, stream, deviceRecord, sync,
-                localFiles, next, playingFile);
+                localFiles, next, playback);
     }
 
     @NonNull
-    public RecordState withPlayingFile(@NonNull Optional<String> next) {
+    public RecordState withPlayback(@NonNull Playback next) {
         return new RecordState(mode, supported, connected, stream, deviceRecord, sync,
                 localFiles, deviceFiles, next);
     }
@@ -219,6 +226,60 @@ public record RecordState(
 
         public boolean inFlight() {
             return phase == SyncPhase.IN_FLIGHT;
+        }
+    }
+
+    // ---- 本地已存文件播放 ----
+
+    /**
+     * 本地已存录音的播放事实：播放哪个文件、进度、总时长、当前物理输出设备与可选设备。
+     *
+     * <p>所有字段都由端口上报或用户意图驱动，界面不另存播放进度；{@code filePath} 存在即「正在播放」。
+     * 进度由 {@link RecordEvent.PlaybackProgress} 推进，输出设备由 {@link RecordEvent.PlaybackRouteChanged}
+     * 落定，状态机自己不读时钟、不枚举系统设备。</p>
+     */
+    public record Playback(@NonNull Optional<String> filePath,
+                           long positionMs,
+                           long durationMs,
+                           @NonNull Optional<PlaybackOutput> output,
+                           @NonNull List<PlaybackOutput> outputs) {
+
+        public Playback {
+            Objects.requireNonNull(filePath, "filePath");
+            Objects.requireNonNull(output, "output");
+            outputs = List.copyOf(Objects.requireNonNull(outputs, "outputs"));
+            positionMs = Math.max(0L, positionMs);
+            durationMs = Math.max(0L, durationMs);
+        }
+
+        @NonNull
+        public static Playback idle() {
+            return new Playback(Optional.empty(), 0L, 0L, Optional.empty(), List.of());
+        }
+
+        /** 开始播放一个文件：进度归零，总时长取文件上报时长。 */
+        @NonNull
+        public static Playback playing(@NonNull String filePath, long durationMs) {
+            return new Playback(Optional.of(filePath), 0L, Math.max(0L, durationMs),
+                    Optional.empty(), List.of());
+        }
+
+        public boolean active() {
+            return filePath.isPresent();
+        }
+
+        @NonNull
+        public Playback withProgress(long nextPositionMs, long nextDurationMs) {
+            long duration = nextDurationMs > 0L ? nextDurationMs : durationMs;
+            long position = Math.min(Math.max(0L, nextPositionMs),
+                    duration > 0L ? duration : Long.MAX_VALUE);
+            return new Playback(filePath, position, duration, output, outputs);
+        }
+
+        @NonNull
+        public Playback withRoute(@NonNull Optional<PlaybackOutput> nextOutput,
+                                  @NonNull List<PlaybackOutput> nextOutputs) {
+            return new Playback(filePath, positionMs, durationMs, nextOutput, nextOutputs);
         }
     }
 }

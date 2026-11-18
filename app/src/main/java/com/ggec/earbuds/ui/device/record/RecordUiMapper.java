@@ -30,6 +30,10 @@ public final class RecordUiMapper {
                 state.sync().totalBytes(),
                 state.localFiles(),
                 state.deviceFiles(),
-                state.playingFile());
+                state.playback().filePath(),
+                state.playback().positionMs(),
+                state.playback().durationMs(),
+                state.playback().output(),
+                state.playback().outputs());
     }
 }

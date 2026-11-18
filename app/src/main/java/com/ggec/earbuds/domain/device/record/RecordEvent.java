@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.device.record;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
@@ -9,6 +10,7 @@ import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -202,6 +204,28 @@ public sealed interface RecordEvent {
     }
 
     record PlaybackStopRequested() implements RecordEvent {
+    }
+
+    /** 播放进度：由 ViewModel 的播放 ticker 带着端口上报的位置与总时长推进。 */
+    record PlaybackProgress(long positionMs, long durationMs) implements RecordEvent {
+    }
+
+    /** 物理输出设备（播放源）事实：当前正在出声的设备 + 当前可选设备列表。 */
+    record PlaybackRouteChanged(@NonNull Optional<PlaybackOutput> output,
+                                @NonNull List<PlaybackOutput> outputs) implements RecordEvent {
+
+        public PlaybackRouteChanged {
+            Objects.requireNonNull(output, "output");
+            outputs = List.copyOf(Objects.requireNonNull(outputs, "outputs"));
+        }
+    }
+
+    /** 用户把播放源切换到指定输出设备。 */
+    record PlaybackOutputSelectRequested(@NonNull String outputId) implements RecordEvent {
+
+        public PlaybackOutputSelectRequested {
+            Objects.requireNonNull(outputId, "outputId");
+        }
     }
 
     /** 播放自然结束（端口回调）。 */

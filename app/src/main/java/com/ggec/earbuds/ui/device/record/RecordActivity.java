@@ -161,6 +161,11 @@ public final class RecordActivity extends AppCompatActivity implements RecordScr
     }
 
     @Override
+    public void onSelectPlaybackOutput(@NonNull String outputId) {
+        viewModel.selectPlaybackOutput(outputId);
+    }
+
+    @Override
     public void onStartDeviceRecord() {
         viewModel.startDeviceRecord();
     }

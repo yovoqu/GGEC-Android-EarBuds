@@ -256,6 +256,16 @@
     <string name="earbuds_record_status_connected">已连接</string>
     <string name="earbuds_record_play">播放</string>
     <string name="earbuds_record_stop_play">停止</string>
+    <string name="earbuds_record_playback_switch_output_title">切换播放设备</string>
+    <string name="earbuds_record_playback_switch_output">切换播放设备 · %1$s</string>
+    <string name="earbuds_record_playback_output_earbuds">耳机</string>
+    <string name="earbuds_record_playback_output_speaker">手机扬声器</string>
+    <string name="earbuds_record_playback_output_earpiece">手机听筒</string>
+    <string name="earbuds_record_playback_output_wired">有线耳机</string>
+    <string name="earbuds_record_playback_output_usb">USB 音频设备</string>
+    <string name="earbuds_record_playback_output_other">其他设备</string>
+    <string name="earbuds_record_playback_output_unknown">播放设备</string>
+    <string name="earbuds_record_playback_output_current_mark">（当前）</string>
     <string name="earbuds_record_delete_confirm_title">删除确认</string>
     <string name="earbuds_record_delete_confirm_msg">确定要删除该录音文件吗？此操作无法撤销。</string>
     <string name="earbuds_record_save_success">录音已保存: %1$s</string>

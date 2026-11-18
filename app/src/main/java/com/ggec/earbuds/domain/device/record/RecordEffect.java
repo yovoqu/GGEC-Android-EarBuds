@@ -67,6 +67,14 @@ public sealed interface RecordEffect {
     record StopPlayback() implements RecordEffect {
     }
 
+    /** 把当前播放路由到指定物理输出设备（播放源）。 */
+    record SelectPlaybackOutput(@NonNull String outputId) implements RecordEffect {
+
+        public SelectPlaybackOutput {
+            Objects.requireNonNull(outputId, "outputId");
+        }
+    }
+
     /** 重新读取手机本地已存录音列表。 */
     record ReloadLocal() implements RecordEffect {
     }

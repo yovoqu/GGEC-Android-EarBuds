@@ -50,7 +50,8 @@ public final class RecordUiMapperTest {
                         Optional.of("dev-1"), 30, 300L, 1_000L),
                 List.of(new SavedRecordItem("/tmp/a.mp3", "a.mp3", 10L, 20L, 1_000L)),
                 List.of(new RecordFileView("dev-1", "录音 1", 5, 900L)),
-                Optional.of("/tmp/a.mp3"));
+                new RecordState.Playback(Optional.of("/tmp/a.mp3"), 1_000L, 3_000L,
+                        Optional.empty(), List.of()));
 
         RecordUiState state = mapper.map(recorded);
 
@@ -69,6 +70,12 @@ public final class RecordUiMapperTest {
         assertEquals(1, state.localFiles().size());
         assertEquals(1, state.deviceFiles().size());
         assertTrue(state.playing("/tmp/a.mp3"));
+        assertTrue(state.playbackActive());
+        assertEquals(1_000L, state.playbackPositionMs());
+        assertEquals(3_000L, state.playbackDurationMs());
+        assertEquals(33, state.playbackPercent());
+        assertTrue(state.playbackOutput().isEmpty());
+        assertTrue(state.playbackOutputs().isEmpty());
         assertTrue(state.canRecord(RecordMode.STREAM));
         assertTrue(state.streamActive());
         assertTrue(state.deviceRecordActive());
@@ -86,7 +93,7 @@ public final class RecordUiMapperTest {
                 RecordState.Sync.idle(),
                 List.of(),
                 List.of(),
-                Optional.empty());
+                RecordState.Playback.idle());
 
         RecordUiState state = mapper.map(connectedWithoutModes);
 

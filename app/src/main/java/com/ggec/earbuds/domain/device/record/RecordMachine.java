@@ -256,32 +256,56 @@ public final class RecordMachine {
                     Transition.unchanged(state.withLocalFiles(reloaded.files()));
             case RecordEvent.PlayRequested requested -> {
                 String filePath = requested.item().filePath();
-                if (state.playingFile().equals(Optional.of(filePath))) {
+                if (state.playback().filePath().equals(Optional.of(filePath))) {
                     yield Transition.of(
-                            state.withPlayingFile(Optional.empty()),
+                            state.withPlayback(RecordState.Playback.idle()),
                             new RecordEffect.StopPlayback());
                 }
                 yield Transition.of(
-                        state.withPlayingFile(Optional.of(filePath)),
+                        state.withPlayback(RecordState.Playback.playing(
+                                filePath, requested.item().durationMs())),
                         new RecordEffect.StopPlayback(),
                         new RecordEffect.Play(filePath));
             }
             case RecordEvent.PlaybackStopRequested ignored -> {
-                if (state.playingFile().isEmpty()) {
+                if (!state.playback().active()) {
                     yield Transition.unchanged(state);
                 }
                 yield Transition.of(
-                        state.withPlayingFile(Optional.empty()),
+                        state.withPlayback(RecordState.Playback.idle()),
                         new RecordEffect.StopPlayback());
             }
+            case RecordEvent.PlaybackProgress progress -> {
+                RecordState.Playback playback = state.playback();
+                if (!playback.active()) {
+                    yield Transition.unchanged(state);
+                }
+                yield Transition.unchanged(state.withPlayback(
+                        playback.withProgress(progress.positionMs(), progress.durationMs())));
+            }
+            case RecordEvent.PlaybackRouteChanged route -> Transition.unchanged(
+                    state.withPlayback(state.playback().withRoute(route.output(), route.outputs())));
+            case RecordEvent.PlaybackOutputSelectRequested requested -> {
+                RecordState.Playback playback = state.playback();
+                if (!playback.active()) {
+                    yield Transition.unchanged(state);
+                }
+                boolean alreadyCurrent = playback.output()
+                        .map(output -> output.id().equals(requested.outputId()))
+                        .orElse(false);
+                if (alreadyCurrent) {
+                    yield Transition.unchanged(state);
+                }
+                yield Transition.of(state, new RecordEffect.SelectPlaybackOutput(requested.outputId()));
+            }
             case RecordEvent.PlaybackFinished ignored ->
-                    Transition.unchanged(state.withPlayingFile(Optional.empty()));
+                    Transition.unchanged(state.withPlayback(RecordState.Playback.idle()));
             case RecordEvent.LocalDeleteRequested requested -> {
                 String filePath = requested.item().filePath();
                 List<RecordEffect> effects = new ArrayList<>(2);
                 RecordState next = state;
-                if (state.playingFile().equals(Optional.of(filePath))) {
-                    next = state.withPlayingFile(Optional.empty());
+                if (state.playback().filePath().equals(Optional.of(filePath))) {
+                    next = state.withPlayback(RecordState.Playback.idle());
                     effects.add(new RecordEffect.StopPlayback());
                 }
                 effects.add(new RecordEffect.DeleteLocalFile(filePath));

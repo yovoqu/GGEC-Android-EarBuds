@@ -2,6 +2,7 @@ package com.ggec.earbuds.ui.device.record;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
@@ -34,7 +35,11 @@ public record RecordUiState(
         long syncTotalBytes,
         @NonNull List<SavedRecordItem> localFiles,
         @NonNull List<RecordFileView> deviceFiles,
-        @NonNull Optional<String> playingFile) {
+        @NonNull Optional<String> playingFile,
+        long playbackPositionMs,
+        long playbackDurationMs,
+        @NonNull Optional<PlaybackOutput> playbackOutput,
+        @NonNull List<PlaybackOutput> playbackOutputs) {
 
     public RecordUiState {
         Objects.requireNonNull(mode, "mode");
@@ -46,6 +51,10 @@ public record RecordUiState(
         localFiles = List.copyOf(Objects.requireNonNull(localFiles, "localFiles"));
         deviceFiles = List.copyOf(Objects.requireNonNull(deviceFiles, "deviceFiles"));
         playingFile = Objects.requireNonNull(playingFile, "playingFile");
+        playbackOutput = Objects.requireNonNull(playbackOutput, "playbackOutput");
+        playbackOutputs = List.copyOf(Objects.requireNonNull(playbackOutputs, "playbackOutputs"));
+        playbackPositionMs = Math.max(0L, playbackPositionMs);
+        playbackDurationMs = Math.max(0L, playbackDurationMs);
     }
 
     /** 该模式此刻是否可发起：已连接且能力目录给出这个模式。空集 → 恒为 false（禁用态）。 */
@@ -72,5 +81,19 @@ public record RecordUiState(
 
     public boolean playing(@NonNull String filePath) {
         return playingFile.equals(Optional.of(filePath));
+    }
+
+    /** 是否有任意本地文件正在播放。 */
+    public boolean playbackActive() {
+        return playingFile.isPresent();
+    }
+
+    /** 播放进度百分比（0–100）；总时长未知时为 0。 */
+    public int playbackPercent() {
+        if (playbackDurationMs <= 0L) {
+            return 0;
+        }
+        long percent = playbackPositionMs * 100L / playbackDurationMs;
+        return (int) Math.max(0L, Math.min(100L, percent));
     }
 }

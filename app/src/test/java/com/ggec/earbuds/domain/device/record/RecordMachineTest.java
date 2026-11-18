@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
@@ -269,6 +270,50 @@ public final class RecordMachineTest {
         RecordMachine.Transition deleted = RecordMachine.reduce(deleting.state(),
                 new RecordEvent.LocalDeleteSucceeded(LOCAL_FILE.filePath()));
         assertTrue(deleted.effects().get(0) instanceof RecordEffect.ReloadLocal);
+    }
+
+    @Test
+    public void playbackProgressAdvancesOnlyWhilePlaying() {
+        RecordState connected = connectedWith(Set.of(RecordMode.STREAM));
+
+        RecordMachine.Transition idleProgress = RecordMachine.reduce(connected,
+                new RecordEvent.PlaybackProgress(1_500L, 4_000L));
+        assertTrue("未播放时进度事件不改状态", idleProgress.state().playback().filePath().isEmpty());
+
+        RecordMachine.Transition playing = RecordMachine.reduce(connected,
+                new RecordEvent.PlayRequested(LOCAL_FILE));
+        assertEquals(5_000L, playing.state().playback().durationMs());
+
+        RecordMachine.Transition progressed = RecordMachine.reduce(playing.state(),
+                new RecordEvent.PlaybackProgress(1_500L, 4_000L));
+        assertEquals(1_500L, progressed.state().playback().positionMs());
+        assertEquals(4_000L, progressed.state().playback().durationMs());
+
+        RecordMachine.Transition clamped = RecordMachine.reduce(progressed.state(),
+                new RecordEvent.PlaybackProgress(9_999L, 4_000L));
+        assertEquals("进度不得超过总时长", 4_000L, clamped.state().playback().positionMs());
+    }
+
+    @Test
+    public void outputSelectionRoutesOnlyToADifferentDevice() {
+        PlaybackOutput earbuds = new PlaybackOutput("1", PlaybackOutput.Kind.EARBUDS, "Buds");
+        PlaybackOutput speaker = new PlaybackOutput("2", PlaybackOutput.Kind.PHONE_SPEAKER, "Speaker");
+        RecordState playing = RecordMachine.reduce(connectedWith(Set.of(RecordMode.STREAM)),
+                new RecordEvent.PlayRequested(LOCAL_FILE)).state();
+        RecordState routed = RecordMachine.reduce(playing,
+                new RecordEvent.PlaybackRouteChanged(Optional.of(earbuds),
+                        List.of(earbuds, speaker))).state();
+        assertEquals(Optional.of(earbuds), routed.playback().output());
+        assertEquals(2, routed.playback().outputs().size());
+
+        RecordMachine.Transition same = RecordMachine.reduce(routed,
+                new RecordEvent.PlaybackOutputSelectRequested("1"));
+        assertTrue("已选中的设备不重复下发路由", same.effects().isEmpty());
+
+        RecordMachine.Transition changed = RecordMachine.reduce(routed,
+                new RecordEvent.PlaybackOutputSelectRequested("2"));
+        assertTrue(changed.effects().get(0) instanceof RecordEffect.SelectPlaybackOutput select
+                && select.outputId().equals("2"));
     }
 
     @Test

@@ -1,25 +1,31 @@
 package com.ggec.earbuds.ui.device.record;
 
+import android.content.res.ColorStateList;
 import android.graphics.PorterDuff;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.record.RecordState;
+import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.feedback.YoDialog;
+import com.yohu.youi.api.navigation.YoMenu;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -39,6 +45,7 @@ public final class StreamRecordPanel {
         void onStopStreamRecord();
         void onTogglePlay(@NonNull SavedRecordItem item);
         void onDeleteLocalFile(@NonNull SavedRecordItem item);
+        void onSelectPlaybackOutput(@NonNull String outputId);
     }
 
     private static final String DATE_PATTERN = "yyyy-MM-dd HH:mm";
@@ -46,6 +53,7 @@ public final class StreamRecordPanel {
     private final AppCompatActivity activity;
     private final DeviceTheme theme;
     private final Listener listener;
+    private final YoComponents components = new YoComponents();
 
     private final LinearLayout root;
     private final TextView timerText;
@@ -131,6 +139,11 @@ public final class StreamRecordPanel {
         return root;
     }
 
+    /** 释放面板自持的 YoUI 组件（播放源切换菜单）。 */
+    public void destroy() {
+        components.close();
+    }
+
     public void render(@NonNull RecordUiState state) {
         renderBoard(state);
         renderLocalFiles(state);
@@ -174,7 +187,7 @@ public final class StreamRecordPanel {
         }
 
         for (SavedRecordItem file : files) {
-            filesContainer.addView(buildFileItemView(file, state.playing(file.filePath())), matchWrap());
+            filesContainer.addView(buildFileItemView(file, state));
         }
     }
 
@@ -191,22 +204,28 @@ public final class StreamRecordPanel {
         };
     }
 
-    private View buildFileItemView(@NonNull SavedRecordItem item, boolean isPlaying) {
+    private View buildFileItemView(@NonNull SavedRecordItem item, @NonNull RecordUiState state) {
+        boolean isPlaying = state.playing(item.filePath());
+
+        // 播放时卡片纵向展开：顶行（播放键 / 信息 / 播放源 / 删除）+ 第二行进度条。
         LinearLayout card = new LinearLayout(activity);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(theme.dp(DeviceTheme.SPACE_M), theme.dp(DeviceTheme.SPACE_M),
                 theme.dp(DeviceTheme.SPACE_M), theme.dp(DeviceTheme.SPACE_M));
         card.setBackground(theme.roundedStroke(theme.card, DeviceTheme.RADIUS_ROW,
                 isPlaying ? theme.brand : theme.cardStroke, isPlaying ? 1.5f : 1f));
+
+        LinearLayout headerRow = new LinearLayout(activity);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(headerRow, matchWrap());
 
         // 左侧圆形底座播放/停止按键
         LinearLayout playCircle = new LinearLayout(activity);
         playCircle.setGravity(Gravity.CENTER);
         playCircle.setBackground(theme.rounded(isPlaying ? theme.brandSoft : theme.fill, 20f));
         int circleSize = theme.dp(40f);
-        LinearLayout.LayoutParams circleParams = new LinearLayout.LayoutParams(circleSize, circleSize);
-        card.addView(playCircle, circleParams);
+        headerRow.addView(playCircle, new LinearLayout.LayoutParams(circleSize, circleSize));
 
         ImageView playIcon = new ImageView(activity);
         playIcon.setImageResource(isPlaying ? R.drawable.ic_record_pause_rect : R.drawable.ic_record_play_arrow);
@@ -222,16 +241,14 @@ public final class StreamRecordPanel {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         infoParams.leftMargin = theme.dp(DeviceTheme.SPACE_M);
         infoParams.rightMargin = theme.dp(DeviceTheme.SPACE_S);
-        card.addView(infoLayout, infoParams);
+        headerRow.addView(infoLayout, infoParams);
 
-        // 顶行：文件名
         TextView nameText = theme.text(DeviceTheme.TEXT_BODY, isPlaying ? theme.brand : theme.text1,
                 DeviceTheme.Weight.MEDIUM);
         nameText.setText(item.fileName());
         nameText.setSingleLine(true);
         infoLayout.addView(nameText, wrapContent());
 
-        // 底行：格式指标
         TextView metaText = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
         metaText.setText(String.join(DeviceFormats.META_SEPARATOR,
                 DeviceFormats.duration(item.durationMs()),
@@ -241,6 +258,24 @@ public final class StreamRecordPanel {
         metaParams.topMargin = theme.dp(DeviceTheme.SPACE_XS);
         infoLayout.addView(metaText, metaParams);
 
+        // 右侧播放源图标位：只在播放时出现，显示当前正在工作的物理播放器，点按切换。
+        if (isPlaying) {
+            PlaybackOutput output = state.playbackOutput().orElse(null);
+            ImageView outputSlot = new ImageView(activity);
+            outputSlot.setImageResource(outputIconRes(output));
+            outputSlot.setColorFilter(theme.brand, PorterDuff.Mode.SRC_IN);
+            outputSlot.setPadding(theme.dp(DeviceTheme.SPACE_S), theme.dp(DeviceTheme.SPACE_S),
+                    theme.dp(DeviceTheme.SPACE_S), theme.dp(DeviceTheme.SPACE_S));
+            outputSlot.setBackground(theme.roundedStroke(theme.brandSoft, 18f, theme.brand, 1f));
+            outputSlot.setContentDescription(activity.getString(
+                    R.string.earbuds_record_playback_switch_output, outputLabel(output)));
+            outputSlot.setOnClickListener(v -> showOutputChooser(state));
+            LinearLayout.LayoutParams slotParams = new LinearLayout.LayoutParams(
+                    theme.dp(36f), theme.dp(36f));
+            slotParams.setMarginEnd(theme.dp(DeviceTheme.SPACE_S));
+            headerRow.addView(outputSlot, slotParams);
+        }
+
         // 右侧极简删除按键
         ImageView deleteBtn = new ImageView(activity);
         deleteBtn.setImageResource(R.drawable.ic_record_trash);
@@ -248,11 +283,116 @@ public final class StreamRecordPanel {
         deleteBtn.setPadding(theme.dp(DeviceTheme.SPACE_XS), theme.dp(DeviceTheme.SPACE_XS),
                 theme.dp(DeviceTheme.SPACE_XS), theme.dp(DeviceTheme.SPACE_XS));
         deleteBtn.setOnClickListener(v -> showDeleteConfirm(item));
-        card.addView(deleteBtn, new LinearLayout.LayoutParams(theme.dp(36f), theme.dp(36f)));
+        headerRow.addView(deleteBtn, new LinearLayout.LayoutParams(theme.dp(36f), theme.dp(36f)));
+
+        if (isPlaying) {
+            card.addView(buildPlaybackProgressRow(state), progressRowParams());
+        }
 
         LinearLayout.LayoutParams cardParams = matchWrap();
         cardParams.bottomMargin = theme.dp(DeviceTheme.SPACE_S);
+        card.setLayoutParams(cardParams);
         return card;
+    }
+
+    /** 播放进度行：已播时间 · 进度条 · 总时长。总时长未知时进度条走不确定态。 */
+    private View buildPlaybackProgressRow(@NonNull RecordUiState state) {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView positionText = theme.text(DeviceTheme.TEXT_CAPTION, theme.brand, DeviceTheme.Weight.MEDIUM);
+        positionText.setText(DeviceFormats.clock(state.playbackPositionMs()));
+        row.addView(positionText, wrapContent());
+
+        boolean durationKnown = state.playbackDurationMs() > 0L;
+        ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(1000);
+        bar.setIndeterminate(!durationKnown);
+        if (durationKnown) {
+            bar.setProgress(state.playbackPercent() * 10);
+        }
+        bar.setProgressTintList(ColorStateList.valueOf(theme.brand));
+        bar.setProgressBackgroundTintList(ColorStateList.valueOf(theme.cardStroke));
+        bar.setMinimumHeight(theme.dp(4f));
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
+                0, theme.dp(4f), 1f);
+        barParams.leftMargin = theme.dp(DeviceTheme.SPACE_S);
+        barParams.rightMargin = theme.dp(DeviceTheme.SPACE_S);
+        row.addView(bar, barParams);
+
+        TextView durationText = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
+        durationText.setText(durationKnown
+                ? DeviceFormats.clock(state.playbackDurationMs())
+                : DeviceFormats.UNKNOWN);
+        row.addView(durationText, wrapContent());
+        return row;
+    }
+
+    private LinearLayout.LayoutParams progressRowParams() {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = theme.dp(DeviceTheme.SPACE_S);
+        return params;
+    }
+
+    private void showOutputChooser(@NonNull RecordUiState state) {
+        List<PlaybackOutput> outputs = state.playbackOutputs();
+        if (outputs.isEmpty()) {
+            return;
+        }
+        String currentId = state.playbackOutput().map(PlaybackOutput::id).orElse("");
+        YoMenu.Builder builder = YoMenu.create(activity)
+                .setAnchorView(activity.findViewById(android.R.id.content));
+        for (int index = 0; index < outputs.size(); index++) {
+            PlaybackOutput output = outputs.get(index);
+            String mark = output.id().equals(currentId)
+                    ? activity.getString(R.string.earbuds_record_playback_output_current_mark)
+                    : "";
+            builder.addItem(index, outputLabel(output) + mark);
+        }
+        YoMenu menu = builder
+                .setOnItemClickListener(id -> {
+                    if (id < 0 || id >= outputs.size()) {
+                        return;
+                    }
+                    PlaybackOutput selected = outputs.get(id);
+                    if (!selected.id().equals(currentId)) {
+                        listener.onSelectPlaybackOutput(selected.id());
+                    }
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
+    }
+
+    @StringRes
+    private int outputIconRes(@Nullable PlaybackOutput output) {
+        if (output == null) {
+            return R.drawable.ic_record_output_other;
+        }
+        return switch (output.kind()) {
+            case EARBUDS -> R.drawable.ic_record_output_earbuds;
+            case PHONE_SPEAKER -> R.drawable.ic_record_output_speaker;
+            case EARPIECE -> R.drawable.ic_record_output_earpiece;
+            case WIRED -> R.drawable.ic_record_output_wired;
+            case USB -> R.drawable.ic_record_output_usb;
+            case OTHER -> R.drawable.ic_record_output_other;
+        };
+    }
+
+    @NonNull
+    private String outputLabel(@Nullable PlaybackOutput output) {
+        if (output == null) {
+            return activity.getString(R.string.earbuds_record_playback_output_unknown);
+        }
+        return switch (output.kind()) {
+            case EARBUDS -> activity.getString(R.string.earbuds_record_playback_output_earbuds);
+            case PHONE_SPEAKER -> activity.getString(R.string.earbuds_record_playback_output_speaker);
+            case EARPIECE -> activity.getString(R.string.earbuds_record_playback_output_earpiece);
+            case WIRED -> activity.getString(R.string.earbuds_record_playback_output_wired);
+            case USB -> activity.getString(R.string.earbuds_record_playback_output_usb);
+            case OTHER -> activity.getString(R.string.earbuds_record_playback_output_other);
+        };
     }
 
     private void showDeleteConfirm(@NonNull SavedRecordItem item) {
