@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoDispatcher;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoExecutors;
 import com.yovo.lib_bluetooth.internal.common.concurrency.YoTaskScheduler;
+import com.yovo.lib_bluetooth.internal.common.concurrency.YoTimeoutHandle;
 import com.yovo.lib_bluetooth.internal.common.lifecycle.YoCloseGuard;
 import com.yovo.lib_bluetooth.provider.lib_common.log.YoBtLogger;
 
@@ -22,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * @date 2026-06-18
  * @description 经典蓝牙运行时，提供 state/IO/回调线程池调度、任务调度与资源释放。
  */
-public final class YoCbtRuntime {
+public final class YoCbtRuntime implements YoCbtLinkRuntime {
     private static final String TAG = "YoCbtRuntime";
 
     private final long shutdownTimeoutSeconds;
@@ -102,6 +103,13 @@ public final class YoCbtRuntime {
     @NonNull
     public YoTaskScheduler scheduler() {
         return scheduler;
+    }
+
+    /** {@link YoCbtLinkRuntime} 实现：委托内部调度器。 */
+    @NonNull
+    @Override
+    public YoTimeoutHandle schedule(@NonNull Runnable task, long delayMillis) {
+        return scheduler.schedule(task, delayMillis);
     }
 
     @NonNull

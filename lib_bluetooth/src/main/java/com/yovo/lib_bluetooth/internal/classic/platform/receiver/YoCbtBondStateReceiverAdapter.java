@@ -107,15 +107,7 @@ public final class YoCbtBondStateReceiverAdapter {
 
     @NonNull
     private static YoCbtBondState mapBondState(int androidBondState) {
-        switch (androidBondState) {
-            case BluetoothDevice.BOND_NONE:
-                return YoCbtBondState.NONE;
-            case BluetoothDevice.BOND_BONDING:
-                return YoCbtBondState.BONDING;
-            case BluetoothDevice.BOND_BONDED:
-                return YoCbtBondState.BONDED;
-            default:
-                return YoCbtBondState.UNKNOWN;
-        }
+        return com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidStateMapper
+                .bondState(androidBondState);
     }
 }

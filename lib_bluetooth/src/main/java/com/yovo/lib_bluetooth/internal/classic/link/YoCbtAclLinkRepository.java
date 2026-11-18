@@ -45,15 +45,6 @@ public final class YoCbtAclLinkRepository {
     }
 
     /**
-     * 若设备当前 ACL 已连接则返回 {@code true}。
-     *
-     * <p>等价于 {@code getAclState(deviceId) == YoCbtAclLinkState.CONNECTED}。
-     */
-    public boolean isAclConnected(@NonNull YoCbtDeviceId deviceId) {
-        return getAclState(deviceId) == YoCbtAclLinkState.CONNECTED;
-    }
-
-    /**
      * 返回 tracker 中状态为 {@link YoCbtAclLinkState#CONNECTED} 的所有设备 ID 列表。
      */
     @NonNull

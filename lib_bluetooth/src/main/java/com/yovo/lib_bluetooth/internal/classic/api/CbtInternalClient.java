@@ -19,6 +19,7 @@ import com.yovo.lib_bluetooth.internal.classic.profiles.state.YoCbtProfileStateO
 import com.yovo.lib_bluetooth.internal.classic.profiles.core.YoCbtProfileType;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommand;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandObserver;
+import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryConfig;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryObserver;
 import com.yovo.lib_bluetooth.internal.classic.spp.connection.YoCbtSppConfig;
@@ -121,4 +122,13 @@ public interface CbtInternalClient extends YoReleasable {
     YoResult<List<YoCbtDeviceSnapshot>> getDeviceSnapshots();
 
     boolean isAdapterEnabled();
+
+    /**
+     * 本客户端独占的运行时。
+     *
+     * <p>仅供库内组件（如 {@code YoCbtLinkSession}）在线程与生命周期上复用同一套
+     * state / callback / scheduler 环境；不得对外暴露，也不得由上层直接调用。</p>
+     */
+    @NonNull
+    YoCbtRuntime runtime();
 }

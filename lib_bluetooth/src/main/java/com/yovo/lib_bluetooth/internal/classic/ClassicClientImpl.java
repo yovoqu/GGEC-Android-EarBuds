@@ -21,6 +21,7 @@ import com.yovo.lib_bluetooth.internal.classic.error.YoCbtFailure;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkObserver;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkSnapshot;
 import com.yovo.lib_bluetooth.internal.classic.link.YoCbtAclLinkState;
+import com.yovo.lib_bluetooth.internal.classic.link.YoCbtLinkSession;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondSnapshot;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondState;
 import com.yovo.lib_bluetooth.internal.classic.pairing.YoCbtBondStateObserver;
@@ -65,6 +66,9 @@ import com.yovo.lib_bluetooth.model.classic.CbtBondSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtBondState;
 import com.yovo.lib_bluetooth.model.classic.CbtBondStateObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtCommand;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtCommandObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtCommandResult;
 import com.yovo.lib_bluetooth.model.classic.CbtConfig;
@@ -400,6 +404,19 @@ public final class ClassicClientImpl implements YoCbtClient {
                     }
                 });
         return new CbtOperationHandle(old.getId(), old::cancel);
+    }
+
+    @NonNull
+    @Override
+    public CbtLinkSessionHandle openLinkSession(@NonNull CbtDeviceId deviceId,
+                                                @NonNull CbtLinkSessionConfig config,
+                                                @NonNull CbtLinkSessionObserver observer) {
+        // 会话内部直接用公开 client（本实例），无需再经内部类型转换；
+        // 线程与定时器复用本客户端唯一的 runtime。
+        YoCbtLinkSession session = new YoCbtLinkSession(
+                this, delegate.runtime(), deviceId, config, observer);
+        session.start();
+        return session;
     }
 
     @NonNull

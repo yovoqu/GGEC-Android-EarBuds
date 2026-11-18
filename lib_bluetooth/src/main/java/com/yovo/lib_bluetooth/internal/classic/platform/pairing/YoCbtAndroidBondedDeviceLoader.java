@@ -91,17 +91,8 @@ public final class YoCbtAndroidBondedDeviceLoader implements YoCbtBondedDeviceLo
 
     @NonNull
     private static YoCbtBondState mapBondState(@NonNull BluetoothDevice device) {
-        int state = device.getBondState();
-        switch (state) {
-            case BluetoothDevice.BOND_NONE:
-                return YoCbtBondState.NONE;
-            case BluetoothDevice.BOND_BONDING:
-                return YoCbtBondState.BONDING;
-            case BluetoothDevice.BOND_BONDED:
-                return YoCbtBondState.BONDED;
-            default:
-                return YoCbtBondState.UNKNOWN;
-        }
+        return com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidStateMapper
+                .bondState(device.getBondState());
     }
 
     @NonNull

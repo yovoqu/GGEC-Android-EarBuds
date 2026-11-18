@@ -15,6 +15,9 @@ import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileState;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryObserver;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtOperationHandle;
 import com.yovo.lib_bluetooth.model.classic.CbtProfileAggregateState;
 import com.yovo.lib_bluetooth.model.classic.CbtProfileStateObserver;
@@ -110,6 +113,33 @@ public interface YoCbtClient {
                                   @NonNull CbtSppEndpoint endpoint,
                                   @NonNull CbtSppConfig config,
                                   @NonNull CbtSppConnectionObserver observer);
+
+    /**
+     * 打开「链路就绪」会话：库内完成 配对 → ACL → 音频 Profile → 就绪 的完整编排。
+     *
+     * <p>这是经典链路的<b>唯一</b>就绪入口。上层不得自行组合
+     * {@code getAclState / getConnectedProfiles / connectAudio / observe*} 来判定链路，
+     * 因为那会重复实现同一套三态判定，并极易把「未知」误判成「未连接」——
+     * 对已连接的设备重复请求 CONNECT 会被系统忽略，不产生任何状态广播，最终只能等到超时。</p>
+     *
+     * <p>实现语义（对齐 Nordic BleManager 的「查询 + 事件 + 显式超时」模型）：</p>
+     * <ul>
+     *   <li>进入会话立即主动查询一次既有链路，命中即 {@link CbtLinkReadiness#READY}，
+     *       不发起任何配对/连接请求；</li>
+     *   <li>只有明确 {@link CbtLinkReadiness#DOWN} 才按配置发起配对或音频连接；</li>
+     *   <li>{@link CbtLinkReadiness#UNKNOWN} 只继续等待并周期复核，绝不据此重连；</li>
+     *   <li>到 {@link CbtLinkSessionConfig#readinessTimeoutMillis()} 仍未就绪即回调失败。</li>
+     * </ul>
+     *
+     * @param deviceId 目标设备
+     * @param config   会话参数（超时、复核间隔、是否自动配对/连音频）
+     * @param observer 就绪事实与失败回调
+     * @return 会话句柄；{@link CbtLinkSessionHandle#cancel()} 幂等且取消后不再回调
+     */
+    @NonNull
+    CbtLinkSessionHandle openLinkSession(@NonNull CbtDeviceId deviceId,
+                                         @NonNull CbtLinkSessionConfig config,
+                                         @NonNull CbtLinkSessionObserver observer);
 
     @NonNull
     Result<Void> disconnectSpp(@NonNull CbtSppConnectionId connectionId);

@@ -29,6 +29,10 @@ public enum CbtErrorCode {
     SPP_REMOTE_CLOSED,
     SPP_STREAM_OPEN_FAILED,
     OPERATION_CANCELLED,
+    /** 链路就绪等待超时：等待期内始终未能确认 ACL/Profile 连通。 */
+    LINK_READINESS_TIMEOUT,
+    /** 链路就绪被拒：配对失败或用户取消配对。 */
+    LINK_READINESS_REJECTED,
     SPP_WRITE_FAILED,
     SPP_READ_FAILED,
     COMMAND_FAILED,

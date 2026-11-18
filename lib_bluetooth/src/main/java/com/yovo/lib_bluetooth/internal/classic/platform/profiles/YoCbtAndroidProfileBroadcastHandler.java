@@ -112,18 +112,8 @@ public final class YoCbtAndroidProfileBroadcastHandler {
 
     @NonNull
     private static YoCbtProfileConnectionState mapConnectionState(int state) {
-        switch (state) {
-            case BluetoothProfile.STATE_DISCONNECTED:
-                return YoCbtProfileConnectionState.DISCONNECTED;
-            case BluetoothProfile.STATE_CONNECTING:
-                return YoCbtProfileConnectionState.CONNECTING;
-            case BluetoothProfile.STATE_CONNECTED:
-                return YoCbtProfileConnectionState.CONNECTED;
-            case BluetoothProfile.STATE_DISCONNECTING:
-                return YoCbtProfileConnectionState.DISCONNECTING;
-            default:
-                return YoCbtProfileConnectionState.UNKNOWN;
-        }
+        return com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidStateMapper
+                .connectionState(state);
     }
 
     @NonNull
@@ -143,15 +133,7 @@ public final class YoCbtAndroidProfileBroadcastHandler {
 
     @NonNull
     private static YoCbtHeadsetAudioState mapAudioState(int audioState) {
-        switch (audioState) {
-            case BluetoothHeadset.STATE_AUDIO_DISCONNECTED:
-                return YoCbtHeadsetAudioState.AUDIO_DISCONNECTED;
-            case BluetoothHeadset.STATE_AUDIO_CONNECTING:
-                return YoCbtHeadsetAudioState.AUDIO_CONNECTING;
-            case BluetoothHeadset.STATE_AUDIO_CONNECTED:
-                return YoCbtHeadsetAudioState.AUDIO_CONNECTED;
-            default:
-                return YoCbtHeadsetAudioState.UNKNOWN;
-        }
+        return com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidStateMapper
+                .audioState(audioState);
     }
 }

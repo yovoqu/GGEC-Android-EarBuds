@@ -39,6 +39,7 @@ import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandObse
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandRequest;
 import com.yovo.lib_bluetooth.internal.classic.protocol.command.YoCbtCommandSession;
 import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtEvents;
+import com.yovo.lib_bluetooth.internal.classic.runtime.YoCbtRuntime;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryConfig;
 import com.yovo.lib_bluetooth.internal.classic.service.discovery.YoCbtServiceDiscoveryObserver;
 import com.yovo.lib_bluetooth.internal.classic.service.model.YoCbtSdpResult;
@@ -595,6 +596,12 @@ public final class YoCbtAndroidClient implements CbtInternalClient {
     @Override
     public boolean isAdapterEnabled() {
         return modules.discoveryPlatform.isEnabled();
+    }
+
+    @NonNull
+    @Override
+    public YoCbtRuntime runtime() {
+        return modules.runtime;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────

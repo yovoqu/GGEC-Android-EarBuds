@@ -152,17 +152,7 @@ public final class YoCbtAndroidA2dpPlatformProxyAdapter {
 
     @NonNull
     private static YoCbtProfileConnectionState mapConnectionState(int androidState) {
-        switch (androidState) {
-            case BluetoothProfile.STATE_DISCONNECTED:
-                return YoCbtProfileConnectionState.DISCONNECTED;
-            case BluetoothProfile.STATE_CONNECTING:
-                return YoCbtProfileConnectionState.CONNECTING;
-            case BluetoothProfile.STATE_CONNECTED:
-                return YoCbtProfileConnectionState.CONNECTED;
-            case BluetoothProfile.STATE_DISCONNECTING:
-                return YoCbtProfileConnectionState.DISCONNECTING;
-            default:
-                return YoCbtProfileConnectionState.UNKNOWN;
-        }
+        return com.yovo.lib_bluetooth.internal.classic.platform.YoCbtAndroidStateMapper
+                .connectionState(androidState);
     }
 }
