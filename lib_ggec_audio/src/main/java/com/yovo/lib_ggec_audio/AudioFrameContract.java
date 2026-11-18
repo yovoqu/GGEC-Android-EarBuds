@@ -48,6 +48,16 @@ public final class AudioFrameContract {
     public static final int NOTIFY_LEGACY_DUAL_336 = PACKET_LEGACY_168 * FRAMES_PER_NOTIFY_STREAM;
     public static final int NOTIFY_MTU_FIRST = NOTIFY_DUAL_168;
 
+    /**
+     * 168 字节一包 4 帧：**一个** 8 字节通知头 + 4 个连续 40B Opus（16 kbps），共 168 字节。
+     *
+     * <p>与 {@link #NOTIFY_QUAD_176} 的区别是「头在哪」：176 是每帧各带 4B 头（4×44），
+     * 这里是整包只带一个 8B 头（8 + 4×40）。两者都能凑出「4 帧」，只有
+     * 「相邻 Notify 头部序号差 == 4」才能把 168 与 2 帧/包（差 == 2）区分开。</p>
+     */
+    public static final int NOTIFY_QUAD_40_168 =
+            HEADER_LEGACY_BYTES + FRAMES_PER_NOTIFY_LOCAL * OPUS_BYTES_16K;
+
     private AudioFrameContract() {
     }
 

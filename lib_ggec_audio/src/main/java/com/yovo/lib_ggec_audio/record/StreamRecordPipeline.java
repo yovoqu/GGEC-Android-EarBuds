@@ -87,12 +87,30 @@ public final class StreamRecordPipeline<F> {
                                @NonNull AudioLog log,
                                @NonNull AudioFrameTrace trace,
                                @NonNull ExecutorService decodeExecutor) {
+        this(codecProvider, streamDir, defaultStreamFile, dispatcher, log, trace,
+                decodeExecutor, com.yovo.lib_ggec_audio.AudioWireByteOrder.LITTLE_ENDIAN);
+    }
+
+    /**
+     * 允许产品声明帧头字节序（HS 小端 / WY 大端）。
+     *
+     * <p>字节序是产品适配参数：共享装配层不自作主张，避免两个产品互相牵制。</p>
+     */
+    public StreamRecordPipeline(@NonNull AudioCodecProviderPort codecProvider,
+                               @NonNull Supplier<File> streamDir,
+                               @NonNull Supplier<File> defaultStreamFile,
+                               @NonNull Dispatcher dispatcher,
+                               @NonNull AudioLog log,
+                               @NonNull AudioFrameTrace trace,
+                               @NonNull ExecutorService decodeExecutor,
+                               @NonNull com.yovo.lib_ggec_audio.AudioWireByteOrder byteOrder) {
         this.codecProvider = Objects.requireNonNull(codecProvider, "codecProvider");
         this.streamDir = Objects.requireNonNull(streamDir, "streamDir");
         this.defaultStreamFile = Objects.requireNonNull(defaultStreamFile, "defaultStreamFile");
         this.dispatcher = Objects.requireNonNull(dispatcher, "dispatcher");
         this.log = Objects.requireNonNull(log, "log");
-        this.frameAssembler = new AudioFrameAssembler(Objects.requireNonNull(trace, "trace"));
+        this.frameAssembler = new AudioFrameAssembler(
+                Objects.requireNonNull(trace, "trace"), Objects.requireNonNull(byteOrder, "byteOrder"));
         this.decodeExecutor = Objects.requireNonNull(decodeExecutor, "decodeExecutor");
     }
 
@@ -194,10 +212,6 @@ public final class StreamRecordPipeline<F> {
             }
             totalPcmFrames++;
             float amplitude = PcmAmplitude.normalized(pcm);
-            if (totalPcmFrames == 1 || totalPcmFrames % 50 == 0) {
-                log.debug("解码 PCM 帧=" + totalPcmFrames + " 时长=" + (totalPcmFrames * 20)
-                        + "ms 振幅=" + amplitude);
-            }
 
             StreamRecordConfig config = currentConfig;
             StreamRecordListener listener = currentListener;
