@@ -7,9 +7,7 @@ import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 import com.yovo.biz_ggec_hs.internal.scan.HsNearbyImpl;
 import com.yovo.biz_ggec_hs.internal.link.HsConnectionIntake;
 import com.yovo.biz_ggec_hs.internal.link.HsSessionImpl;
-import com.yovo.biz_ggec_hs.internal.center.link.HsClassicConnect;
 import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
-import com.yovo.biz_ggec_hs.internal.link.HsMainDelay;
 import com.yovo.biz_ggec_hs.internal.record.HsRecordManager;
 import com.yovo.biz_ggec_hs.internal.record.HsRecordPathResolver;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.HsNearbyScanner;
@@ -49,8 +47,7 @@ public final class HsGraph {
         HsCatalogImpl catalog = new HsCatalogImpl();
         HsCapabilityRouter.verify(catalog);
         HsRecordPathResolver pathResolver = new HsRecordPathResolver(context);
-        HsSessionImpl session = new HsSessionImpl(engine, catalog, new HsClassicConnect(
-                YoClassicRadio.open(context), new HsMainDelay()),
+        HsSessionImpl session = new HsSessionImpl(engine, catalog, YoClassicRadio.open(context),
                 new HsConnectionIntake(), audioLink);
         HsRecordManager recordManager = new HsRecordManager(engine, audioLink, pathResolver,
                 new YoOpusCodecProvider(), session::applyCompletion);

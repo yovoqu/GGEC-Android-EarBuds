@@ -72,4 +72,36 @@ public final class HsProductCatalog {
             default -> "";
         };
     }
+
+    /**
+     * 旧广播（HS01：128-bit Service UUID 特征码）识别方案：由市场号定位产品型号。
+     *
+     * <p>CN / TVS / AU 是 HS01（V11），CN2 是 HS02（V12）。市场号只在这一代广播里有效。</p>
+     */
+    @NonNull
+    public static String modelIdByMarket(int marketId) {
+        return modelId(marketId);
+    }
+
+    /** 新广播（HS02 厂商段）Product ID / 机型代码的取值：0 为 V11，1 为 V12（即 CN2）。 */
+    public static final int PRODUCT_MODEL_V11 = 0;
+    public static final int PRODUCT_MODEL_V12 = 1;
+
+    /**
+     * 新广播（HS02：厂商段）识别方案：由 Product ID（机型代码）定位产品型号。
+     *
+     * <p>0 → HS01（V11），1 → HS02（V12）。新广播里机型代码和市场号是两套编码，
+     * 同名数字含义不同（例如旧广播市场 1 是 TVS/V11，而新广播机型 1 是 V12），
+     * 因此新广播必须只认 Product ID，不能拿市场号套旧表的 switch。</p>
+     *
+     * <p>其它机型代码未登记，返回空串，调用方必须丢弃这帧。</p>
+     */
+    @NonNull
+    public static String modelIdByProductModel(int productModel) {
+        return switch (productModel) {
+            case PRODUCT_MODEL_V11 -> HS01;
+            case PRODUCT_MODEL_V12 -> HS02;
+            default -> "";
+        };
+    }
 }

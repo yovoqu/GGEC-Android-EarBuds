@@ -29,8 +29,22 @@ public final class HsScan {
         }
     }
 
-    /** 一台已识别的双模设备。地址只用 {@link HsDevice.Radios}，不要在界面侧再算一次。 */
-    public record Found(String modelId, Radios radios, int rssi) {
+    /**
+     * 一台已识别的双模设备。地址只用 {@link HsDevice.Radios}，不要在界面侧再算一次。
+     *
+     * <p>{@code productId} 是新广播（HS02 厂商段）的 Product ID（机型代码）：{@code 0} 为 V11、
+     * {@code 1} 为 V12。旧广播没有这个字段，恒为空串——调用方按空串与否区分即可，不要用假值填充。</p>
+     */
+    public record Found(String modelId, Radios radios, int rssi, String productId) {
+
+        public Found {
+            productId = productId != null ? productId : "";
+        }
+
+        /** 兼容旧构造：不带 Product ID 的来源（旧广播）用空串。 */
+        public Found(String modelId, Radios radios, int rssi) {
+            this(modelId, radios, rssi, "");
+        }
     }
 
     public interface Listener {

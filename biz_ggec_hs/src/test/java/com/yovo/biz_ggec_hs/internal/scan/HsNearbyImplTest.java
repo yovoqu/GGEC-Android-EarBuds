@@ -37,7 +37,8 @@ import java.util.function.Predicate;
 public final class HsNearbyImplTest {
 
     private static final String FEATURE_CN = "86103800900000100000fffe";
-    /** 厂商数据里未知市场号：协议认得是 HS02 耳机，但产品目录没有对应型号 → modelId="". */
+    private static final String FEATURE_CN2 = "86103800900000300000fffe";
+    /** 新广播里未登记的机型代码（9）：产品目录没有对应型号 → modelId="". */
     private static final int UNKNOWN_MARKET = 9;
     private static final long START_AT = 100_000L;
 
@@ -73,6 +74,52 @@ public final class HsNearbyImplTest {
         assertFalse("未登记型号不进型号分面", view.countsByModel().containsKey(""));
         assertEquals(ADDRESS_B, observer.lastUpdated().get(0).radios().bleAddress());
         assertEquals("HS01", view.devices().get(1).modelId());
+        assertEquals("新广播 Product ID 透传到扫描结果", "1", view.devices().get(0).productId());
+        assertEquals("旧广播没有 Product ID", "", view.devices().get(1).productId());
+    }
+
+    @Test
+    public void oldAndNewBroadcastSchemesBothIdentifyV11AndV12() {
+        nearby.start(observer);
+        // 旧广播（HS01 特征码）：CN 市场 → V11（HS01），CN2 市场 → V12（HS02）。
+        // 新广播（HS02 厂商段）：只看 Product ID —— 0 → V11（HS01），1 → V12（HS02），
+        // 故意让市场号与机型代码相反，证明新广播不套旧市场表。
+        link.onBatch(List.of(
+                hsAdvert(addressOf("01"), -60, "old-cn", List.of(hs01Uuid(FEATURE_CN)), new byte[0]),
+                hsAdvert(addressOf("02"), -58, "old-cn2",
+                        List.of(hs01Uuid(FEATURE_CN2)), new byte[0]),
+                hs02V11(addressOf("03"), -56, "new-v11", HsMarket.CN2),
+                hs02V12(addressOf("04"), -54, "new-v12", HsMarket.CN)));
+
+        HsScan.View view = nearby.view();
+        assertEquals(4, view.devices().size());
+        assertEquals(Integer.valueOf(2), view.countsByModel().get("HS01"));
+        assertEquals(Integer.valueOf(2), view.countsByModel().get("HS02"));
+
+        for (HsScan.Found device : view.devices()) {
+            switch (device.radios().bleAddress()) {
+                case "11:22:33:44:55:01" -> assertEquals("HS01", device.modelId());
+                case "11:22:33:44:55:02" -> assertEquals("HS02", device.modelId());
+                case "11:22:33:44:55:03" -> {
+                    assertEquals("新广播 Product ID=0 必须识别为 V11/HS01", "HS01", device.modelId());
+                    assertEquals("0", device.productId());
+                }
+                case "11:22:33:44:55:04" -> {
+                    assertEquals("新广播 Product ID=1 必须识别为 V12/HS02", "HS02", device.modelId());
+                    assertEquals("1", device.productId());
+                }
+                default -> throw new AssertionError("未知地址: " + device.radios().bleAddress());
+            }
+        }
+    }
+
+    private static String addressOf(String tail) {
+        return "11:22:33:44:55:" + tail;
+    }
+
+    private HsRawAdvert hsAdvert(String address, int rssi, String name,
+                                 List<UUID> uuids, byte[] raw) {
+        return adopt(address, rssi, name, uuids, raw, true);
     }
 
     @Test
@@ -272,18 +319,32 @@ public final class HsNearbyImplTest {
         return adopt(address, rssi, "buds", List.of(hs01Uuid(FEATURE_CN)), new byte[0], true);
     }
 
+    /** 新广播 V12：Product ID = 1。 */
     private HsRawAdvert hs02(String address, int rssi, String name) {
-        return adopt(address, rssi, name, Collections.emptyList(), hs02Packet(name, HsMarket.CN2), true);
+        return hs02V12(address, rssi, name, HsMarket.CN2);
     }
 
+    /** 新广播 V12：Product ID = 1（机型代码决定 V12，与市场号无关）。 */
+    private HsRawAdvert hs02V12(String address, int rssi, String name, int marketId) {
+        return adopt(address, rssi, name, Collections.emptyList(),
+                hs02Packet(name, 1, marketId), true);
+    }
+
+    /** 新广播 V11：Product ID = 0（即便市场号写成 CN2，也必须识别为 V11/HS01）。 */
+    private HsRawAdvert hs02V11(String address, int rssi, String name, int marketId) {
+        return adopt(address, rssi, name, Collections.emptyList(),
+                hs02Packet(name, 0, marketId), true);
+    }
+
+    /** 新广播但机型代码未登记（9）：产品目录没有对应型号 → modelId="". */
     private HsRawAdvert unregistered(String address, int rssi) {
         return adopt(address, rssi, "Unknown", Collections.emptyList(),
-                hs02Packet("Unknown", UNKNOWN_MARKET), true);
+                hs02Packet("Unknown", 9, UNKNOWN_MARKET), true);
     }
 
     private HsRawAdvert notConnectable(String address, int rssi) {
         return adopt(address, rssi, "Vidda", Collections.emptyList(),
-                hs02Packet("Vidda", 0), false);
+                hs02Packet("Vidda", 1, HsMarket.CN), false);
     }
 
     private HsRawAdvert adopt(String address, int rssi, String name, List<UUID> uuids,
@@ -313,7 +374,7 @@ public final class HsNearbyImplTest {
         return new UUID(buffer.getLong(), buffer.getLong());
     }
 
-    private static byte[] hs02Packet(String name, int marketId) {
+    private static byte[] hs02Packet(String name, int productModel, int marketId) {
         byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
         byte[] nameField = new byte[nameBytes.length + 2];
         nameField[0] = (byte) (nameBytes.length + 1);
@@ -321,7 +382,7 @@ public final class HsNearbyImplTest {
         System.arraycopy(nameBytes, 0, nameField, 2, nameBytes.length);
         byte[] manufacturer = new byte[]{
                 (byte) 0xFF, (byte) 0xFF, 0x48, 0x43, 0x01, 0x02, 0x12,
-                0x01, 0x00, 0x00, 0x00,
+                (byte) productModel, 0x00, 0x00, 0x00,
                 0x0A, 0x06,
                 (byte) 0xAA, (byte) 0xBB, (byte) 0xCC, (byte) 0xDD, (byte) 0xEE, (byte) 0xFF,
                 0x0B, 0x01, (byte) marketId

@@ -91,6 +91,20 @@ tasks.register('checkBizGgecHsBoundary') {
 
             file.eachLine { line, index ->
                 def location = "${path}:${index}"
+                // B1: link-readiness judgement belongs to lib_bluetooth only (see openLinkSession).
+                // biz (incl. provider/lib_bluetooth) must consume openLinkSession, never re-combine
+                // these primitives. Comment lines are ignored.
+                def linkJudgementApis = ['getAclState', 'getConnectedProfiles',
+                                         'queryConnectedDevices', 'observeAclLinkState', 'observeProfileState']
+                def trimmedLine = line.trim()
+                def isCommentLine = trimmedLine.startsWith('*') || trimmedLine.startsWith('//')
+                if (inMain && !isCommentLine) {
+                    linkJudgementApis.each { api ->
+                        if (line =~ /\bclient\s*\.\s*${api}\s*\(/) {
+                            offenders << "${location}: link readiness must be decided inside lib_bluetooth (forbidden: ${api})"
+                        }
+                    }
+                }
                 if (inMain && !inLogProvider && (line =~ /\bYoLog\s*\./)) {
                     offenders << "${location}: 鏃ュ織缂濅箣澶栫洿鎺ヨ皟鐢?YoLog"
                 }

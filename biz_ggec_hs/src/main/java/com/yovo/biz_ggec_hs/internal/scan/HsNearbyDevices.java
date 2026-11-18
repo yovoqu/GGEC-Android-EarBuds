@@ -44,7 +44,7 @@ final class HsNearbyDevices {
         if (bleAddress.isEmpty()) {
             return null;
         }
-        String modelId = HsProductCatalog.modelId(identity.marketId());
+        String modelId = resolveModelId(identity);
         if (modelId.isEmpty()) {
             return null;
         }
@@ -55,7 +55,27 @@ final class HsNearbyDevices {
                         bleName(identity, snapshot),
                         firstNonBlank(identity.classicAddress()),
                         ""),
-                advert.rssi());
+                advert.rssi(),
+                productId(identity));
+    }
+
+    /**
+     * 新旧广播两套识别方案，按代际分流，不能混用同一张市场表：
+     * <ul>
+     *   <li>新广播（HS02 厂商段）：只认 Product ID（机型代码）——0 → HS01（V11），1 → HS02（V12）；</li>
+     *   <li>旧广播（HS01 特征码）：按市场号——CN / TVS / AU → HS01（V11），CN2 → HS02（V12）。</li>
+     * </ul>
+     */
+    private static String resolveModelId(HsBroadcastIdentity identity) {
+        if (identity instanceof Hs02Identity hs02) {
+            return HsProductCatalog.modelIdByProductModel(hs02.productModel());
+        }
+        return HsProductCatalog.modelIdByMarket(identity.marketId());
+    }
+
+    /** Product ID 只在新广播里有意义；旧广播没有这个字段，返回空串。 */
+    private static String productId(HsBroadcastIdentity identity) {
+        return identity instanceof Hs02Identity hs02 ? hs02.productId() : "";
     }
 
     /** BLE 名称只取广播本地名。HS02 厂商段里的完整名称也是这条 AD 名，不是经典蓝牙名。 */

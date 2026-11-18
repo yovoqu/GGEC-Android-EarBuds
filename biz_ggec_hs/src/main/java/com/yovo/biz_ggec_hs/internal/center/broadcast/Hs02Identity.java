@@ -91,6 +91,15 @@ public final class Hs02Identity implements HsBroadcastIdentity {
         return productModel;
     }
 
+    /**
+     * 新广播 Product ID（机型代码）原始值字符串：{@code 0} 为 V11，{@code 1} 为 V12。
+     * 未上报（负数）返回空串。旧广播没有这个字段，由调用方按代际区分。
+     */
+    @NonNull
+    public String productId() {
+        return productModel < 0 ? "" : String.valueOf(productModel);
+    }
+
     public boolean pairable() {
         return pairable;
     }

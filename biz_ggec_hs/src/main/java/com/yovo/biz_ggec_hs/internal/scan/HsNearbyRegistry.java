@@ -30,6 +30,7 @@ final class HsNearbyRegistry {
     static final class Entry {
         private final String address;
         private String modelId = "";
+        private String productId = "";
         private HsDevice.Radios radios = HsDevice.Radios.none();
         private HsDevice.Type deviceType;
         private String projectId;
@@ -81,11 +82,15 @@ final class HsNearbyRegistry {
         }
 
         HsScan.Found toDevice() {
-            return new HsScan.Found(modelId, radios, rssi());
+            return new HsScan.Found(modelId, radios, rssi(), productId);
         }
 
         private void fold(HsRawAdvert advert, HsScan.Found device) {
             modelId = device.modelId() == null ? "" : device.modelId();
+            // Product ID 只来自新广播；后到的空值不覆盖已经上报的那一侧。
+            if (device.productId() != null && !device.productId().isBlank()) {
+                productId = device.productId();
+            }
             radios = merge(radios, device.radios());
             connectable = advert.connectable();
             lastSeenAtMillis = advert.observedAtMillis();

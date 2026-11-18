@@ -5,51 +5,46 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_ggec_hs.internal.center.port.HsClassicLink;
+import com.yovo.biz_ggec_hs.api.HsControl;
+import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.api.YoCbtClient;
-import com.yovo.lib_bluetooth.model.classic.CbtBondState;
-import com.yovo.lib_bluetooth.model.classic.CbtBondStateObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtConnectedDeviceObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileSnapshot;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileState;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtFailure;
-import com.yovo.lib_bluetooth.model.classic.CbtOperationHandle;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileConnectionState;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileStateObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileType;
-import com.yovo.lib_bluetooth.model.common.Result;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkReadiness;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionObserver;
+import com.yovo.lib_bluetooth.model.common.Failure;
 
-import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 /**
- * 把 {@link YoCbtClient} 收成配对事实、音频事实，以及配对和音频连接两个动作。
- * 下一步由中层决定。
+ * 经典音频链路适配：把 {@code lib_bluetooth} 的 {@link YoCbtClient#openLinkSession} 的
+ * 三态就绪事实（READY / DOWN / UNKNOWN）投影成 HS 会话能消费的
+ * {@link HsClassicRadio.Callback}（onReady / onFailed / onLost）。
+ *
+ * <p><b>为什么这里没有配对/ACL/Profile 的任何判定</b>：「先查后等、未知不重连、显式超时、
+ * 失败即终态」这些链路就绪策略已全部收敛到库内 {@code YoCbtLinkSession}。本类只做
+ * <b>事实→回调</b>的单点投影，不再组合 {@code getAclState / getConnectedProfiles /
+ * queryConnectedDevices / observe* } 去自行判链路——那正是过去 biz 关注蓝牙细节、且重复
+ * 触发 CONNECT 导致必然超时的根因。</p>
  */
-public final class YoClassicRadio implements HsClassicLink {
+public final class YoClassicRadio implements HsClassicRadio {
 
     private final YoCbtClient client;
     private final Object lock = new Object();
 
     private int generation;
     private boolean released;
-    private boolean audioSettled;
+    @NonNull
+    private String address = "";
     @Nullable
-    private String address;
+    private Callback callback;
     @Nullable
-    private CbtBondState observedBond;
-    @Nullable
-    private Listener listener;
-    @Nullable
-    private CbtOperationHandle bonds;
-    @Nullable
-    private CbtOperationHandle profiles;
-    @Nullable
-    private CbtOperationHandle query;
+    private CbtLinkSessionHandle session;
+    /** 是否已经上报过 READY；用于把「就绪后再掉线」识别成 onLost。 */
+    private boolean announced;
 
     public YoClassicRadio(@NonNull YoCbtClient client) {
         this.client = client;
@@ -63,116 +58,67 @@ public final class YoClassicRadio implements HsClassicLink {
     }
 
     @Override
-    public void watch(@NonNull String classicAddress, @NonNull Listener listener) {
+    public void open(@NonNull String classicAddress, @NonNull Callback callback) {
         Objects.requireNonNull(classicAddress, "classicAddress");
-        Objects.requireNonNull(listener, "listener");
-        unwatch();
+        Objects.requireNonNull(callback, "callback");
+        cancel();
         int current;
         synchronized (lock) {
             if (released) {
                 throw new IllegalStateException("经典蓝牙链路已释放");
             }
-            current = generation;
-            address = classicAddress.trim().toUpperCase(Locale.US);
-            this.listener = listener;
-            observedBond = null;
-            audioSettled = false;
+            current = ++generation;
+            address = classicAddress.trim();
+            this.callback = callback;
+            announced = false;
         }
-        client.prepareProfileProxy(CbtProfileType.A2DP);
-        client.prepareProfileProxy(CbtProfileType.HEADSET);
-        CbtOperationHandle bondHandle = client.observeBondState(new CbtBondStateObserver() {
-            @Override
-            public void onBondStateChanged(@NonNull CbtDeviceSnapshot snapshot) {
-                if (!same(current, snapshot.deviceId())) {
-                    return;
-                }
-                synchronized (lock) {
-                    if (current == generation) {
-                        observedBond = snapshot.bondState();
+        CbtDeviceId deviceId = CbtDeviceId.fromAddress(address);
+        CbtLinkSessionHandle handle = client.openLinkSession(
+                deviceId,
+                CbtLinkSessionConfig.defaults(),
+                new CbtLinkSessionObserver() {
+                    @Override
+                    public void onReadinessChanged(@NonNull CbtDeviceId id,
+                                                   @NonNull CbtLinkReadiness readiness) {
+                        if (readiness == CbtLinkReadiness.READY) {
+                            notifyReady(current, id);
+                        } else {
+                            notifyLost(current, id);
+                        }
                     }
-                }
-                notifyListener(current);
-            }
-        });
-        CbtOperationHandle profileHandle = client.observeProfileState(new CbtProfileStateObserver() {
-            @Override
-            public void onProfileStateChanged(@NonNull CbtDeviceProfileState state) {
-                if (same(current, state.deviceId())) {
-                    notifyListener(current);
-                }
-            }
-        });
-        CbtOperationHandle queryHandle = client.queryConnectedDevices(new CbtConnectedDeviceObserver() {
-            @Override
-            public void onConnectedDevices(@NonNull List<CbtDeviceSnapshot> snapshots) {
-                settle(current);
-            }
 
-            @Override
-            public void onConnectedDeviceQueryFailed(@NonNull CbtFailure failure) {
-                // 查不到音频事实就保持未知。中层会按等待超时失败，不会把未知当成「没连上」去配对。
-            }
-        });
+                    @Override
+                    public void onLinkFailed(@NonNull CbtDeviceId id, @NonNull CbtFailure failure) {
+                        notifyFailed(current, failure);
+                    }
+
+                    @Override
+                    public void onLinkCancelled(@NonNull CbtDeviceId id) {
+                        // 主动取消不产生业务回调。
+                    }
+                });
         synchronized (lock) {
             if (current != generation) {
-                cancel(bondHandle);
-                cancel(profileHandle);
-                cancel(queryHandle);
+                handle.cancel();
                 return;
             }
-            bonds = bondHandle;
-            profiles = profileHandle;
-            query = queryHandle;
+            session = handle;
         }
     }
 
     @Override
-    public void unwatch() {
-        CbtOperationHandle bondHandle;
-        CbtOperationHandle profileHandle;
-        CbtOperationHandle queryHandle;
+    public void cancel() {
+        CbtLinkSessionHandle s;
         synchronized (lock) {
             generation++;
-            address = null;
-            listener = null;
-            observedBond = null;
-            audioSettled = false;
-            bondHandle = bonds;
-            profileHandle = profiles;
-            queryHandle = query;
-            bonds = null;
-            profiles = null;
-            query = null;
+            callback = null;
+            announced = false;
+            s = session;
+            session = null;
         }
-        cancel(bondHandle);
-        cancel(profileHandle);
-        cancel(queryHandle);
-    }
-
-    @Override
-    public Snapshot read(@NonNull String classicAddress) {
-        String target = classicAddress.trim().toUpperCase(Locale.US);
-        boolean settled;
-        synchronized (lock) {
-            settled = audioSettled && target.equals(address);
+        if (s != null) {
+            s.cancel();
         }
-        Bond bond = bondOf(target);
-        if (!settled) {
-            return new Snapshot(bond, Audio.UNKNOWN);
-        }
-        return new Snapshot(bond, audioOf(target));
-    }
-
-    @Override
-    public boolean createBond(@NonNull String classicAddress) {
-        Result<Void> started = client.createBond(CbtDeviceId.fromAddress(classicAddress));
-        return !started.isFailure();
-    }
-
-    @Override
-    public boolean connectAudio(@NonNull String classicAddress) {
-        Result<Void> started = client.connectAudio(CbtDeviceId.fromAddress(classicAddress));
-        return !started.isFailure();
     }
 
     @Override
@@ -180,93 +126,61 @@ public final class YoClassicRadio implements HsClassicLink {
         synchronized (lock) {
             released = true;
         }
-        unwatch();
+        cancel();
         client.release();
     }
 
-    private void settle(int current) {
+    private void notifyReady(int current, @NonNull CbtDeviceId id) {
+        if (!same(current, id)) {
+            return;
+        }
+        Callback cb;
+        synchronized (lock) {
+            if (current != generation || announced) {
+                return;
+            }
+            announced = true;
+            cb = callback;
+        }
+        if (cb != null) {
+            cb.onReady();
+        }
+    }
+
+    private void notifyLost(int current, @NonNull CbtDeviceId id) {
+        if (!same(current, id)) {
+            return;
+        }
+        Callback cb;
+        synchronized (lock) {
+            // 只有「已就绪过」的掉线才上报 onLost；就绪前的 DOWN/UNKNOWN 交由库继续收敛。
+            if (current != generation || !announced) {
+                return;
+            }
+            announced = false;
+            cb = callback;
+        }
+        if (cb != null) {
+            cb.onLost();
+        }
+    }
+
+    private void notifyFailed(int current, @NonNull CbtFailure failure) {
+        Callback cb;
         synchronized (lock) {
             if (current != generation) {
                 return;
             }
-            audioSettled = true;
+            generation++;
+            cb = callback;
+            callback = null;
         }
-        notifyListener(current);
-    }
-
-    private void notifyListener(int current) {
-        Listener currentListener;
-        synchronized (lock) {
-            if (current != generation) {
-                return;
-            }
-            currentListener = listener;
-        }
-        if (currentListener != null) {
-            currentListener.onChanged();
+        if (cb != null) {
+            cb.onFailed(mapFailure(failure));
         }
     }
 
-    private Bond bondOf(String target) {
-        CbtBondState observed;
-        synchronized (lock) {
-            observed = observedBond;
-        }
-        if (observed == CbtBondState.BONDING) {
-            return Bond.BONDING;
-        }
-        Result<List<CbtDeviceSnapshot>> bonded = client.getBondedDevices();
-        if (!bonded.isFailure() && bonded.getValue() != null) {
-            for (CbtDeviceSnapshot snapshot : bonded.getValue()) {
-                if (snapshot.deviceId() != null && target.equals(snapshot.deviceId().value())) {
-                    return mapBond(snapshot.bondState());
-                }
-            }
-        }
-        if (observed == CbtBondState.BONDED) {
-            return Bond.BONDED;
-        }
-        return Bond.NONE;
-    }
-
-    private static Bond mapBond(@Nullable CbtBondState state) {
-        if (state == CbtBondState.BONDING) {
-            return Bond.BONDING;
-        }
-        if (state == CbtBondState.BONDED) {
-            return Bond.BONDED;
-        }
-        return Bond.NONE;
-    }
-
-    private Audio audioOf(String target) {
-        Result<CbtDeviceProfileSnapshot> snapshot =
-                client.getDeviceProfileSnapshot(CbtDeviceId.fromAddress(target));
-        if (snapshot.isFailure() || snapshot.getValue() == null) {
-            return Audio.DOWN;
-        }
-        CbtProfileConnectionState a2dp = state(snapshot.getValue(), CbtProfileType.A2DP);
-        CbtProfileConnectionState headset = state(snapshot.getValue(), CbtProfileType.HEADSET);
-        if (a2dp == CbtProfileConnectionState.CONNECTED
-                || headset == CbtProfileConnectionState.CONNECTED) {
-            return Audio.UP;
-        }
-        if (a2dp == CbtProfileConnectionState.CONNECTING
-                || a2dp == CbtProfileConnectionState.DISCONNECTING
-                || headset == CbtProfileConnectionState.CONNECTING
-                || headset == CbtProfileConnectionState.DISCONNECTING) {
-            return Audio.BUSY;
-        }
-        return Audio.DOWN;
-    }
-
-    @Nullable
-    private static CbtProfileConnectionState state(CbtDeviceProfileSnapshot snapshot, CbtProfileType type) {
-        CbtDeviceProfileState profile = snapshot.profileStates().get(type);
-        return profile == null ? null : profile.state();
-    }
-
-    private boolean same(int current, @Nullable CbtDeviceId deviceId) {
+    private boolean same(int current, @Nullable CbtDeviceId id) {
         String target;
         synchronized (lock) {
             if (current != generation) {
@@ -274,12 +188,20 @@ public final class YoClassicRadio implements HsClassicLink {
             }
             target = address;
         }
-        return target != null && deviceId != null && target.equals(deviceId.value());
+        return id != null && target.equals(id.value());
     }
 
-    private static void cancel(@Nullable CbtOperationHandle handle) {
-        if (handle != null) {
-            handle.cancel();
+    @NonNull
+    private static HsControl.Failure mapFailure(@Nullable Failure failure) {
+        if (!(failure instanceof CbtFailure cbtFailure)) {
+            return HsControl.Failure.INTERNAL_ERROR;
         }
+        return switch (cbtFailure.errorCode()) {
+            case BLUETOOTH_DISABLED -> HsControl.Failure.BLUETOOTH_DISABLED;
+            case PERMISSION_DENIED -> HsControl.Failure.PERMISSION_DENIED;
+            case LINK_READINESS_TIMEOUT -> HsControl.Failure.TIMEOUT;
+            case LINK_READINESS_REJECTED, BOND_FAILED -> HsControl.Failure.REJECTED;
+            default -> HsControl.Failure.DEVICE_ERROR;
+        };
     }
 }

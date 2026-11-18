@@ -64,6 +64,7 @@ public class HsBroadcastClassifierTest {
         assertEquals(Hs02Identity.DEVICE_TYPE_HEADSET, identity.deviceType());
         assertTrue(identity.headset());
         assertEquals(1, identity.productModel());
+        assertEquals("1", identity.productId());
         assertEquals("00", identity.color());
         assertEquals("AA:BB:CC:DD:EE:FF", identity.classicAddress());
         assertEquals(HsMarket.CN, identity.marketId());

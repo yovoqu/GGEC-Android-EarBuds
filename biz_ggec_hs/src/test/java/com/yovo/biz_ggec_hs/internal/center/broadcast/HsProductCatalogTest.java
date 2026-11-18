@@ -30,6 +30,25 @@ public final class HsProductCatalogTest {
     }
 
     @Test
+    public void oldBroadcastSchemeMapsMarketToModel() {
+        // 旧广播：CN / TVS / AU 是 V11（HS01），CN2 是 V12（HS02）。
+        assertEquals(HsProductCatalog.HS01, HsProductCatalog.modelIdByMarket(HsMarket.CN));
+        assertEquals(HsProductCatalog.HS01, HsProductCatalog.modelIdByMarket(HsMarket.TVS));
+        assertEquals(HsProductCatalog.HS01, HsProductCatalog.modelIdByMarket(HsMarket.AUSTRALIA));
+        assertEquals(HsProductCatalog.HS02, HsProductCatalog.modelIdByMarket(HsMarket.CN2));
+        assertEquals("", HsProductCatalog.modelIdByMarket(HsMarket.UNKNOWN));
+    }
+
+    @Test
+    public void newBroadcastSchemeMapsProductIdToModel() {
+        // 新广播：Product ID 0 → V11（HS01），1 → V12（HS02）。这是与旧市场表不同的两套编码。
+        assertEquals(HsProductCatalog.HS01, HsProductCatalog.modelIdByProductModel(0));
+        assertEquals(HsProductCatalog.HS02, HsProductCatalog.modelIdByProductModel(1));
+        assertEquals("", HsProductCatalog.modelIdByProductModel(9));
+        assertEquals("", HsProductCatalog.modelIdByProductModel(-1));
+    }
+
+    @Test
     public void byHs01FeaturePrefixMatchesProduct() {
         // 广播只能给出 9 字节(18 hex)前缀
         HsProductCatalog.Product cn = HsProductCatalog.byHs01FeatureCode("861038009000001000");
