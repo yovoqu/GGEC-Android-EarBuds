@@ -88,6 +88,24 @@ tasks.register('checkBizGgecWyBoundary') {
                 if (inMain && !inLogProvider && (line =~ /\bYoLog\s*\./)) {
                     offenders << "${location}: 鏃ュ織缂濅箣澶栫洿鎺ヨ皟鐢?YoLog"
                 }
+                // B1: link-readiness judgement belongs to lib_bluetooth only.
+                // These orchestration primitives may only be used inside
+                // lib_bluetooth.internal.classic.link.YoCbtLinkSession.
+                // Biz (including provider/lib_bluetooth) consumes openLinkSession
+                // instead of re-combining them. Comment lines are ignored.
+                def linkJudgementApis = [
+                        'getAclState', 'getConnectedProfiles', 'queryConnectedDevices',
+                        'observeAclLinkState', 'observeProfileState'
+                ]
+                def trimmedLine = line.trim()
+                def isCommentLine = trimmedLine.startsWith('*') || trimmedLine.startsWith('//')
+                if (inMain && !isCommentLine) {
+                    linkJudgementApis.each { api ->
+                        if (line =~ /\bclient\s*\.\s*${api}\s*\(/) {
+                            offenders << "${location}: link readiness must be decided inside lib_bluetooth (forbidden: ${api})"
+                        }
+                    }
+                }
                 def imported = (line =~ /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.]+)\s*;/)
                 if (!imported.find()) {
                     return

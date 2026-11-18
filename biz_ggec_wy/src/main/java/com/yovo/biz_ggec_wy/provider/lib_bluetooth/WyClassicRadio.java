@@ -1,8 +1,6 @@
 package com.yovo.biz_ggec_wy.provider.lib_bluetooth;
 
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -12,29 +10,25 @@ import com.yovo.biz_ggec_wy.internal.center.port.WyClassicRadioPort;
 import com.yovo.biz_ggec_wy.provider.lib_common.log.WyLog;
 import com.yovo.lib_bluetooth.YoBluetoothSDK;
 import com.yovo.lib_bluetooth.api.YoCbtClient;
-import com.yovo.lib_bluetooth.model.classic.CbtAclLinkObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtAclLinkState;
-import com.yovo.lib_bluetooth.model.classic.CbtBondState;
-import com.yovo.lib_bluetooth.model.classic.CbtBondStateObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
-import com.yovo.lib_bluetooth.model.classic.CbtDeviceProfileState;
 import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryResult;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryState;
-import com.yovo.lib_bluetooth.model.classic.CbtErrorCode;
 import com.yovo.lib_bluetooth.model.classic.CbtFailure;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkReadiness;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
+import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtOperationHandle;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileConnectionState;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileStateObserver;
-import com.yovo.lib_bluetooth.model.classic.CbtProfileType;
 import com.yovo.lib_bluetooth.model.classic.CbtSppConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtSppConnectionId;
 import com.yovo.lib_bluetooth.model.classic.CbtSppConnectionObserver;
 import com.yovo.lib_bluetooth.model.classic.CbtSppConnectionSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtSppConnectionState;
 import com.yovo.lib_bluetooth.model.classic.CbtSppEndpoint;
+import com.yovo.lib_bluetooth.model.common.Failure;
 import com.yovo.lib_bluetooth.model.common.Result;
 
 import java.util.ArrayList;
@@ -44,13 +38,22 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 经典蓝牙栈适配器：实现 {@link WyClassicRadioPort}，封装 {@link YoCbtClient}。
+ * WY 经典蓝牙适配：<b>只做协议适配与 SPP 通道编排</b>，链路就绪由 lib_bluetooth 负责。
  *
- * <p>连接策略：
- * 1. 发起连接时，先检查经典蓝牙链路（ACL / Profile）是否已就绪；
- * 2. 若未就绪，先调用 lib_bluetooth 执行配对与连接（createBond / connectAudio）；
- * 3. 经典蓝牙物理链路就绪后，再正式建立控制流与音频流双通道 SPP；
- * 4. 严禁在经典蓝牙未连时直接拒绝连接。</p>
+ * <h3>职责边界</h3>
+ * <table>
+ *   <tr><th>归 lib_bluetooth</th><th>归本类</th></tr>
+ *   <tr>
+ *     <td>配对 / ACL / 音频 Profile 的就绪判定与编排、超时收敛、未知态等待</td>
+ *     <td>WY 专有的两条 SPP 通道（控制流 7777…、音频流 8888…）、
+ *         字节收发、状态到 {@link WyControl.Failure} 的映射</td>
+ *   </tr>
+ * </table>
+ *
+ * <p>此前本类自行组合 {@code getAclState / getConnectedProfiles / connectAudio / observe*}
+ * 判定链路，把「未知」当成「未连接」，对已连接设备重复请求 CONNECT 被系统忽略，
+ * 导致必然超时。该判定已上移到 {@link YoCbtClient#openLinkSession}，本类不再持有任何
+ * ACL/Profile 状态机。</p>
  */
 public final class WyClassicRadio implements WyClassicRadioPort {
 
@@ -59,79 +62,51 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     public static final UUID CONTROL_UUID = UUID.fromString("77777777-7777-7777-7777-777777777777");
     public static final UUID AUDIO_UUID = UUID.fromString("88888888-8888-8888-8888-888888888888");
 
-    public interface Delay {
-        void postDelayed(@NonNull Runnable task, long delayMillis);
-
-        void removeCallbacks(@NonNull Runnable task);
+    /** 控制流端点 UUID：WY 协议专有，供测试与诊断引用同一取值。 */
+    @NonNull
+    public static UUID controlUuid() {
+        return CONTROL_UUID;
     }
 
+    /** 音频流端点 UUID：WY 协议专有，供测试与诊断引用同一取值。 */
+    @NonNull
+    public static UUID audioUuid() {
+        return AUDIO_UUID;
+    }
+
+    /** SPP 通道连接超时：与链路就绪超时解耦，通道本身只需较短窗口。 */
+    private static final long SPP_CONNECT_TIMEOUT_MILLIS = 15_000L;
+
     private final YoCbtClient client;
-    private final Delay delay;
     private final Object lock = new Object();
 
     @Nullable
     private CbtOperationHandle discoveryHandle;
+
+    @Nullable
+    private CbtLinkSessionHandle linkSession;
     @Nullable
     private CbtOperationHandle controlHandle;
     @Nullable
     private CbtOperationHandle audioHandle;
+
     @Nullable
     private CbtSppConnectionId controlConnectionId;
     @Nullable
     private CbtSppConnectionId audioConnectionId;
 
-    private int connectGeneration;
-    private boolean classicConnectSettled;
-    @Nullable
-    private Runnable classicTimeoutRunnable;
-    @Nullable
-    private CbtOperationHandle bondHandle;
-    @Nullable
-    private CbtOperationHandle aclHandle;
-    @Nullable
-    private CbtOperationHandle profileHandle;
-
     private boolean controlConnected;
     private boolean audioConnected;
 
     @Nullable
-    private CbtDeviceId currentConnectedDeviceId;
+    private CbtDeviceId currentDeviceId;
     @Nullable
-    private SppStateListener currentSppListener;
+    private SppStateListener currentListener;
+    /** 会话代次：每次 connect/disconnect 递增，用于丢弃过期回调。 */
+    private int generation;
 
     public WyClassicRadio(@NonNull YoCbtClient client) {
-        this(client, createDefaultDelay());
-    }
-
-    public WyClassicRadio(@NonNull YoCbtClient client, @NonNull Delay delay) {
         this.client = Objects.requireNonNull(client, "client");
-        this.delay = Objects.requireNonNull(delay, "delay");
-    }
-
-    private static Delay createDefaultDelay() {
-        if (Looper.getMainLooper() != null) {
-            Handler handler = new Handler(Looper.getMainLooper());
-            return new Delay() {
-                @Override
-                public void postDelayed(@NonNull Runnable task, long delayMillis) {
-                    handler.postDelayed(task, delayMillis);
-                }
-
-                @Override
-                public void removeCallbacks(@NonNull Runnable task) {
-                    handler.removeCallbacks(task);
-                }
-            };
-        }
-        return new Delay() {
-            @Override
-            public void postDelayed(@NonNull Runnable task, long delayMillis) {
-            }
-
-            @Override
-            public void removeCallbacks(@NonNull Runnable task) {
-            }
-        };
     }
 
     @NonNull
@@ -140,6 +115,8 @@ public final class WyClassicRadio implements WyClassicRadioPort {
         Context target = app != null ? app : context;
         return new WyClassicRadio(YoBluetoothSDK.classic(target));
     }
+
+    // ── 已配对设备 ────────────────────────────────────────────────
 
     @NonNull
     @Override
@@ -155,275 +132,195 @@ public final class WyClassicRadio implements WyClassicRadioPort {
             }
             String address = snapshot.identity().classicAddress();
             String name = snapshot.identity().classicName();
-            boolean connected = isClassicConnected(address);
-            result.add(new BondedDevice(name, address, connected));
+            result.add(new BondedDevice(name, address, false));
         }
         return Collections.unmodifiableList(result);
     }
+
+    // ── 发现 ──────────────────────────────────────────────────────
 
     @Override
     public void startDiscovery(@NonNull DiscoveryListener listener) {
         Objects.requireNonNull(listener, "listener");
         stopDiscovery();
+        CbtDiscoveryConfig config = CbtDiscoveryConfig.builder()
+                .timeoutMillis(12_000L)
+                .requireName(false)
+                .build();
+        CbtOperationHandle handle = client.discover(config, new CbtDiscoveryObserver() {
+            @Override
+            public void onDiscoveryStateChanged(@NonNull CbtDiscoveryState state) {
+                if (state == CbtDiscoveryState.FINISHED) {
+                    listener.onDiscoveryFinished();
+                }
+            }
+
+            @Override
+            public void onDeviceFound(@NonNull CbtDiscoveryResult result) {
+                CbtDeviceSnapshot snapshot = result.snapshot();
+                String name = snapshot.identity().classicName();
+                listener.onDeviceDiscovered(
+                        name != null ? name : "",
+                        snapshot.identity().classicAddress(),
+                        snapshot.rssi(),
+                        result.timestampMillis());
+            }
+
+            @Override
+            public void onDiscoveryFailed(@NonNull CbtFailure failure) {
+                listener.onDiscoveryFailed(mapFailure(failure));
+            }
+        });
         synchronized (lock) {
-            CbtDiscoveryConfig config = CbtDiscoveryConfig.builder()
-                    .timeoutMillis(12000L)
-                    .requireName(false)
-                    .build();
-            discoveryHandle = client.discover(config, new CbtDiscoveryObserver() {
-                @Override
-                public void onDiscoveryStateChanged(@NonNull CbtDiscoveryState state) {
-                    if (state == CbtDiscoveryState.FINISHED) {
-                        listener.onDiscoveryFinished();
-                    }
-                }
-
-                @Override
-                public void onDeviceFound(@NonNull CbtDiscoveryResult result) {
-                    String name = result.snapshot().identity().classicName();
-                    String address = result.snapshot().identity().classicAddress();
-                    int rssi = result.snapshot().rssi();
-                    long ts = result.timestampMillis();
-                    listener.onDeviceDiscovered(name, address, rssi, ts);
-                }
-
-                @Override
-                public void onDiscoveryFailed(@NonNull CbtFailure failure) {
-                    listener.onDiscoveryFailed(mapFailure(failure));
-                }
-            });
+            discoveryHandle = handle;
         }
     }
 
     @Override
     public void stopDiscovery() {
+        CbtOperationHandle handle;
         synchronized (lock) {
-            if (discoveryHandle != null) {
-                discoveryHandle.cancel();
-                discoveryHandle = null;
-            }
-            client.stopDiscovery();
+            handle = discoveryHandle;
+            discoveryHandle = null;
         }
+        if (handle != null) {
+            handle.cancel();
+        }
+        client.stopDiscovery();
     }
+
+    // ── 连接：链路就绪交给 lib，本类只编排 SPP ──────────────────────
 
     @Override
     public void connect(@NonNull String classicAddress, @NonNull SppStateListener listener) {
         Objects.requireNonNull(classicAddress, "classicAddress");
         Objects.requireNonNull(listener, "listener");
-        disconnect();
 
-        final int currentGen;
+        final int current;
         synchronized (lock) {
-            currentGen = ++connectGeneration;
-            classicConnectSettled = false;
+            cancelLinkSessionLocked();
+            current = ++generation;
+            currentDeviceId = CbtDeviceId.fromAddress(classicAddress);
+            currentListener = listener;
+            controlConnected = false;
+            audioConnected = false;
         }
 
-        final CbtDeviceId deviceId = CbtDeviceId.fromAddress(classicAddress);
+        listener.onControlStateChanged(SppState.CONNECTING, null);
 
-        // 1. 如果经典蓝牙已经连通（ACL 或 Profile 已就绪），直接连接 SPP 双通道
-        if (isClassicConnected(classicAddress)) {
-            WyLog.i(TAG, "经典蓝牙已就绪，直接发起 SPP 双通道连接: " + classicAddress);
-            connectSppChannels(currentGen, deviceId, listener);
+        CbtDeviceId deviceId = CbtDeviceId.fromAddress(classicAddress);
+        CbtLinkSessionHandle session = client.openLinkSession(
+                deviceId,
+                CbtLinkSessionConfig.defaults(),
+                new CbtLinkSessionObserver() {
+                    @Override
+                    public void onReadinessChanged(@NonNull CbtDeviceId id,
+                                                   @NonNull CbtLinkReadiness readiness) {
+                        WyLog.d(TAG, "链路就绪事实: " + readiness + ", " + id.value());
+                        if (readiness == CbtLinkReadiness.READY) {
+                            synchronized (lock) {
+                                if (current != generation) {
+                                    return;
+                                }
+                            }
+                            connectControlChannel(current, deviceId);
+                        }
+                    }
+
+                    @Override
+                    public void onLinkFailed(@NonNull CbtDeviceId id, @NonNull CbtFailure failure) {
+                        WyLog.w(TAG, "链路就绪失败: " + failure.message());
+                        synchronized (lock) {
+                            if (current != generation) {
+                                return;
+                            }
+                        }
+                        listener.onControlStateChanged(SppState.FAILED, mapFailure(failure));
+                    }
+
+                    @Override
+                    public void onLinkCancelled(@NonNull CbtDeviceId id) {
+                        // 主动取消不产生失败回调。
+                    }
+                });
+
+        synchronized (lock) {
+            if (current != generation) {
+                session.cancel();
+                return;
+            }
+            linkSession = session;
+        }
+    }
+
+    /** 建立控制流 SPP：音频 SPP 按需在录音时另建（见 {@link #connectAudioSpp}）。 */
+    private void connectControlChannel(int gen, @NonNull CbtDeviceId deviceId) {
+        CbtSppConfig config = CbtSppConfig.builder()
+                .connectTimeoutMillis(SPP_CONNECT_TIMEOUT_MILLIS)
+                .build();
+        SppStateListener listener;
+        synchronized (lock) {
+            if (gen != generation) {
+                return;
+            }
+            listener = currentListener;
+            if (controlHandle != null) {
+                controlHandle.cancel();
+                controlHandle = null;
+            }
+        }
+        if (listener == null) {
             return;
         }
 
-        // 2. 经典蓝牙未连通，先通过 lib_bluetooth 建立经典蓝牙连接
-        WyLog.i(TAG, "经典蓝牙未连接，先调用 lib_bluetooth 建立经典连接: " + classicAddress);
-        listener.onControlStateChanged(SppState.CONNECTING, null);
-
-        client.prepareProfileProxy(CbtProfileType.A2DP);
-        client.prepareProfileProxy(CbtProfileType.HEADSET);
-
-        synchronized (lock) {
-            classicTimeoutRunnable = () -> handleClassicTimeout(currentGen, listener);
-            delay.postDelayed(classicTimeoutRunnable, 15000L);
-
-            // 监听 ACL 链路状态（ACL 连接代表经典蓝牙物理链路已连通）
-            aclHandle = client.observeAclLinkState(new CbtAclLinkObserver() {
-                @Override
-                public void onAclLinkChanged(@NonNull CbtDeviceSnapshot snapshot) {
-                    if (snapshot.deviceId() != null && deviceId.equals(snapshot.deviceId())) {
-                        if (snapshot.aclLinkState() == CbtAclLinkState.CONNECTED) {
-                            WyLog.i(TAG, "监听到 ACL 链路已连通: " + classicAddress);
-                            onClassicLinkEstablished(currentGen, deviceId, listener);
-                        }
-                    }
-                }
-            });
-
-            // 监听 Profile 连接状态（A2DP 或 HEADSET 连上也可代表经典蓝牙已就绪）
-            profileHandle = client.observeProfileState(deviceId, new CbtProfileStateObserver() {
-                @Override
-                public void onProfileStateChanged(@NonNull CbtDeviceProfileState profileState) {
-                    if (profileState.state() == CbtProfileConnectionState.CONNECTED) {
-                        WyLog.i(TAG, "监听到 Profile 已连通: " + profileState.profileType() + ", " + classicAddress);
-                        onClassicLinkEstablished(currentGen, deviceId, listener);
-                    }
-                }
-            });
-
-            boolean bonded = isBonded(deviceId);
-            if (!bonded) {
-                WyLog.i(TAG, "设备未配对，先发起配对: " + classicAddress);
-                bondHandle = client.observeBondState(new CbtBondStateObserver() {
+        CbtOperationHandle handle = client.connectSpp(
+                deviceId,
+                CbtSppEndpoint.uuid(CONTROL_UUID),
+                config,
+                new CbtSppConnectionObserver() {
                     @Override
-                    public void onBondStateChanged(@NonNull CbtDeviceSnapshot snapshot) {
-                        if (snapshot.deviceId() != null && deviceId.equals(snapshot.deviceId())) {
-                            if (snapshot.bondState() == CbtBondState.BONDED) {
-                                WyLog.i(TAG, "配对成功，发起 connectAudio 建立经典蓝牙连接: " + classicAddress);
-                                Result<Void> audioRes = client.connectAudio(deviceId);
-                                if (audioRes.isFailure()) {
-                                    WyLog.w(TAG, "connectAudio 发起失败，直接尝试建立 SPP: " + audioRes.getFailure());
-                                    onClassicLinkEstablished(currentGen, deviceId, listener);
-                                }
-                            } else if (snapshot.bondState() == CbtBondState.NONE) {
-                                WyLog.w(TAG, "配对失败或取消: " + classicAddress);
-                                handleClassicFailed(currentGen, listener, WyControl.Failure.REJECTED);
+                    public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
+                        synchronized (lock) {
+                            if (gen != generation) {
+                                return;
                             }
+                            applyChannelState(snapshot, true);
                         }
+                        listener.onControlStateChanged(
+                                mapSppState(snapshot.state()),
+                                snapshot.failure() != null ? mapFailure(snapshot.failure()) : null);
+                    }
+
+                    @Override
+                    public void onSppDataReceived(@NonNull CbtSppConnectionId connectionId,
+                                                  @NonNull byte[] data) {
+                        listener.onControlDataReceived(data);
                     }
                 });
-                Result<Void> bondRes = client.createBond(deviceId);
-                if (bondRes.isFailure()) {
-                    WyLog.w(TAG, "createBond 发起失败，尝试直接 connectAudio: " + bondRes.getFailure());
-                    Result<Void> audioRes = client.connectAudio(deviceId);
-                    if (audioRes.isFailure()) {
-                        WyLog.w(TAG, "connectAudio 也失败，直接尝试建立 SPP: " + audioRes.getFailure());
-                        onClassicLinkEstablished(currentGen, deviceId, listener);
-                    }
-                }
-            } else {
-                WyLog.i(TAG, "设备已配对，发起 connectAudio 建立经典蓝牙音频/ACL: " + classicAddress);
-                Result<Void> audioRes = client.connectAudio(deviceId);
-                if (audioRes.isFailure()) {
-                    WyLog.w(TAG, "connectAudio 发起失败（可能非音频设备），直接尝试建立 SPP: " + audioRes.getFailure());
-                    onClassicLinkEstablished(currentGen, deviceId, listener);
-                }
-            }
-        }
-    }
 
-    private void onClassicLinkEstablished(int gen, @NonNull CbtDeviceId deviceId, @NonNull SppStateListener listener) {
         synchronized (lock) {
-            if (gen != connectGeneration || classicConnectSettled) {
+            if (gen != generation) {
+                handle.cancel();
                 return;
             }
-            classicConnectSettled = true;
-            cancelClassicObserversLocked();
-        }
-        WyLog.i(TAG, "经典蓝牙链路已建立，开始发起 SPP 双通道连接: " + deviceId.value());
-        connectSppChannels(gen, deviceId, listener);
-    }
-
-    private void handleClassicTimeout(int gen, @NonNull SppStateListener listener) {
-        synchronized (lock) {
-            if (gen != connectGeneration || classicConnectSettled) {
-                return;
-            }
-            classicConnectSettled = true;
-            cancelClassicObserversLocked();
-        }
-        WyLog.w(TAG, "经典蓝牙连接超时");
-        listener.onControlStateChanged(SppState.FAILED, WyControl.Failure.TIMEOUT);
-    }
-
-    private void handleClassicFailed(int gen, @NonNull SppStateListener listener, @NonNull WyControl.Failure failure) {
-        synchronized (lock) {
-            if (gen != connectGeneration || classicConnectSettled) {
-                return;
-            }
-            classicConnectSettled = true;
-            cancelClassicObserversLocked();
-        }
-        WyLog.w(TAG, "经典蓝牙连接失败: " + failure);
-        listener.onControlStateChanged(SppState.FAILED, failure);
-    }
-
-    private void cancelClassicObserversLocked() {
-        if (classicTimeoutRunnable != null) {
-            delay.removeCallbacks(classicTimeoutRunnable);
-            classicTimeoutRunnable = null;
-        }
-        if (bondHandle != null) {
-            bondHandle.cancel();
-            bondHandle = null;
-        }
-        if (aclHandle != null) {
-            aclHandle.cancel();
-            aclHandle = null;
-        }
-        if (profileHandle != null) {
-            profileHandle.cancel();
-            profileHandle = null;
-        }
-    }
-
-    private boolean isBonded(@NonNull CbtDeviceId deviceId) {
-        Result<List<CbtDeviceSnapshot>> bonded = client.getBondedDevices();
-        if (bonded.isSuccess() && bonded.getValue() != null) {
-            for (CbtDeviceSnapshot snapshot : bonded.getValue()) {
-                if (snapshot.deviceId() != null && deviceId.equals(snapshot.deviceId())) {
-                    return snapshot.bondState() == CbtBondState.BONDED;
-                }
-            }
-        }
-        return false;
-    }
-
-    private void connectSppChannels(int gen, @NonNull CbtDeviceId deviceId, @NonNull SppStateListener listener) {
-        synchronized (lock) {
-            if (gen != connectGeneration) {
-                return;
-            }
-            controlConnected = false;
-            audioConnected = false;
-            currentConnectedDeviceId = deviceId;
-            currentSppListener = listener;
-
-            CbtSppConfig config = CbtSppConfig.builder()
-                    .connectTimeoutMillis(15000L)
-                    .build();
-
-            // 默认只连接控制通道
-            controlHandle = client.connectSpp(deviceId, CbtSppEndpoint.uuid(CONTROL_UUID), config, new CbtSppConnectionObserver() {
-                @Override
-                public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
-                    synchronized (lock) {
-                        if (gen != connectGeneration) return;
-                        if (snapshot.state() == CbtSppConnectionState.CONNECTED) {
-                            controlConnectionId = snapshot.connectionId();
-                            controlConnected = true;
-                        } else if (snapshot.state() == CbtSppConnectionState.DISCONNECTED
-                                || snapshot.state() == CbtSppConnectionState.FAILED) {
-                            controlConnectionId = null;
-                            controlConnected = false;
-                        }
-                    }
-                    SppState state = mapSppState(snapshot.state());
-                    WyControl.Failure failure = snapshot.failure() != null ? mapFailure(snapshot.failure()) : null;
-                    listener.onControlStateChanged(state, failure);
-                }
-
-                @Override
-                public void onSppDataReceived(@NonNull CbtSppConnectionId connectionId, @NonNull byte[] data) {
-                    listener.onControlDataReceived(data);
-                }
-            });
+            controlHandle = handle;
         }
     }
 
     @Override
     public void connectAudioSpp(@NonNull ActionCallback callback) {
         Objects.requireNonNull(callback, "callback");
-        CbtDeviceId deviceId;
-        SppStateListener listener;
+        final int gen;
+        final CbtDeviceId deviceId;
+        final SppStateListener listener;
         synchronized (lock) {
             if (audioConnected) {
                 callback.onResult(true, null);
                 return;
             }
-            deviceId = currentConnectedDeviceId;
-            listener = currentSppListener;
+            gen = generation;
+            deviceId = currentDeviceId;
+            listener = currentListener;
             if (deviceId == null || listener == null || !controlConnected) {
                 callback.onResult(false, WyControl.Failure.DISCONNECTED);
                 return;
@@ -432,46 +329,83 @@ public final class WyClassicRadio implements WyClassicRadioPort {
                 audioHandle.cancel();
                 audioHandle = null;
             }
-            CbtSppConfig config = CbtSppConfig.builder()
-                    .connectTimeoutMillis(15000L)
-                    .build();
-            audioHandle = client.connectSpp(deviceId, CbtSppEndpoint.uuid(AUDIO_UUID), config, new CbtSppConnectionObserver() {
-                private boolean callbackFired;
+        }
 
-                @Override
-                public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
-                    synchronized (lock) {
-                        if (snapshot.state() == CbtSppConnectionState.CONNECTED) {
-                            audioConnectionId = snapshot.connectionId();
-                            audioConnected = true;
-                        } else if (snapshot.state() == CbtSppConnectionState.DISCONNECTED
-                                || snapshot.state() == CbtSppConnectionState.FAILED) {
-                            audioConnectionId = null;
-                            audioConnected = false;
+        CbtSppConfig config = CbtSppConfig.builder()
+                .connectTimeoutMillis(SPP_CONNECT_TIMEOUT_MILLIS)
+                .build();
+        CbtOperationHandle handle = client.connectSpp(
+                deviceId,
+                CbtSppEndpoint.uuid(AUDIO_UUID),
+                config,
+                new CbtSppConnectionObserver() {
+                    private boolean callbackFired;
+
+                    @Override
+                    public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
+                        SppState state;
+                        WyControl.Failure failure;
+                        synchronized (lock) {
+                            if (gen != generation) {
+                                return;
+                            }
+                            applyChannelState(snapshot, false);
+                            state = mapSppState(snapshot.state());
+                            failure = snapshot.failure() != null
+                                    ? mapFailure(snapshot.failure()) : null;
                         }
-                    }
-                    SppState state = mapSppState(snapshot.state());
-                    WyControl.Failure failure = snapshot.failure() != null ? mapFailure(snapshot.failure()) : null;
-                    listener.onAudioStateChanged(state, failure);
-
-                    synchronized (this) {
-                        if (!callbackFired) {
+                        listener.onAudioStateChanged(state, failure);
+                        synchronized (this) {
+                            if (callbackFired) {
+                                return;
+                            }
                             if (state == SppState.CONNECTED) {
                                 callbackFired = true;
                                 callback.onResult(true, null);
                             } else if (state == SppState.FAILED || state == SppState.DISCONNECTED) {
                                 callbackFired = true;
-                                callback.onResult(false, failure != null ? failure : WyControl.Failure.DEVICE_ERROR);
+                                callback.onResult(false, failure != null
+                                        ? failure : WyControl.Failure.DEVICE_ERROR);
                             }
                         }
                     }
-                }
 
-                @Override
-                public void onSppDataReceived(@NonNull CbtSppConnectionId connectionId, @NonNull byte[] data) {
-                    listener.onAudioDataReceived(data);
-                }
-            });
+                    @Override
+                    public void onSppDataReceived(@NonNull CbtSppConnectionId connectionId,
+                                                  @NonNull byte[] data) {
+                        listener.onAudioDataReceived(data);
+                    }
+                });
+
+        synchronized (lock) {
+            if (gen != generation) {
+                handle.cancel();
+                return;
+            }
+            audioHandle = handle;
+        }
+    }
+
+    /** 把 SPP 快照落到通道状态字段（调用方须持锁）。 */
+    private void applyChannelState(@NonNull CbtSppConnectionSnapshot snapshot, boolean control) {
+        CbtSppConnectionState state = snapshot.state();
+        if (state == CbtSppConnectionState.CONNECTED) {
+            if (control) {
+                controlConnectionId = snapshot.connectionId();
+                controlConnected = true;
+            } else {
+                audioConnectionId = snapshot.connectionId();
+                audioConnected = true;
+            }
+        } else if (state == CbtSppConnectionState.DISCONNECTED
+                || state == CbtSppConnectionState.FAILED) {
+            if (control) {
+                controlConnectionId = null;
+                controlConnected = false;
+            } else {
+                audioConnectionId = null;
+                audioConnected = false;
+            }
         }
     }
 
@@ -492,12 +426,13 @@ public final class WyClassicRadio implements WyClassicRadioPort {
 
     @Override
     public void disconnect() {
+        CbtSppConnectionId control;
+        CbtSppConnectionId audio;
         synchronized (lock) {
-            connectGeneration++;
-            classicConnectSettled = true;
-            cancelClassicObserversLocked();
-            currentConnectedDeviceId = null;
-            currentSppListener = null;
+            generation++;
+            cancelLinkSessionLocked();
+            currentDeviceId = null;
+            currentListener = null;
             if (controlHandle != null) {
                 controlHandle.cancel();
                 controlHandle = null;
@@ -506,39 +441,42 @@ public final class WyClassicRadio implements WyClassicRadioPort {
                 audioHandle.cancel();
                 audioHandle = null;
             }
-            if (controlConnectionId != null) {
-                client.disconnectSpp(controlConnectionId);
-                controlConnectionId = null;
-            }
-            if (audioConnectionId != null) {
-                client.disconnectSpp(audioConnectionId);
-                audioConnectionId = null;
-            }
+            control = controlConnectionId;
+            audio = audioConnectionId;
+            controlConnectionId = null;
+            audioConnectionId = null;
             controlConnected = false;
             audioConnected = false;
         }
+        if (control != null) {
+            client.disconnectSpp(control);
+        }
+        if (audio != null) {
+            client.disconnectSpp(audio);
+        }
     }
+
+    // ── 收发 ──────────────────────────────────────────────────────
 
     @Override
     public void sendControl(@NonNull byte[] data, @NonNull SendCallback callback) {
         Objects.requireNonNull(data, "data");
         Objects.requireNonNull(callback, "callback");
-        CbtSppConnectionId connId;
+        CbtSppConnectionId connectionId;
         synchronized (lock) {
-            connId = controlConnectionId;
+            connectionId = controlConnectionId;
         }
-        if (connId == null) {
+        if (connectionId == null) {
             callback.onComplete(false, WyControl.Failure.DISCONNECTED);
             return;
         }
-        Result<Void> result = client.send(connId, data);
-        if (result.isSuccess()) {
-            callback.onComplete(true, null);
-        } else {
-            callback.onComplete(false, result.getFailure() != null ? mapFailure(result.getFailure()) : WyControl.Failure.DEVICE_ERROR);
+        Result<Void> sent = client.send(connectionId, data);
+        if (sent.isFailure()) {
+            callback.onComplete(false, mapFailure(sent.getFailure()));
+            return;
         }
+        callback.onComplete(true, null);
     }
-
     @Override
     public boolean isControlConnected() {
         synchronized (lock) {
@@ -556,25 +494,31 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     @Override
     public boolean isClassicConnected(@NonNull String classicAddress) {
         Objects.requireNonNull(classicAddress, "classicAddress");
-        CbtDeviceId deviceId = CbtDeviceId.fromAddress(classicAddress);
-        Result<CbtAclLinkState> acl = client.getAclState(deviceId);
-        if (acl.isSuccess() && acl.getValue() == CbtAclLinkState.CONNECTED) {
-            return true;
+        // 链路事实只在 lib 内判定：这里只回答「本会话的控制通道是否已就绪」，
+        // 不再自行组合 ACL/Profile 查询，避免出现第二套三态判定。
+        synchronized (lock) {
+            return controlConnected;
         }
-        Result<List<CbtProfileType>> profiles = client.getConnectedProfiles(deviceId);
-        if (profiles.isSuccess() && profiles.getValue() != null && !profiles.getValue().isEmpty()) {
-            return true;
-        }
-        return false;
     }
 
     @Override
     public void release() {
         disconnect();
         stopDiscovery();
+        client.release();
     }
 
-    private static SppState mapSppState(CbtSppConnectionState state) {
+    private void cancelLinkSessionLocked() {
+        if (linkSession != null) {
+            linkSession.cancel();
+            linkSession = null;
+        }
+    }
+
+    // ── 状态映射 ──────────────────────────────────────────────────
+
+    @NonNull
+    private static SppState mapSppState(@Nullable CbtSppConnectionState state) {
         if (state == null) {
             return SppState.IDLE;
         }
@@ -587,26 +531,23 @@ public final class WyClassicRadio implements WyClassicRadioPort {
         };
     }
 
-    private static WyControl.Failure mapFailure(com.yovo.lib_bluetooth.model.common.Failure failure) {
-        if (failure == null) {
+    /**
+     * 失败映射单点：{@code lib_bluetooth} 的失败类型 → WY 对外失败枚举。
+     *
+     * <p>接受基类 {@link Failure} 并在此做唯一一次类型收窄，
+     * 调用方不再各自判断具体子类。</p>
+     */
+    @NonNull
+    private static WyControl.Failure mapFailure(@Nullable Failure failure) {
+        if (!(failure instanceof CbtFailure cbtFailure)) {
             return WyControl.Failure.INTERNAL_ERROR;
         }
-        String code = failure.code();
-        if (CbtErrorCode.BLUETOOTH_DISABLED.name().equals(code)) {
-            return WyControl.Failure.BLUETOOTH_DISABLED;
-        }
-        if (CbtErrorCode.PERMISSION_DENIED.name().equals(code)) {
-            return WyControl.Failure.PERMISSION_DENIED;
-        }
-        if (CbtErrorCode.DISCOVERY_START_FAILED.name().equals(code)) {
-            return WyControl.Failure.SCAN_FAILED;
-        }
-        if (CbtErrorCode.SPP_CONNECT_TIMEOUT.name().equals(code)) {
-            return WyControl.Failure.TIMEOUT;
-        }
-        if (CbtErrorCode.SPP_LOCAL_CLOSED.name().equals(code) || CbtErrorCode.SPP_REMOTE_CLOSED.name().equals(code)) {
-            return WyControl.Failure.DISCONNECTED;
-        }
-        return WyControl.Failure.DEVICE_ERROR;
+        return switch (cbtFailure.errorCode()) {
+            case BLUETOOTH_DISABLED -> WyControl.Failure.BLUETOOTH_DISABLED;
+            case PERMISSION_DENIED -> WyControl.Failure.PERMISSION_DENIED;
+            case SPP_CONNECT_TIMEOUT, LINK_READINESS_TIMEOUT -> WyControl.Failure.TIMEOUT;
+            case LINK_READINESS_REJECTED, BOND_FAILED -> WyControl.Failure.REJECTED;
+            default -> WyControl.Failure.DEVICE_ERROR;
+        };
     }
 }

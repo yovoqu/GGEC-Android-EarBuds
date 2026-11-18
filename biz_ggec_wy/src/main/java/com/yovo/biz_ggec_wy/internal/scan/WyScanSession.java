@@ -24,6 +24,12 @@ final class WyScanSession {
         }
     }
 
+    long currentGeneration() {
+        synchronized (lock) {
+            return generation;
+        }
+    }
+
     boolean isCurrent(long candidateGeneration) {
         synchronized (lock) {
             return scanning && generation == candidateGeneration;

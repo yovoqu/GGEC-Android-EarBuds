@@ -63,10 +63,11 @@ public final class WyClassicScanner {
         Objects.requireNonNull(listener, "listener");
         stop();
         this.currentListener = listener;
+        registry.clear();
         long generation = scanSession.begin();
         WyLog.i(TAG, "启动经典蓝牙扫描，generation=" + generation);
 
-        // 先上报系统已配对（不论已连接或未连接）的设备
+        // 仅在当前规则接受 WY01 机型时，才上报系统已配对设备（属于 SPP 协议）
         reportBondedDevices(generation);
 
         radio.startDiscovery(new WyClassicRadioPort.DiscoveryListener() {
@@ -82,7 +83,7 @@ public final class WyClassicScanner {
                 }
                 lastFrameAtMillis = timestampMillis;
                 registry.update(DEVICE_PREFIX, address, name.trim(), rssi, timestampMillis);
-                List<WyScan.Found> foundList = registry.getFoundDevices();
+                List<WyScan.Found> foundList = view().devices();
                 mainDispatcher.post(() -> {
                     WyScan.Listener l = currentListener;
                     if (l != null && scanSession.isCurrent(generation)) {
@@ -127,7 +128,18 @@ public final class WyClassicScanner {
         radio.stopDiscovery();
     }
 
+    private boolean isModelAccepted(@NonNull String modelId) {
+        WyScan.Rule rule = currentRule;
+        if (rule == null || rule.modelIds() == null || rule.modelIds().isEmpty()) {
+            return true;
+        }
+        return rule.modelIds().contains(modelId);
+    }
+
     private void reportBondedDevices(long generation) {
+        if (!isModelAccepted(DEVICE_PREFIX)) {
+            return;
+        }
         List<WyClassicRadioPort.BondedDevice> bondedList = radio.getBondedDevices();
         if (bondedList == null || bondedList.isEmpty()) {
             return;
@@ -145,7 +157,7 @@ public final class WyClassicScanner {
             hasUpdate = true;
         }
         if (hasUpdate) {
-            List<WyScan.Found> foundList = registry.getFoundDevices();
+            List<WyScan.Found> foundList = view().devices();
             mainDispatcher.post(() -> {
                 WyScan.Listener l = currentListener;
                 if (l != null && scanSession.isCurrent(generation)) {
@@ -159,6 +171,9 @@ public final class WyClassicScanner {
         this.currentRule = Objects.requireNonNull(rule, "rule");
         WyScan.Listener l = currentListener;
         if (l != null) {
+            if (scanSession.isScanning()) {
+                reportBondedDevices(scanSession.currentGeneration());
+            }
             List<WyScan.Found> found = view().devices();
             mainDispatcher.post(() -> l.onUpdated(found));
         }

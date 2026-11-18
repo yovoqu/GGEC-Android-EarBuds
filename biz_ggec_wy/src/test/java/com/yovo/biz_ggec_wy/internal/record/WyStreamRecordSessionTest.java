@@ -236,15 +236,16 @@ public class WyStreamRecordSessionTest {
         assertTrue(started.get());
         assertTrue(codecProvider.decoderCreated);
 
-        // 2. 灌入 WY01 专属数据包：440 字节一包，内含 10 帧（每帧 4B 序号 + 40B Opus）
+        // 2. 灌入 WY01 专属数据包：440 字节一包，内含 10 帧（每帧 4B 序号 + 40B Opus）。
+        //    WY01 现场固件序号为 4 字节大端（与真机一致）。
         byte[] deca440 = new byte[440];
         int step = 44;
         for (int i = 0; i < 10; i++) {
             int idx = 1 + i;
-            deca440[i * step] = (byte) (idx & 0xFF);
-            deca440[i * step + 1] = (byte) ((idx >> 8) & 0xFF);
-            deca440[i * step + 2] = (byte) ((idx >> 16) & 0xFF);
-            deca440[i * step + 3] = (byte) ((idx >> 24) & 0xFF);
+            deca440[i * step] = (byte) ((idx >> 24) & 0xFF);
+            deca440[i * step + 1] = (byte) ((idx >> 16) & 0xFF);
+            deca440[i * step + 2] = (byte) ((idx >> 8) & 0xFF);
+            deca440[i * step + 3] = (byte) (idx & 0xFF);
         }
         recordSession.onAudioChunkReceived(deca440);
 

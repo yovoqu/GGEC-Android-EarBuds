@@ -11,6 +11,8 @@ import com.yovo.biz_ggec_wy.api.StreamRecordListener;
 import com.yovo.biz_ggec_wy.api.WyControl;
 import com.yovo.biz_ggec_wy.api.WyRecordApi;
 import com.yovo.biz_ggec_wy.internal.center.port.WyClassicRadioPort;
+import com.yovo.biz_ggec_wy.internal.support.HexPreview;
+import com.yovo.lib_ggec_audio.AudioWireByteOrder;
 import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
 import com.yovo.lib_ggec_audio.record.LoggingAudioFrameTrace;
 import com.yovo.lib_ggec_audio.record.StreamRecordPipeline;
@@ -76,8 +78,12 @@ public final class WyStreamRecordSession implements WyRecordApi {
                 pathResolver::generateDefaultStreamFile,
                 mainDispatcher::post,
                 WyRecordLog.INSTANCE,
-                new LoggingAudioFrameTrace("WyAudioFrame", WyRecordLog.INSTANCE),
-                decodeExecutor);
+                new LoggingAudioFrameTrace("WyAudioFrame", WyRecordLog.INSTANCE,
+                        AudioWireByteOrder.BIG_ENDIAN),
+                decodeExecutor,
+                // WY01 现场固件帧头为 4 字节大端（包首 00 00 00 00 / 00 00 00 0A / 00 00 00 14）。
+                // 字节序是产品适配参数：HS 保持小端，不受影响。
+                AudioWireByteOrder.BIG_ENDIAN);
     }
 
     private static MainDispatcher createDefaultDispatcher() {
@@ -124,7 +130,45 @@ public final class WyStreamRecordSession implements WyRecordApi {
     @Override
     public void startStreamRecord(@NonNull StreamRecordConfig config,
                                   @NonNull StreamRecordListener listener) {
-        pipeline.start(config, listener, new WyRecordCommands());
+        // Biz 层包裹监听器：在把 PCM 交给真正监听器前，先打印真实解码数据（lib 不打印数据）。
+        pipeline.start(config, new PcmDataLoggingListener(listener), new WyRecordCommands());
+    }
+
+    /** 在 Biz 层处理 PCM 时打印真实解码字节，再原样转发给真正的监听器。 */
+    private static final class PcmDataLoggingListener implements StreamRecordListener {
+
+        @NonNull
+        private final StreamRecordListener delegate;
+
+        PcmDataLoggingListener(@NonNull StreamRecordListener delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void onStarted() {
+            delegate.onStarted();
+        }
+
+        @Override
+        public void onPcmFrame(@NonNull byte[] pcmData, float amplitude) {
+            WyRecordLog.INSTANCE.debug("PCM解码数据: " + HexPreview.of(pcmData, 48));
+            delegate.onPcmFrame(pcmData, amplitude);
+        }
+
+        @Override
+        public void onFileSaved(@NonNull File file, long durationMs, long fileSizeBytes) {
+            delegate.onFileSaved(file, durationMs, fileSizeBytes);
+        }
+
+        @Override
+        public void onError(@NonNull String message) {
+            delegate.onError(message);
+        }
+
+        @Override
+        public void onStopped() {
+            delegate.onStopped();
+        }
     }
 
     @Override

@@ -212,4 +212,43 @@ public class WyClassicScannerTest {
         List<WyScan.Found> immediateDevices = updates.get(0);
         assertEquals(2, immediateDevices.size());
     }
+
+    @Test
+    public void testFilterRuleExcludesBondedDevicesIfNotWy01() {
+        FakeWyClassicRadio radio = new FakeWyClassicRadio();
+        radio.bondedDevices.add(new WyClassicRadioPort.BondedDevice("WY01-Paired", "AA:BB:CC:11:22:33", false));
+
+        WyClassicScanner scanner = new WyClassicScanner(radio, Runnable::run);
+        // 先设为 HS02 规则
+        scanner.setFilterRule(new WyScan.Rule(java.util.Set.of(), java.util.Set.of(),
+                java.util.Set.of("HS02"), WyScan.Rule.MIN_RSSI_UNRESTRICTED));
+
+        List<List<WyScan.Found>> updates = new ArrayList<>();
+        scanner.start(new WyScan.Listener() {
+            @Override
+            public void onUpdated(List<WyScan.Found> devices) {
+                updates.add(new ArrayList<>(devices));
+            }
+
+            @Override
+            public void onFailed(WyControl.Failure failure) {
+            }
+
+            @Override
+            public void onFinished() {
+            }
+        });
+
+        // 筛选 HS02 时，WY01 的配对设备绝不能上报
+        assertTrue("非 WY01 规则下不应上报已配对设备", updates.isEmpty() || updates.get(updates.size() - 1).isEmpty());
+
+        // 切换为包含 WY01
+        scanner.setFilterRule(new WyScan.Rule(java.util.Set.of(), java.util.Set.of(),
+                java.util.Set.of("WY01"), WyScan.Rule.MIN_RSSI_UNRESTRICTED));
+
+        assertFalse(updates.isEmpty());
+        List<WyScan.Found> last = updates.get(updates.size() - 1);
+        assertEquals(1, last.size());
+        assertEquals("WY01", last.get(0).modelId());
+    }
 }

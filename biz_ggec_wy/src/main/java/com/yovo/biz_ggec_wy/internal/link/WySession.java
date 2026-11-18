@@ -10,6 +10,7 @@ import com.yovo.biz_ggec_wy.api.WyControl;
 import com.yovo.biz_ggec_wy.api.WyDevice;
 import com.yovo.biz_ggec_wy.internal.center.catalog.WyCatalogImpl;
 import com.yovo.biz_ggec_wy.internal.center.port.WyClassicRadioPort;
+import com.yovo.biz_ggec_wy.internal.support.HexPreview;
 import com.yovo.biz_ggec_wy.provider.lib_common.log.WyLog;
 
 import java.util.Collections;
@@ -135,11 +136,15 @@ public final class WySession {
 
             @Override
             public void onControlDataReceived(@NonNull byte[] data) {
+                // Biz 层处理 SPP 控制数据时打印真实原始字节（lib 不打印数据）。
+                WyLog.d(TAG, "SPP接收控制命令数据: " + HexPreview.of(data, 48));
                 handleControlData(data);
             }
 
             @Override
             public void onAudioDataReceived(@NonNull byte[] data) {
+                // Biz 层处理 SPP 音频数据时打印真实原始字节（lib 不打印数据）。
+                WyLog.d(TAG, "SPP接收音频数据: " + HexPreview.of(data, 48));
                 Consumer<byte[]> consumer = audioChunkConsumer;
                 if (consumer != null && data != null && data.length > 0) {
                     consumer.accept(data);
