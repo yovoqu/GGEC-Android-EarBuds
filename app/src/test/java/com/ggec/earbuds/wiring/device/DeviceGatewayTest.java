@@ -121,23 +121,59 @@ public final class DeviceGatewayTest {
     }
 
     @Test
-    public void filterModelsReachesEveryEndpointWithoutRestartingScan() {
+    public void filterModelsSwitchesActiveEndpointsAndIsolatesHardware() {
         FakeEndpoint hs = new FakeEndpoint(DeviceTransport.BLE, HS_MODELS);
         FakeEndpoint wy = new FakeEndpoint(DeviceTransport.CLASSIC, WY_MODELS);
         DeviceGateway gateway = gateway(hs, wy);
-        gateway.startScanBatch(results -> {
-        }, failure -> {
+        List<List<ScanResult>> results = new ArrayList<>();
+        gateway.startScanBatch(results::add, failure -> {
         }, () -> {
         }, removed -> {
         });
 
-        gateway.filterModels(Set.of());
+        // 初始不限筛选时，两者均开扫
+        assertEquals(1, hs.link.startScanCalls);
+        assertEquals(1, wy.link.startScanCalls);
+
+        // 用户切换筛选为 HS02 (M02)
         gateway.filterModels(Set.of("M02"));
 
-        assertEquals(List.of(Set.<String>of(), Set.of("M02")), hs.link.filters);
-        assertEquals(List.of(Set.<String>of(), Set.of("M02")), wy.link.filters);
-        assertEquals("切筛选不停扫描", 0, hs.link.stopScanCalls);
-        assertEquals("切筛选不停扫描", 0, wy.link.stopScanCalls);
+        assertEquals(List.of(Set.of("M02")), hs.link.filters);
+        assertEquals("HS 保持扫描", 0, hs.link.stopScanCalls);
+        assertEquals("非 M02 驱动的 WY 经典蓝牙停止扫描，杜绝 SPP 配对设备与经典扫描侵入", 1, wy.link.stopScanCalls);
+
+        // 切换为 WY01 (W01)
+        gateway.filterModels(Set.of("W01"));
+        assertEquals("HS 停止扫描", 1, hs.link.stopScanCalls);
+        assertEquals(List.of(Set.of("W01")), wy.link.filters);
+        assertEquals("WY 重新开扫", 2, wy.link.startScanCalls);
+    }
+
+    @Test
+    public void filterModelsRemovesInactiveEndpointBatchesImmediately() {
+        FakeEndpoint hs = new FakeEndpoint(DeviceTransport.BLE, HS_MODELS);
+        FakeEndpoint wy = new FakeEndpoint(DeviceTransport.CLASSIC, WY_MODELS);
+        DeviceGateway gateway = gateway(hs, wy);
+        List<List<ScanResult>> results = new ArrayList<>();
+        gateway.startScanBatch(results::add, failure -> {
+        }, () -> {
+        }, removed -> {
+        });
+
+        ScanResult hsDev = new ScanResult("M01", "HS-Buds", "AA:BB:CC:11:22:01", -50);
+        ScanResult wyBonded = new ScanResult("W01", "WY-Paired", "AA:BB:CC:11:22:02", 0);
+        hs.link.emitBatch(List.of(hsDev));
+        wy.link.emitBatch(List.of(wyBonded));
+
+        assertEquals(2, results.get(results.size() - 1).size());
+
+        // 切换为 HS 机型
+        gateway.filterModels(Set.of("M01"));
+
+        // 切换后，属于 WY 的已配对设备立刻被剔除，结果中只保留 HS 设备
+        List<ScanResult> latest = results.get(results.size() - 1);
+        assertEquals(1, latest.size());
+        assertEquals("M01", latest.get(0).modelId());
     }
 
     @Test

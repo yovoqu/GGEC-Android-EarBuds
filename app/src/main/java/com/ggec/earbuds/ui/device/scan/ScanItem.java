@@ -11,17 +11,23 @@ public record ScanItem(
         String name,
         String address,
         int rssi,
-        boolean connecting
+        boolean connecting,
+        String productId
 ) {
 
     public ScanItem {
         Objects.requireNonNull(modelId, "modelId");
         name = name != null ? name.trim() : "";
         address = address != null ? address.trim().toUpperCase(java.util.Locale.ROOT) : "";
+        productId = productId != null ? productId.trim() : "";
+    }
+
+    public ScanItem(String modelId, String name, String address, int rssi, boolean connecting) {
+        this(modelId, name, address, rssi, connecting, "");
     }
 
     public ScanItem(String modelId, String name, String address, int rssi) {
-        this(modelId, name, address, rssi, false);
+        this(modelId, name, address, rssi, false, "");
     }
 
     /** 设备展示名称 */

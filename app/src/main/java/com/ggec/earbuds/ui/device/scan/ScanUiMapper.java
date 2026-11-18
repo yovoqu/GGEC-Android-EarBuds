@@ -26,7 +26,7 @@ public final class ScanUiMapper {
                 && !connectingAddress.isEmpty()
                 && result.address().equalsIgnoreCase(connectingAddress);
         return new ScanItem(result.modelId(), result.name(), result.address(),
-                result.rssi(), connecting);
+                result.rssi(), connecting, result.productId());
     }
 
     @NonNull

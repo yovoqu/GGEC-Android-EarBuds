@@ -170,7 +170,26 @@ public final class ScanDeviceCard {
 
     @NonNull
     private String subtitleOf(@NonNull ScanItem result) {
-        return result.displayAddress() + DeviceFormats.META_SEPARATOR + DeviceFormats.rssi(result.rssi());
+        String base = result.displayAddress()
+                + DeviceFormats.META_SEPARATOR + DeviceFormats.rssi(result.rssi());
+        String product = productText(result.productId());
+        return product.isEmpty() ? base : base + DeviceFormats.META_SEPARATOR + product;
+    }
+
+    /**
+     * 新广播（HS02 厂商段）Product ID 的展示文案：{@code 0} → {@code Product ID 0 (V11)}，
+     * {@code 1} → {@code Product ID 1 (V12)}，其它机型原样展示。旧广播没有这个字段，空串不展示。
+     */
+    @NonNull
+    private static String productText(@NonNull String productId) {
+        if (productId.isEmpty()) {
+            return "";
+        }
+        return switch (productId) {
+            case "0" -> "Product ID 0 (V11)";
+            case "1" -> "Product ID 1 (V12)";
+            default -> "Product ID " + productId;
+        };
     }
 
     @NonNull

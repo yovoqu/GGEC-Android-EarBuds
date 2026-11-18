@@ -224,7 +224,7 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
                 : (!radios.classicName().isEmpty() ? radios.classicName() : device.modelId());
         String address = !radios.bleAddress().isEmpty() ? radios.bleAddress() : radios.classicAddress();
         discoveredRadios.put(address, radios);
-        return new ScanResult(device.modelId(), name, address, device.rssi());
+        return new ScanResult(device.modelId(), name, address, device.rssi(), device.productId());
     }
 
     /**

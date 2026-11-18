@@ -7,6 +7,7 @@ import com.ggec.earbuds.domain.device.model.ConnectSettlement;
 import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
+import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceTarget;
 import com.ggec.earbuds.domain.device.model.DeviceTransport;
@@ -65,6 +66,16 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
     private final Map<DeviceTransport, List<ScanResult>> latestBatches = new LinkedHashMap<>();
     private boolean batchActive;
     private int finishedEndpoints;
+
+    @Nullable
+    private Consumer<List<ScanResult>> scanOnResults;
+    @Nullable
+    private Consumer<DeviceFailure> scanOnFailed;
+    @Nullable
+    private Runnable scanOnFinished;
+    @Nullable
+    private Consumer<ScanResult> scanOnRemoved;
+    private Set<String> currentFilter = Set.of();
 
     public DeviceGateway(@NonNull DeviceEndpoints endpoints) {
         this.endpoints = Objects.requireNonNull(endpoints, "endpoints");
@@ -141,8 +152,50 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
     @Override
     public void filterModels(@NonNull Set<String> modelIds) {
         Set<String> filter = Set.copyOf(Objects.requireNonNull(modelIds, "modelIds"));
-        for (DeviceEndpoint endpoint : endpoints.all()) {
-            endpoint.link().filterModels(filter);
+        List<DeviceEndpoint> toStart = new ArrayList<>();
+        List<DeviceEndpoint> toStop = new ArrayList<>();
+        List<ScanResult> merged = null;
+        Consumer<List<ScanResult>> resultsConsumer = null;
+
+        synchronized (scanLock) {
+            this.currentFilter = filter;
+            for (DeviceEndpoint endpoint : endpoints.all()) {
+                boolean active = isEndpointActiveForFilter(endpoint, filter);
+                if (active) {
+                    endpoint.link().filterModels(filter);
+                    if (batchActive && !endpoint.link().isScanning()) {
+                        toStart.add(endpoint);
+                    }
+                } else {
+                    if (endpoint.link().isScanning()) {
+                        toStop.add(endpoint);
+                    }
+                    if (latestBatches.remove(endpoint.transport()) != null) {
+                        merged = mergeBatchesLocked();
+                        resultsConsumer = scanOnResults;
+                    }
+                }
+            }
+        }
+
+        for (DeviceEndpoint endpoint : toStop) {
+            endpoint.link().stopScan();
+        }
+        for (DeviceEndpoint endpoint : toStart) {
+            Consumer<List<ScanResult>> onResults = scanOnResults;
+            Consumer<DeviceFailure> onFailed = scanOnFailed;
+            Runnable onFinished = scanOnFinished;
+            Consumer<ScanResult> onRemoved = scanOnRemoved;
+            if (onResults != null && onFailed != null && onFinished != null && onRemoved != null) {
+                endpoint.link().startScanBatch(
+                        batch -> onEndpointResults(endpoint.transport(), batch, onResults),
+                        onFailed,
+                        () -> onEndpointFinished(onFinished),
+                        onRemoved);
+            }
+        }
+        if (resultsConsumer != null && merged != null) {
+            resultsConsumer.accept(merged);
         }
     }
 
@@ -155,12 +208,30 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
         Objects.requireNonNull(onFailed, "onFailed");
         Objects.requireNonNull(onFinished, "onFinished");
         Objects.requireNonNull(onRemoved, "onRemoved");
+        List<DeviceEndpoint> activeEndpoints = new ArrayList<>();
         synchronized (scanLock) {
-            batchActive = true;
-            finishedEndpoints = 0;
-            latestBatches.clear();
+            this.scanOnResults = onResults;
+            this.scanOnFailed = onFailed;
+            this.scanOnFinished = onFinished;
+            this.scanOnRemoved = onRemoved;
+            this.batchActive = true;
+            this.finishedEndpoints = 0;
+            this.latestBatches.clear();
+            for (DeviceEndpoint endpoint : endpoints.all()) {
+                if (isEndpointActiveForFilter(endpoint, currentFilter)) {
+                    activeEndpoints.add(endpoint);
+                } else {
+                    if (endpoint.link().isScanning()) {
+                        endpoint.link().stopScan();
+                    }
+                }
+            }
         }
-        for (DeviceEndpoint endpoint : endpoints.all()) {
+        if (activeEndpoints.isEmpty()) {
+            onFinished.run();
+            return;
+        }
+        for (DeviceEndpoint endpoint : activeEndpoints) {
             endpoint.link().startScanBatch(
                     batch -> onEndpointResults(endpoint.transport(), batch, onResults),
                     onFailed,
@@ -173,6 +244,10 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
     public void stopScan() {
         synchronized (scanLock) {
             batchActive = false;
+            scanOnResults = null;
+            scanOnFailed = null;
+            scanOnFinished = null;
+            scanOnRemoved = null;
         }
         for (DeviceEndpoint endpoint : endpoints.all()) {
             endpoint.link().stopScan();
@@ -340,6 +415,19 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
 
     // ==================== 内部 ====================
 
+    private boolean isEndpointActiveForFilter(@NonNull DeviceEndpoint endpoint,
+                                              @NonNull Set<String> filter) {
+        if (filter.isEmpty()) {
+            return true;
+        }
+        for (DeviceProfileView profile : endpoint.catalog().models()) {
+            if (filter.contains(profile.modelId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** 扫描结果合并回调：缓存该端点最新一批，合并后整批下发。 */
     private void onEndpointResults(@NonNull DeviceTransport transport,
                                    @NonNull List<ScanResult> batch,
@@ -349,13 +437,17 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
             if (!batchActive) {
                 return;
             }
+            DeviceEndpoint ep = endpoints.of(transport).orElse(null);
+            if (ep != null && !isEndpointActiveForFilter(ep, currentFilter)) {
+                return;
+            }
             latestBatches.put(transport, batch);
             merged = mergeBatchesLocked();
         }
         onResults.accept(merged);
     }
 
-    /** 所有端点都结束才算整批结束：上层只收到一次 finished。 */
+    /** 所有活跃端点都结束才算整批结束：上层只收到一次 finished。 */
     private void onEndpointFinished(@NonNull Runnable onFinished) {
         boolean allFinished;
         synchronized (scanLock) {
@@ -363,7 +455,13 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
                 return;
             }
             finishedEndpoints++;
-            allFinished = finishedEndpoints == endpoints.all().size();
+            int expected = 0;
+            for (DeviceEndpoint endpoint : endpoints.all()) {
+                if (isEndpointActiveForFilter(endpoint, currentFilter)) {
+                    expected++;
+                }
+            }
+            allFinished = finishedEndpoints >= expected;
             if (allFinished) {
                 batchActive = false;
             }
