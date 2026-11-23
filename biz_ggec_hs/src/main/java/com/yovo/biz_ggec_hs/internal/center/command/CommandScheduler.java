@@ -347,14 +347,19 @@ public final class CommandScheduler {
             // 因此把它当作“写完成”的等价信号：取消发送看门狗、置 SENT 并使能响应超时，
             // 立即处理该帧（及此前缓冲帧），不再无限等待可能永不触发的写完成回调而 10s 超时。
             node.writeCompleted = true;
+            // 迟到帧隔离（lateFrameGuard）以 writeStarted 判定是否登记，快速路径必须一并置位。
+            node.writeStarted = true;
             cancelSendWatchdog();
             command.setState(Command.State.SENT);
             startResponseTimeout(command, node, node.attemptId,
                     initialResponseTimeoutMs(command, node));
+            long attemptId = node.attemptId;
             List<String> buffered = new ArrayList<>(node.bufferedFrames);
             node.bufferedFrames.clear();
             for (String bufferedFrame : buffered) {
-                if (!isCurrentAttempt(node, command, node.attemptId)) {
+                // 命令可能已在上一帧完成（完成回调是异步 post 的，currentCommand 尚未清空）：
+                // 终止态后不要再 processFrame，避免把 COMPLETED/FAILED 回退成 RECEIVING。
+                if (command.getCompletion() != null || !isCurrentAttempt(node, command, attemptId)) {
                     break;
                 }
                 processFrame(command, bufferedFrame);
@@ -538,12 +543,17 @@ public final class CommandScheduler {
         if (!isCurrentAttempt(node, command, attemptId)) {
             return;
         }
+        if (node.writeCompleted) {
+            // 快速路径已按匹配响应帧判定“写已送达”，真实写完成回调迟到时不再重复推进/重置超时。
+            return;
+        }
         if (status != 0) {
             failCurrent("GATT 写入失败，状态码=" + status);
             return;
         }
 
         node.writeCompleted = true;
+        node.writeStarted = true;
         cancelSendWatchdog();
         command.setState(Command.State.SENT);
         startResponseTimeout(
@@ -553,7 +563,7 @@ public final class CommandScheduler {
             List<String> buffered = new ArrayList<>(node.bufferedFrames);
             node.bufferedFrames.clear();
             for (String frame : buffered) {
-                if (!isCurrentAttempt(node, command, attemptId)) {
+                if (command.getCompletion() != null || !isCurrentAttempt(node, command, attemptId)) {
                     break;
                 }
                 processFrame(command, frame);
@@ -562,6 +572,10 @@ public final class CommandScheduler {
     }
 
     private void processFrame(Command command, String frame) {
+        if (command.getCompletion() != null) {
+            // 命令已终态：忽略迟到/重复帧，且不得把状态从 COMPLETED/FAILED 回退成 RECEIVING。
+            return;
+        }
         try {
             command.setState(Command.State.RECEIVING);
             Command.Response response = command.parseResponse(frame);

@@ -291,15 +291,27 @@ public final class HsSessionImpl {
         }
         AtomicInteger remaining = new AtomicInteger(commands.size());
         AtomicReference<HsControl.Failure> firstFailure = new AtomicReference<>();
-        HsControl.Callback aggregator = result -> {
-            if (result instanceof HsControl.Outcome.Err<Void> failed) {
-                firstFailure.compareAndSet(null, failed.failure());
+        AtomicBoolean startedForwarded = new AtomicBoolean(false);
+        HsControl.Callback aggregator = new HsControl.Callback() {
+            @Override
+            public void onStarted() {
+                // 多命令写入：首个命令进入处理中时向上转发一次 onStarted，语义与单命令一致。
+                if (startedForwarded.compareAndSet(false, true)) {
+                    callback.onStarted();
+                }
             }
-            if (remaining.decrementAndGet() == 0) {
-                HsControl.Failure failure = firstFailure.get();
-                callback.onResult(failure == null
-                        ? new HsControl.Outcome.Ok<>(null)
-                        : new HsControl.Outcome.Err<>(failure));
+
+            @Override
+            public void onResult(HsControl.Outcome<Void> result) {
+                if (result instanceof HsControl.Outcome.Err<Void> failed) {
+                    firstFailure.compareAndSet(null, failed.failure());
+                }
+                if (remaining.decrementAndGet() == 0) {
+                    HsControl.Failure failure = firstFailure.get();
+                    callback.onResult(failure == null
+                            ? new HsControl.Outcome.Ok<>(null)
+                            : new HsControl.Outcome.Err<>(failure));
+                }
             }
         };
         for (Command command : commands) {

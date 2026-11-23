@@ -36,6 +36,13 @@ public final class HsStreamRecordSession {
 
     private static final String TAG = "HsStreamRecordSession";
 
+    /**
+     * 音频流原始字节日志限流：HS02 音频约每 20ms 一片（≈50 片/秒），逐片十六进制会刷屏且
+     * 造成分配开销。控制包与关键事件逐条打印；音频切片仅前 3 片 + 之后每约 1s 采样一次。
+     */
+    private long audioChunksSeen;
+    private long lastAudioLogMs;
+
     private final HsProtocolEngine engine;
     private final HsAudioDataLink audioLink;
     private final StreamRecordPipeline<HsControl.Failure> pipeline;
@@ -301,7 +308,12 @@ public final class HsStreamRecordSession {
                     + " 语义=" + HsAudioPacketClassifier.describeControlCmdType(cmdType)
                     + " data=" + HsHex.preview(chunk, HsHex.PREVIEW_BYTES));
         } else {
-            HsLog.d(TAG, "BLE接收音频数据: " + HsHex.preview(chunk, HsHex.PREVIEW_BYTES));
+            long now = System.currentTimeMillis();
+            if (audioChunksSeen < 3L || now - lastAudioLogMs >= 1000L) {
+                lastAudioLogMs = now;
+                HsLog.d(TAG, "BLE接收音频数据: " + HsHex.preview(chunk, HsHex.PREVIEW_BYTES));
+            }
+            audioChunksSeen++;
         }
 
         if (!pipeline.isRecording()) {
