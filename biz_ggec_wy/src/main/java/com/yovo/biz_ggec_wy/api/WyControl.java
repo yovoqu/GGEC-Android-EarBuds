@@ -50,6 +50,13 @@ public final class WyControl {
     }
 
     public interface Callback {
+        /**
+         * 命令已下发/设备已受理（进入处理中），最终结果仍以 {@link #onResult} 为准。
+         * 默认空实现：不关心中间阶段的调用方无需改动。
+         */
+        default void onStarted() {
+        }
+
         void onResult(Outcome<Void> result);
     }
 

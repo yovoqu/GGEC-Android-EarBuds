@@ -236,6 +236,8 @@ public final class WySession {
             values.put(capability, value);
         }
         dispatchSnapshotChanged();
+        // WY 写入是本地即时受理：先回调「已受理/处理中」，再回调终态。
+        callback.onStarted();
         callback.onResult(new WyControl.Outcome.Ok<>(null));
     }
 
