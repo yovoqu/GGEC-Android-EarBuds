@@ -210,3 +210,25 @@ IDLE ──start()──► STARTING ──首片音频/0x8004──► RECORDIN
 - APP 设置页 `RECORD_STREAM` 死按钮（RECORD 组经 `DeviceSettingsActivity` 不可达）未删除；命令层已切断，若触达仅返回 `UNSUPPORTED_CAPABILITY`，不影响真实 `RecordActivity` 入口。彻底移除需改 `HsControl.Action` 公共 API 与 UI 接线，属产品决策。
 - 文件同步缺真机覆盖；`HsRecordManager.syncDeviceRecord` 仍传 `expectedTotalBytes=0`，现依赖数据静默判定（1.5s），建议后续从录音列表带出真实大小。
 
+---
+
+## 9. 文件录音（设备本地录音）链路核对与真机
+
+### 9.1 两个录音功能（产品口径）
+- **随录随传（边录边传）**：实时音频流→App。`HsStreamRecordSession`（事件驱动流状态机）+ `StreamRecordPanel`。
+- **文件录音（先录后取）**：设备自己录（开始/结束）→ 拉设备录音列表 → 展示 → 「获取」把某文件传回手机。
+  App 链路：`RecordPort.startDeviceRecord / stopDeviceRecord / refreshDeviceRecords / syncDeviceRecord / deleteDeviceRecord` → `HsRecordAdapter` → `HsRecordManager`：
+  - 开始/结束：`StartLocalRecordCommand(99ECBB)` / `StopLocalRecordCommand(99ECBC)`（命令事务，设备本地录制）；
+  - 列表：`GetRecordIdListCommand`（GET，落 `recordFiles` 快照，`LocalRecordPanel` 展示）；
+  - 获取：`HsDeviceRecordSyncSession`（820003 Notify → Opus 解码 → 落盘，本轮已改事件驱动）。
+  UI：`RecordActivity` 两个 Tab —— `StreamRecordPanel`（随录随传）/ `LocalRecordPanel`（文件录音：设备录音列表 + 获取）。
+
+### 9.2 真机发现（HS02，16:45）
+- 点「本地录音」Tab →「开始录音」：下发 `StartLocalRecordCommand 99ECBB0001001234`，**2s 内设备未在 Notify 回 `99ECBB`** → 默认 2s 响应窗口 `FAILED：等待设备响应超时`。与随录随传早期同类（声明窗口过短）。
+- 已把 `StartLocalRecordCommand/StopLocalRecordCommand` 的响应窗口从默认 2s 提到 10s（`CommandPolicyRegistry` 的 `STREAM_RECORD_RESPONSE_TIMEOUT_MS` 组）——协议自描述响应超时，非补丁。
+
+### 9.3 待办（需真机稳定时复测）
+- 复测 文件录音「开始/结束/列表/获取」全链路（本轮 HS02 链路不稳：A2DP/HEADSET 反复 connect/disconnect、App BLE 未到 READY，端到端未完成）。
+- 确认设备是否真会回 `99ECBB/99ECBC`：若仅为“慢回执”，10s 窗口可解；若**永不回执**，则本地录音成功判定缺少设备信号（命令 ack 是唯一信号），需与固件确认或改判定策略。
+- 文件传输（获取，`HsDeviceRecordSyncSession` 事件驱动 + 数据静默判定）亦未真机覆盖。
+
