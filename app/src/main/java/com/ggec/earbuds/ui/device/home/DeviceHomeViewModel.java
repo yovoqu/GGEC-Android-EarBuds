@@ -53,7 +53,8 @@ public final class DeviceHomeViewModel extends ViewModel {
 
     private Subscription rosterSubscription;
     private Subscription failureSubscription;
-    private DeviceRoster roster = DeviceRoster.empty();
+    /** 台账快照：可能由蓝牙线程回调更新、主线程读取，用 volatile 保证可见性。 */
+    private volatile DeviceRoster roster = DeviceRoster.empty();
 
     public DeviceHomeViewModel(@NonNull ObserveDeviceRoster observeRoster,
                                @NonNull ListDeviceEntries listEntries,
@@ -207,11 +208,6 @@ public final class DeviceHomeViewModel extends ViewModel {
             }
         }
         return null;
-    }
-
-    private synchronized void putWrite(@NonNull String capabilityId,
-                                       @NonNull DeviceHomeUiState.WriteSlot slot) {
-        writes.put(capabilityId, slot);
     }
 
     private synchronized Map<String, DeviceHomeUiState.WriteSlot> currentWrites() {

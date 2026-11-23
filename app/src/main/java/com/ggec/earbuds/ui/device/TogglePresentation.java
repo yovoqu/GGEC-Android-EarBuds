@@ -2,8 +2,6 @@ package com.ggec.earbuds.ui.device;
 
 import androidx.annotation.NonNull;
 
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-
 import java.util.Objects;
 import java.util.Optional;
 
@@ -23,7 +21,7 @@ import java.util.Optional;
  *       （当前 UI 未单独渲染「写入中/处理中/已确认」文案，SENDING 与 PROCESSING 视觉一致为“禁用+目标值”）。</li>
  * </ul>
  *
- * <p>「未确认」只存在于 {@link DeviceSettingsUiState.WriteSlot}，由 ViewModel 维护；
+ * <p>「未确认」只存在于写入槽 {@code WriteSlot}（设置页 / 首页各一份，由各自 ViewModel 维护）；
  * 本记录是它的纯函数投影。</p>
  */
 public record TogglePresentation(boolean unknown, boolean position, boolean enabled,
