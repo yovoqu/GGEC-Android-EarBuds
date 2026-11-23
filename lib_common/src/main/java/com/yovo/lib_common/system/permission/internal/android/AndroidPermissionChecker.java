@@ -1,6 +1,5 @@
 package com.yovo.lib_common.system.permission.internal.android;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;

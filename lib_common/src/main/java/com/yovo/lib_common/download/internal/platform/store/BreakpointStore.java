@@ -4,7 +4,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_common.download.YoDownload;
-import com.yovo.lib_common.download.model.BlockInfo;
 import com.yovo.lib_common.download.model.BreakpointInfo;
 
 import java.util.List;

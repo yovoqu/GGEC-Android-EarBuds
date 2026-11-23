@@ -25,7 +25,6 @@ import com.yovo.lib_common.log.model.LogInterceptor;
 import com.yovo.lib_common.log.model.LogRecord;
 import com.yovo.lib_common.log.model.LogSink;
 import com.yovo.lib_common.log.YoLog;
-import com.yovo.lib_common.system.file.model.PathTarget;
 
 import java.util.ArrayList;
 import java.util.Collections;

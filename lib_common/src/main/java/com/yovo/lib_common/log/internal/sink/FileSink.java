@@ -10,7 +10,6 @@ import com.yovo.lib_common.log.internal.policy.RetentionController;
 import com.yovo.lib_common.log.internal.policy.RollController;
 import com.yovo.lib_common.log.model.FileLogReason;
 import com.yovo.lib_common.log.model.FileLogStatus;
-import com.yovo.lib_common.log.model.FileNamePolicy;
 import com.yovo.lib_common.log.model.LogConfig;
 import com.yovo.lib_common.log.model.LogLevel;
 import com.yovo.lib_common.log.model.LogRecord;

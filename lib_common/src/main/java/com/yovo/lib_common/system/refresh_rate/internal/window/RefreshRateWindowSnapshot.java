@@ -1,6 +1,5 @@
 package com.yovo.lib_common.system.refresh_rate.internal.window;
 
-import androidx.annotation.Nullable;
 
 /**
  * Window attribute values after apply or clear.

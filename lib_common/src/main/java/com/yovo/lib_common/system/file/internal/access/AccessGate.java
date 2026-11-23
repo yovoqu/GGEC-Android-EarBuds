@@ -12,13 +12,6 @@ import com.yovo.lib_common.system.file.model.FileTarget;
 import com.yovo.lib_common.system.file.model.PathTarget;
 import com.yovo.lib_common.system.file.model.UriKind;
 import com.yovo.lib_common.system.file.model.UriTarget;
-import com.yovo.lib_common.system.permission.model.Permission;
-import com.yovo.lib_common.system.permission.model.PermissionPolicy;
-
-import android.os.Build;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 访问门禁：check-only，不 request、不弹 UI。

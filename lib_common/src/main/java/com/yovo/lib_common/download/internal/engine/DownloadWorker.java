@@ -20,7 +20,6 @@ import com.yovo.lib_common.download.internal.util.DownloadNetwork;
 import com.yovo.lib_common.internal.util.IoUtil;
 import com.yovo.lib_common.log.YoLog;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;

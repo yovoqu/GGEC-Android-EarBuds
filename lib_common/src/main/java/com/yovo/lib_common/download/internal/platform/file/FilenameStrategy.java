@@ -3,7 +3,6 @@ package com.yovo.lib_common.download.internal.platform.file;
 import com.yovo.lib_common.download.YoDownload;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.lib_common.download.internal.util.DownloadUtil;
 

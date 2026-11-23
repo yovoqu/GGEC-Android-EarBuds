@@ -1,7 +1,6 @@
 package com.yovo.lib_common.system.refresh_rate.model;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 /**
  * Outcome of applying or clearing a refresh-rate request on a window.

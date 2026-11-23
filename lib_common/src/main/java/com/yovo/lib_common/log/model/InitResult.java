@@ -1,6 +1,5 @@
 package com.yovo.lib_common.log.model;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.yovo.lib_common.system.file.model.PathTarget;

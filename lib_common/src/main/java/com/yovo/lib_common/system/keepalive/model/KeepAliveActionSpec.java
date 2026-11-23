@@ -4,7 +4,6 @@ import android.app.PendingIntent;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 public final class KeepAliveActionSpec {
 
