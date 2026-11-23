@@ -99,6 +99,9 @@ public final class HsProtocolEngine {
                 new LinkTransport(),
                 snapshot -> { },
                 new CommandPolicyRegistry());
+        // HS 命令特征的 GATT 写完成回调不可靠（HS02 实测永不触发），成功/失败以设备在 Notify 通道
+        // 回的响应帧为准：对 HS 这一条通道开启「匹配响应帧即视为写已送达」的 opt-in 快速路径。
+        this.scheduler.setTrustResponseAsWriteCompletion(true);
         this.demux = new InboundFrameDemux(
                 (sessionId, frame) -> deviceReportsAccepted && events.onEvent(sessionId, frame),
                 scheduler::onResponseCandidate,

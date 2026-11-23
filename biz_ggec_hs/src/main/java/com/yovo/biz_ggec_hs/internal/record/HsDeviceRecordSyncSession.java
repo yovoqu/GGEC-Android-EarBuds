@@ -36,6 +36,9 @@ public final class HsDeviceRecordSyncSession {
 
     /** 设备文件 ID 违约：既不上报进度，也不下发任何下标。 */
     private static final String ERROR_INVALID_FILE_ID = "设备录音文件 ID 非法";
+    /** 一次文件同步的总体超时：设备迟迟不同步/不出流时兜底收尾，避免永久「进行中」。 */
+    private static final long SYNC_TOTAL_TIMEOUT_MS = 120_000L;
+    private final Runnable syncTimeout = this::onSyncTimeout;
 
     private final HsProtocolEngine engine;
     private final HsAudioDataLink audioLink;
@@ -103,6 +106,10 @@ public final class HsDeviceRecordSyncSession {
         this.currentTargetFile = targetFile != null
                 ? targetFile
                 : pathResolver.generateDefaultTransferFile(fileId);
+
+        // 总体超时兜底：从启动同步开始计时，正常完成/取消时撤销。
+        mainHandler.removeCallbacks(syncTimeout);
+        mainHandler.postDelayed(syncTimeout, SYNC_TOTAL_TIMEOUT_MS);
 
         frameAssembler.reset();
         frameAssembler.setAllowIndexResync(true);
@@ -195,6 +202,7 @@ public final class HsDeviceRecordSyncSession {
             return;
         }
         syncing = false;
+        mainHandler.removeCallbacks(syncTimeout);
         audioLink.stopAudioNotify();
 
         SyncProgressListener listener = currentListener;
@@ -225,6 +233,7 @@ public final class HsDeviceRecordSyncSession {
             return;
         }
         syncing = false;
+        mainHandler.removeCallbacks(syncTimeout);
         audioLink.stopAudioNotify();
 
         SyncProgressListener listener = currentListener;
@@ -248,6 +257,14 @@ public final class HsDeviceRecordSyncSession {
                 }
             });
         });
+    }
+
+    private synchronized void onSyncTimeout() {
+        if (!syncing) {
+            return;
+        }
+        HsLog.w(TAG, "录音文件同步总体超时（" + SYNC_TOTAL_TIMEOUT_MS + "ms），中止本次同步");
+        cancelInternal("录音文件同步超时");
     }
 
     public void release() {

@@ -36,6 +36,9 @@ public final class HsStreamRecordSession {
 
     private static final String TAG = "HsStreamRecordSession";
 
+    /** 停止回执兜底：设备停止应答可能延迟（实测偶发十余秒），发出停止命令后最多等这么久就按 best-effort 收尾。 */
+    private static final long STOP_FALLBACK_MS = 3_000L;
+
     /**
      * 音频流原始字节日志限流：HS02 音频约每 20ms 一片（≈50 片/秒），逐片十六进制会刷屏且
      * 造成分配开销。控制包与关键事件逐条打印；音频切片仅前 3 片 + 之后每约 1s 采样一次。
@@ -47,6 +50,8 @@ public final class HsStreamRecordSession {
     private final HsAudioDataLink audioLink;
     private final StreamRecordPipeline<HsControl.Failure> pipeline;
     private final ExecutorService decodeExecutor = Executors.newSingleThreadExecutor();
+    /** 主线程 Handler：用于停止回执兜底计时（无主线程时为空，退化为不兜底）。 */
+    private final Handler mainHandler;
 
     /**
      * 当前随录随传会话的命令对象（每会话一个 {@link HsRecordCommands}）。
@@ -61,6 +66,7 @@ public final class HsStreamRecordSession {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.audioLink = Objects.requireNonNull(audioLink, "audioLink");
         Objects.requireNonNull(pathResolver, "pathResolver");
+        this.mainHandler = Looper.getMainLooper() == null ? null : new Handler(Looper.getMainLooper());
         this.pipeline = new StreamRecordPipeline<>(
                 codecProvider,
                 pathResolver::getStreamDir,
@@ -121,6 +127,8 @@ public final class HsStreamRecordSession {
         /** 在途的开始/停止命令对象；用于设备侧先行成功时主动结算。 */
         private volatile Command startCommand;
         private volatile Command stopCommand;
+        /** 停止回执兜底：发出停止命令后若迟迟不结算（设备应答偶发延迟），到点按 best-effort 收尾。 */
+        private final Runnable stopFallback = () -> settleStop("停止回执超时兜底");
 
         @Override
         public void start(@NonNull StreamRecordPipeline.Reply<HsControl.Failure> reply) {
@@ -155,6 +163,12 @@ public final class HsStreamRecordSession {
             Command command = HsCommandFactory.stopStreamRecord();
             stopCommand = command;
             engine.submit(command, (cmd, completion) -> onStopCommandCompletion(completion));
+            // 停止回执兜底：设备应答偶发延迟（实测十余秒）时，不必让 UI 一直等到 15s 看门狗，
+            // 超过 STOP_FALLBACK_MS 仍无终态就按 best-effort 收尾（停止命令已下发，设备会停）。
+            if (mainHandler != null) {
+                mainHandler.removeCallbacks(stopFallback);
+                mainHandler.postDelayed(stopFallback, STOP_FALLBACK_MS);
+            }
         }
 
         @Override
@@ -229,6 +243,9 @@ public final class HsStreamRecordSession {
                 return;
             }
             if (stopSettled.compareAndSet(false, true)) {
+                if (mainHandler != null) {
+                    mainHandler.removeCallbacks(stopFallback);
+                }
                 HsLog.i(TAG, "随录随传停止成功（控制上报 0x8005）");
                 replayStopCommandIfInFlight("设备侧已停止出流");
                 replyStop(null);
@@ -255,6 +272,9 @@ public final class HsStreamRecordSession {
         /** 结算停止完成（只调用一次，且永远以 null 上报，避免把停止失败抛给 UI）。 */
         private void settleStop(String source) {
             if (stopSettled.compareAndSet(false, true)) {
+                if (mainHandler != null) {
+                    mainHandler.removeCallbacks(stopFallback);
+                }
                 HsLog.i(TAG, "随录随传停止完成（" + source + "）");
                 replyStop(null);
             }

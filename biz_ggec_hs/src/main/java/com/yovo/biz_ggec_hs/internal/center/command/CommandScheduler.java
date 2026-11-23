@@ -126,6 +126,14 @@ public final class CommandScheduler {
     private boolean released;
     private long consistencyGeneration;
     private long attemptSequence;
+    /**
+     * 「匹配响应帧即视为写已送达」是否启用（默认 false）。
+     *
+     * <p>仅用于命令特征 GATT 写完成回调不可靠、但设备会在 Notify 通道回业务响应帧的通道（如 HS02）。
+     * 由链路/协议引擎显式开启（opt-in）；默认关闭走「缓冲待 onWriteCompleted 回放」的可靠语义，
+     * 避免对写完成可靠、或存在请求/响应回环的通道造成误判。</p>
+     */
+    private boolean trustResponseAsWriteCompletion;
 
     public CommandScheduler(Dispatcher dispatcher,
                      Transport transport,
@@ -135,7 +143,14 @@ public final class CommandScheduler {
         this.transport = transport;
         this.stateListener = stateListener;
         this.policyResolver = policyResolver;
-        publishState();
+        publishState();    }
+
+    /**
+     * 开启/关闭「匹配响应帧即视为写已送达」快速路径（opt-in，见字段说明）。
+     * 必须在命令提交前调用；HS 协议引擎在构造后开启。
+     */
+    public void setTrustResponseAsWriteCompletion(boolean trust) {
+        this.trustResponseAsWriteCompletion = trust;
     }
 
     public void submit(Command command) {
@@ -342,6 +357,10 @@ public final class CommandScheduler {
             // H-14：写完成前到达的匹配帧一律先缓冲（含 onStarted 之前的窗口），
             // 待 onWriteCompleted 后按序回放；此前 writeStarted==false 时直接 return false 会静默丢帧。
             node.bufferedFrames.add(frame);
+            if (!trustResponseAsWriteCompletion) {
+                // 默认语义：写完成回调可靠，缓冲等待 onWriteCompleted 回放即可。
+                return true;
+            }
             // 真机适配（HS02 / 部分固件）：命令特征的 GATT 写可能永远不回报 onCharacteristicWrite，
             // 但设备收到命令后会在 Notify 通道回业务响应帧。匹配响应帧本身即证明写已送达，
             // 因此把它当作“写完成”的等价信号：取消发送看门狗、置 SENT 并使能响应超时，

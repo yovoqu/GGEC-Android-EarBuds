@@ -107,6 +107,7 @@ public class HsCommandSystemHardeningTest {
         ManualDispatcher dispatcher = new ManualDispatcher();
         DeferredTransport transport = new DeferredTransport();
         CommandScheduler scheduler = newScheduler(dispatcher, transport);
+        scheduler.setTrustResponseAsWriteCompletion(true);
 
         AtomicReference<CommandCompletion> result = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
