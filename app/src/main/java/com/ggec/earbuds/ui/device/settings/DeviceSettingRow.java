@@ -52,15 +52,18 @@ public sealed interface DeviceSettingRow {
      *
      * <p>{@code options} 是描述符给出的频段表（段数与标签），{@code range} 是增益值域；
      * 编辑器只渲染这两项，不猜段数、不猜取值域。缺任何一个，工厂不会生成该行
-     * （目录不变量被违反 → 能力不可用）。{@code points} 为空表示未上报当前曲线。</p>
+     * （目录不变量被违反 → 能力不可用）。{@code points} 为空表示未上报当前曲线；
+     * {@code name} 是这条自定义音效的 APP 侧命名（设备不承载，可空）。</p>
      */
     record Curve(String capabilityId, String title, List<CapabilityOption> options,
-                 Optional<ControlRange> range, Optional<List<Integer>> points) implements Entry {
+                 Optional<ControlRange> range, Optional<List<Integer>> points,
+                 Optional<String> name) implements Entry {
 
         public Curve {
             options = options == null ? List.of() : List.copyOf(options);
             range = range == null ? Optional.empty() : range;
             points = points == null ? Optional.empty() : points;
+            name = name == null ? Optional.empty() : name;
         }
     }
 

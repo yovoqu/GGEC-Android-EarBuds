@@ -2,7 +2,6 @@ package com.ggec.earbuds.domain.device.usecase;
 
 import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceRecord;
-import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceTarget;
 import com.ggec.earbuds.domain.device.port.DeviceRosterRepository;

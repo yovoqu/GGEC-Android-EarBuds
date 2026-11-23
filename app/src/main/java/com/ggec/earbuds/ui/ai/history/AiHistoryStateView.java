@@ -17,7 +17,6 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.yohu.youi.api.controls.YoButton;
 
-import java.util.List;
 
 /** 历史面板的互斥四态：加载、内容、空、失败。 */
 final class AiHistoryStateView {

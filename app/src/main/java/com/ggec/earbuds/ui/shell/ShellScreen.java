@@ -15,15 +15,18 @@ import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFailureText;
 import com.ggec.earbuds.ui.device.roster.DeviceRosterEvent;
 import com.ggec.earbuds.ui.device.home.DeviceHomePage;
+import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
 import com.ggec.earbuds.ui.device.record.RecordActivity;
+import com.ggec.earbuds.ui.device.find.FindDeviceActivity;
+import com.ggec.earbuds.ui.device.wear.WearSettingsActivity;
 import com.ggec.earbuds.ui.device.scan.ScanActivity;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsActivity;
 import com.yohu.youi.api.feedback.YoToast;
 import com.yohu.youi.api.navigation.YoTabs;
 
 /**
- * 应用外壳视图：设备 / AI / 我的三个页签。
+ * 应用外壳视图：设备 / AI 两个页签。
  *
  * <p>只装配与展示，不持有业务状态：设备页签的状态在
  * {@link DeviceHomeViewModel}，AI 页的状态在 {@link AiChatViewModel}。</p>
@@ -85,7 +88,7 @@ final class ShellScreen {
         for (ShellTabUi tab : state.tabs()) {
             CharSequence title = activity.getString(tab.titleRes());
             builder.addTab(tab.tabId(), title, tab.iconRes(), tab.selectedIconRes(),
-                    createPage(tab, title));
+                    createPage(tab));
         }
         YoTabs created = builder.build();
         created.setOnChangeListener((index, id) ->
@@ -105,27 +108,28 @@ final class ShellScreen {
     }
 
     @NonNull
-    private View createPage(@NonNull ShellTabUi tab, @NonNull CharSequence title) {
-        if (ShellDestination.AI.key().equals(tab.key())) {
-            AiChatViewModel chat = new ViewModelProvider(activity, aiFactory)
-                    .get(AiChatViewModel.class);
-            aiPage = new AiChatPage(activity, chat, listener::onAIHistory);
-            return aiPage.view();
-        }
-        if (ShellDestination.DEVICE.key().equals(tab.key())) {
-            homeViewModel = new ViewModelProvider(activity, homeFactory)
-                    .get(DeviceHomeViewModel.class);
-            devicePage = new DeviceHomePage(activity, new DeviceTabListener(homeViewModel));
-            homeViewModel.uiState().observe(activity, state -> {
-                if (state != null && devicePage != null) {
-                    devicePage.render(state);
-                }
-            });
-            homeViewModel.events().observe(activity, this::onRosterEvent);
-            homeViewModel.start();
-            return devicePage.view();
-        }
-        return ShellPageView.create(activity, title);
+    private View createPage(@NonNull ShellTabUi tab) {
+        return switch (ShellDestination.fromKey(tab.key())) {
+            case AI -> {
+                AiChatViewModel chat = new ViewModelProvider(activity, aiFactory)
+                        .get(AiChatViewModel.class);
+                aiPage = new AiChatPage(activity, chat, listener::onAIHistory);
+                yield aiPage.view();
+            }
+            case DEVICE -> {
+                homeViewModel = new ViewModelProvider(activity, homeFactory)
+                        .get(DeviceHomeViewModel.class);
+                devicePage = new DeviceHomePage(activity, new DeviceTabListener(homeViewModel));
+                homeViewModel.uiState().observe(activity, state -> {
+                    if (state != null && devicePage != null) {
+                        devicePage.render(state);
+                    }
+                });
+                homeViewModel.events().observe(activity, this::onRosterEvent);
+                homeViewModel.start();
+                yield devicePage.view();
+            }
+        };
     }
 
     private void onRosterEvent(@NonNull DeviceRosterEvent event) {
@@ -140,6 +144,9 @@ final class ShellScreen {
                     YoToast.showWarning(activity, activity.getString(R.string.device_error_store));
             case DeviceRosterEvent.DeviceMissing ignored ->
                     YoToast.showWarning(activity, activity.getString(R.string.device_error_not_found));
+            case DeviceRosterEvent.WriteFailed failed ->
+                    YoToast.showWarning(activity,
+                            activity.getString(DeviceFailureText.message(failed.failure())));
         }
     }
 
@@ -168,6 +175,20 @@ final class ShellScreen {
                 return;
             }
             activity.startActivity(DeviceSettingsActivity.intent(activity, group));
+        }
+
+        @Override
+        public void onOpenPage(@NonNull String pageId) {
+            if (DeviceHomeUiMapper.PAGE_WEAR_SETTINGS.equals(pageId)) {
+                activity.startActivity(WearSettingsActivity.intent(activity));
+                return;
+            }
+            activity.startActivity(FindDeviceActivity.intent(activity));
+        }
+
+        @Override
+        public void onQuickToggle(@NonNull String capabilityId, boolean enabled) {
+            home.toggle(capabilityId, enabled);
         }
 
     }

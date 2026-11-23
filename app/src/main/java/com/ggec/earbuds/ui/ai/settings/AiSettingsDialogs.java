@@ -1,15 +1,12 @@
 package com.ggec.earbuds.ui.ai.settings;
 
-import android.app.Activity;
 import android.view.View;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.ai.model.AiChatPreferences;
-import com.ggec.earbuds.domain.ai.model.AiInteractionMode;
 import com.ggec.earbuds.domain.ai.model.AiPlatformTemplate;
 import com.ggec.earbuds.ui.ai.common.AiFormat;
 import com.ggec.earbuds.ui.common.YoComponents;

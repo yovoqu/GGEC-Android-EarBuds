@@ -1,7 +1,6 @@
 package com.ggec.earbuds.ui.device.settings;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -10,15 +9,11 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.domain.device.model.CapabilityOption;
 import com.ggec.earbuds.domain.device.model.ControlRange;
-import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
-import com.ggec.earbuds.domain.device.model.DeviceId;
 import com.ggec.earbuds.domain.device.model.DeviceProfileView;
-import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.model.DeviceState;
-import com.ggec.earbuds.domain.device.model.DeviceTarget;
 import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.session.DeviceSession;
@@ -116,7 +111,7 @@ public final class DeviceSettingsViewModelTest {
                 .of(bands, Optional.of(range), Optional.empty(), Optional.empty())
                 .orElseThrow();
 
-        viewModel.onCurve("CUSTOM_EQ", draft);
+        viewModel.onCurve("CUSTOM_EQ", "", draft);
 
         assertEquals(List.of("CUSTOM_EQ"), port.writes);
 

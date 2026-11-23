@@ -21,4 +21,8 @@ public sealed interface DeviceRosterEvent {
     /** 操作的设备已不在台账里。 */
     record DeviceMissing() implements DeviceRosterEvent {
     }
+
+    /** 首页内联开关写入失败。 */
+    record WriteFailed(DeviceFailure failure) implements DeviceRosterEvent {
+    }
 }

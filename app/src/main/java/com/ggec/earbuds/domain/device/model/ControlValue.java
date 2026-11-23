@@ -21,8 +21,10 @@ public sealed interface ControlValue {
         }
     }
 
-    record Curve(List<Integer> points) implements ControlValue {
+    /** 自定义 EQ 曲线：{@code name} 是这条自定义音效在 APP 侧的命名（设备协议只承载 points）。 */
+    record Curve(String name, List<Integer> points) implements ControlValue {
         public Curve {
+            name = name == null ? "" : name;
             points = List.copyOf(Objects.requireNonNull(points, "points"));
         }
     }

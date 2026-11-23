@@ -4,8 +4,7 @@ import java.util.Objects;
 
 public enum ShellDestination {
     DEVICE("device"),
-    AI("ai"),
-    MINE("mine");
+    AI("ai");
 
     private final String key;
 

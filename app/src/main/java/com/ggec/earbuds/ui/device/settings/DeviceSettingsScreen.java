@@ -15,10 +15,13 @@ import androidx.core.view.ViewCompat;
 import androidx.core.widget.NestedScrollView;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.device.DeviceTheme;
+import com.ggec.earbuds.ui.device.settings.section.AlignedSettingsView;
 import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.ggec.earbuds.ui.device.settings.section.SettingsRowsView;
+import com.ggec.earbuds.ui.device.settings.section.SettingsSectionView;
 import com.yohu.youi.api.platform.YoSystemBar;
 
 /**
@@ -39,9 +42,10 @@ public final class DeviceSettingsScreen {
     private final NestedScrollView scroll;
     private final ScrollView empty;
     private final LinearLayout content;
-    private final SettingsRowsView rows;
+    private final SettingsSectionView rows;
 
     public DeviceSettingsScreen(@NonNull AppCompatActivity activity,
+                                @NonNull DeviceCapabilityGroup group,
                                 @NonNull Listener listener) {
         this.activity = activity;
         this.theme = DeviceTheme.of(activity);
@@ -81,8 +85,15 @@ public final class DeviceSettingsScreen {
         });
         ViewCompat.requestApplyInsets(root);
 
-        rows = new SettingsRowsView(activity, theme, listener);
+        rows = alignedGroup(group)
+                ? new AlignedSettingsView(activity, theme, listener, group)
+                : new SettingsRowsView(activity, theme, listener);
         content.addView(rows.view(), matchWrap());
+    }
+
+    /** 本轮先对齐的二级页：本机设置（FUNCTION）与音效设置（MUSIC）。 */
+    private static boolean alignedGroup(@NonNull DeviceCapabilityGroup group) {
+        return group == DeviceCapabilityGroup.MUSIC || group == DeviceCapabilityGroup.FUNCTION;
     }
 
     @NonNull

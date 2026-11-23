@@ -62,6 +62,16 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.device.find.FindDeviceActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.device.wear.WearSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.device.record.RecordActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

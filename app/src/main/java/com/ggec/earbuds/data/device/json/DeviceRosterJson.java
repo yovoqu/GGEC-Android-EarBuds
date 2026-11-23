@@ -127,7 +127,7 @@ public final class DeviceRosterJson {
             case ValueDto.Toggle toggle -> new ControlValue.Toggle(toggle.enabled());
             case ValueDto.Level level -> new ControlValue.Level(level.value());
             case ValueDto.Choice choice -> new ControlValue.Choice(choice.optionId());
-            case ValueDto.Curve curve -> new ControlValue.Curve(curve.points());
+            case ValueDto.Curve curve -> new ControlValue.Curve("", curve.points());
         };
     }
 

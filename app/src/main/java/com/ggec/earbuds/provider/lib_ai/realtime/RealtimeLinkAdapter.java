@@ -9,7 +9,6 @@ import com.ggec.earbuds.domain.ai.port.AiRealtimeInput;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeLink;
 import com.ggec.earbuds.domain.ai.port.AiRealtimeOutput;
 import com.ggec.earbuds.provider.lib_ai.platform.LibAiFailures;
-import com.yovo.lib_ai.error.YoAiErrorKind;
 import com.yovo.lib_ai.realtime.YoRealtime;
 import com.yovo.lib_ai.realtime.YoRealtimeConfig;
 import com.yovo.lib_ai.realtime.YoRealtimeDialect;

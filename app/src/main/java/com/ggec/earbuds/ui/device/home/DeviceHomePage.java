@@ -19,17 +19,15 @@ import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 import com.ggec.earbuds.ui.common.YoComponents;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceTheme;
+import com.ggec.earbuds.ui.device.component.DeviceLayouts;
 import com.yohu.youi.api.navigation.YoMenu;
 import com.yohu.youi.api.platform.YoSystemBar;
 
 import java.util.List;
 
 /**
- * 设备页视图：标题组件（设备信息 + 下拉）、能力入口卡片、空态、添加设备。
- *
- * <p>职责拆分：设备信息与下拉放在 {@link DeviceTitleView}，单张能力卡放在
- * {@link DeviceEntryCardView}；本类只做页面装配、状态分发与菜单编排。下拉菜单用 YoUI 原生能力
- * （{@code subtitle} / {@code endIconTinted}），分隔线与按压反馈由组件自身提供。</p>
+ * 设备首页页面：只做装配。标题栏（{@link DeviceTitleView}）→ 概览（{@link DeviceHeroSectionView}）
+ * → 五个版块（{@link DeviceHomeSectionsView}），或空态。分组策略在 {@link DeviceHomeUiMapper}。
  */
 public final class DeviceHomePage {
 
@@ -39,6 +37,10 @@ public final class DeviceHomePage {
         void onSelectDevice(@NonNull String key);
 
         void onOpenEntry(@NonNull DeviceCapabilityGroup group);
+
+        void onOpenPage(@NonNull String pageId);
+
+        void onQuickToggle(@NonNull String capabilityId, boolean enabled);
     }
 
     private final AppCompatActivity activity;
@@ -49,7 +51,8 @@ public final class DeviceHomePage {
     private final LinearLayout root;
     private final DeviceTitleView titleView;
     private final NestedScrollView scroll;
-    private final LinearLayout cardColumn;
+    private final LinearLayout contentColumn;
+    private final DeviceHomeSectionsView sections;
     private final LinearLayout emptyBox;
     private final TextView emptyTitle;
     private final TextView emptyBody;
@@ -68,7 +71,7 @@ public final class DeviceHomePage {
         root.setBackgroundColor(theme.page);
 
         titleView = new DeviceTitleView(activity, theme, this::showDeviceMenu);
-        root.addView(buildHeader(), matchWrap());
+        root.addView(buildHeader(), DeviceLayouts.matchWrap());
 
         FrameLayout host = new FrameLayout(activity);
         root.addView(host, new LinearLayout.LayoutParams(
@@ -77,12 +80,14 @@ public final class DeviceHomePage {
         scroll = new NestedScrollView(activity);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
-        cardColumn = new LinearLayout(activity);
-        cardColumn.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(cardColumn, new ViewGroup.LayoutParams(
+        contentColumn = new LinearLayout(activity);
+        contentColumn.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(contentColumn, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         host.addView(scroll, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        sections = new DeviceHomeSectionsView(activity, theme, listener);
 
         emptyBox = new LinearLayout(activity);
         emptyBox.setOrientation(LinearLayout.VERTICAL);
@@ -91,12 +96,12 @@ public final class DeviceHomePage {
                 theme.dp(DeviceTheme.PAGE_INSET), 0);
         emptyTitle = theme.text(DeviceTheme.TEXT_HEADLINE, theme.text1, DeviceTheme.Weight.MEDIUM);
         emptyTitle.setGravity(Gravity.CENTER_HORIZONTAL);
-        emptyBox.addView(emptyTitle, matchWrap());
+        emptyBox.addView(emptyTitle, DeviceLayouts.matchWrap());
         emptyBody = theme.text(DeviceTheme.TEXT_CALLOUT, theme.hint);
         emptyBody.setGravity(Gravity.CENTER_HORIZONTAL);
         emptyBody.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         emptyBody.setPadding(0, theme.dp(DeviceTheme.SPACE_S), 0, 0);
-        emptyBox.addView(emptyBody, matchWrap());
+        emptyBox.addView(emptyBody, DeviceLayouts.matchWrap());
         emptyBox.setVisibility(View.GONE);
         host.addView(emptyBox, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -124,22 +129,23 @@ public final class DeviceHomePage {
         choices = state.devices();
         titleView.render(state);
 
-        boolean hasEntries = !state.entries().isEmpty();
-        scroll.setVisibility(hasEntries ? View.VISIBLE : View.GONE);
-        emptyBox.setVisibility(hasEntries ? View.GONE : View.VISIBLE);
-        if (!hasEntries) {
+        boolean hasContent = !state.title().isEmpty();
+        scroll.setVisibility(hasContent ? View.VISIBLE : View.GONE);
+        emptyBox.setVisibility(hasContent ? View.GONE : View.VISIBLE);
+        if (!hasContent) {
             emptyTitle.setText(state.emptyTitleRes());
             emptyBody.setText(state.emptyBodyRes());
+            sections.dispose();
             return;
         }
-        rebuild(state.entries());
+        rebuild(state);
     }
 
     public void destroy() {
+        sections.dispose();
         components.close();
     }
 
-    /** 菜单 = 设备列表（原生主副标题 + 右侧状态点）+ 分隔线 + 重命名/忘记。 */
     private void showDeviceMenu() {
         if (choices.isEmpty()) {
             return;
@@ -165,19 +171,13 @@ public final class DeviceHomePage {
         menu.show();
     }
 
-    private void rebuild(@NonNull List<DeviceHomeUiState.Entry> entries) {
-        cardColumn.removeAllViews();
-        for (DeviceHomeUiState.Entry entry : entries) {
-            DeviceEntryCardView card = new DeviceEntryCardView(activity, theme, entry.group(),
-                    listener::onOpenEntry);
-            card.render(entry);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.leftMargin = theme.dp(DeviceTheme.LIST_EDGE);
-            params.rightMargin = theme.dp(DeviceTheme.LIST_EDGE);
-            params.topMargin = theme.dp(DeviceTheme.SPACE_S);
-            cardColumn.addView(card.view(), params);
-        }
+    private void rebuild(@NonNull DeviceHomeUiState state) {
+        contentColumn.removeAllViews();
+        contentColumn.addView(DeviceHeroSectionView.create(activity, theme, state),
+                DeviceLayouts.pageInset(theme, DeviceTheme.SPACE_S, 0f));
+        sections.render(state.sections());
+        contentColumn.addView(sections.view(),
+                DeviceLayouts.verticalOnly(theme, 0f, DeviceTheme.SPACE_XL));
     }
 
     private void applyScrollBottom(int systemBottom) {
@@ -186,7 +186,6 @@ public final class DeviceHomePage {
         scroll.setPadding(0, 0, 0, bottom);
     }
 
-    /** 标题栏：左侧设备信息组件占满剩余宽度，右侧只留「添加设备」。 */
     private View buildHeader() {
         LinearLayout header = new LinearLayout(activity);
         header.setOrientation(LinearLayout.VERTICAL);
@@ -209,12 +208,7 @@ public final class DeviceHomePage {
         addParams.setMarginStart(theme.dp(DeviceTheme.SPACE_XS));
         row.addView(add, addParams);
 
-        header.addView(row, matchWrap());
+        header.addView(row, DeviceLayouts.matchWrap());
         return header;
-    }
-
-    private LinearLayout.LayoutParams matchWrap() {
-        return new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 }

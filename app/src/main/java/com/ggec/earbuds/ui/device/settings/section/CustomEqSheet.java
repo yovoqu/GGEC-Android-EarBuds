@@ -1,9 +1,11 @@
 package com.ggec.earbuds.ui.device.settings.section;
 
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -18,6 +20,8 @@ import com.ggec.earbuds.ui.device.DeviceTheme;
 import com.yohu.youi.api.containers.YoSheet;
 import com.yohu.youi.api.controls.YoButton;
 import com.yohu.youi.api.controls.YoSlider;
+import com.yohu.youi.api.controls.YoTextInput;
+import com.yohu.youi.api.feedback.YoDialog;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +39,7 @@ import java.util.Optional;
 public final class CustomEqSheet {
 
     public interface Listener {
-        void onSaved(@NonNull List<Integer> points);
+        void onSaved(@NonNull String name, @NonNull List<Integer> points);
 
         void onDismissed();
     }
@@ -62,6 +66,8 @@ public final class CustomEqSheet {
     private final List<YoSlider> sliders = new ArrayList<>();
 
     private int[] gains;
+    private String name;
+    private TextView nameValue;
     private YoSheet sheet;
 
     private CustomEqSheet(@NonNull AppCompatActivity activity, @NonNull DeviceTheme theme,
@@ -87,6 +93,7 @@ public final class CustomEqSheet {
                                                @NonNull Optional<ControlRange> range,
                                                @NonNull Optional<List<Integer>> reported,
                                                @NonNull Optional<List<Integer>> draft,
+                                               @NonNull Optional<String> initialName,
                                                @NonNull Listener listener) {
         Optional<List<Integer>> seed = CurveEditorSeed.of(bands, range, reported, draft);
         Optional<List<Integer>> rest = CurveEditorSeed.flat(bands, range);
@@ -94,18 +101,21 @@ public final class CustomEqSheet {
             return Optional.empty();
         }
         CustomEqSheet panel = new CustomEqSheet(activity, theme, bands, range.get(), rest.get());
-        panel.present(seed.get(), listener);
+        panel.present(seed.get(), initialName, listener);
         return Optional.of(panel);
     }
 
-    private void present(List<Integer> seed, Listener listener) {
+    private void present(List<Integer> seed, Optional<String> initialName, Listener listener) {
         gains = new int[seed.size()];
         for (int index = 0; index < gains.length; index++) {
             gains[index] = seed.get(index);
         }
+        name = initialName.filter(value -> !value.trim().isEmpty())
+                .orElseGet(() -> activity.getString(R.string.device_eq_name_default));
 
         LinearLayout content = SettingsChrome.vertical(activity);
         content.setPadding(0, theme.dp(DeviceTheme.SPACE_S), 0, theme.dp(DeviceTheme.SPACE_L));
+        content.addView(nameCard(), cardParams());
         content.addView(bandCard(gains), cardParams());
 
         TextView hint = theme.text(DeviceTheme.TEXT_CAPTION, theme.text3);
@@ -126,7 +136,7 @@ public final class CustomEqSheet {
         YoButton save = YoButton.create(activity).build();
         save.setText(activity.getString(R.string.device_eq_save));
         save.setOnClickListener(v -> {
-            listener.onSaved(points());
+            listener.onSaved(name, points());
             dismiss();
         });
         releases.add(save::destroy);
@@ -162,8 +172,69 @@ public final class CustomEqSheet {
         return List.copyOf(points);
     }
 
-    private View bandCard(int[] gains) {
+    /** 音效名称行：左「音效名称」、右当前名 + 右箭头，点开输入框改名。 */
+    private View nameCard() {
         LinearLayout card = new LinearLayout(activity);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackground(theme.roundedStroke(theme.card, DeviceTheme.RADIUS_SHEET,
+                theme.cardStroke, 1f));
+        int padH = theme.dp(DeviceTheme.SPACE_L);
+        int padV = theme.dp(DeviceTheme.SPACE_L);
+        card.setPadding(padH, padV, padH, padV);
+        card.setMinimumHeight(theme.dp(DeviceTheme.ROW_MIN_HEIGHT));
+
+        TextView label = theme.text(DeviceTheme.TEXT_BODY, theme.text1, DeviceTheme.Weight.MEDIUM);
+        label.setText(R.string.device_eq_name_label);
+        card.addView(label, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        nameValue = theme.text(DeviceTheme.TEXT_BODY, theme.text3);
+        nameValue.setText(name);
+        nameValue.setSingleLine(true);
+        nameValue.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(nameValue, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        ImageView chevron = theme.icon(R.drawable.ic_dev_chevron_right, theme.hint);
+        LinearLayout.LayoutParams chevronParams = new LinearLayout.LayoutParams(
+                theme.dp(DeviceTheme.SCAN_CHEVRON), theme.dp(DeviceTheme.SCAN_CHEVRON));
+        chevronParams.leftMargin = theme.dp(DeviceTheme.SPACE_XS);
+        card.addView(chevron, chevronParams);
+
+        card.setOnClickListener(v -> openNameDialog());
+        return card;
+    }
+
+    private void openNameDialog() {
+        YoTextInput field = YoTextInput.create(activity)
+                .setText(name)
+                .setPlaceholder(activity.getString(R.string.device_eq_name_placeholder))
+                .setMaxLength(20)
+                .setShowCounter(true)
+                .setShowErrorEnabled(true)
+                .build();
+        YoDialog.create(activity)
+                .kind(YoDialog.Kind.INPUT)
+                .hosted(field)
+                .setTitle(activity.getString(R.string.device_eq_name_label))
+                .setActions(
+                        YoDialog.Action.negative(activity.getString(R.string.device_dialog_cancel),
+                                null),
+                        YoDialog.Action.positive(activity.getString(R.string.device_dialog_confirm),
+                                () -> {
+                                    String edited = String.valueOf(field.getText()).trim();
+                                    if (!edited.isEmpty()) {
+                                        name = edited;
+                                        if (nameValue != null) {
+                                            nameValue.setText(name);
+                                        }
+                                    }
+                                }))
+                .show();
+    }
+
+    private View bandCard(int[] gains) {        LinearLayout card = new LinearLayout(activity);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackground(theme.roundedStroke(theme.card, DeviceTheme.RADIUS_SHEET,
                 theme.cardStroke, 1f));

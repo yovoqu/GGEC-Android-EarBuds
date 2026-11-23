@@ -2,7 +2,6 @@ package com.ggec.earbuds.ui.ai.settings;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.R;

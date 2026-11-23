@@ -65,6 +65,16 @@ public class ShellViewModelTest {
     }
 
     @Test
+    public void staleSavedSelectionFallsBackToFirstTab() {
+        SavedStateHandle savedState = new SavedStateHandle(Map.of(ShellViewModel.SELECTED_KEY, "mine"));
+
+        ShellViewModel viewModel = viewModel(savedState);
+
+        assertEquals("device", viewModel.current().selectedKey());
+        assertEquals("device", savedState.get(ShellViewModel.SELECTED_KEY));
+    }
+
+    @Test
     public void selectRejectsUnknownKeyWithoutChangingSelection() {
         ShellViewModel viewModel = viewModel(new SavedStateHandle());
         String selected = viewModel.current().selectedKey();
@@ -80,8 +90,7 @@ public class ShellViewModelTest {
     private static ShellViewModel viewModel(SavedStateHandle savedState) {
         List<ShellTab> tabs = List.of(
                 new ShellTab(ShellDestination.DEVICE),
-                new ShellTab(ShellDestination.AI),
-                new ShellTab(ShellDestination.MINE));
+                new ShellTab(ShellDestination.AI));
         return new ShellViewModel(savedState, new LoadShellTabs(() -> tabs),
                 new ShellSelectionPolicy(), new ShellUiMapper());
     }

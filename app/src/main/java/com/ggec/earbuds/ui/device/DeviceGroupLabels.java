@@ -28,12 +28,26 @@ public final class DeviceGroupLabels {
     @DrawableRes
     public static int icon(@NonNull DeviceCapabilityGroup group) {
         return switch (group) {
-            case MUSIC -> R.drawable.ic_ai_bolt;
-            case CONTROL -> R.drawable.ic_ai_settings;
-            case FUNCTION -> R.drawable.ic_ai_shield;
-            case DUAL_CONNECTION -> R.drawable.ic_ai_swap;
-            case RECORD -> R.drawable.ic_ai_call_mic;
-            case ABOUT -> R.drawable.ic_ai_globe;
+            case MUSIC -> R.drawable.ic_hw_sound;
+            case CONTROL -> R.drawable.ic_hw_control;
+            case FUNCTION -> R.drawable.ic_hw_settings;
+            case DUAL_CONNECTION -> R.drawable.ic_dev_dual;
+            case RECORD -> R.drawable.ic_hw_record;
+            case ABOUT -> R.drawable.ic_hw_about;
+        };
+    }
+
+    /**
+     * 首页内联开关的图标。能力 id 只在 {@code DeviceCapabilityIds} 里出现；这里只是给已登记的
+     * 三个开关配图标，其余 id 返回 0（不画图标），不猜别的开关长什么样。
+     */
+    @DrawableRes
+    public static int toggleIcon(@NonNull String capabilityId) {
+        return switch (capabilityId) {
+            case DeviceCapabilityIds.GAME_MODE -> R.drawable.ic_dev_game;
+            case DeviceCapabilityIds.WEAR_DETECT -> R.drawable.ic_dev_wear;
+            case DeviceCapabilityIds.VOLUME_ADAPTIVE -> R.drawable.ic_dev_volume;
+            default -> 0;
         };
     }
 }

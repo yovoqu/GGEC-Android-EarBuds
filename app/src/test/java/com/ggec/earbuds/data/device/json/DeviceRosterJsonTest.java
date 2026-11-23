@@ -103,6 +103,6 @@ public final class DeviceRosterJsonTest {
                         "EQ_MODE", new ControlValue.Choice("POP"),
                         "WEAR_DETECT", new ControlValue.Toggle(true),
                         "VOLUME", new ControlValue.Level(50),
-                        "CUSTOM_EQ", new ControlValue.Curve(List.of(1, 2, 3)))));
+                        "CUSTOM_EQ", new ControlValue.Curve("", List.of(1, 2, 3)))));
     }
 }

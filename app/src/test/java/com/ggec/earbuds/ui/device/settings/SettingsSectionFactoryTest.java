@@ -343,7 +343,7 @@ public final class SettingsSectionFactoryTest {
                 "GAME_MODE", new ControlValue.Toggle(true),
                 "EQ_MODE", new ControlValue.Choice("MOVIE"),
                 "VOLUME_REMIND", new ControlValue.Level(4),
-                "CUSTOM_EQ", new ControlValue.Curve(List.of(1, 2, 3))));
+                "CUSTOM_EQ", new ControlValue.Curve("", List.of(1, 2, 3))));
 
         List<DeviceSettingRow> rows =
                 factory.rows(profile, state, DeviceCapabilityGroup.FUNCTION);

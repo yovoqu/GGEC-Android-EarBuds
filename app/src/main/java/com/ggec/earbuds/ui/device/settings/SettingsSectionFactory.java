@@ -97,7 +97,8 @@ public final class SettingsSectionFactory {
             return Optional.empty();
         }
         return Optional.of(new DeviceSettingRow.Curve(capability.id(), capability.title(),
-                capability.options(), capability.range(), curveOf(state, capability.id())));
+                capability.options(), capability.range(), curveOf(state, capability.id()),
+                nameOf(state, capability.id())));
     }
 
     private static DeviceSettingRow actionRow(DeviceCapabilityView capability) {
@@ -172,6 +173,17 @@ public final class SettingsSectionFactory {
     private static Optional<List<Integer>> curveOf(DeviceState state, String capabilityId) {
         return state.value(capabilityId).flatMap(value -> switch (value) {
             case ControlValue.Curve curve -> Optional.of(curve.points());
+            case ControlValue.Toggle toggle -> Optional.empty();
+            case ControlValue.Level level -> Optional.empty();
+            case ControlValue.Choice choice -> Optional.empty();
+        });
+    }
+
+    /** 曲线行携带的 APP 侧命名；设备不上报时为空。 */
+    private static Optional<String> nameOf(DeviceState state, String capabilityId) {
+        return state.value(capabilityId).flatMap(value -> switch (value) {
+            case ControlValue.Curve curve ->
+                    curve.name().isEmpty() ? Optional.empty() : Optional.of(curve.name());
             case ControlValue.Toggle toggle -> Optional.empty();
             case ControlValue.Level level -> Optional.empty();
             case ControlValue.Choice choice -> Optional.empty();

@@ -17,7 +17,8 @@ public interface SettingsInteractionListener {
 
     void onLevel(@NonNull String capabilityId, int level);
 
-    void onCurve(@NonNull String capabilityId, @NonNull List<Integer> points);
+    void onCurve(@NonNull String capabilityId, @NonNull String name,
+                 @NonNull List<Integer> points);
 
     void onAction(@NonNull DeviceSettingRow.ActionKind kind);
 

@@ -1,7 +1,5 @@
 package com.ggec.earbuds.domain.ai.usecase;
 
-import androidx.annotation.NonNull;
-
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiModel;
@@ -12,7 +10,6 @@ import com.ggec.earbuds.domain.ai.port.AiCredentialStore;
 import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
 import com.ggec.earbuds.domain.ai.port.AiVoiceModelGateway;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 

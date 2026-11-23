@@ -14,10 +14,9 @@ import com.ggec.earbuds.ui.update.UpdateOverlay;
 import com.ggec.earbuds.wiring.AppContainer;
 
 /**
- * 应用外壳：设备 / AI / 我的三个页签，底部是悬浮标签栏。
+ * 应用外壳：设备 / AI 两个页签，底部是悬浮标签栏。
  *
- * <p>窗口级 edge-to-edge 由 {@link YoUi#edgeToEdge} 处理。AI 页自己避开状态栏，
- * 占位页由 {@link ShellPageView} 补顶部。</p>
+ * <p>窗口级 edge-to-edge 由 {@link YoUi#edgeToEdge} 处理，AI 页自己避开状态栏。</p>
  *
  * <p>APP 更新也挂在这个壳上：本页是唯一常驻入口，启动即检查、下载与安装的弹层都由
  * {@link UpdateOverlay} 渲染，流程状态在适配层侧（页面上只留 {@link UpdateUiPort} 接缝）。</p>

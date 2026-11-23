@@ -13,6 +13,7 @@ import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.ui.device.DeviceFailureText;
+import com.ggec.earbuds.ui.device.find.FindDeviceActivity;
 import com.ggec.earbuds.wiring.AppContainer;
 import com.yohu.youi.api.feedback.YoToast;
 
@@ -43,7 +44,7 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
         DeviceCapabilityGroup group = group();
         viewModel = new ViewModelProvider(this, container().device().settingsFactory(group))
                 .get(DeviceSettingsViewModel.class);
-        screen = new DeviceSettingsScreen(this, new SettingsListener());
+        screen = new DeviceSettingsScreen(this, group, new SettingsListener());
         setContentView(screen.view());
         viewModel.uiState().observe(this, state -> {
             if (state != null) {
@@ -114,12 +115,17 @@ public final class DeviceSettingsActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onCurve(@NonNull String capabilityId, @NonNull List<Integer> points) {
-            viewModel.onCurve(capabilityId, points);
+        public void onCurve(@NonNull String capabilityId, @NonNull String name,
+                            @NonNull List<Integer> points) {
+            viewModel.onCurve(capabilityId, name, points);
         }
 
         @Override
         public void onAction(@NonNull DeviceSettingRow.ActionKind kind) {
+            if (kind == DeviceSettingRow.ActionKind.FIND_EAR) {
+                startActivity(FindDeviceActivity.intent(DeviceSettingsActivity.this));
+                return;
+            }
             viewModel.onAction(kind);
         }
 

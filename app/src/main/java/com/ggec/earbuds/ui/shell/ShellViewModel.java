@@ -35,10 +35,21 @@ public final class ShellViewModel extends ViewModel {
         String savedKey = savedState.get(SELECTED_KEY);
         ShellTab selected = savedKey == null
                 ? this.selection.first(tabs)
-                : this.selection.select(tabs, savedKey);
+                : selectSavedOrFirst(savedKey);
         this.state = this.uiMapper.map(tabs, selected);
         this.uiState = new MutableLiveData<>(state);
         this.savedState.set(SELECTED_KEY, selected.key());
+    }
+
+    @NonNull
+    private ShellTab selectSavedOrFirst(@NonNull String savedKey) {
+        for (ShellTab tab : tabs) {
+            if (tab.key().equals(savedKey)) {
+                return tab;
+            }
+        }
+        // 旧版本可能持久化过已移除的页签（如 "mine"），静默回退到首个页签并自愈。
+        return selection.first(tabs);
     }
 
     @NonNull

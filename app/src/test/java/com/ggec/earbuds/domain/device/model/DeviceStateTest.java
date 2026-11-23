@@ -28,12 +28,12 @@ public final class DeviceStateTest {
                 "GAME_MODE", new ControlValue.Toggle(true),
                 "VOLUME", new ControlValue.Level(7),
                 "EQ_MODE", new ControlValue.Choice("music"),
-                "CUSTOM_EQ", new ControlValue.Curve(List.of(0, 2, -1))));
+                "CUSTOM_EQ", new ControlValue.Curve("", List.of(0, 2, -1))));
 
         assertEquals(Optional.of(new ControlValue.Toggle(true)), state.value("GAME_MODE"));
         assertEquals(Optional.of(new ControlValue.Level(7)), state.value("VOLUME"));
         assertEquals(Optional.of(new ControlValue.Choice("music")), state.value("EQ_MODE"));
-        assertEquals(Optional.of(new ControlValue.Curve(List.of(0, 2, -1))), state.value("CUSTOM_EQ"));
+        assertEquals(Optional.of(new ControlValue.Curve("", List.of(0, 2, -1))), state.value("CUSTOM_EQ"));
     }
 
     @Test
@@ -67,7 +67,7 @@ public final class DeviceStateTest {
     @Test
     public void curvePointsAreCopiedSoLaterMutationDoesNotLeak() {
         java.util.ArrayList<Integer> points = new java.util.ArrayList<>(List.of(1, 2, 3));
-        DeviceState state = new DeviceState(Map.of("CUSTOM_EQ", new ControlValue.Curve(points)));
+        DeviceState state = new DeviceState(Map.of("CUSTOM_EQ", new ControlValue.Curve("", points)));
 
         points.set(0, 9);
 

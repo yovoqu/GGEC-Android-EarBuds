@@ -80,7 +80,7 @@ public final class HsValueMapperTest {
                 new ControlValue.Toggle(true),
                 new ControlValue.Level(7),
                 new ControlValue.Choice("movie"),
-                new ControlValue.Curve(List.of(0, 1, 2)));
+                new ControlValue.Curve("", List.of(0, 1, 2)));
 
         for (ControlValue value : presented) {
             HsControl.Value toBiz = HsValueMapper.toHsControlValue(value);

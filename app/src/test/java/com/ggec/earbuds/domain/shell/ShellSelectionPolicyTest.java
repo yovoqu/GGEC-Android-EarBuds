@@ -14,10 +14,10 @@ public class ShellSelectionPolicyTest {
     @Test
     public void firstFollowsCatalogOrder() {
         List<ShellTab> tabs = List.of(
-                new ShellTab(ShellDestination.MINE),
-                new ShellTab(ShellDestination.AI));
+                new ShellTab(ShellDestination.AI),
+                new ShellTab(ShellDestination.DEVICE));
 
-        assertEquals(ShellDestination.MINE, policy.first(tabs).destination());
+        assertEquals(ShellDestination.AI, policy.first(tabs).destination());
     }
 
     @Test

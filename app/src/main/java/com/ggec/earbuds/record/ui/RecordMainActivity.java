@@ -380,7 +380,7 @@ public final class RecordMainActivity extends AppCompatActivity {
         statsView.setText(R.string.record_stats_idle);
         deviceList.setVisibility(View.GONE);
         deviceSectionTitle.setVisibility(View.GONE);
-        graph.client().connect(device.macAddress());
+        graph.client().connect(device.macAddress(), device.name());
     }
 
     private void stopScan() {

@@ -70,6 +70,41 @@ public final class DeviceTheme {
     public static final float SCAN_SUBTITLE_GAP = 2f;
     public static final float PRIMARY_ACTION_HEIGHT = 48f;
 
+    // ---- 设备首页：概览区（主图 + 电量）与分组列表 ----
+    /** 概览卡片圆角。 */
+    public static final float HERO_RADIUS = 28f;
+    /** 主图占位区高度。 */
+    public static final float HERO_IMAGE_HEIGHT = 176f;
+    /** 主图占位区圆角。 */
+    public static final float HERO_IMAGE_RADIUS = 18f;
+    /** 电量电池图形尺寸。 */
+    public static final float BATTERY_GLYPH_WIDTH = 28f;
+    public static final float BATTERY_GLYPH_HEIGHT = 14f;
+    /** 功能分组列表：容器圆角、行图标圆底与图标、行最小高度。 */
+    public static final float GROUP_RADIUS = 20f;
+    public static final float ROW_ICON_BOX = 38f;
+    public static final float ROW_ICON = 20f;
+    public static final float ROW_MIN_HEIGHT = 64f;
+    /** 列表行文字相对卡片外沿的实际内缩（dp）。
+     * YoUI 行内容 = 卡片内边距 + 行 padding + 标题自身留白；实测（16dp 卡片外沿之上）
+     * 行文字约在 33dp 处，即再内缩约 17dp。版块标题按「LIST_EDGE + 此值」计算左内边距，
+     * 与卡片标题落在同一条竖线（HarmonyOS 口径）。 */
+    public static final float ROW_TEXT_INSET = 17f;
+
+    // ---- 公共卡片（DeviceCardView / DeviceCardRow） ----
+    /** 卡片圆角。 */
+    public static final float CARD_RADIUS = 20f;
+    /** 卡片最小高度。 */
+    public static final float CARD_MIN_HEIGHT = 76f;
+    /** 卡片左右 / 上下内边距。 */
+    public static final float CARD_PADDING_H = 16f;
+    public static final float CARD_PADDING_V = 16f;
+    /** 卡片尾槽图标尺寸与图标到箭头的间距。 */
+    public static final float CARD_ICON = 24f;
+    public static final float CARD_TRAILING_GAP = 8f;
+    /** 卡片之间的间距（同列竖距 / 两列横距）。 */
+    public static final float CARD_GAP = 12f;
+
     public final Context context;
     public final float density;
     private final boolean dark;
@@ -89,6 +124,8 @@ public final class DeviceTheme {
     @ColorInt public final int alert;
     @ColorInt public final int alertSoft;
     @ColorInt public final int confirm;
+    /** 概览卡片顶部渐变起始色：卡片底色向品牌色轻混，形成主图区的柔和高光。 */
+    @ColorInt public final int heroTop;
     private final int ripple;
 
     private DeviceTheme(@NonNull Context context) {
@@ -112,6 +149,7 @@ public final class DeviceTheme {
         this.fill = ColorUtils.setAlphaComponent(text1, dark ? 0x1A : 0x0F);
         this.brandSoft = ColorUtils.setAlphaComponent(brand, dark ? 0x2E : 0x1A);
         this.alertSoft = ColorUtils.setAlphaComponent(alert, dark ? 0x2E : 0x14);
+        this.heroTop = ColorUtils.blendARGB(card, brand, dark ? 0.22f : 0.10f);
     }
 
     @NonNull
@@ -180,6 +218,28 @@ public final class DeviceTheme {
                                           @ColorInt int stroke, float strokeDp) {
         GradientDrawable drawable = rounded(color, radiusDp);
         drawable.setStroke(Math.max(1, dp(strokeDp)), stroke);
+        return drawable;
+    }
+
+    /** 竖向线性渐变的圆角块：设备概览卡片用，从顶部柔光过渡到卡片底色。 */
+    @NonNull
+    public GradientDrawable roundedGradient(@ColorInt int top, @ColorInt int bottom,
+                                            float radiusDp) {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM, new int[]{top, bottom});
+        drawable.setCornerRadius(dpf(radiusDp));
+        return drawable;
+    }
+
+    /** 径向柔光：中心为给定色、边缘透明，用于主图衬底，避免出现硬边圆盘。 */
+    @NonNull
+    public GradientDrawable radialGlow(@ColorInt int centerColor, float sizeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.OVAL);
+        drawable.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+        drawable.setGradientRadius(dpf(sizeDp) * 0.5f);
+        drawable.setGradientCenter(0.5f, 0.5f);
+        drawable.setColors(new int[]{centerColor, centerColor & 0x00FFFFFF});
         return drawable;
     }
 

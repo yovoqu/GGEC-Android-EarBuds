@@ -101,7 +101,7 @@ public final class HsValueMapper {
             case HsControl.Value.Toggle toggle -> new ControlValue.Toggle(toggle.enabled());
             case HsControl.Value.Level level -> new ControlValue.Level(level.value());
             case HsControl.Value.Choice choice -> new ControlValue.Choice(choice.optionId());
-            case HsControl.Value.Curve curve -> new ControlValue.Curve(curve.points());
+            case HsControl.Value.Curve curve -> new ControlValue.Curve("", curve.points());
         };
     }
 

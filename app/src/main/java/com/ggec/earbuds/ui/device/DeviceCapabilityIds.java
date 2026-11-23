@@ -17,6 +17,19 @@ public final class DeviceCapabilityIds {
     public static final String LDAC = "LDAC";
     public static final String VOLUME_ADAPTIVE = "VOLUME_ADAPTIVE";
 
+    /** 声音页（音效设置）里的两个通用选择能力：均衡器预置、音质偏好。 */
+    public static final String EQ_MODE = "EQ_MODE";
+    public static final String SOUND_QUALITY = "SOUND_QUALITY";
+
+    /** 本机设置（设备功能）里的三个通用开关能力。 */
+    public static final String FALL_ALERT = "FALL_ALERT";
+    public static final String BEGINNER_MODE = "BEGINNER_MODE";
+    public static final String INTERPRET = "INTERPRET";
+
+    /** 首页内联的常用开关（通用 TOGGLE 能力）：游戏模式、佩戴检测。 */
+    public static final String GAME_MODE = "GAME_MODE";
+    public static final String WEAR_DETECT = "WEAR_DETECT";
+
     public static final String FIND_EAR = "FIND_EAR";
     public static final String RENAME = "RENAME";
     public static final String REBOOT = "REBOOT";

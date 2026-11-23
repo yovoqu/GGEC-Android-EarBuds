@@ -6,33 +6,43 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.device.model.ConnectSettlement;
+import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceRecord;
 import com.ggec.earbuds.domain.device.model.DeviceRoster;
 import com.ggec.earbuds.domain.device.model.DeviceTarget;
+import com.ggec.earbuds.domain.device.model.DeviceWriteResult;
 import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.OpenDevice;
+import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.roster.DeviceRosterEvent;
 import com.yovo.lib_common.event.OneShotLiveData;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * 设备页视图模型：台账 → 标题栏（名称 + MAC·型号 + 下拉）与能力入口。
+ * 设备页视图模型：台账 → 标题栏、概览（电量/状态）、首页内联开关、卡片入口与列表入口。
  *
- * <p>只经用例触达领域：观察台账、列能力入口、打开设备。能力入口不在界面里
- * 推断，全部来自 {@link ListDeviceEntries}（数据源是 biz 设备目录）。</p>
+ * <p>只经用例触达领域：观察台账、列能力入口、打开设备、写内联开关。入口分流由
+ * {@link DeviceHomeUiMapper} 决定，本类不判断分组。</p>
  */
 public final class DeviceHomeViewModel extends ViewModel {
 
     private final ObserveDeviceRoster observeRoster;
     private final ListDeviceEntries listEntries;
     private final OpenDevice openDevice;
+    private final WriteDeviceControl writeControl;
     private final DeviceHomeUiMapper mapper;
 
     private final MutableLiveData<DeviceHomeUiState> uiState = new MutableLiveData<>();
     private final OneShotLiveData<DeviceRosterEvent> events = new OneShotLiveData<>();
+
+    /** 内联开关的写入槽，按能力 id 索引；断开连接时清空。 */
+    private final Map<String, DeviceHomeUiState.WriteSlot> writes = new LinkedHashMap<>();
 
     private Subscription rosterSubscription;
     private Subscription failureSubscription;
@@ -41,10 +51,12 @@ public final class DeviceHomeViewModel extends ViewModel {
     public DeviceHomeViewModel(@NonNull ObserveDeviceRoster observeRoster,
                                @NonNull ListDeviceEntries listEntries,
                                @NonNull OpenDevice openDevice,
+                               @NonNull WriteDeviceControl writeControl,
                                @NonNull DeviceHomeUiMapper mapper) {
         this.observeRoster = Objects.requireNonNull(observeRoster, "observeRoster");
         this.listEntries = Objects.requireNonNull(listEntries, "listEntries");
         this.openDevice = Objects.requireNonNull(openDevice, "openDevice");
+        this.writeControl = Objects.requireNonNull(writeControl, "writeControl");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -87,6 +99,38 @@ public final class DeviceHomeViewModel extends ViewModel {
         });
     }
 
+    /** 首页内联开关：先落 PENDING（带本次值），结果落 CONFIRMED 或丢弃回退。 */
+    public void toggle(@NonNull String capabilityId, boolean enabled) {
+        if (!isWritable()) {
+            return;
+        }
+        putWrite(capabilityId, new DeviceHomeUiState.WriteSlot(
+                DeviceHomeUiState.WriteState.PENDING, Optional.of(enabled)));
+        publish();
+        writeControl.execute(capabilityId, new ControlValue.Toggle(enabled),
+                result -> onWriteResult(capabilityId, enabled, result));
+    }
+
+    private void onWriteResult(@NonNull String capabilityId, boolean enabled,
+                               @NonNull DeviceWriteResult result) {
+        switch (result) {
+            case DeviceWriteResult.Ok ignored -> putWrite(capabilityId,
+                    new DeviceHomeUiState.WriteSlot(
+                            DeviceHomeUiState.WriteState.CONFIRMED, Optional.of(enabled)));
+            case DeviceWriteResult.Failed failed -> {
+                putWrite(capabilityId, new DeviceHomeUiState.WriteSlot(
+                        DeviceHomeUiState.WriteState.FAILED, Optional.empty()));
+                events.postValue(new DeviceRosterEvent.WriteFailed(failed.failure()));
+            }
+        }
+        publish();
+    }
+
+    private boolean isWritable() {
+        return roster.activeRecord().map(record -> record.live() && record.status().ready())
+                .orElse(false);
+    }
+
     private DeviceRecord find(String key) {
         for (DeviceRecord record : roster.devices()) {
             if (record.id().key().equals(key)) {
@@ -96,9 +140,32 @@ public final class DeviceHomeViewModel extends ViewModel {
         return null;
     }
 
+    private synchronized void putWrite(@NonNull String capabilityId,
+                                       @NonNull DeviceHomeUiState.WriteSlot slot) {
+        writes.put(capabilityId, slot);
+    }
+
+    private synchronized Map<String, DeviceHomeUiState.WriteSlot> currentWrites() {
+        return Map.copyOf(writes);
+    }
+
     private void onRoster(@NonNull DeviceRoster next) {
-        roster = next;
-        uiState.postValue(mapper.map(next, listEntries.execute(next.activeId().orElse(null))));
+        synchronized (this) {
+            roster = next;
+            boolean ready = next.activeRecord()
+                    .map(record -> record.live() && record.status().ready()).orElse(false);
+            if (!ready) {
+                // 写入事实属于当前连接：断开后旧槽不得在新设备上复活。
+                writes.clear();
+            }
+        }
+        publish();
+    }
+
+    private void publish() {
+        DeviceRoster current = roster;
+        uiState.postValue(mapper.map(current,
+                listEntries.execute(current.activeId().orElse(null)), currentWrites()));
     }
 
     @Override

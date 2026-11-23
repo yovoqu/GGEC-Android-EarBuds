@@ -16,8 +16,7 @@ public class ShellUiMapperTest {
     public void mapsDomainTabsToPresentation() {
         List<ShellTab> tabs = List.of(
                 new ShellTab(ShellDestination.DEVICE),
-                new ShellTab(ShellDestination.AI),
-                new ShellTab(ShellDestination.MINE));
+                new ShellTab(ShellDestination.AI));
         ShellUiState state = new ShellUiMapper().map(tabs, tabs.get(1));
 
         assertEquals("ai", state.selectedKey());

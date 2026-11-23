@@ -144,8 +144,9 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
     }
 
     @Override
-    public void onCurve(@NonNull String capabilityId, @NonNull List<Integer> points) {
-        write(capabilityId, new ControlValue.Curve(points));
+    public void onCurve(@NonNull String capabilityId, @NonNull String name,
+                        @NonNull List<Integer> points) {
+        write(capabilityId, new ControlValue.Curve(name, points));
     }
 
     /**

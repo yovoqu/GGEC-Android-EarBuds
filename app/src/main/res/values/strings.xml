@@ -3,7 +3,6 @@
     <string name="app_name">GGEC EarBuds</string>
     <string name="tab_device">设备</string>
     <string name="tab_ai">AI</string>
-    <string name="tab_mine">我的</string>
 
     <!-- 通用 -->
     <string name="ai_cancel">取消</string>
@@ -140,12 +139,23 @@
     <string name="device_connect_in_progress">正在连接</string>
     <string name="device_state_ready">已连接</string>
     <string name="device_state_disconnected">已断开</string>
-    <string name="device_entry_music">音乐与音效</string>
+    <string name="device_entry_music">音效设置</string>
     <string name="device_entry_control">控制设置</string>
-    <string name="device_entry_function">功能设置</string>
+    <string name="device_entry_function">本机设置</string>
     <string name="device_entry_dual">双连接</string>
     <string name="device_entry_record">录音</string>
     <string name="device_entry_about">关于设备</string>
+    <string name="device_home_functions">功能</string>
+    <string name="device_home_features">常用设置</string>
+    <string name="device_home_quick">快捷开关</string>
+    <string name="device_home_manage">设备与记录</string>
+    <string name="device_section_connection">设备连接中心</string>
+    <string name="device_section_sound">声音</string>
+    <string name="device_section_interaction">交互</string>
+    <string name="device_section_wear">佩戴</string>
+    <string name="device_section_more">更多</string>
+    <string name="device_hero_image">设备图片</string>
+    <string name="device_hero_image_desc">设备主图占位</string>
     <string name="device_empty_title">还没有连接耳机</string>
     <string name="device_empty_body">打开耳机并靠近手机，点右上角 + 添加设备。</string>
     <string name="device_settings_empty_body">请先返回设备页添加并连接耳机，连接后即可查看和调整此项设置。</string>
@@ -203,11 +213,44 @@
     <string name="device_eq_hint">建议根据播放音乐时的实时感受调整效果</string>
     <string name="device_eq_reset">重置</string>
     <string name="device_eq_custom">自定义</string>
+<string name="device_eq_name_label">音效名称</string>
+<string name="device_eq_name_default">我的音效 1</string>
+<string name="device_eq_name_placeholder">请输入音效名称</string>
+<!-- 查找设备独立页 -->
+<string name="find_device_title">查找设备</string>
+<string name="find_device_subtitle">耳机在附近时，可通过响铃进行查找。</string>
+<string name="find_device_hint">点击左耳或右耳播放声音，逐只耳机查找</string>
+<string name="find_device_left">左耳机响铃</string>
+<string name="find_device_right">右耳机响铃</string>
+<string name="find_device_stop">停止响铃</string>
+<string name="find_device_name_unknown">当前耳机</string>
+<!-- 佩戴设置独立页 -->
+<string name="wear_settings_title">佩戴设置</string>
+<string name="wear_settings_section">佩戴</string>
+<string name="wear_detect_title">佩戴检测</string>
+<string name="wear_detect_subtitle">摘下耳机自动暂停，戴上继续播放</string>
     <string name="device_value_unknown">未上报</string>
     <string name="device_value_on">开</string>
     <string name="device_value_off">关</string>
     <string name="device_capability_unsupported">本机未支持</string>
     <string name="device_settings_descriptor_missing">本机暂无这款耳机的设置描述</string>
+<!-- 本机设置 / 音效设置：分区标题 -->
+<string name="device_settings_section_preset_effect">官方预置音效</string>
+<string name="device_settings_section_custom_effect">自定义音效</string>
+<string name="device_settings_section_quality">音质</string>
+<string name="device_settings_section_advanced">更多设置</string>
+<string name="device_settings_section_functions">设备功能</string>
+<string name="device_settings_section_actions">设备操作</string>
+<string name="device_settings_section_other">其它</string>
+<!-- 本机设置 / 音效设置：行内说明 -->
+<string name="device_settings_subtitle_fall_alert">佩戴时检测到掉落，会播放声音并发送提示通知</string>
+<string name="device_settings_subtitle_game_mode">进入游戏时自动切换为低延迟模式，以降低游戏声音延迟</string>
+<string name="device_settings_subtitle_beginner_mode">简化操作提示，帮助初次使用更快上手</string>
+<string name="device_settings_subtitle_interpret">实时将对话翻译后通过耳机播放</string>
+<string name="device_settings_subtitle_ldac">开启后使用高解析音频传输，更耗电</string>
+<string name="device_settings_subtitle_volume_adaptive">根据环境噪声自动调整音量</string>
+<string name="device_settings_subtitle_high_quality">优先音质，传输更多声音细节</string>
+<string name="device_settings_subtitle_endurance">优先续航，降低传输功耗</string>
     <string name="device_action_unsupported">该操作需要在对应设置项内完成</string>
     <string name="device_error_not_ready">耳机尚未就绪，请稍后再试。</string>
     <string name="device_error_timeout">操作超时，请重试。</string>

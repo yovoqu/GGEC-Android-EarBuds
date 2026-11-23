@@ -94,6 +94,14 @@ public record DeviceSettingsUiState(
             return valueOf(ControlValue.Curve.class).map(ControlValue.Curve::points);
         }
 
+        /** 本次写入携带的自定义音效名称（APP 侧命名，设备不承载）。 */
+        @NonNull
+        public Optional<String> curveName() {
+            return valueOf(ControlValue.Curve.class)
+                    .map(ControlValue.Curve::name)
+                    .filter(name -> !name.isEmpty());
+        }
+
         @NonNull
         private <T extends ControlValue> Optional<T> valueOf(@NonNull Class<T> type) {
             return pendingValue.filter(type::isInstance).map(type::cast);

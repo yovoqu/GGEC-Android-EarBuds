@@ -9,7 +9,6 @@ public final class ShellCatalogSource {
     public List<ShellTabRecord> read() {
         return List.of(
                 new ShellTabRecord(ShellDestination.DEVICE.key()),
-                new ShellTabRecord(ShellDestination.AI.key()),
-                new ShellTabRecord(ShellDestination.MINE.key()));
+                new ShellTabRecord(ShellDestination.AI.key()));
     }
 }

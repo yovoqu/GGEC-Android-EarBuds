@@ -181,9 +181,13 @@ public final class SettingsRowsView implements SettingsSectionView {
                           @NonNull DeviceSettingsUiState state) {
         DeviceSettingsUiState.WriteSlot slot = state.writeOf(row.capabilityId());
         boolean saved = row.points().isPresent() || slot.curveValue().isPresent();
-        String value = saved
+        Optional<String> name = slot.curveName();
+        if (name.isEmpty()) {
+            name = row.name();
+        }
+        String value = name.orElse(saved
                 ? activity.getString(R.string.device_eq_custom)
-                : activity.getString(R.string.device_value_unknown);
+                : activity.getString(R.string.device_value_unknown));
         if (state.interactive()) {
             pendingBuilder.addItem(ListPrefixSpec.none(),
                     ListTextSpec.of(row.title()),
@@ -267,12 +271,15 @@ public final class SettingsRowsView implements SettingsSectionView {
         Optional<List<Integer>> pending = rendered == null
                 ? Optional.empty()
                 : rendered.writeOf(row.capabilityId()).curveValue();
+        Optional<String> initialName = rendered == null
+                ? row.name()
+                : rendered.writeOf(row.capabilityId()).curveName().or(() -> row.name());
         // 段数/值域/编辑起点全部由描述符决定：描述符缺频段表或增益值域时面板不打开（不可用）。
         customEqSheet = CustomEqSheet.show(activity, theme, row.options(), row.range(),
-                row.points(), pending, new CustomEqSheet.Listener() {
+                row.points(), pending, initialName, new CustomEqSheet.Listener() {
                     @Override
-                    public void onSaved(@NonNull List<Integer> edited) {
-                        listener.onCurve(row.capabilityId(), edited);
+                    public void onSaved(@NonNull String name, @NonNull List<Integer> edited) {
+                        listener.onCurve(row.capabilityId(), name, edited);
                     }
 
                     @Override

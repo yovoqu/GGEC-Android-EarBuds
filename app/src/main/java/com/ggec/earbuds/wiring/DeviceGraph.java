@@ -32,6 +32,8 @@ import com.ggec.earbuds.provider.lib_common.permission.BluetoothScanPermissionRe
 import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.ui.device.home.DeviceHomeUiMapper;
 import com.ggec.earbuds.ui.device.home.DeviceHomeViewModel;
+import com.ggec.earbuds.ui.device.find.FindDeviceViewModel;
+import com.ggec.earbuds.ui.device.wear.WearSettingsViewModel;
 import com.ggec.earbuds.ui.device.record.RecordViewModel;
 import com.ggec.earbuds.ui.device.scan.ScanViewModel;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiMapper;
@@ -122,7 +124,8 @@ public final class DeviceGraph {
     @NonNull
     public ViewModelProvider.Factory homeFactory() {
         return new Factory<>(DeviceHomeViewModel.class,
-                () -> new DeviceHomeViewModel(observeRoster, listEntries, openDevice, homeMapper));
+                () -> new DeviceHomeViewModel(observeRoster, listEntries, openDevice,
+                        writeControl, homeMapper));
     }
 
     @NonNull
@@ -145,6 +148,18 @@ public final class DeviceGraph {
                 () -> new DeviceSettingsViewModel(group, catalog, observeDevice,
                         writeControl, runAction, forgetDevice, observeRoster,
                         settingsMapper));
+    }
+
+    @NonNull
+    public ViewModelProvider.Factory findFactory() {
+        return new Factory<>(FindDeviceViewModel.class,
+                () -> new FindDeviceViewModel(observeDevice, observeRoster, runAction));
+    }
+
+    @NonNull
+    public ViewModelProvider.Factory wearFactory() {
+        return new Factory<>(WearSettingsViewModel.class,
+                () -> new WearSettingsViewModel(observeDevice, writeControl));
     }
 
     /**

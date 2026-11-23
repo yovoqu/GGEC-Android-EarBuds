@@ -2,7 +2,6 @@ package com.ggec.earbuds.ui.ai.widget;
 
 import android.graphics.Typeface;
 import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.HorizontalScrollView;
