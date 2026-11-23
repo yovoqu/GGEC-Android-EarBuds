@@ -160,3 +160,28 @@ IDLE ──start()──► STARTING ──首片音频/0x8004──► RECORDIN
 ### 6.4 待后续（P4/P5）
 - P4 清理：删除 `Command.State.SENDING` 死枚举、APP `DeviceHomeUiState` 旧写入状态统一、日志/常量归位、`HsCommandSystemHardeningTest` 与设计对齐复核。
 - P5：全量复审（子代理）+ HS02 真机回归 + 文档定稿。
+
+---
+
+## 7. P5 全量复审与收尾（已执行）
+
+### 7.1 P4 完成
+- `Command.State.SENDING` 删除（命令状态现为 `QUEUED/SENT/RECEIVING/COMPLETED/FAILED`）。
+- APP 写入状态统一：新增顶层 `ui/device/WriteState`，设置页与首页共用；首页 `DeviceHomeViewModel` 增 seq 守卫 + `SENDING→PROCESSING→CONFIRMED/FAILED`；`DeviceHomeUiMapper` 复用 `TogglePresentation`；两页语义一致（点击即切换/处理中禁用/成功后保持/失败回退）。
+
+### 7.2 复审发现与修复
+- **flaky 根因（已修）**：`HsProtocolEngine.submit` 完成监听器注册顺序为“先消费回调、后落域”，在测试内联主线程替身下 `read` 可能先于落域 → `beginnerModeToggleReflectsCommandAck` 偶发失败。已调整为**先注册 `persistCompletion` 再注册对外回调**（落域先于回执）。`HsSessionImplTest` 连跑 3 次全绿。
+- **随录随传健壮性（已修）**：开始回执（含失败）统一派发主线程（避免 BLE 回调栈内 detach 重入）；`STARTING` 计时从进入即起（覆盖 Notify 就绪等待，3s）；`stop()` 幂等（重复停止不覆盖在途 reply）。
+- **APP 清理（已修）**：删除首页死方法 `putWrite`；`roster` 改 `volatile`；订正 `TogglePresentation`/`LevelPresentation` Javadoc 漂移。
+
+### 7.3 验证
+- 全量门禁（`--rerun-tasks` 强制重跑）：`biz_ggec_hs 184 / biz_ggec_wy 34 / app 627` 全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
+- `HsSessionImplTest` 连跑 3 次全绿（flaky 消除）。
+- HS02 真机：佩戴检测开关 `code=0`（off→on）；随录随传 启动 157ms（首段音频驱动）、停止 ≤3s 有界兜底、落盘 222 帧/4.44s。
+
+### 7.4 已知余项（记录，不阻塞）
+1. **设置页 `RECORD_STREAM` 动作仍走命令调度器**：`DeviceSettingsActivity.onStartRecordStream → perform(StartRecord(STREAM)) → CommandScheduler`。但设备「录音」入口实际由 `RecordActivity`/`RecordPort`（事件驱动）承载，`DeviceSettingsActivity` 不加载 RECORD 组，故该动作是**不可达的旧路径**。属“双轨残留”，建议后续随产品接线一并删除或改走 `RecordPort`。
+2. **测试缺口**：随录随传状态机（STARTING 超时/0x8004/0x8005/音频静默/幂等 stop）与命令核心（多帧 inter-frame、GET 单飞+缓存、SET 合并、会话切换中止）尚无直接单测；`DeviceHomeViewModel` 三态守卫无单测（首页内联开关当前 `QUICK_TOGGLE_IDS` 为空、不可达）。
+3. **无主线程退化**：`HsStreamRecordSession` 的计时依赖 `mainHandler`，无 Looper 环境退化（生产不涉及）。
+4. **文件同步**：`StartTransmitRecordCommand` 仍走调度器 10s 窗口，若设备同样不回执属同类隐患，真机未覆盖。
+
