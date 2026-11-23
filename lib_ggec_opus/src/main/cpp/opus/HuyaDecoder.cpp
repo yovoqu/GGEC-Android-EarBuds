@@ -7,18 +7,29 @@
 extern "C" {
 
 
+/*
+ * 进程内单配置（single-process single-configuration）：
+ * 本 native 库由同一进程内所有解码器共享（HS / WY 共用同一份），下列全局量在 initDecoder()
+ * 时被改写。约定：同一进程内只持有一种解码配置（16 kHz / 1ch / 20 ms / 16 kbps，HS 与 WY 同参）。
+ * 真正的多实例隔离需把配置移入 HuyaDecoder 成员变量（本次不做高风险大改，仅注明约束）。
+ */
 int mFramePeriod = -1 ;
 int mSingleFrameInputSize = -1 ;
 int mTotalFrameInputSize = -1 ;
 int mSingnleFrameOutputSize = -1 ;
 int mBiteRate = 0;
 /**
+ * 返回帧周期（单位：毫秒）。
  *
- * @return
+ * <p>历史实现返回 {@code OPUS_FRAMESIZE_20_MS} 枚举值(=5004)，被 JNI 日志当作"帧周期=5004"
+ * 打印，语义误导（既不是 5004 毫秒也不是 5.004 秒）。现统一返回 {@code VOICE_FRAME_PERIOD_IN_MS}
+ * (=20 ms)；5004 仅为 Opus 帧时长档位枚举，在 init() 日志里单独说明。</p>
+ *
+ * @return 帧周期毫秒数（20）
  */
 int getFramePeriod(){
     if(mFramePeriod == -1){
-        mFramePeriod = VOICE_FRAME_PERIOD ;
+        mFramePeriod = VOICE_FRAME_PERIOD_IN_MS ;
     }
     return mFramePeriod ;
 }
@@ -60,7 +71,8 @@ void initDecoder(int framePeriod , int singleFrameInputSize , int totalFrameInpu
        mBiteRate = VOICE_OPUS_BITRATE;
     }
     if (framePeriod == 0) {
-        setFramePeriod(VOICE_FRAME_PERIOD);
+        // 默认帧周期按毫秒语义存储，与 getFramePeriod() 返回值统一（20 ms）。
+        setFramePeriod(VOICE_FRAME_PERIOD_IN_MS);
     } else {
         setFramePeriod(framePeriod);
     }
@@ -90,19 +102,22 @@ void HuyaDecoder::init() {
         __android_log_print(ANDROID_LOG_ERROR, "GGEC-Opus",
             "初始化失败 error=%d", error);
     }
-    opus_int32 skip;
-    opus_decoder_ctl(opusDecoder, OPUS_SET_BITRATE(mBiteRate));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_BANDWIDTH(VOICE_OPUS_BANDWIDTH));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_VBR(VOICE_OPUS_USE_VBR));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_VBR_CONSTRAINT(VOICE_OPUS_CONSTRAINT_USE_VBR));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_COMPLEXITY(VOICE_OPUS_COMPLEXITY));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_INBAND_FEC(VOICE_OPUS_USE_INBANDFEC));
+
+    // 仅保留对 decoder 有意义/可观测的控制项：
+    //   - OPUS_SET_FORCE_CHANNELS：强制解出单声道，与设备 1ch 一致；
+    //   - OPUS_GET_LOOKAHEAD：读取解码前瞻样本数（仅观测，用于诊断）。
+    // 说明：BITRATE / VBR / VBR_CONSTRAINT / COMPLEXITY / INBAND_FEC / DTX /
+    //       PACKET_LOSS_PERC / SIGNAL / BANDWIDTH / EXPERT_FRAME_DURATION 都是
+    //       encoder-only 参数，对 decoder 返回 OPUS_UNIMPLEMENTED 或空操作；
+    //       此前"配了一堆其实没生效"，现移除以免误导。decode 行为不受影响。
     opus_decoder_ctl(opusDecoder, OPUS_SET_FORCE_CHANNELS(VOICE_OPUS_CHANNEL_COUNT));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_DTX(VOICE_OPUS_USE_DTX));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_PACKET_LOSS_PERC(VOICE_OPUS_PACKET_LOSS_PERC));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
-    opus_decoder_ctl(opusDecoder, OPUS_SET_EXPERT_FRAME_DURATION(getFramePeriod()));
+    opus_int32 skip = 0;
     opus_decoder_ctl(opusDecoder, OPUS_GET_LOOKAHEAD(&skip));
+
+    // 明确区分"帧周期(毫秒)"与"Opus 帧时长枚举档位"，消除 5004 被误读成 5.004 秒/毫秒的误导。
+    __android_log_print(ANDROID_LOG_INFO, "GGEC-Opus",
+        "解码器帧周期=%d ms（OPUS_FRAMESIZE_20_MS=%d 仅为 Opus 帧时长档位枚举值，非毫秒）",
+        VOICE_FRAME_PERIOD_IN_MS, OPUS_FRAMESIZE_20_MS);
 }
 
 void HuyaDecoder::setBitRate(int bitRate) {

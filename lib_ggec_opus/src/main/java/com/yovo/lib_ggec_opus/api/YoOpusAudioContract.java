@@ -33,10 +33,33 @@ public final class YoOpusAudioContract {
     public static final int OPUS_BYTES_32K = 80;
     public static final int OPUS_BYTES_64K = 160;
 
-    /** 默认/推荐码率：32000 bps */
+    /** 默认/推荐码率：32000 bps（既有取值，保持不动，其它代码/测试依赖） */
     public static final int BIT_RATE_DEFAULT = 32_000;
     public static final int BIT_RATE_MIN = 16_000;
     public static final int BIT_RATE_MAX = 64_000;
+
+    /**
+     * 由「单帧字节数 × 8 bit × 1000 ms/s ÷ 帧周期(ms)」推导的码率（CBR）。
+     * 这些是线格式的物理真值，不可手写：40B/20ms 恒等于 16000 bps。
+     */
+    /** 16 kbps：40 * 8 * 1000 / 20 = 16000 */
+    public static final int OPUS_BIT_RATE_16K = OPUS_BYTES_16K * 8 * 1000 / FRAME_PERIOD_MS;
+    /** 32 kbps：80 * 8 * 1000 / 20 = 32000 */
+    public static final int OPUS_BIT_RATE_32K = OPUS_BYTES_32K * 8 * 1000 / FRAME_PERIOD_MS;
+    /** 64 kbps：160 * 8 * 1000 / 20 = 64000 */
+    public static final int OPUS_BIT_RATE_64K = OPUS_BYTES_64K * 8 * 1000 / FRAME_PERIOD_MS;
+
+    /** PCM 线码率：640 * 8 * 1000 / 20 = 256000 bps（16 kHz × 16 bit × 1ch） */
+    public static final int PCM_BIT_RATE = PCM_FRAME_BYTES * 8 * 1000 / FRAME_PERIOD_MS;
+
+    /**
+     * 设备实际传输（wire）的 Opus 码率：16 kbps。
+     * 解码器初始化应使用本值，与 40B/20ms 帧长严格一致；不再沿用 BMP 默认 32000。
+     */
+    public static final int WIRE_OPUS_BIT_RATE = OPUS_BIT_RATE_16K;
+
+    /** 压缩比：PCM 256 kbps ÷ Opus 16 kbps = 16:1 */
+    public static final int COMPRESSION_RATIO = PCM_BIT_RATE / WIRE_OPUS_BIT_RATE;
 
     /** MP3 导出推荐配置 */
     public static final int MP3_BITRATE_KBPS = 64;

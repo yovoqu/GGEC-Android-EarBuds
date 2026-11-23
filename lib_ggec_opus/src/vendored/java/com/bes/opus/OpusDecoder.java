@@ -25,7 +25,9 @@ public class OpusDecoder {
      * Call {@link #decode(byte[])} with one Opus packet at a time.
      */
     public OpusDecoder() {
-        decoder = init_native(-1, 0, 0, YoOpusAudioContract.PCM_FRAME_BYTES, 0);
+        // bitRate 传 WIRE_OPUS_BIT_RATE(=16000)，使"生效码率"与 40B/20ms 帧长一致（原默认 32000 是错的）。
+        decoder = init_native(-1, 0, 0,
+                YoOpusAudioContract.PCM_FRAME_BYTES, YoOpusAudioContract.WIRE_OPUS_BIT_RATE);
         if (decoder == 0L) {
             throw new IllegalStateException("Opus decoder init failed: native handle is 0");
         }

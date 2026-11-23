@@ -16,8 +16,7 @@ extern "C" {
 // setup the opus begin
 #define VOICE_OPUS_BITRATE (32000)
 #define VOICE_OPUS_SAMPLE_RATE (16000)
-#define VOICE_FRAME_PERIOD	 (OPUS_FRAMESIZE_20_MS)  // see the OPUS_FRAMESIZE_*_MS
-#define VOICE_FRAME_PERIOD_IN_MS		(20) // 80 ms
+#define VOICE_FRAME_PERIOD_IN_MS		(20) // 真实帧周期 20 ms（日志/时长换算用这个）
 #define VOICE_SIZE_PER_SAMPLE			(2)	// 16 bits = 2*byte
 #define VOICE_OPUS_CHANNEL_COUNT (1)  // 1 channel
 // setup the opus end

@@ -121,7 +121,7 @@ public class OpusUtils {
     }
 
     /**
-     * 将短整型数组转换为字节数组
+     * 将短整型数组转换为字节数组（固定小端，与 PCM 落盘/文件约定一致）
      * 每个短整型（2字节）转换为对应的字节表示
      * @param s 短整型数组
      * @return 转换后的字节数组，长度为原数组长度的2倍
@@ -130,7 +130,8 @@ public class OpusUtils {
         byte bLength = 2; // 每个short占2字节
         byte[] buf = new byte[s.length * bLength];
         for (int iLoop = 0; iLoop < s.length; iLoop++) {
-            byte[] temp = getBytes(s[iLoop]);
+            // 固定小端：不依赖 testCPU() 的 CPU 端序探测，保证 PCM 落盘端序在任何设备上稳定一致。
+            byte[] temp = getBytes(s[iLoop], false);
             for (int jLoop = 0; jLoop < bLength; jLoop++) {
                 buf[iLoop * bLength + jLoop] = temp[jLoop];
             }
