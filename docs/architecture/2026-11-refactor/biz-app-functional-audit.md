@@ -1,9 +1,10 @@
 # Biz / APP 功能梳理与 HS02 设置失败根因审计
 
-> 版本：2026-11 · 范围：`biz_ggec_hs`、`biz_ggec_wy`、`biz_ggec_record`、`app`（设备域 + 设置页）
-> 方法：逐层读码（文件:行）+ 运行期日志核对（`.scratch/pull/log/earbuds-07f0e.log` HS02、`earbuds-006eb.log` WY01）
-> 证据等级：`已读码` / `日志实测`。无真机可控复现，运行期结论以日志与代码契约推断，不确定处显式标注。
-> 本轮落地：①HS 包 BLE 接收数据日志（命令/音频分道）②命令终态原因日志 ③APP 开关「点击即先切换」修正。详见 §6。
+> 版本：2026-11（复审后修订）· 范围：`biz_ggec_hs`、`biz_ggec_wy`、`biz_ggec_record`、`app`（设备域 + 设置页）
+> 方法：逐层读码（文件:行）+ 运行期日志核对（HS02/WY01）+ motorola edge 60 pro 真机实测（§8）。
+> 证据等级：`已读码` / `日志实测` / `真机实测`。**凡本文前部与实现或 §8/§9 冲突处，一律以 §8/§9（复审后最终口径）为准。**
+> ⚠️ **重要勘误**：早期草稿曾把「A = 改 `WITH_RESPONSE`」写作已修；真机证明其错误并已回退。**最终代码为 `WRITE_TYPE = WITHOUT_RESPONSE`，真正的修复在 `CommandScheduler`（匹配响应帧即视为“写已送达”，不再死等不触发的 GATT 写完成）。** 本文 §3.4 / §4 / §5 / §6.6 中「WITH_RESPONSE 已修」表述作废，见 §8、§9。
+> 本轮落地：BLE 收发日志、命令终态原因日志、随录随传多源结算、命令三态（发送/处理中/成功/失败）、开关成功后保持目标值。详见 §6/§9。
 
 ---
 
@@ -13,7 +14,7 @@
 2. **HS02「随录随传」启动/停止必失败**（日志实证）：`StartStreamRecordCommand` 下发后**收不到 99ECD5 回执**，约 **10.03s** 后 `FAILED`，业务层打印「录音启动失败」。但**音频实际在流**（428 帧 PCM 已落盘，格式锁定 `DUAL_HALF_168 / LITTLE_ENDIAN`）。即：**设备侧动作成功、APP 侧命令判定失败**——是「命令回执/写完成」链路问题，不是录音管线问题。
 3. **关键盲区**：现有日志**没有命令通道的 BLE 接收埋点**，也**不打印命令终态原因**（只有「状态变更为 FAILED」）。因此无法仅凭旧日志区分是「GATT 写超时」还是「设备不在命令通道回 99ECD5」。**本轮已补齐这两处日志**（§6），下一轮同类失败可直接定论。
 4. **权威对照（WY01）**：同样命令 `99ECD5/99ECD6`，WY01 在**控制通道**收到 `99 EC D5/D6 00 01 00 12 34` 回执，状态字节 `0x00` → 成功。HS02 未在命令通道看到对应回执，却在**音频通道**收到 `0x8012` 控制上报包。两种产品回执路径不同，HS 命令模型未覆盖。
-5. **APP 开关状态**：`DeviceSettingsUiState.WriteState{IDLE,IN_FLIGHT,CONFIRMED,FAILED}` 已有清晰抽象（发送/处理中合并为 IN_FLIGHT，成功 CONFIRMED，失败 FAILED），且 IN_FLIGHT 时 `enabled=false` 已实现「禁用点击」。**但存在一处与要求相反的实现**：IN_FLIGHT 期间 `position` 取「设备上报值优先」，导致**点击后开关不先翻转**，违背「点击时先切换状态」。**本轮已修正为 IN_FLIGHT 期间优先呈现用户目标值**（§6.3）。
+5. **APP 开关状态**：`DeviceSettingsUiState.WriteState{IDLE,IN_FLIGHT,CONFIRMED,FAILED}` 已有清晰抽象（发送/处理中合并为 IN_FLIGHT，成功 CONFIRMED，失败 FAILED），且 IN_FLIGHT 时 `enabled=false` 已实现「禁用点击」。**但存在一处与要求相反的实现**：IN_FLIGHT 期间 `position` 取「设备上报值优先」，导致**点击后开关不先翻转**，违背「点击时先切换状态」。**本轮已修正为 IN_FLIGHT 期间优先呈现用户目标值**（§6.3）。（注：本段的 `IN_FLIGHT` 是改造前基线的旧状态名；最终枚举为 `IDLE/SENDING/PROCESSING/CONFIRMED/FAILED`，成功/处理中均保持目标值，见 §6.3/§9。）
 
 ---
 
@@ -120,7 +121,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 
 ### 3.4 修复落地（本轮已实施：A、B 双修，无残留）
 
-1. **A（链路层）已修**：命令特征写类型改为 `WITH_RESPONSE`（`HsBleSettings.WRITE_TYPE`），确保拿到 `onCharacteristicWrite` 写完成回调，不再空等 ~10s 的 GATT 超时。真机需确认 `820104` 同时声明了 WRITE 属性（多数固件两者都声明；若只声明 WRITE_NO_RESPONSE，会**快速失败**而非超时，届时再按机型微调）。
+1. **A（链路层）——【已作废，见 §8/§9】**：曾尝试把命令特征写类型改为 `WITH_RESPONSE`，真机证明固件不回 ATT 应答、反而等满 10s 超时，**已回退为 `WITHOUT_RESPONSE`**。真正的修复不在写类型，而在 `CommandScheduler`：把匹配响应帧视为“写已送达”并立即处理。详见 §8、§9。
 2. **B（协议层）已修**：HS 随录随传开始/停止改为「设备侧信号优先」的**多源结算**（`HsStreamStartGate`）：命令回执 SUCCESS / 音频控制上报 `0x8004`(开始) / 首段非控制音频切片 / 停止的 `0x8005` 或命令终态，谁先到算谁，且**只成功一次**；`0x8012` 仅记为延时信息（不算成败）；成功后迟到的命令失败一律忽略，并主动 `replayCompletion(SUCCESS)` 释放串行队列（避免 Stop 被占满 10s）。→ **同时兼容 HS02（无命令 ack）与既有固件（有 99ECD5 ack）**。文件同步会话 `HsDeviceRecordSyncSession` 同样以「已出流」判定设备已接受，避免误中止。
 3. **通用**：命令终态原因已日志（§6.2），FAILED 可区分 TIMEOUT/业务失败；UI 侧 `DeviceFailure` 已含 `TIMEOUT/REJECTED/DEVICE_ERROR` 分类。
 
@@ -136,7 +137,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 | P1 | biz_ggec_hs | 命令通道 BLE 接收无埋点，失败无法定位 | ✅ 已加 `BLE接收命令数据`（§6.1） |
 | P1 | biz_ggec_hs | 命令终态不打印 `code/message` | ✅ 已加 `完成: code=.. message=..`（§6.2） |
 | P1 | app | 开关写入中 `position` 上报值优先 → 点击不先翻转 | ✅ 已修 乐观呈现（§6.3） |
-| P1 | biz_ggec_hs | `820104` 命令特征用 `WITHOUT_RESPONSE`，命令可靠性弱 | ✅ 已改 `WITH_RESPONSE`（§6.6） |
+| P1 | biz_ggec_hs | `820104` 命令特征写类型 | ✅ 最终 `WITHOUT_RESPONSE`；真修复在 `CommandScheduler`（§8/§9） |
 | P2 | biz_ggec_hs | 音频通道控制包只处理 `0x8005`，忽略 `0x8004/0x8012` | ✅ 已关联（`0x8004` 开始成功、`0x8012` 延时、`0x8005` 停止，§6.5） |
 | P2 | app | 写入端口单回调，APP 无法区分「发送」与「处理中」 | ✅ 已实现 `SENDING/PROCESSING` 三态贯通（§6.7） |
 | P3 | app | 滑块 `LevelPresentation` 同样上报值优先 | ✅ 已同步（§6.8） |
@@ -152,7 +153,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 | 开始/停止命令 | `99ECD5/99ECD6 …1234` | 同（`99ECD50001001234`） | 命令字节一致 |
 | 命令回执路径 | 控制通道回 `99EC D5/D6 …`（status=0x00） | **命令通道未见**；音频通道 `0x8012` | **差异=本次问题** |
 | 音频格式 | `DECA_40_440 / BIG_ENDIAN / 40B×10 / 440B` | `DUAL_HALF_168 / LITTLE_ENDIAN / 80B×2 / 168B` | 各自锁定正确 |
-| 写类型 | SPP 字节流 | `WITH_RESPONSE`（已修） | HS 命令写确认可靠 |
+| 写类型 | SPP 字节流 | `WITHOUT_RESPONSE`（最终） | 响应帧驱动完成（§9） |
 
 ---
 
@@ -192,7 +193,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 
 ### 6.6 Biz HS 命令通道写类型
 
-- `HsBleSettings.WRITE_TYPE`：`WITHOUT_RESPONSE → WITH_RESPONSE`（仅作用于命令特征 `820104`，音频只订阅不受影响）。
+- `HsBleSettings.WRITE_TYPE`：**保持 `WITHOUT_RESPONSE`**（§6.6 原写「改 WITH_RESPONSE」已作废，真机否定）；真修复在 `CommandScheduler`（§8/§9）。
 
 ### 6.7 APP 命令状态三态贯通（发送 / 处理中 / 成功 / 失败）
 
@@ -225,7 +226,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 
 - `biz_ggec_hs:testDebugUnitTest`：**190 tests / 0 failures / 0 errors / 0 skipped**（真机修正后新增 `matchingResponseCompletesEvenWhenWriteNeverReportsCompletion`）。
 - `biz_ggec_wy:testDebugUnitTest`：**34 tests / 0 failures**。
-- `app:testDebugUnitTest`：**624 tests / 0 failures**（Toggle/Level 三态 + onStarted + 网关 `writeWithProgress` 转发用例）。
+- `app:testDebugUnitTest`：**627 tests / 0 failures**（Toggle/Level 三态 + onStarted + 网关 `writeWithProgress` 转发 + 在途去重用例）。
 - `:app:assembleDebug`：**BUILD SUCCESSFUL**（全量打包通过）。
 - 结构门禁 `checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`checkLibBluetoothBoundary`、app 侧 `check*` 全部通过（期间修正两处：命令 TX 日志从 `provider/lib_bluetooth`（禁止依赖协议）上移到 `HsProtocolEngine`；`DeviceGateway` 补 `writeWithProgress` 转发，否则生产链路 `PROCESSING` 态不可达——已补 2 条网关单测）。
 - 变更点 `grep TODO/FIXME/XXX/暂不` → 0。
@@ -259,7 +260,7 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 - `CommandScheduler.onResponseCandidate`：`!writeCompleted` 时以匹配响应帧驱动完成（新增单测 `matchingResponseCompletesEvenWhenWriteNeverReportsCompletion`）。
 - `HsBleSettings.WRITE_TYPE`：回退 `WITHOUT_RESPONSE`（真机结论，见 8.1-3）。
 - 说明：§3.4 中「A：改 WITH_RESPONSE」被真机推翻并回退；§6.6 以本节为准。B（`HsStreamStartGate` 多源结算）保留为冗余保护（对无 99ECD5 回执的固件仍有效）。
-- 全量门禁（真机修正后）：`biz_ggec_hs 190 / biz_ggec_wy 34 / app 624` 单测全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
+- 全量门禁（真机修正 + 复审修复后）：`biz_ggec_hs 190 / biz_ggec_wy 34 / app 627` 单测全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
 
 ### 8.4 证据留存（`.scratch/device/hs02-test/`）
 
@@ -274,6 +275,40 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 - 佩戴设置独立页：`WearSettingsViewModel` 增加 `pendingTarget`——点击即先切换、成功后保持目标值、失败/断连回退设备上报值（此前该页只镜像设备上报，未做乐观/保持）。
 - 真机复验：`佩戴检测` 开关点击后 `check=true`（t+1s、t+4s 持续保持 ON），命令 `完成: code=0 佩戴检测开启成功`（截图 `12_wear_on`）。
 
-> 说明：这是"呈现策略"清理，不改变命令成功率；若设备实际未持久化该设置（其状态上报仍为关），下次进入页面会如实显示设备状态。`app` 单测 626 全绿、`:app:assembleDebug` 通过。
+> 说明：这是"呈现策略"清理，不改变命令成功率；若设备实际未持久化该设置（其状态上报仍为关），下次进入页面会如实显示设备状态。`app` 单测 627 全绿、`:app:assembleDebug` 通过。
+
+---
+
+## 9. 全量复审（第二轮）结论与修复清单
+
+> 方式：3 个独立只读复审子代理（biz_ggec_hs / app / wy+docs 跨模块）+ lead 自查关键路径 + 全量门禁 + HS02 真机复验。
+> 结论：**无 P0**；核心方向正确（真机验证随录随传/功能设置在 HS02 上均返回 `code=0` 成功）。复审发现的实质问题已按下表修复。
+
+### 9.1 已修复
+
+| 模块 | 问题 | 修复 |
+|---|---|---|
+| biz_ggec_hs | 音频切片逐片十六进制日志刷屏（≈50 片/s） | `HsStreamRecordSession` 音频数据日志限流：前 3 片 + 每约 1s 采样；控制包/关键事件逐条 |
+| biz_ggec_hs | 快速路径回放循环未判终态 → 完成回调异步导致 `COMPLETED` 被回退成 `RECEIVING` | 回放循环加 `command.getCompletion()!=null` 守卫；`processFrame` 入口终态直接返回 |
+| biz_ggec_hs | 快速路径未置 `writeStarted` → 迟到帧隔离不登记 | 快速路径同时置 `node.writeStarted=true`；捕获局部 attemptId |
+| biz_ggec_hs | 真实写完成回调迟到会二次 `setState(SENT)`/重置超时 | `onWriteCompleted` 加 `if(node.writeCompleted) return;`（幂等） |
+| biz_ggec_hs | 多命令 `perform` 聚合不向上转发 `onStarted` | `HsSessionImpl.submit(List)` 聚合器首个 `onStarted` 转发一次 |
+| app | 结果守卫按「值相等」判定，同值旧回调可能误确认/误回退 | 引入每次写入单调 `seq` token，`onStarted/onWriteResult` 按 seq 认领（非值相等） |
+| app | `write()` 缺「同能力在途」守卫，重绘前双击/重复触发可并发下发 | `write()` 同能力已 `inFlight` 直接忽略；补单测 `duplicateWriteWhileInFlightIsIgnored` |
+| app | `WearSettingsViewModel` 状态字段跨蓝牙线程/主线程无锁 | 加 `lock` 统一读写；失败/断连清空；外部事件锁外投递 |
+| app | `DeviceSettingsViewModel` 持锁调用 `events.postValue` | 移出锁，锁内只算结果 |
+| app | `LevelPresentation` 用黑名单判 targetWins（与 Toggle 白名单不一致） | 统一为 `inFlight() || CONFIRMED` 白名单 |
+| docs | 前部仍把 `WITH_RESPONSE` 当已修、`IN_FLIGHT` 旧基线当现状、计数不一致 | 顶部加勘误、就地标注作废、计数统一（190/34/627）；本 §9 |
+
+### 9.2 复审记录、按设计取舍（未改，理由）
+
+- **成功后保持 pending（P1-1）**：用户明确要求「命令成功后开关显示其目标值」（§8.5 真机复验）。HS02 状态上报滞后/不回读时，如立即回采会"显示关闭"与需求相反。故成功后保持目标值；若设备实际未持久化，离开重进页面会如实反映设备状态。属**产品取舍**，非遗漏。
+- **快速路径 P1-2（回环帧误完成）**：HS02 请求/成功响应同形，首枚入站同族帧即设备应答；未观察到固件回环。已在 §8.1 记录；如需更严可在策略层声明"纯 Notify 应答通道"再启用快速路径。当前真机验证通过。
+- **`HsDeviceRecordSyncSession` 已出流即接受 / 无总体超时（P2-4）、0x8005 收尾在 BLE 回调线程（P2-5）**：文件同步为次要功能，且"已出流"确经命令触发；风险低，记录为已知边界，后续按需加固。
+
+### 9.3 最终验证
+
+- 单测/门禁：`biz_ggec_hs 190 / biz_ggec_wy 34 / app 627` 全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
+- HS02 真机（复审修复版）：佩戴检测开关 `check=true` 且 `完成 code=0`；随录随传 开始 `code=0`、停止 `code=0` 并落盘（示例 674 帧 / 13.48s）。
 
 
