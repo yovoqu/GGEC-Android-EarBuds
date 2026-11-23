@@ -3,6 +3,7 @@ package com.yovo.yotheme.background.shapeblurbiew.internal;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.os.Build;
+import android.util.Log;
 
 import com.yovo.yotheme.background.shapeblurbiew.impl.AndroidStockBlurImpl;
 import com.yovo.yotheme.background.shapeblurbiew.impl.AndroidXBlurImpl;
@@ -89,7 +90,9 @@ public class BlurEngine {
         try {
             Class.forName(className);
             return true;
-        } catch (Throwable e) {
+        } catch (Throwable blurFailure) {
+            // 设备不支持模糊（含 UnsatisfiedLinkError）时降级返回 false，但记录以便排查
+            Log.w("BlurEngine", "blur unavailable, degrade", blurFailure);
             return false;
         }
     }
@@ -101,7 +104,9 @@ public class BlurEngine {
             impl.release();
             testBitmap.recycle();
             return success;
-        } catch (Throwable e) {
+        } catch (Throwable blurFailure) {
+            // 设备不支持模糊（含 UnsatisfiedLinkError）时降级返回 false，但记录以便排查
+            Log.w("BlurEngine", "blur unavailable, degrade", blurFailure);
             return false;
         }
     }

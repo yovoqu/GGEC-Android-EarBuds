@@ -200,7 +200,7 @@ public final class SystemBarUtils {
             if (outValue.resourceId != 0) {
                 try {
                     return context.getResources().getBoolean(outValue.resourceId);
-                } catch (Resources.NotFoundException ignored) {
+                } catch (Resources.NotFoundException notFound) {
                     return true;
                 }
             }

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -551,8 +552,9 @@ public class YoModalPanel extends Dialog implements YoModalPanelInterface.YoModa
             
             super.dismiss();
             notifyLifecycleListener(l -> l.onPanelDestroyed());
-        } catch (Exception e) {
-            // 忽略异常
+        } catch (RuntimeException dismissFailure) {
+            // 释放过程中的异常不影响后续状态复位，但记录（不静默吞）
+            Log.w("YoModalPanel", "dismiss failed", dismissFailure);
         } finally {
             isInternalDismiss = false;
         }
@@ -840,8 +842,9 @@ public class YoModalPanel extends Dialog implements YoModalPanelInterface.YoModa
         if (interactionListener != null) {
             try {
                 notifier.notify(interactionListener);
-            } catch (Exception e) {
-                // 忽略监听器异常
+            } catch (RuntimeException listenerFailure) {
+                // 单个监听器异常不阻断其余监听器，但记录（不静默吞）
+                Log.w("YoModalPanel", "panel listener failed", listenerFailure);
             }
         }
     }
@@ -853,8 +856,9 @@ public class YoModalPanel extends Dialog implements YoModalPanelInterface.YoModa
         if (lifecycleListener != null) {
             try {
                 notifier.notify(lifecycleListener);
-            } catch (Exception e) {
-                // 忽略监听器异常
+            } catch (RuntimeException listenerFailure) {
+                // 单个监听器异常不阻断其余监听器，但记录（不静默吞）
+                Log.w("YoModalPanel", "panel listener failed", listenerFailure);
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.yovo.yotheme.components.yo_list.list_structure;
 
+import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,7 +59,10 @@ public class ListItemStateManager {
         for (OnStateChangeListener l : listeners) {
             try {
                 l.onStateChanged(getCurrentState());
-            } catch (Exception ignored) { }
+            } catch (RuntimeException listenerFailure) {
+                // 单个监听器异常不阻断其余监听器，但要可见（不静默吞）
+                Log.w("ListItemStateManager", "state change listener failed", listenerFailure);
+            }
         }
     }
 }

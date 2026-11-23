@@ -8,7 +8,6 @@ package com.yovo.yotheme.color;
  * @note 此类为 yotheme 模块的内部API，模块外请使用公开门面 {@link YoTheme}。
  * 
  */
-@Deprecated
 public final class ColorMapper {
 
     private static volatile int brandOverride = -1;

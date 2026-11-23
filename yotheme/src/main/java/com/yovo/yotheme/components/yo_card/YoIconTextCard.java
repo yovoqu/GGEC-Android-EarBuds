@@ -11,6 +11,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -267,8 +268,8 @@ public class YoIconTextCard extends FrameLayout {
             Bitmap bitmap = BitmapFactory.decodeStream(is);
             setIconBitmap(bitmap);
         } catch (IOException e) {
-            // 不中断调用链，保留空白图标
-            e.printStackTrace();
+            // 不中断调用链，保留空白图标；记录以便定位资源问题（不吞异常）
+            Log.w("YoIconTextCard", "icon asset decode failed: " + assetPath, e);
         }
     }
 

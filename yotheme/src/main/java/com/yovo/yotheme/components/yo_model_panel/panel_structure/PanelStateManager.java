@@ -1,5 +1,7 @@
 package com.yovo.yotheme.components.yo_model_panel.panel_structure;
 
+import android.util.Log;
+
 import com.yovo.yotheme.components.yo_model_panel.YoModalPanelInterface;
 
 import java.util.ArrayList;
@@ -194,8 +196,9 @@ public class PanelStateManager {
         for (YoModalPanelInterface.OnPanelStateChangeListener listener : stateListeners) {
             try {
                 listener.onStateChanged(oldState, newState);
-            } catch (Exception e) {
-                // 忽略监听器异常，避免影响其他监听器
+            } catch (RuntimeException listenerFailure) {
+                // 单个监听器异常不阻断其余监听器，但记录（不静默吞）
+                Log.w("PanelStateManager", "panel state listener failed", listenerFailure);
             }
         }
     }

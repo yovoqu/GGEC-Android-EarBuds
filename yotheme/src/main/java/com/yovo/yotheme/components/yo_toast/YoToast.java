@@ -5,6 +5,7 @@ import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.Window;
 
 import androidx.annotation.NonNull;
@@ -95,8 +96,9 @@ public final class YoToast extends Dialog {
             toast.show();
             current = toast;
             MAIN_HANDLER.postDelayed(toast.autoDismiss, Math.max(0, durationMs));
-        } catch (Exception ignored) {
-            // Activity 已销毁等异常场景，静默忽略，避免崩溃
+        } catch (RuntimeException windowFailure) {
+            // Activity 已销毁等异常场景：不崩溃，但记录以便定位（不静默吞）
+            Log.w("YoToast", "toast display skipped", windowFailure);
         }
     }
 
@@ -111,8 +113,9 @@ public final class YoToast extends Dialog {
         MAIN_HANDLER.removeCallbacks(autoDismiss);
         try {
             super.dismiss();
-        } catch (Exception ignored) {
-            // 窗口已分离等场景，忽略
+        } catch (RuntimeException windowFailure) {
+            // 窗口已分离等场景：忽略释放异常，但记录（不静默吞）
+            Log.w("YoToast", "toast dismiss skipped", windowFailure);
         }
         if (current == this) {
             current = null;

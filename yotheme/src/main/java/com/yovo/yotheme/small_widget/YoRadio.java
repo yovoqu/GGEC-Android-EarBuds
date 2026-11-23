@@ -269,14 +269,6 @@ public class YoRadio extends View {
         return checked;
     }
 
-    /**
-     * @deprecated 单选语义不应「点一下取消」。请使用 {@link #setChecked(boolean)} 或点击选中。
-     */
-    @Deprecated
-    public void toggle() {
-        setChecked(!checked);
-    }
-
     public void setOnCheckedChangeListener(@Nullable OnCheckedChangeListener listener) {
         this.listener = listener;
     }

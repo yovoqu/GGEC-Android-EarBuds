@@ -1,5 +1,7 @@
 package com.yovo.yotheme.components.yo_navigation.nav_structure;
 
+import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -434,8 +436,9 @@ public class NavigationStateManager {
         for (OnStateChangeListener listener : stateChangeListeners) {
             try {
                 listener.onStateChanged(new NavigationState(currentState));
-            } catch (Exception e) {
-                // 忽略监听器异常，确保其他监听器能正常执行
+            } catch (RuntimeException listenerFailure) {
+                // 单个监听器异常不阻断其余监听器，但记录（不静默吞）
+                Log.w("NavigationStateManager", "nav state listener failed", listenerFailure);
             }
         }
     }
