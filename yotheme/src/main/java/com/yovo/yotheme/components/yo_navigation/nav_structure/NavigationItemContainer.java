@@ -443,19 +443,6 @@ public class NavigationItemContainer extends LinearLayout {
     }
 
     /**
-     * 更新徽章位置
-     */
-    private void updateBadgePosition() {
-        if (iconComponent != null && badgeComponent != null) {
-            int offsetX = dpToPx(NavigationConstants.BADGE_OFFSET_X_DP.getIntValue());
-            int offsetY = dpToPx(NavigationConstants.BADGE_OFFSET_Y_DP.getIntValue());
-
-            badgeComponent.setTranslationX(iconComponent.getRight() + offsetX);
-            badgeComponent.setTranslationY(iconComponent.getTop() + offsetY);
-        }
-    }
-
-    /**
      * dp转px工具方法
      */
     private int dpToPx(float dp) {

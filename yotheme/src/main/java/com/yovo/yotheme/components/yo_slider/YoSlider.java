@@ -8,7 +8,6 @@ import android.graphics.RectF;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
-import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -560,16 +559,6 @@ public class YoSlider extends View {
         });
     }
     
-    /**
-     * dp转px工具方法
-     */
-    private int dpToPx(float dp) {
-        return (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP,
-                dp,
-                getContext().getResources().getDisplayMetrics()
-        );
-    }
     
     @Override
     public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {

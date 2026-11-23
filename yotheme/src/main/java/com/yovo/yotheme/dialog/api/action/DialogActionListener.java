@@ -1,6 +1,5 @@
 package com.yovo.yotheme.dialog.api.action;
 
-import androidx.annotation.NonNull;
 
 /**
  * @author tingfeng.yang

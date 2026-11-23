@@ -6,7 +6,6 @@ import android.graphics.Paint;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.TypedValue;
-import android.view.View;
 import android.view.ViewGroup;
 
 import com.yovo.yotheme.color.ColorMapper;

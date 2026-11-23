@@ -27,7 +27,6 @@ import androidx.annotation.StringRes;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 
-import com.yovo.yotheme.R;
 import com.yovo.yotheme.background.shapeblurbiew.YoBlurBackgroundView;
 import com.yovo.yotheme.color.ColorMapper;
 import com.yovo.yotheme.color.YoThemeColor;

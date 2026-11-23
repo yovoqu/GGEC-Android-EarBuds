@@ -255,10 +255,6 @@ public class ListItemContainer extends LinearLayout {
         }
     }
 
-    private void addGap(int gapDp) {
-        addView(createGap(gapDp, false));
-    }
-
     private View createGap(int gapDp, boolean vertical) {
         View spacer = new View(getContext());
         LayoutParams lp = vertical

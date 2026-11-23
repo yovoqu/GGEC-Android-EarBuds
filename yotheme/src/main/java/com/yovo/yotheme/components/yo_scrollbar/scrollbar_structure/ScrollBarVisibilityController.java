@@ -5,7 +5,6 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
-import com.yovo.yotheme.constants.ScrollBarConstants;
 
 /**
  * 按 {@link BarState} 管理滚动条可见性（Auto / On / Off）。

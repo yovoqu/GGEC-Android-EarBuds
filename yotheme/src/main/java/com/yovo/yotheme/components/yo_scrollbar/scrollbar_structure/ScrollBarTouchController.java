@@ -5,7 +5,6 @@ import androidx.annotation.NonNull;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewParent;
-import android.widget.ScrollView;
 
 import com.yovo.yotheme.constants.ScrollBarConstants;
 

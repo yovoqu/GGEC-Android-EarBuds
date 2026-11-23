@@ -2,7 +2,6 @@ package com.yovo.yotheme.components.yo_menu;
 
 import android.content.Context;
 
-import com.yovo.yotheme.constants.MenuConstants;
 
 import java.util.ArrayList;
 import java.util.List;

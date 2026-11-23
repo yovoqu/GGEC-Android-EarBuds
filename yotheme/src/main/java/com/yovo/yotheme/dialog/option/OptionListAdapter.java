@@ -5,7 +5,6 @@ import com.yovo.yotheme.dialog.api.option.OptionSelectionMode;
 import com.yovo.yotheme.dialog.api.option.OptionItemSpec;
 
 import android.content.Context;
-import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;

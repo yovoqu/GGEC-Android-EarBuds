@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewTreeObserver;
-import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;

@@ -2,7 +2,6 @@ package com.yovo.yotheme.components.yo_slider.slider_structure;
 
 import android.graphics.RectF;
 
-import com.yovo.yotheme.constants.SliderConstants;
 
 /**
  * @author tingfeng.yang

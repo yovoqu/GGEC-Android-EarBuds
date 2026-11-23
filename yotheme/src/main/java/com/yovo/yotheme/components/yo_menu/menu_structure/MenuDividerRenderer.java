@@ -3,7 +3,6 @@ package com.yovo.yotheme.components.yo_menu.menu_structure;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.view.View;
 import android.view.ViewGroup;
 
 import com.yovo.yotheme.color.ColorMapper;

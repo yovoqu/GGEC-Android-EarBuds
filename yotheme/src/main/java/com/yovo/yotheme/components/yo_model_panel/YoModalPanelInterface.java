@@ -1,7 +1,6 @@
 package com.yovo.yotheme.components.yo_model_panel;
 
 import android.view.View;
-import android.graphics.drawable.Drawable;
 
 import com.yovo.yotheme.constants.ModalPanelConstants;
 
