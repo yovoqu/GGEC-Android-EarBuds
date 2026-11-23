@@ -215,6 +215,17 @@ public final class DeviceSettingsViewModelTest {
     }
 
     @Test
+    public void duplicateWriteWhileInFlightIsIgnored() {
+        viewModel.onToggle("ANC", true);
+        // 同一能力已在途：重复点击/程序化重复调用应被忽略，不产生第二次下发。
+        viewModel.onToggle("ANC", false);
+
+        assertEquals("在途期间重复写入必须被忽略", List.of("ANC"), port.writes);
+        assertSame(DeviceSettingsUiState.WriteState.SENDING,
+                currentState().writeOf("ANC").state());
+    }
+
+    @Test
     public void failedWriteDropsTheUnconfirmedValueAndReportsTheFailure() {
         List<DeviceSettingsEvent> events = new ArrayList<>();
         viewModel.events().observeForever(events::add);

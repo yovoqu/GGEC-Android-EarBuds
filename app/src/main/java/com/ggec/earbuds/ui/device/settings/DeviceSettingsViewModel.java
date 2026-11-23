@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 设置页状态机：订阅快照、从能力目录取描述、把界面的类型化意图交给用例。
@@ -60,6 +61,13 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
 
     /** 本次连接内的写入槽，按能力 id 索引。 */
     private final Map<String, DeviceSettingsUiState.WriteSlot> writes = new LinkedHashMap<>();
+    /**
+     * 单调写入序号：每次 {@link #write} 生成一次，随 onStarted/onWriteResult 闭包传递，
+     * 用于把回调精确归属到“这一次写入”，避免同一能力同值的旧回调误确认/误回退新写入。
+     */
+    private final AtomicLong writeSeq = new AtomicLong();
+    /** 每个能力当前在途写入的序号（键存在且在途才认领回调）。 */
+    private final Map<String, Long> activeSeq = new LinkedHashMap<>();
 
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private Subscription subscription;
@@ -113,27 +121,36 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         if (!isWritable()) {
             return;
         }
-        // 点击即先切换：立即落 SENDING 并带本次目标值，视图据此先翻到目标位置并禁用重复点击。
-        putWrite(capabilityId,
-                new DeviceSettingsUiState.WriteSlot(
-                        DeviceSettingsUiState.WriteState.SENDING, Optional.of(value)));
+        final long seq;
+        synchronized (this) {
+            DeviceSettingsUiState.WriteSlot existing = writes.get(capabilityId);
+            if (existing != null && existing.state().inFlight()) {
+                // 同一能力已有一次写入在途：忽略重复下发（重绘前双击/无障碍重复触发/程序化重复调用）。
+                return;
+            }
+            seq = writeSeq.incrementAndGet();
+            activeSeq.put(capabilityId, seq);
+            // 点击即先切换：立即落 SENDING 并带本次目标值，视图据此先翻到目标位置并禁用重复点击。
+            writes.put(capabilityId, new DeviceSettingsUiState.WriteSlot(
+                    DeviceSettingsUiState.WriteState.SENDING, Optional.of(value)));
+        }
         publish();
         writeControl.execute(capabilityId, value,
-                () -> onWriteStarted(capabilityId, value),
-                result -> onWriteResult(capabilityId, value, result));
+                () -> onWriteStarted(capabilityId, value, seq),
+                result -> onWriteResult(capabilityId, value, seq, result));
     }
 
     /**
      * 链路写完成 / 设备已受理：SENDING → PROCESSING（仍在途，仍禁用点击）。
-     * 只有当前槽仍是「本次值 + SENDING」时才推进，避免旧写入的迟到信号覆盖新写入或终态。
+     * 只认领“本次写入序号且槽仍为 SENDING”的信号，避免旧写入/同值迟到信号覆盖新写入或终态。
      */
-    private void onWriteStarted(@NonNull String capabilityId, @NonNull ControlValue value) {
+    private void onWriteStarted(@NonNull String capabilityId, @NonNull ControlValue value, long seq) {
         synchronized (this) {
+            if (!isActiveSeq(capabilityId, seq)) {
+                return;
+            }
             DeviceSettingsUiState.WriteSlot slot = writes.get(capabilityId);
-            boolean stillSending = slot != null
-                    && slot.state() == DeviceSettingsUiState.WriteState.SENDING
-                    && slot.pendingValue().filter(v -> v.equals(value)).isPresent();
-            if (!stillSending) {
+            if (slot == null || slot.state() != DeviceSettingsUiState.WriteState.SENDING) {
                 return;
             }
             writes.put(capabilityId, new DeviceSettingsUiState.WriteSlot(
@@ -320,19 +337,21 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
     /**
      * 写入落地：成功保留本次值（设备不回读时界面仍有确定呈现），失败丢弃本次值。
      *
-     * <p>守卫：只有当前槽仍属于「本次 value 且在途（SENDING/PROCESSING）」时才落终态，
-     * 迟到结果、掉线清空后的旧结果、已被新写入替换的旧结果一律丢弃，避免污染当前槽。</p>
+     * <p>守卫：只认领“本次写入序号 且 槽仍在途（SENDING/PROCESSING）”的结果，迟到/乱序、
+     * 掉线清空、被新写入替换的旧结果一律丢弃（同值旧回调也不会被误认领）。外部事件在锁外投递。</p>
      */
     private void onWriteResult(@NonNull String capabilityId, @NonNull ControlValue value,
-                               @NonNull DeviceWriteResult result) {
+                               long seq, @NonNull DeviceWriteResult result) {
+        DeviceFailure failureToPost = null;
         synchronized (this) {
-            DeviceSettingsUiState.WriteSlot current = writes.get(capabilityId);
-            boolean stillPending = current != null
-                    && current.state().inFlight()
-                    && current.pendingValue().filter(v -> v.equals(value)).isPresent();
-            if (!stillPending) {
+            if (!isActiveSeq(capabilityId, seq)) {
                 return;
             }
+            DeviceSettingsUiState.WriteSlot current = writes.get(capabilityId);
+            if (current == null || !current.state().inFlight()) {
+                return;
+            }
+            activeSeq.remove(capabilityId);
             DeviceSettingsUiState.WriteSlot slot = switch (result) {
                 case DeviceWriteResult.Ok ignored -> new DeviceSettingsUiState.WriteSlot(
                         DeviceSettingsUiState.WriteState.CONFIRMED, Optional.of(value));
@@ -341,8 +360,11 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
             };
             writes.put(capabilityId, slot);
             if (result instanceof DeviceWriteResult.Failed failed) {
-                events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
+                failureToPost = failed.failure();
             }
+        }
+        if (failureToPost != null) {
+            events.postValue(new DeviceSettingsEvent.Failure(failureToPost));
         }
         publish();
     }
@@ -356,9 +378,10 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         }
     }
 
-    private synchronized void putWrite(@NonNull String capabilityId,
-                                       @NonNull DeviceSettingsUiState.WriteSlot slot) {
-        writes.put(capabilityId, slot);
+    /** 该能力的当前在途写入是否就是 seq 这一次。 */
+    private boolean isActiveSeq(@NonNull String capabilityId, long seq) {
+        Long active = activeSeq.get(capabilityId);
+        return active != null && active == seq;
     }
 
     private synchronized Map<String, DeviceSettingsUiState.WriteSlot> currentWrites() {
@@ -375,6 +398,7 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
             if (next.connection() != ConnectionState.READY) {
                 // 写入事实属于当前连接：连接不在就绪态时，旧槽不得在新设备上复活。
                 writes.clear();
+                activeSeq.clear();
             }
         }
         publish();

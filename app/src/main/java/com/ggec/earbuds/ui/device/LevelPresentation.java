@@ -35,8 +35,8 @@ public record LevelPresentation(boolean unknown, int value, boolean enabled,
         Objects.requireNonNull(reported, "reported");
         Objects.requireNonNull(pending, "pending");
         boolean targetWins = pending.isPresent()
-                && writeState != DeviceSettingsUiState.WriteState.FAILED
-                && writeState != DeviceSettingsUiState.WriteState.IDLE;
+                && (writeState.inFlight()
+                || writeState == DeviceSettingsUiState.WriteState.CONFIRMED);
         OptionalInt position = targetWins
                 ? pending
                 : (reported.isPresent() ? reported : pending);

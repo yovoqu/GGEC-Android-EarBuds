@@ -32,6 +32,8 @@ public final class WearSettingsViewModel extends ViewModel {
             new MutableLiveData<>(WearSettingsUiState.idle());
     private final OneShotLiveData<DeviceFailure> failures = new OneShotLiveData<>();
 
+    /** 端口快照回调在蓝牙线程到达，而 toggle/写结果在主线程：状态字段一律在本锁内读写。 */
+    private final Object lock = new Object();
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private Subscription subscription;
     private boolean inFlight;
@@ -61,13 +63,17 @@ public final class WearSettingsViewModel extends ViewModel {
         if (subscription != null) {
             return;
         }
-        snapshot = observeDevice.current();
+        synchronized (lock) {
+            snapshot = observeDevice.current();
+        }
         subscription = observeDevice.execute(next -> {
-            snapshot = next;
-            if (next.connection() != ConnectionState.READY) {
-                // 连接不在就绪态：丢弃未确认目标，避免把上一台设备的意图带到新会话。
-                pendingTarget = Optional.empty();
-                inFlight = false;
+            synchronized (lock) {
+                snapshot = next;
+                if (next.connection() != ConnectionState.READY) {
+                    // 连接不在就绪态：丢弃未确认目标，避免把上一台设备的意图带到新会话。
+                    pendingTarget = Optional.empty();
+                    inFlight = false;
+                }
             }
             publish();
         });
@@ -75,34 +81,46 @@ public final class WearSettingsViewModel extends ViewModel {
     }
 
     public void toggle(boolean enabled) {
-        if (snapshot.connection() != ConnectionState.READY || inFlight) {
-            return;
+        synchronized (lock) {
+            if (snapshot.connection() != ConnectionState.READY || inFlight) {
+                return;
+            }
+            inFlight = true;
+            // 点击即先切换：先呈现目标值，禁用重复点击。
+            pendingTarget = Optional.of(enabled);
         }
-        inFlight = true;
-        // 点击即先切换：先呈现目标值，禁用重复点击。
-        pendingTarget = Optional.of(enabled);
         publish();
         writeControl.execute(DeviceCapabilityIds.WEAR_DETECT, new ControlValue.Toggle(enabled),
                 result -> {
-                    inFlight = false;
-                    if (result instanceof DeviceWriteResult.Failed failed) {
-                        // 失败回退到设备上报值。
-                        pendingTarget = Optional.empty();
-                        failures.postValue(failed.failure());
+                    DeviceFailure failureToPost = null;
+                    synchronized (lock) {
+                        inFlight = false;
+                        if (result instanceof DeviceWriteResult.Failed failed) {
+                            // 失败回退到设备上报值。
+                            pendingTarget = Optional.empty();
+                            failureToPost = failed.failure();
+                        }
+                        // 成功：保留 pendingTarget，开关保持用户目标值（设备上报可能滞后/不回读）。
                     }
-                    // 成功：保留 pendingTarget，开关保持用户目标值（设备上报可能滞后/不回读）。
+                    if (failureToPost != null) {
+                        failures.postValue(failureToPost);
+                    }
                     publish();
                 });
     }
 
     private void publish() {
-        boolean ready = snapshot.connection() == ConnectionState.READY;
-        boolean reported = snapshot.state().value(DeviceCapabilityIds.WEAR_DETECT)
-                .flatMap(WearSettingsViewModel::toggleValue)
-                .orElse(false);
-        // 写入中/成功后以用户目标值为准；否则以设备上报值为准。
-        boolean checked = pendingTarget.orElse(reported);
-        state.postValue(new WearSettingsUiState(ready, checked, ready && !inFlight));
+        WearSettingsUiState next;
+        synchronized (lock) {
+            boolean ready = snapshot.connection() == ConnectionState.READY;
+            boolean reported = snapshot.state().value(DeviceCapabilityIds.WEAR_DETECT)
+                    .flatMap(WearSettingsViewModel::toggleValue)
+                    .orElse(false);
+            // 写入中/成功后以用户目标值为准；否则以设备上报值为准。
+            boolean checked = pendingTarget.orElse(reported);
+            next = new WearSettingsUiState(ready, checked, ready && !inFlight);
+        }
+        state.postValue(next);
     }
 
     @NonNull

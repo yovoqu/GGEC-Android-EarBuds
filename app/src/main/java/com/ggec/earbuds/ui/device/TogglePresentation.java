@@ -19,7 +19,8 @@ import java.util.Optional;
  *   <li>{@link #position()}：开关位置——写入过程中（SENDING/PROCESSING）与成功确认后（CONFIRMED）
  *       优先呈现本次用户目标值（点击即先切换、成功后保持），失败或空闲时设备上报值优先；</li>
  *   <li>{@link #enabled()}：是否可写——连接就绪且没有一次同能力的写入正在进行（SENDING/PROCESSING 时禁用）；</li>
- *   <li>{@link #writeState()}：本次写入的落地状态，界面据此显示「写入中 / 已确认 / 失败已回退」。</li>
+ *   <li>{@link #writeState()}：本次写入的落地状态；界面据此派生 {@link #enabled()}/{@link #position()}
+ *       （当前 UI 未单独渲染「写入中/处理中/已确认」文案，SENDING 与 PROCESSING 视觉一致为“禁用+目标值”）。</li>
  * </ul>
  *
  * <p>「未确认」只存在于 {@link DeviceSettingsUiState.WriteSlot}，由 ViewModel 维护；
