@@ -59,7 +59,6 @@ public abstract class Command {
 
     public enum State {
         QUEUED,
-        SENDING,
         SENT,
         RECEIVING,
         COMPLETED,
@@ -71,7 +70,7 @@ public abstract class Command {
     }
 
     /**
-     * 命令状态观察者：状态机每次迁移都会回调（QUEUED/SENDING/SENT/RECEIVING/COMPLETED/FAILED）。
+     * 命令状态观察者：状态机每次迁移都会回调（QUEUED/SENT/RECEIVING/COMPLETED/FAILED）。
      * 供上层做「发送中 → 处理中 → 终态」的阶段映射，不改变命令本身的行为。
      *
      * <p><b>线程契约：</b>回调发生在命令状态迁移所在线程（正常为引擎串行线程；经
