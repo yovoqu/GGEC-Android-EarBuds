@@ -69,6 +69,14 @@ public class ControlCommandV11 extends Command {
         return String.format(COMMAND_FORMAT, position, functionType) + COMMAND_SUFFIX;
     }
 
+    @Override
+    public String semanticKey(String payload) {
+        if (payload != null && payload.length() >= 12) {
+            return getClass().getName() + ":" + payload.substring(10, 12);
+        }
+        return getClass().getName();
+    }
+
     private int calculatePosition() {
         if (tapType == TAP_TRIPLE) {
             return 3;

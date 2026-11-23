@@ -87,6 +87,16 @@ public class GetRecordIdListCommand extends Command {
     }
 
     @Override
+    public String semanticKey(String payload) {
+        return getClass().getName() + ":" + payload;
+    }
+
+    @Override
+    public DeviceEventKind deviceEventKind() {
+        return DeviceEventKind.RECORD_FILE_LIST;
+    }
+
+    @Override
     public boolean isResponseMatch(String responseData) {
         return responseData != null && responseData.startsWith(COMMAND_PREFIX);
     }

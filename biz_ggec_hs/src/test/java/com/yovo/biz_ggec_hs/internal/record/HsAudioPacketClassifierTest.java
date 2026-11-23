@@ -49,7 +49,10 @@ public class HsAudioPacketClassifierTest {
         List<byte[]> frames = assembler.assemble(stopNotify);
 
         assertTrue(frames.isEmpty());
-        assertEquals(0, assembler.pendingBytes());
         assertNull(assembler.getActiveFormat());
+        // 新语义：装配器把任意长度输入都当“字节流”缓存，短控制包不丢弃、也不产生帧；
+        // 真实 HS 流程中控制包会先被 HsAudioPacketClassifier 过滤，不会走到这里。
+        // 这里只断言“不被误判成音频帧/格式”，缓存字节数等于输入长度即可。
+        assertEquals(stopNotify.length, assembler.pendingBytes());
     }
 }

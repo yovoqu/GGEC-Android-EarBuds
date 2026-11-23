@@ -21,7 +21,7 @@ import com.yovo.biz_ggec_hs.internal.interact.HsSnapshotAssembler;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.DeviceDomainStore;
 
 import java.util.List;

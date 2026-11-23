@@ -11,11 +11,8 @@ import com.yovo.biz_ggec_hs.api.SyncProgressListener;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
-import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.GetRecordIdListCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.DeleteRecordFileCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StartLocalRecordCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StopLocalRecordCommand;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.command.HsCommandFactory;
 import com.yovo.biz_ggec_hs.internal.link.HsFailureMapper;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
@@ -82,20 +79,20 @@ public final class HsRecordManager implements HsRecordApi {
 
     @Override
     public void startDeviceRecord(@NonNull HsControl.Callback callback) {
-        engine.submit(new StartLocalRecordCommand(), (cmd, completion) ->
+        engine.submit(HsCommandFactory.startLocalRecord(), (cmd, completion) ->
                 callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 
     @Override
     public void stopDeviceRecord(@NonNull HsControl.Callback callback) {
-        engine.submit(new StopLocalRecordCommand(), (cmd, completion) ->
+        engine.submit(HsCommandFactory.stopLocalRecord(), (cmd, completion) ->
                 callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 
     @Override
     public void refreshDeviceRecords(@NonNull HsControl.Callback callback) {
         // 请求获取第 0 页，最多 12 个文件
-        engine.submit(new GetRecordIdListCommand(0, 12), (cmd, completion) -> {
+        engine.submit(HsCommandFactory.getRecordIdList(0, 12), (cmd, completion) -> {
             if (completionSink != null) {
                 completionSink.accept(cmd, completion);
             }
@@ -122,7 +119,7 @@ public final class HsRecordManager implements HsRecordApi {
             callback.onResult(new HsControl.Outcome.Err<>(HsControl.Failure.REJECTED));
             return;
         }
-        engine.submit(new DeleteRecordFileCommand(new int[]{index}), (cmd, completion) ->
+        engine.submit(HsCommandFactory.deleteRecordFile(new int[]{index}), (cmd, completion) ->
                 callback.onResult(HsFailureMapper.writeResult(completion)));
     }
 

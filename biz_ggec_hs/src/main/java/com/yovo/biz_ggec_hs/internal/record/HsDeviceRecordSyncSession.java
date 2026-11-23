@@ -10,9 +10,8 @@ import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.api.SyncProgressListener;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
-import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.CancelTransmitRecordCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.filerecordcmd.StartTransmitRecordCommand;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.command.HsCommandFactory;
 import com.yovo.biz_ggec_hs.internal.link.HsFailureMapper;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.lib_ggec_audio.AudioFrameAssembler;
@@ -110,7 +109,7 @@ public final class HsDeviceRecordSyncSession {
             @Override
             public void onReady() {
                 HsLog.i(TAG, "音频传输 Notify 通道就绪，发送 StartTransmitRecordCommand: " + targetIndex);
-                engine.submit(new StartTransmitRecordCommand(targetIndex), (cmd, completion) -> {
+                engine.submit(HsCommandFactory.startTransmitRecord(targetIndex), (cmd, completion) -> {
                     if (completion.getCode() == Command.ResultCode.SUCCESS) {
                         HsLog.i(TAG, "设备接受传输指令，开始接收数据");
                     } else {
@@ -134,7 +133,7 @@ public final class HsDeviceRecordSyncSession {
             return;
         }
 
-        engine.submit(new CancelTransmitRecordCommand(), (cmd, completion) -> {
+        engine.submit(HsCommandFactory.cancelTransmitRecord(), (cmd, completion) -> {
             cancelInternal("传输已取消");
             callback.onResult(HsFailureMapper.writeResult(completion));
         });

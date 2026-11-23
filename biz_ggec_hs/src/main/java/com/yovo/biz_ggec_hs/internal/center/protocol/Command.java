@@ -29,6 +29,34 @@ public abstract class Command {
         }
     }
 
+    /**
+     * 完成结果落域的种类。默认 {@link #AGGREGATED_HOME_STATUS}：把 OBJECT+Map 结果当首页聚合状态落地。
+     * 少数命令覆写 {@link #resultKind()} 走专属落域，使协议引擎无需 {@code instanceof} 具体命令类。
+     */
+    public enum ResultKind {
+        /** 默认：OBJECT+Map 聚合首页状态（电量/EQ/固件/服务状态等）。 */
+        AGGREGATED_HOME_STATUS,
+        /** 耳机颜色：结果为颜色字节的字符串。 */
+        EAR_COLOR,
+        /** LDAC 开关：结果为整数（非 0 即开启）。 */
+        LDAC_TOGGLE,
+        /** 新手模式开关：成功即设备侧等于本命令的进入/退出值，见 {@link #resultingToggleValue()}。 */
+        BEGINNER_MODE_TOGGLE
+    }
+
+    /**
+     * 命令回包要产出的业务事件种类。默认 {@link #NONE}。只有少数命令会产出事件，
+     * 由命令自声明；上层据此从回包数据构造事件，不再 {@code instanceof} 具体命令类。
+     */
+    public enum DeviceEventKind {
+        /** 不产出事件。 */
+        NONE,
+        /** 双连接页聚合回包 → 双连接态事件。 */
+        DUAL_CONNECTION_PAGE,
+        /** 录音列表回包 → 录音文件列表事件。 */
+        RECORD_FILE_LIST
+    }
+
     public enum State {
         QUEUED,
         SENDING,
@@ -101,7 +129,49 @@ public abstract class Command {
         return HsTraffic.REQUEST_REPLY;
     }
 
+    /**
+     * 完成结果落域的种类。默认按 OBJECT+Map 聚合首页状态；特殊命令覆写以走专属落域。
+     * 引擎据此分发，不再 {@code instanceof} 具体命令类。
+     */
+    public ResultKind resultKind() {
+        return ResultKind.AGGREGATED_HOME_STATUS;
+    }
+
+    /**
+     * 仅 {@link ResultKind#BEGINNER_MODE_TOGGLE} 使用：本命令成功后设备侧的开关值
+     * （新手模式“进入/退出”即设备事实）。其它命令返回 {@code null}。
+     */
+    public Boolean resultingToggleValue() {
+        return null;
+    }
+
+    /**
+     * 命令回包产出的业务事件种类。默认不产出事件；特殊命令覆写以声明其事件种类，
+     * 上层据 {@code DeviceEventKind} 构造事件，避免 {@code instanceof} 具体命令类。
+     */
+    public DeviceEventKind deviceEventKind() {
+        return DeviceEventKind.NONE;
+    }
+
     public abstract String getCommandData();
+
+    /**
+     * 合并/去重语义键。默认=命令类名；需要按参数区分合并槽的命令覆写。
+     *
+     * @param payload 本命令 {@link #getCommandData()} 的输出
+     */
+    public String semanticKey(String payload) {
+        return getClass().getName();
+    }
+
+    /**
+     * 调度目录声明的响应超时；命令可按自身语义上调/下调。默认沿用声明值。
+     *
+     * @param declaredResponseTimeoutMs 调度目录为该命令声明的响应超时
+     */
+    public long responseTimeoutMs(long declaredResponseTimeoutMs) {
+        return declaredResponseTimeoutMs;
+    }
 
     public abstract Response parseResponse(String responseData);
 
@@ -228,27 +298,27 @@ public abstract class Command {
         return completion;
     }
 
-    final boolean tryClaimForScheduling() {
+    public final boolean tryClaimForScheduling() {
         return schedulingClaimed.compareAndSet(false, true);
     }
 
-    final void replayCompletion(CommandCompletion result) {
+    public final void replayCompletion(CommandCompletion result) {
         complete(result);
     }
 
-    final void completeResponse(Response response) {
+    public final void completeResponse(Response response) {
         if (response == null || !response.isComplete()) {
             throw new IllegalArgumentException("命令完成响应不能为空");
         }
         complete(response.getCompletion());
     }
 
-    final void completeSuperseded() {
+    public final void completeSuperseded() {
         complete(CommandCompletion.integerResult(
                 ResultCode.SUCCESS, 0, "已被后续设置覆盖，无需真实下发"));
     }
 
-    final void abort(CommandCompletion result) {
+    public final void abort(CommandCompletion result) {
         try {
             onAborted();
         } catch (RuntimeException e) {

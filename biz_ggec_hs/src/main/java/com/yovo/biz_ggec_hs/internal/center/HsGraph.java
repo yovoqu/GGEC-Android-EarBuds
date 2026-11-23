@@ -7,7 +7,6 @@ import com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter;
 import com.yovo.biz_ggec_hs.internal.scan.HsNearbyImpl;
 import com.yovo.biz_ggec_hs.internal.link.HsConnectionIntake;
 import com.yovo.biz_ggec_hs.internal.link.HsSessionImpl;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.record.HsRecordManager;
 import com.yovo.biz_ggec_hs.internal.record.HsRecordPathResolver;
 import com.yovo.biz_ggec_hs.provider.lib_bluetooth.HsNearbyScanner;
@@ -46,9 +45,11 @@ public final class HsGraph {
         HsProtocolEngine engine = new HsProtocolEngine(link);
         HsCatalogImpl catalog = new HsCatalogImpl();
         HsCapabilityRouter.verify(catalog);
-        HsRecordPathResolver pathResolver = new HsRecordPathResolver(context);
         HsSessionImpl session = new HsSessionImpl(engine, catalog, YoClassicRadio.open(context),
                 new HsConnectionIntake(), audioLink);
+        // 录音文件名带产品型号：绑定当前连接型号（连接前为空 → 命名回落 UNKNOWN）。
+        HsRecordPathResolver pathResolver = new HsRecordPathResolver(context,
+                () -> session.peer().modelId());
         HsRecordManager recordManager = new HsRecordManager(engine, audioLink, pathResolver,
                 new YoOpusCodecProvider(), session::applyCompletion);
         return new HsGraph(

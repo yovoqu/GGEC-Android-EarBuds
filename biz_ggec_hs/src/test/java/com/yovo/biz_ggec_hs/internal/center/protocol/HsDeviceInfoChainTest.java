@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.EarColorCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.HomePageStatusV12FirstCommand;

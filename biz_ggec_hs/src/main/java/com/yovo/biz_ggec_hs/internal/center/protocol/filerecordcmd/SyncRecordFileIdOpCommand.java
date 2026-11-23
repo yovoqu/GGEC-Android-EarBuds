@@ -151,6 +151,26 @@ public class SyncRecordFileIdOpCommand extends Command {
         return command;
     }
 
+    /**
+     * EC D4 同一命令承载删除和导出。删除按录音文件操作等待（5s），导出开始仍用声明超时。
+     */
+    @Override
+    public long responseTimeoutMs(long declaredResponseTimeoutMs) {
+        String payload = getCommandData();
+        if (payload != null && payload.length() >= 12) {
+            int payloadFlags;
+            try {
+                payloadFlags = Integer.parseInt(payload.substring(10, 12), 16);
+            } catch (NumberFormatException e) {
+                return declaredResponseTimeoutMs;
+            }
+            if (payloadFlags == FLAGS_DELETE_LEFT || payloadFlags == FLAGS_DELETE_RIGHT) {
+                return 5_000L;
+            }
+        }
+        return declaredResponseTimeoutMs;
+    }
+
     @Override
     public boolean isResponseMatch(String responseData) {
         return responseData != null && responseData.startsWith(COMMAND_PREFIX);

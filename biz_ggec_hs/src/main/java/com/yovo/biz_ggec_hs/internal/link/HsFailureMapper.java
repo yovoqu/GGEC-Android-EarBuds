@@ -5,7 +5,7 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 
 /**
  * 引擎侧原因与命令完成码到对外失败分类的唯一映射点。

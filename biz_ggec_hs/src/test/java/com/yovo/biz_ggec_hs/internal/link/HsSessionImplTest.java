@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.yovo.biz_ggec_hs.internal.center.port.HsClassicRadio;
 import com.yovo.biz_ggec_hs.internal.center.protocol.FakeHsCommandLink;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.CustomEQRealtimeCommand;
 
 import org.junit.Test;

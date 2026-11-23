@@ -296,22 +296,28 @@ public final class HsCapabilityRouter {
             return Optional.empty();
         }
         Object data = completion.getData();
-        if (command instanceof GetDualConnectionPageCommand
-                && data instanceof ProtocolDual dual) {
-            return Optional.of(new HsControl.Event.DualConnectionChanged(HsModels.dual(dual)));
+        // 事件种类由命令自声明（DeviceEventKind），此处不再 instanceof 具体命令类。
+        return switch (command.deviceEventKind()) {
+            case DUAL_CONNECTION_PAGE -> data instanceof ProtocolDual dual
+                    ? Optional.of(new HsControl.Event.DualConnectionChanged(HsModels.dual(dual)))
+                    : Optional.empty();
+            case RECORD_FILE_LIST -> recordFilesEvent(data);
+            case NONE -> Optional.empty();
+        };
+    }
+
+    private static Optional<HsControl.Event> recordFilesEvent(Object data) {
+        if (!(data instanceof List<?> items)) {
+            return Optional.empty();
         }
-        if (command instanceof GetRecordIdListCommand && data instanceof List<?> items) {
-            List<ProtocolRecording> files = new ArrayList<>(items.size());
-            for (Object item : items) {
-                if (!(item instanceof ProtocolRecording file)) {
-                    throw new IllegalArgumentException(
-                            "录音列表回包混入了非录音文件项: " + item);
-                }
-                files.add(file);
+        List<ProtocolRecording> files = new ArrayList<>(items.size());
+        for (Object item : items) {
+            if (!(item instanceof ProtocolRecording file)) {
+                throw new IllegalArgumentException("录音列表回包混入了非录音文件项: " + item);
             }
-            return Optional.of(new HsControl.Event.RecordFilesChanged(HsModels.recordings(files)));
+            files.add(file);
         }
-        return Optional.empty();
+        return Optional.of(new HsControl.Event.RecordFilesChanged(HsModels.recordings(files)));
     }
 
     /**

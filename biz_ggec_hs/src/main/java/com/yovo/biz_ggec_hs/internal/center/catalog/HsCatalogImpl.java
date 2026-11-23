@@ -352,7 +352,7 @@ public final class HsCatalogImpl {
                     HsDevice.Form.TOGGLE, List.of());
             case VOICE_WAKEUP -> of(capability, "语音唤醒", HsDevice.Group.CONTROL,
                     HsDevice.Form.TOGGLE, List.of());
-            case GAME_MODE -> of(capability, "游戏模式", HsDevice.Group.CONTROL,
+            case GAME_MODE -> of(capability, "游戏模式", HsDevice.Group.FUNCTION,
                     HsDevice.Form.TOGGLE, List.of());
             case FALL_ALERT -> of(capability, "跌落提醒", HsDevice.Group.FUNCTION,
                     HsDevice.Form.TOGGLE, List.of());

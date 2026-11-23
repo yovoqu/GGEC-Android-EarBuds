@@ -97,6 +97,14 @@ public class ControlCommand extends Command {
         return String.format(COMMAND_FORMAT, position, functionType) + COMMAND_SUFFIX;
     }
 
+    @Override
+    public String semanticKey(String payload) {
+        if (payload != null && payload.length() >= 12) {
+            return getClass().getName() + ":" + payload.substring(10, 12);
+        }
+        return getClass().getName();
+    }
+
     private int calculateSendPosition() {
         if (tapType == TAP_TWICE) {
             return earSide == EAR_LEFT ? 0x00 : 0x01;

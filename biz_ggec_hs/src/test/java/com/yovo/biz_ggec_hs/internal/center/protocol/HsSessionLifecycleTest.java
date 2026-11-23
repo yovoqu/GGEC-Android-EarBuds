@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.EQModeCommand;
 

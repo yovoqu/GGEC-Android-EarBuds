@@ -9,7 +9,6 @@ import com.yovo.lib_bluetooth.model.classic.CbtDeviceId;
 import com.yovo.lib_bluetooth.model.classic.CbtErrorCode;
 import com.yovo.lib_bluetooth.model.classic.CbtFailure;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkReadiness;
-import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionObserver;
 

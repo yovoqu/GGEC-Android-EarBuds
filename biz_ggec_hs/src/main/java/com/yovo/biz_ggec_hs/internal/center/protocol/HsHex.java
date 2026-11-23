@@ -3,13 +3,13 @@ package com.yovo.biz_ggec_hs.internal.center.protocol;
 /**
  * 协议帧在命令层使用十六进制文本，过链路时才变成字节。
  */
-final class HsHex {
+public final class HsHex {
     private static final char[] UPPER = "0123456789ABCDEF".toCharArray();
 
     private HsHex() {
     }
 
-    static byte[] decode(String hex) {
+    public static byte[] decode(String hex) {
         if (hex == null || (hex.length() & 1) != 0) {
             throw new IllegalArgumentException("协议帧长度必须是偶数个十六进制字符");
         }
@@ -26,7 +26,7 @@ final class HsHex {
         return out;
     }
 
-    static String encode(byte[] value) {
+    public static String encode(byte[] value) {
         if (value == null || value.length == 0) {
             return "";
         }

@@ -33,6 +33,11 @@ public class LDACQueryCommand extends Command {
     }
 
     @Override
+    public ResultKind resultKind() {
+        return ResultKind.LDAC_TOGGLE;
+    }
+
+    @Override
     public Response parseResponse(String responseData) {
         HsLog.d(TAG, "解析响应数据: " + responseData);
 

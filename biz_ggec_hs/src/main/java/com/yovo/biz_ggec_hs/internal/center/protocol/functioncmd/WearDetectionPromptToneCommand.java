@@ -81,6 +81,16 @@ public class WearDetectionPromptToneCommand extends Command {
         return command;
     }
 
+    // 佩戴检测提示音：开关共用一枚语义键（可被后一次开关覆盖），查询独立成键，避免顶掉待发的开关
+    @Override
+    public String semanticKey(String payload) {
+        if (payload != null && payload.length() >= 12) {
+            boolean query = "02".equals(payload.substring(10, 12));
+            return getClass().getName() + (query ? ":query" : ":set");
+        }
+        return getClass().getName();
+    }
+
     @Override
     public boolean isResponseMatch(String responseData) {
         return responseData != null && responseData.startsWith(COMMAND_PREFIX);

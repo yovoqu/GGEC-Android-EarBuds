@@ -14,7 +14,6 @@ import com.yovo.biz_ggec_hs.internal.center.port.HsRawAdvert;
 import org.junit.Test;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 
 /**

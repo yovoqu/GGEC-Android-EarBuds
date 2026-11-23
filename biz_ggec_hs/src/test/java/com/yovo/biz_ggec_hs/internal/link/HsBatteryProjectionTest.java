@@ -9,7 +9,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.yovo.biz_ggec_hs.internal.center.protocol.FakeHsCommandLink;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
 
 import org.junit.Test;
 

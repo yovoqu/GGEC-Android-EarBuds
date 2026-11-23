@@ -42,8 +42,26 @@ public class BeginnerModeCommand extends Command {
     }
 
     @Override
+    public ResultKind resultKind() {
+        return ResultKind.BEGINNER_MODE_TOGGLE;
+    }
+
+    @Override
+    public Boolean resultingToggleValue() {
+        return enter;
+    }
+
+    @Override
     public String getCommandData() {
         return commandData;
+    }
+
+    @Override
+    public String semanticKey(String payload) {
+        if (payload != null && payload.length() >= 6) {
+            return getClass().getName() + ":" + payload.substring(4, 6);
+        }
+        return getClass().getName();
     }
 
     @Override

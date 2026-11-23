@@ -1,9 +1,9 @@
-package com.yovo.biz_ggec_hs.internal.center.protocol;
+package com.yovo.biz_ggec_hs.internal.center.command;
 
 /**
  * 具体命令的调度语义。
  */
-final class CommandPolicy {
+public final class CommandPolicy {
 
     enum Kind {
         GET,

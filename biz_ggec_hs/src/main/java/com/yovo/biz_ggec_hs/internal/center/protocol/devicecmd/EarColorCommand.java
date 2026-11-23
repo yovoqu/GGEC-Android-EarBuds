@@ -80,6 +80,11 @@ public class EarColorCommand extends Command {
     }
 
     @Override
+    public ResultKind resultKind() {
+        return ResultKind.EAR_COLOR;
+    }
+
+    @Override
     public long getTimeoutMs() {
         return responseTimeoutMs;
     }

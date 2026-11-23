@@ -47,6 +47,14 @@ public class SimultaneousInterpretationCommand extends Command {
     }
 
     @Override
+    public String semanticKey(String payload) {
+        if (payload != null && payload.length() >= 12) {
+            return getClass().getName() + ":" + payload.substring(10, 12);
+        }
+        return getClass().getName();
+    }
+
+    @Override
     public boolean isResponseMatch(String responseData) {
         return responseData != null && responseData.startsWith(COMMAND_PREFIX);
     }

@@ -1,5 +1,6 @@
-package com.yovo.biz_ggec_hs.internal.center.protocol;
+package com.yovo.biz_ggec_hs.internal.center.command;
 
+import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
 import com.yovo.biz_ggec_hs.internal.center.protocol.batterycmd.BatteryCaseCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.batterycmd.BatteryLeftCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.batterycmd.BatteryRightCommand;
@@ -98,7 +99,7 @@ import java.util.Map;
  * 防止新增命令因漏配而获得错误的合并和缓存语义。
  * 响应等待也在这里声明。0 表示沿用命令自己的 {@link Command#getTimeoutMs()}。
  */
-final class CommandPolicyRegistry implements CommandPolicyResolver {
+public final class CommandPolicyRegistry implements CommandPolicyResolver {
     private static final long REALTIME_CACHE_MS = 0L;
     private static final long SHORT_CACHE_MS = 300L;
     private static final long DEFAULT_CACHE_MS = 1000L;
@@ -108,7 +109,7 @@ final class CommandPolicyRegistry implements CommandPolicyResolver {
 
     private final Map<Class<? extends Command>, Definition> definitions = new HashMap<>();
 
-    CommandPolicyRegistry() {
+    public CommandPolicyRegistry() {
         registerGet(REALTIME_CACHE_MS,
                 GetDualConnectionPageCommand.class);
 
@@ -218,16 +219,12 @@ final class CommandPolicyRegistry implements CommandPolicyResolver {
         @SuppressWarnings("unchecked")
         Class<? extends Command> type =
                 (Class<? extends Command>) command.getClass();
-        return resolve(type, payload);
-    }
-
-    CommandPolicy resolve(Class<? extends Command> type, String payload) {
         Definition definition = definitions.get(type);
         if (definition == null) {
             throw new IllegalArgumentException("命令未登记调度策略: " + type.getName());
         }
 
-        String semanticKey = semanticKey(type, payload);
+        String semanticKey = command.semanticKey(payload);
         String valueFingerprint = definition.kind == CommandPolicy.Kind.SET
                 ? payload
                 : null;
@@ -237,73 +234,7 @@ final class CommandPolicyRegistry implements CommandPolicyResolver {
                 semanticKey,
                 valueFingerprint,
                 definition.cacheTtlMs,
-                responseTimeoutMs(type, payload, definition));
-    }
-
-    /**
-     * EC D4 同一命令类承载删除和导出。删除按录音文件操作等待，导出开始仍用命令默认超时。
-     */
-    private long responseTimeoutMs(Class<? extends Command> type,
-                                   String payload,
-                                   Definition definition) {
-        if (type == SyncRecordFileIdOpCommand.class && isRecordIdDelete(payload)) {
-            return RECORD_FILE_RESPONSE_TIMEOUT_MS;
-        }
-        return definition.responseTimeoutMs;
-    }
-
-    private static boolean isRecordIdDelete(String payload) {
-        if (payload == null || payload.length() < 12) {
-            return false;
-        }
-        int flags;
-        try {
-            flags = Integer.parseInt(payload.substring(10, 12), 16);
-        } catch (NumberFormatException e) {
-            return false;
-        }
-        return flags == SyncRecordFileIdOpCommand.FLAGS_DELETE_LEFT
-                || flags == SyncRecordFileIdOpCommand.FLAGS_DELETE_RIGHT;
-    }
-
-    private String semanticKey(Class<? extends Command> type, String payload) {
-        String base = type.getName();
-        if (type == BeginnerModeCommand.class
-                && payload != null && payload.length() >= 6) {
-            return base + ":" + payload.substring(4, 6);
-        }
-        if (type == SimultaneousInterpretationCommand.class
-                && payload != null && payload.length() >= 12) {
-            return base + ":" + payload.substring(10, 12);
-        }
-        // 佩戴检测提示音：开关共用一枚语义键（可被后一次开关覆盖），查询独立成键，避免顶掉待发的开关
-        if (type == WearDetectionPromptToneCommand.class
-                && payload != null && payload.length() >= 12) {
-            boolean query = "02".equals(payload.substring(10, 12));
-            return base + (query ? ":query" : ":set");
-        }
-        if (type == GetStorageCommand.class
-                && payload != null && payload.length() >= 12) {
-            return base + ":" + payload.substring(10, 12);
-        }
-        if (type == GetRecordIdListCommand.class) {
-            return base + ":" + payload;
-        }
-        if ((type == ControlCommand.class || type == ControlCommandV11.class)
-                && payload != null && payload.length() >= 12) {
-            return base + ":" + payload.substring(10, 12);
-        }
-        if ((type == LongPressSetCommand.class
-                || type == ShortPressSetCommand.class
-                || type == DoublePressSetCommand.class)
-                && payload != null && payload.length() >= 12) {
-            return base + ":" + payload.substring(10, 12);
-        }
-        if (type == CustomEQRealtimeCommand.class
-                || type == CustomEQCancelRealtimeCommand.class) {
-            return "custom-eq-realtime";
-        }
-        return base;
+                command.responseTimeoutMs(definition.responseTimeoutMs));
     }
 
     @SafeVarargs

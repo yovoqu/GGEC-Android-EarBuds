@@ -225,6 +225,43 @@ tasks.register('checkBizGgecHsBoundary') {
     }
 }
 
+/**
+ * 协议层纯度门禁：{@code internal/center/protocol/**} 不得依赖命令运行期包
+ * （{@code internal.center.command}）。与 checkBizGgecHsBoundary 一致的写法：
+ * 只看目录事实 / import 归属，没有类名或包名白名单。注释行豁免。
+ */
+tasks.register('checkBizProtocolPurity') {
+    group = 'verification'
+    description = 'Structural purity gate: protocol layer must not import the command runtime package.'
+    doLast {
+        def offenders = []
+        def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
+        fileTree(bizGgecHsRoot) {
+            include 'src/main/java/**/internal/center/protocol/**/*.java'
+        }.each { file ->
+            def path = rel(file)
+            file.eachLine { line, index ->
+                def trimmed = line.trim()
+                if (trimmed.startsWith('*') || trimmed.startsWith('//')) {
+                    return
+                }
+                if (line =~ /^\s*import\s+(?:static\s+)?com\.yovo\.biz_ggec_hs\.internal\.center\.command\b/) {
+                    offenders << "${path}:${index}: 协议层不得 import 命令运行期包 -> ${trimmed}"
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException('biz_ggec_hs 协议层纯度被打破（protocol 不得依赖 command）:\n'
+                    + offenders.join('\n'))
+        }
+    }
+}
+
 tasks.named('check') {
     dependsOn 'checkBizGgecHsBoundary'
+    dependsOn 'checkBizProtocolPurity'
+}
+
+tasks.named('preBuild') {
+    dependsOn 'checkBizProtocolPurity'
 }

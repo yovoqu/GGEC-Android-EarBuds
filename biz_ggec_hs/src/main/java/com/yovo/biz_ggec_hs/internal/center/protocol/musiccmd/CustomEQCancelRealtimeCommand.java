@@ -23,6 +23,11 @@ public class CustomEQCancelRealtimeCommand extends Command {
     }
 
     @Override
+    public String semanticKey(String payload) {
+        return "custom-eq-realtime";
+    }
+
+    @Override
     public Response parseResponse(String responseData) {
         HsLog.d(TAG, "解析响应: " + responseData);
         if (responseData == null || !COMMAND_DATA.equalsIgnoreCase(responseData)) {

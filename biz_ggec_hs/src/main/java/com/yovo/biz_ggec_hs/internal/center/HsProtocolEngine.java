@@ -1,20 +1,20 @@
-package com.yovo.biz_ggec_hs.internal.center.protocol;
+package com.yovo.biz_ggec_hs.internal.center;
 
-
-
-
-
-import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
+import com.yovo.biz_ggec_hs.internal.center.command.CommandPolicyRegistry;
+import com.yovo.biz_ggec_hs.internal.center.command.CommandScheduler;
+import com.yovo.biz_ggec_hs.internal.center.command.HsCommandFactory;
 import com.yovo.biz_ggec_hs.internal.center.port.HsCommandLink;
 import com.yovo.biz_ggec_hs.internal.center.port.HsConnectionEvents;
-import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
+import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
+import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
+import com.yovo.biz_ggec_hs.internal.center.protocol.HsHex;
+import com.yovo.biz_ggec_hs.internal.center.protocol.ProtocolInfo;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.EarColorCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.functioncmd.BeginnerModeCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.LDACQueryCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.DeviceDomainStore;
 import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.DeviceEventPipeline;
 import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.HsInboundFrameAssembler;
 import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.InboundFrameDemux;
+import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,6 +30,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>连接生命周期只有一处状态源：{@link #sessionEstablished}。它只在链路 READY 时置位，
  * 只由 {@link #endSession()} 清除；{@code sessionId} 是该会话的身份值。上层收到
  * {@code onDisconnected} / {@code onConnectFailed} 各至多一次，且都从本类发出。</p>
+ *
+ * <p>本类位于组合根包（与 {@code HsGraph} 同层）：它把运行期命令系统
+ * （{@code internal.center.command}）与协议层（{@code internal.center.protocol}）
+ * 装配在一起。协议层不再反向依赖命令运行期包，纯度由
+ * {@code checkBizProtocolPurity} 门禁保证。</p>
  */
 public final class HsProtocolEngine {
     private static final String TAG = "HsProtocolEngine";
@@ -78,7 +83,7 @@ public final class HsProtocolEngine {
      * 由装配方提供引擎线程的构造入口。调度、分帧与域事件全部排在这一个执行器上，
      * 因此它必须串行执行；生产路径用 {@link #HsProtocolEngine(HsCommandLink)} 的守护线程。
      */
-    HsProtocolEngine(HsCommandLink link, ScheduledExecutorService executor) {
+    public HsProtocolEngine(HsCommandLink link, ScheduledExecutorService executor) {
         if (link == null) {
             throw new IllegalArgumentException("命令链路不能为空");
         }
@@ -167,7 +172,7 @@ public final class HsProtocolEngine {
     /**
      * 当前会话序号；0 表示没有已建立的会话。会话身份的唯一可观察出口（诊断与包内测试）。
      */
-    long sessionId() {
+    public long sessionId() {
         return sessionId;
     }
 
@@ -198,31 +203,28 @@ public final class HsProtocolEngine {
         if (completion == null) {
             return;
         }
-        if (command instanceof EarColorCommand) {
-            persistEarColor(completion);
-            return;
+        // 结果种类由命令自声明（类级常量），引擎不 instanceof 具体命令类（Q1/E5）。
+        switch (command.resultKind()) {
+            case EAR_COLOR -> persistEarColor(completion);
+            case LDAC_TOGGLE -> persistLdacStatus(completion);
+            case BEGINNER_MODE_TOGGLE -> persistBeginnerMode(command, completion);
+            case AGGREGATED_HOME_STATUS -> persistAggregatedStatus(completion);
         }
-        if (command instanceof LDACQueryCommand) {
-            persistLdacStatus(completion);
-            return;
-        }
-        if (command instanceof BeginnerModeCommand beginnerMode) {
-            persistBeginnerMode(beginnerMode, completion);
-            return;
-        }
-        persistAggregatedStatus(completion);
     }
 
     /**
      * 新手模式开关：进入/退出命令成功后设备侧状态即该开关值。
      * 主动上报（{@code 99ECD2}）给的是配置（耳侧+动作），不参与这里。
      */
-    private void persistBeginnerMode(BeginnerModeCommand command,
+    private void persistBeginnerMode(Command command,
                                      CommandCompletion completion) {
         if (!completion.isSuccess()) {
             return;
         }
-        events.applyBeginnerModeEnabled(command.isEnter());
+        Boolean enabled = command.resultingToggleValue();
+        if (enabled != null) {
+            events.applyBeginnerModeEnabled(enabled);
+        }
     }
 
     /** LDAC 查询回包是整数值：非 0 即开启。设备不会主动上报该状态。 */
@@ -470,7 +472,7 @@ public final class HsProtocolEngine {
             return;
         }
         earColorQueriedSession = sessionId;
-        submit(new EarColorCommand(EarColorCommand.QueryOrigin.AUTO), null);
+        submit(HsCommandFactory.earColorQuery(EarColorCommand.QueryOrigin.AUTO), null);
     }
 
     private final class LinkListener implements HsCommandLink.Listener {

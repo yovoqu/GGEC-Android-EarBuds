@@ -53,6 +53,11 @@ public class GetDualConnectionPageCommand extends Command {
     }
 
     @Override
+    public DeviceEventKind deviceEventKind() {
+        return DeviceEventKind.DUAL_CONNECTION_PAGE;
+    }
+
+    @Override
     public boolean isResponseMatch(String responseData) {
         return responseData != null && responseData.startsWith(COMMAND_PREFIX);
     }

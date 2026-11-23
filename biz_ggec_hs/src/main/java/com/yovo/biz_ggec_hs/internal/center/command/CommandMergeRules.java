@@ -1,4 +1,4 @@
-package com.yovo.biz_ggec_hs.internal.center.protocol;
+package com.yovo.biz_ggec_hs.internal.center.command;
 
 /**
  * Android 调度器与本地 JVM 测试共用的纯调度规则。

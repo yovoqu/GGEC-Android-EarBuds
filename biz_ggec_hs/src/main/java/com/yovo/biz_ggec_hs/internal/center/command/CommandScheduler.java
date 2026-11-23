@@ -1,34 +1,37 @@
-package com.yovo.biz_ggec_hs.internal.center.protocol;
+package com.yovo.biz_ggec_hs.internal.center.command;
 
+import com.yovo.biz_ggec_hs.internal.center.protocol.Command;
+import com.yovo.biz_ggec_hs.internal.center.protocol.CommandCompletion;
 import com.yovo.biz_ggec_hs.internal.center.exchange.HsTraffic;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.LinkedHashSet;
 
 /**
  * 与 Android 和 BLE 实现无关的命令调度核心。
  *
  * 所有方法必须由同一个 {@link Dispatcher} 串行调用。传输回调会自动切回该调度线程。
  */
-final class CommandScheduler {
+public final class CommandScheduler {
     private static final String TAG = "CommandScheduler";
 
     static final long SET_COALESCE_WINDOW_MS = 1000L;
     static final long COMMAND_INTERVAL_MS = 30L;
+    /**
+     * 下发后等待 GATT 写完成的兜底看门狗（毫秒）。响应超时只在 {@code onWriteCompleted} 之后才启动：
+     * 若链路对一次写既不回 {@code onCompleted} 也不回 {@code onTimeout}，没有这道看门狗，
+     * {@code executing}/{@code currentNode} 会永久为真，后续命令在 {@code executeNext} 处永久早退，
+     * 串行队列整体堵死。取值须大于链路自身单次 GATT 操作超时（lib 默认 10s），避免误杀慢写。
+     */
+    static final long WRITE_COMPLETION_WATCHDOG_MS = 15_000L;
 
-    interface Cancelable {
+    public interface Cancelable {
         void cancel();
     }
 
-    interface Dispatcher {
+    public interface Dispatcher {
         void execute(Runnable runnable);
 
         Cancelable schedule(Runnable runnable, long delayMs);
@@ -36,8 +39,8 @@ final class CommandScheduler {
         long nowMs();
     }
 
-    interface Transport {
-        interface Callback {
+    public interface Transport {
+        public interface Callback {
             void onStarted();
 
             void onCompleted(int status);
@@ -48,11 +51,11 @@ final class CommandScheduler {
         boolean send(long sessionId, String payload, Callback callback);
     }
 
-    interface StateListener {
+    public interface StateListener {
         void onStateChanged(Snapshot snapshot);
     }
 
-    static final class Snapshot {
+    public static final class Snapshot {
         private final boolean executing;
         private final boolean released;
         private final boolean idle;
@@ -108,16 +111,15 @@ final class CommandScheduler {
     private final StateListener stateListener;
     private final CommandPolicyResolver policyResolver;
 
-    private final Deque<Node> pending = new ArrayDeque<>();
-    private final Map<String, Node> pendingSetSlots = new HashMap<>();
-    private final Map<String, Node> queryGroups = new HashMap<>();
-    private final Map<String, CacheEntry> cache = new HashMap<>();
-    private final Map<String, ResponseQuarantine> responseQuarantines = new HashMap<>();
+    private final RequestQueue requestQueue = new RequestQueue();
+    private final ResponseCache responseCache = new ResponseCache();
+    private final LateFrameGuard lateFrameGuard = new LateFrameGuard();
 
-    private Node currentNode;
+    private CommandNode currentNode;
     private Command currentCommand;
     private Cancelable responseTimeout;
     private Cancelable nextExecution;
+    private Cancelable sendWatchdog;
     private long sessionId;
     private boolean ready;
     private boolean executing;
@@ -125,7 +127,7 @@ final class CommandScheduler {
     private long consistencyGeneration;
     private long attemptSequence;
 
-    CommandScheduler(Dispatcher dispatcher,
+    public CommandScheduler(Dispatcher dispatcher,
                      Transport transport,
                      StateListener stateListener,
                      CommandPolicyResolver policyResolver) {
@@ -136,11 +138,11 @@ final class CommandScheduler {
         publishState();
     }
 
-    void submit(Command command) {
+    public void submit(Command command) {
         submit(command, sessionId);
     }
 
-    void submit(Command command, long requestSessionId) {
+    public void submit(Command command, long requestSessionId) {
         if (command == null) {
             return;
         }
@@ -185,11 +187,11 @@ final class CommandScheduler {
             admitGet(command, payload, policy, now);
         } else {
             consistencyGeneration++;
-            cache.clear();
+            responseCache.clear();
             if (policy.getMergeMode() == CommandPolicy.MergeMode.LATEST_WINS) {
                 admitSet(command, payload, policy, now);
             } else {
-                pending.offerLast(Node.forCommand(
+                requestQueue.offerLast(CommandNode.forCommand(
                         command, payload, policy, consistencyGeneration,
                         requestSessionId, now));
                 publishState();
@@ -198,72 +200,18 @@ final class CommandScheduler {
         }
     }
 
-    void submit(CommandTransaction transaction) {
-        submit(transaction, sessionId);
-    }
-
-    void submit(CommandTransaction transaction, long requestSessionId) {
-        if (transaction == null) {
-            return;
-        }
-        if (released) {
-            transaction.complete(failure("命令调度器已释放"));
-            return;
-        }
-        if (requestSessionId <= 0L || requestSessionId != sessionId) {
-            transaction.complete(unavailable("事务没有可用的目标连接会话"));
-            return;
-        }
-
-        List<PreparedCommand> prepared = new ArrayList<>();
-        for (Command command : transaction.getCommands()) {
-            if (command == null) {
-                abortPrepared(prepared, "事务中包含空命令");
-                transaction.complete(failure("事务中包含空命令"));
-                return;
-            }
-            if (!command.tryClaimForScheduling()) {
-                abortPrepared(prepared, "事务命令已被其它调度请求占用");
-                transaction.complete(failure("事务包含重复或已提交的命令"));
-                return;
-            }
-            command.setState(Command.State.QUEUED);
-            String payload = encode(command);
-            if (command.getCompletion() != null || payload == null || payload.isEmpty()) {
-                abortPrepared(prepared, "事务命令数据无效");
-                if (command.getCompletion() == null) {
-                    command.abort(failure("事务命令数据为空，无法发送"));
-                }
-                transaction.complete(failure("事务命令准备失败"));
-                return;
-            }
-            prepared.add(new PreparedCommand(command, payload));
-        }
-
-        consistencyGeneration++;
-        cache.clear();
-        pending.offerLast(Node.forTransaction(
-                transaction, prepared, consistencyGeneration,
-                requestSessionId, dispatcher.nowMs()));
-        publishState();
-        executeNext();
-    }
-
     private void admitGet(Command command,
                           String payload,
                           CommandPolicy policy,
                           long now) {
         String identity = CommandMergeRules.queryIdentity(policy, consistencyGeneration);
-        CacheEntry cached = cache.get(identity);
+        CommandCompletion cached = responseCache.get(identity, now);
         if (cached != null) {
-            if (cached.expiresAtMs >= now) {
-                command.replayCompletion(cached.completion);
-                return;
-            }
-            cache.remove(identity);
+            command.replayCompletion(cached);
+            return;
         }
 
-        Node group = queryGroups.get(identity);
+        CommandNode group = requestQueue.getQueryGroup(identity);
         if (group != null) {
             group.followers.add(command);
             group.updatedAtMs = now;
@@ -271,11 +219,11 @@ final class CommandScheduler {
             return;
         }
 
-        Node node = Node.forCommand(
+        CommandNode node = CommandNode.forCommand(
                 command, payload, policy, consistencyGeneration, sessionId, now);
         node.queryIdentity = identity;
-        pending.offerLast(node);
-        queryGroups.put(identity, node);
+        requestQueue.offerLast(node);
+        requestQueue.putQueryGroup(identity, node);
         publishState();
         executeNext();
     }
@@ -284,84 +232,74 @@ final class CommandScheduler {
                           String payload,
                           CommandPolicy policy,
                           long now) {
-        if (canJoinCurrentSet(policy, now)) {
-            currentNode.followers.add(command);
-            currentNode.updatedAtMs = now;
-            publishState();
-            return;
-        }
-
-        Node target = pendingSetSlots.get(policy.getSemanticKey());
-        boolean reusable = CommandMergeRules.canReusePendingSet(
+        CommandNode target = requestQueue.getSetSlot(policy.getSemanticKey());
+        SetMerger.Decision decision = SetMerger.decide(
+                currentNode,
+                requestQueue.isEmpty(),
+                requestQueue.peekLast(),
                 target,
-                pending.peekLast(),
-                target == null ? 0L : target.updatedAtMs,
+                policy,
                 now,
                 SET_COALESCE_WINDOW_MS);
-        if (!reusable) {
-            Node node = Node.forCommand(
-                    command, payload, policy, consistencyGeneration, sessionId, now);
-            pending.offerLast(node);
-            pendingSetSlots.put(policy.getSemanticKey(), node);
-            publishState();
-            executeNext();
-            return;
+        switch (decision) {
+            case JOIN_CURRENT:
+                currentNode.followers.add(command);
+                currentNode.updatedAtMs = now;
+                publishState();
+                return;
+            case NEW_NODE: {
+                CommandNode node = CommandNode.forCommand(
+                        command, payload, policy, consistencyGeneration, sessionId, now);
+                requestQueue.offerLast(node);
+                requestQueue.offerSetSlot(policy.getSemanticKey(), node);
+                publishState();
+                executeNext();
+                return;
+            }
+            case REUSE_SLOT_SAME_VALUE:
+                target.followers.add(command);
+                target.updatedAtMs = now;
+                publishState();
+                return;
+            case SUPERSEDE:
+            default:
+                target.primary.completeSuperseded();
+                for (Command follower : target.followers) {
+                    follower.completeSuperseded();
+                }
+                target.followers.clear();
+                target.primary = command;
+                target.payload = payload;
+                target.policy = policy;
+                target.generation = consistencyGeneration;
+                target.updatedAtMs = now;
+                publishState();
         }
-
-        if (CommandMergeRules.sameValue(policy, target.policy)) {
-            target.followers.add(command);
-            target.updatedAtMs = now;
-            publishState();
-            return;
-        }
-
-        target.primary.completeSuperseded();
-        for (Command follower : target.followers) {
-            follower.completeSuperseded();
-        }
-        target.followers.clear();
-        target.primary = command;
-        target.payload = payload;
-        target.policy = policy;
-        target.generation = consistencyGeneration;
-        target.updatedAtMs = now;
-        publishState();
     }
 
-    private boolean canJoinCurrentSet(CommandPolicy policy, long now) {
-        return currentNode != null
-                && currentNode.transaction == null
-                && currentNode.policy != null
-                && currentNode.policy.getMergeMode() == CommandPolicy.MergeMode.LATEST_WINS
-                && pending.isEmpty()
-                && policy.getSemanticKey().equals(currentNode.policy.getSemanticKey())
-                && CommandMergeRules.sameValue(policy, currentNode.policy)
-                && now - currentNode.updatedAtMs <= SET_COALESCE_WINDOW_MS;
-    }
-
-    void setSession(long newSessionId, boolean ready) {
+    public void setSession(long newSessionId, boolean ready) {
         if (released) {
             return;
         }
         if (newSessionId <= 0L) {
-            if (sessionId != 0L || this.ready || currentNode != null || !pending.isEmpty()) {
+            if (sessionId != 0L || this.ready || currentNode != null || !requestQueue.isEmpty()) {
                 abortAll("目标连接会话已结束");
             }
             sessionId = 0L;
             this.ready = false;
-            responseQuarantines.clear();
+            lateFrameGuard.clear();
             publishState();
             return;
         }
         if (sessionId != newSessionId) {
-            if (sessionId != 0L || currentNode != null || !pending.isEmpty()) {
+            if (sessionId != 0L || currentNode != null || !requestQueue.isEmpty()) {
                 abortAll("目标连接会话已切换");
             }
             sessionId = newSessionId;
             this.ready = ready;
             consistencyGeneration++;
-            cache.clear();
-            responseQuarantines.clear();
+            responseCache.clear();
+            lateFrameGuard.clear();
             if (ready) {
                 executeNext();
             }
@@ -385,27 +323,26 @@ final class CommandScheduler {
      *
      * @return true 表示帧被当前命令消费（含写窗口缓冲）
      */
-    boolean onResponseCandidate(long frameSessionId, String frame) {
+    public boolean onResponseCandidate(long frameSessionId, String frame) {
         if (frame == null) {
             return false;
         }
         if (frameSessionId <= 0L || frameSessionId != sessionId) {
             return false;
         }
-        if (isQuarantinedFrame(frame)) {
+        if (lateFrameGuard.isQuarantined(frame, dispatcher.nowMs())) {
             return false;
         }
         Command command = currentCommand;
-        Node node = currentNode;
+        CommandNode node = currentNode;
         if (command == null || node == null || !matches(command, frame)) {
             return false;
         }
-        if (node.writeStarted && !node.writeCompleted) {
+        if (!node.writeCompleted) {
+            // H-14：写完成前到达的匹配帧一律先缓冲（含 onStarted 之前的窗口），
+            // 待 onWriteCompleted 后按序回放；此前 writeStarted==false 时直接 return false 会静默丢帧。
             node.bufferedFrames.add(frame);
             return true;
-        }
-        if (!node.writeCompleted) {
-            return false;
         }
         processFrame(command, frame);
         return true;
@@ -413,9 +350,9 @@ final class CommandScheduler {
 
     void abortCurrent(String reason) {
         cancelTimers();
-        Node node = currentNode;
+        CommandNode node = currentNode;
         Command command = currentCommand;
-        quarantine(command, node);
+        lateFrameGuard.register(command, node != null && node.writeStarted, dispatcher.nowMs());
         currentNode = null;
         currentCommand = null;
         executing = false;
@@ -426,11 +363,7 @@ final class CommandScheduler {
         }
         if (node != null) {
             abortFollowers(node, failure);
-            abortTransactionRemainder(node, failure);
-            if (node.transaction != null) {
-                node.transaction.complete(failure);
-            }
-            removeIndexes(node);
+            requestQueue.removeIndexes(node);
         }
         publishState();
         scheduleNext(COMMAND_INTERVAL_MS);
@@ -440,42 +373,30 @@ final class CommandScheduler {
         cancelTimers();
         CommandCompletion failure = aborted(reason);
 
-        Node active = currentNode;
+        CommandNode active = currentNode;
         Command activeCommand = currentCommand;
-        quarantine(activeCommand, active);
+        lateFrameGuard.register(activeCommand, active != null && active.writeStarted, dispatcher.nowMs());
         currentNode = null;
         currentCommand = null;
         executing = false;
 
-        List<Node> queued = new ArrayList<>(pending);
-        pending.clear();
-        pendingSetSlots.clear();
-        queryGroups.clear();
-        cache.clear();
+        List<CommandNode> queued = requestQueue.clear();
+        responseCache.clear();
 
         if (activeCommand != null) {
             activeCommand.abort(failure);
         }
         if (active != null) {
             abortFollowers(active, failure);
-            abortTransactionRemainder(active, failure);
-            if (active.transaction != null) {
-                active.transaction.complete(failure);
-            }
         }
-        for (Node node : queued) {
-            if (node.transaction != null) {
-                abortTransactionRemainder(node, failure);
-                node.transaction.complete(failure);
-            } else {
-                node.primary.abort(failure);
-                abortFollowers(node, failure);
-            }
+        for (CommandNode node : queued) {
+            node.primary.abort(failure);
+            abortFollowers(node, failure);
         }
         publishState();
     }
 
-    void release() {
+    public void release() {
         if (released) {
             return;
         }
@@ -483,7 +404,7 @@ final class CommandScheduler {
         released = true;
         ready = false;
         sessionId = 0L;
-        responseQuarantines.clear();
+        lateFrameGuard.clear();
         publishState();
     }
 
@@ -492,7 +413,7 @@ final class CommandScheduler {
             return;
         }
         cancelNextExecution();
-        Node node = pending.pollFirst();
+        CommandNode node = requestQueue.pollFirst();
         if (node == null) {
             executing = false;
             publishState();
@@ -500,52 +421,29 @@ final class CommandScheduler {
         }
         if (node.sessionId != sessionId) {
             CommandCompletion failure = unavailable("命令所属连接会话已过期");
-            if (node.transaction != null) {
-                abortTransactionRemainder(node, failure);
-                node.transaction.complete(failure);
-            } else {
-                node.primary.abort(failure);
-                abortFollowers(node, failure);
-            }
-            removeIndexes(node);
+            node.primary.abort(failure);
+            abortFollowers(node, failure);
+            requestQueue.removeIndexes(node);
             scheduleNext(0L);
             return;
         }
         currentNode = node;
         if (node.policy != null
                 && node.policy.getMergeMode() == CommandPolicy.MergeMode.LATEST_WINS) {
-            pendingSetSlots.remove(node.policy.getSemanticKey(), node);
+            requestQueue.removeSetSlot(node.policy.getSemanticKey(), node);
         }
-        if (node.transaction != null) {
-            startTransactionCommand();
-        } else {
-            startCommand(node.primary, node.payload);
-        }
+        startCommand(node.primary, node.payload);
         publishState();
     }
 
-    private void startTransactionCommand() {
-        Node node = currentNode;
-        if (node == null || node.transaction == null) {
-            failCurrent("事务状态已丢失");
-            return;
-        }
-        if (node.transactionIndex >= node.transactionCommands.size()) {
-            finishTransaction(node);
-            return;
-        }
-        PreparedCommand prepared = node.transactionCommands.get(node.transactionIndex);
-        startCommand(prepared.command, prepared.payload);
-    }
-
     private void startCommand(Command command, String payload) {
-        Node node = currentNode;
+        CommandNode node = currentNode;
         if (node == null || command == null) {
             failCurrent("命令状态无效");
             return;
         }
 
-        long quarantineDelay = quarantineDelayMs(command);
+        long quarantineDelay = lateFrameGuard.delayFor(command, dispatcher.nowMs());
         if (quarantineDelay > 0L) {
             executing = false;
             cancelNextExecution();
@@ -575,6 +473,7 @@ final class CommandScheduler {
         if (!isCurrentAttempt(node, command, attemptId)) {
             return;
         }
+        armSendWatchdog(node, command, attemptId);
 
         command.setState(Command.State.SENDING);
         boolean accepted;
@@ -609,13 +508,13 @@ final class CommandScheduler {
         }
     }
 
-    private void onWriteStarted(Node node, Command command, long attemptId) {
+    private void onWriteStarted(CommandNode node, Command command, long attemptId) {
         if (isCurrentAttempt(node, command, attemptId)) {
             node.writeStarted = true;
         }
     }
 
-    private void onWriteCompleted(Node node,
+    private void onWriteCompleted(CommandNode node,
                                   Command command,
                                   long attemptId,
                                   int status) {
@@ -628,6 +527,7 @@ final class CommandScheduler {
         }
 
         node.writeCompleted = true;
+        cancelSendWatchdog();
         command.setState(Command.State.SENT);
         startResponseTimeout(
                 command, node, attemptId, initialResponseTimeoutMs(command, node));
@@ -653,7 +553,7 @@ final class CommandScheduler {
             } else if (response.isComplete()) {
                 command.completeResponse(response);
             } else {
-                Node node = currentNode;
+                CommandNode node = currentNode;
                 if (node != null) {
                     startResponseTimeout(
                             command, node, node.attemptId, command.getInterFrameTimeoutMs());
@@ -665,48 +565,30 @@ final class CommandScheduler {
         }
     }
 
-    private void onCommandCompletion(Node node,
+    private void onCommandCompletion(CommandNode node,
                                      Command command,
                                      CommandCompletion completion) {
         if (node != currentNode || command != currentCommand) {
             return;
         }
+        cancelSendWatchdog();
         if (completion != null
                 && completion.getCode() == Command.ResultCode.TIMEOUT) {
-            quarantine(command, node);
+            lateFrameGuard.register(command, node.writeStarted, dispatcher.nowMs());
         }
         cancelResponseTimeout();
         detachCompletionListener(node, command);
         executing = false;
         currentCommand = null;
 
-        if (node.transaction != null) {
-            if (!completion.isSuccess() && node.firstTransactionFailure == null) {
-                node.firstTransactionFailure = completion;
-            }
-            node.transactionIndex++;
-            if (!completion.isSuccess() && !node.transaction.shouldContinueOnFailure()) {
-                abortTransactionRemainder(node, completion);
-                finishTransaction(node);
-                return;
-            }
-            if (node.transactionIndex >= node.transactionCommands.size()) {
-                finishTransaction(node);
-            } else {
-                scheduleTransactionNext(node.transaction.getCommandIntervalMs());
-            }
-            publishState();
-            return;
-        }
-
         if (node.policy.getKind() == CommandPolicy.Kind.GET
                 && completion.isSuccess()
                 && node.generation == consistencyGeneration
                 && node.policy.getCacheTtlMs() > 0L) {
-            cache.put(node.queryIdentity, new CacheEntry(
-                    completion, dispatcher.nowMs() + node.policy.getCacheTtlMs()));
+            responseCache.put(node.queryIdentity, completion,
+                    dispatcher.nowMs() + node.policy.getCacheTtlMs());
         }
-        removeIndexes(node);
+        requestQueue.removeIndexes(node);
         List<Command> followers = new ArrayList<>(node.followers);
         currentNode = null;
         for (Command follower : followers) {
@@ -716,41 +598,17 @@ final class CommandScheduler {
         scheduleNext(COMMAND_INTERVAL_MS);
     }
 
-    private void finishTransaction(Node node) {
-        if (node != currentNode || node.transaction == null) {
-            return;
-        }
-        CommandCompletion completion = node.firstTransactionFailure == null
-                ? CommandCompletion.stringResult(
-                        Command.ResultCode.SUCCESS, "事务执行完成")
-                : node.firstTransactionFailure;
-        currentNode = null;
-        currentCommand = null;
-        executing = false;
-        node.transaction.complete(completion);
-        publishState();
-        scheduleNext(COMMAND_INTERVAL_MS);
-    }
-
-    private void scheduleTransactionNext(long delayMs) {
-        cancelNextExecution();
-        nextExecution = dispatcher.schedule(() -> {
-            nextExecution = null;
-            startTransactionCommand();
-        }, delayMs);
-    }
-
     /**
      * 目录里的响应等待优先于命令自身超时。重命名、多帧状态等未在目录声明的命令
      * 继续用 {@link Command#getTimeoutMs()}。
      */
-    private static long initialResponseTimeoutMs(Command command, Node node) {
+    private static long initialResponseTimeoutMs(Command command, CommandNode node) {
         long declared = node.policy == null ? 0L : node.policy.getResponseTimeoutMs();
         return declared > 0L ? declared : command.getTimeoutMs();
     }
 
     private void startResponseTimeout(Command command,
-                                      Node node,
+                                      CommandNode node,
                                       long attemptId,
                                       long timeoutMs) {
         cancelResponseTimeout();
@@ -789,113 +647,15 @@ final class CommandScheduler {
             abortCurrent(reason);
             return;
         }
-        quarantine(command, currentNode);
+        lateFrameGuard.register(command, currentNode != null && currentNode.writeStarted,
+                dispatcher.nowMs());
         command.abort(CommandCompletion.stringResult(code, reason));
     }
 
-    private boolean isCurrentAttempt(Node node, Command command, long attemptId) {
+    private boolean isCurrentAttempt(CommandNode node, Command command, long attemptId) {
         return currentNode == node
                 && currentCommand == command
                 && node.attemptId == attemptId;
-    }
-
-    private void quarantine(Command command, Node node) {
-        if (command == null || node == null || !node.writeStarted) {
-            return;
-        }
-        long guardMs;
-        try {
-            guardMs = Math.max(0L, command.getLateResponseGuardMs());
-        } catch (RuntimeException e) {
-            // 保护窗口读不出来时该命令不登记迟到帧隔离：宁可让同族迟到帧继续走正常匹配，
-            // 也不把调度器留在半登记状态。
-            HsLog.w(TAG, "读取晚到响应保护窗口失败，本命令不隔离迟到帧: "
-                    + command.getClass().getSimpleName(), e);
-            guardMs = 0L;
-        }
-        if (guardMs <= 0L) {
-            return;
-        }
-        long expiresAt = dispatcher.nowMs() + guardMs;
-        for (String family : responseFamilies(command)) {
-            ResponseQuarantine current = responseQuarantines.get(family);
-            if (current == null || current.expiresAtMs < expiresAt) {
-                responseQuarantines.put(
-                        family, new ResponseQuarantine(family, command, expiresAt));
-            }
-        }
-    }
-
-    private long quarantineDelayMs(Command command) {
-        pruneQuarantines();
-        long delayMs = 0L;
-        long now = dispatcher.nowMs();
-        for (String family : responseFamilies(command)) {
-            ResponseQuarantine quarantine = responseQuarantines.get(family);
-            if (quarantine != null) {
-                delayMs = Math.max(delayMs, quarantine.expiresAtMs - now);
-            }
-        }
-        return Math.max(0L, delayMs);
-    }
-
-    private boolean isQuarantinedFrame(String frame) {
-        pruneQuarantines();
-        if (frame == null || frame.length() < 6) {
-            return false;
-        }
-        String family = frame.substring(0, 6).toUpperCase(java.util.Locale.US);
-        return responseQuarantines.containsKey(family);
-    }
-
-    private void pruneQuarantines() {
-        long now = dispatcher.nowMs();
-        List<String> expired = new ArrayList<>();
-        for (Map.Entry<String, ResponseQuarantine> entry
-                : responseQuarantines.entrySet()) {
-            if (entry.getValue().expiresAtMs <= now) {
-                expired.add(entry.getKey());
-            }
-        }
-        for (String family : expired) {
-            responseQuarantines.remove(family);
-        }
-    }
-
-    private String responseFamily(Command command) {
-        try {
-            String family = command.getResponseFamily();
-            if (family != null && !family.isEmpty()) {
-                return family;
-            }
-        } catch (RuntimeException e) {
-            // 该命令放弃自报的响应族，改以命令类名作为隔离族键。
-            HsLog.w(TAG, "读取响应族失败，改用命令类名作为隔离族: "
-                    + command.getClass().getName(), e);
-        }
-        return command.getClass().getName();
-    }
-
-    private Set<String> responseFamilies(Command command) {
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-        try {
-            Set<String> families = command.getResponseFamilies();
-            if (families != null) {
-                for (String family : families) {
-                    if (family != null && !family.isEmpty()) {
-                        result.add(family.toUpperCase(java.util.Locale.US));
-                    }
-                }
-            }
-        } catch (RuntimeException e) {
-            // 该命令的迟到帧隔离退化为单族判定，由下方 responseFamily 补齐族键。
-            HsLog.w(TAG, "读取响应族集合失败，隔离退化为单族: "
-                    + command.getClass().getName(), e);
-        }
-        if (result.isEmpty()) {
-            result.add(responseFamily(command).toUpperCase(java.util.Locale.US));
-        }
-        return result;
     }
 
     private boolean matches(Command command, String frame) {
@@ -921,44 +681,14 @@ final class CommandScheduler {
         }
     }
 
-    private void removeIndexes(Node node) {
-        if (node.queryIdentity != null) {
-            queryGroups.remove(node.queryIdentity, node);
-        }
-        if (node.policy != null
-                && node.policy.getMergeMode() == CommandPolicy.MergeMode.LATEST_WINS) {
-            pendingSetSlots.remove(node.policy.getSemanticKey(), node);
-        }
-    }
-
-    private void abortFollowers(Node node, CommandCompletion failure) {
+    private void abortFollowers(CommandNode node, CommandCompletion failure) {
         for (Command follower : node.followers) {
             follower.abort(failure);
         }
         node.followers.clear();
     }
 
-    private void abortTransactionRemainder(Node node, CommandCompletion failure) {
-        if (node.transaction == null) {
-            return;
-        }
-        int start = Math.max(node.transactionIndex, 0);
-        for (int i = start; i < node.transactionCommands.size(); i++) {
-            Command command = node.transactionCommands.get(i).command;
-            if (command != currentCommand && command.getCompletion() == null) {
-                command.abort(failure);
-            }
-        }
-    }
-
-    private void abortPrepared(List<PreparedCommand> prepared, String reason) {
-        CommandCompletion failure = failure(reason);
-        for (PreparedCommand command : prepared) {
-            command.command.abort(failure);
-        }
-    }
-
-    private void detachCompletionListener(Node node, Command command) {
+    private void detachCompletionListener(CommandNode node, Command command) {
         if (node.currentCompletionListener != null) {
             command.removeCompletionListener(node.currentCompletionListener);
             node.currentCompletionListener = null;
@@ -976,6 +706,24 @@ final class CommandScheduler {
     private void cancelTimers() {
         cancelResponseTimeout();
         cancelNextExecution();
+        cancelSendWatchdog();
+    }
+
+    private void armSendWatchdog(CommandNode node, Command command, long attemptId) {
+        cancelSendWatchdog();
+        sendWatchdog = dispatcher.schedule(() -> {
+            sendWatchdog = null;
+            if (isCurrentAttempt(node, command, attemptId) && !node.writeCompleted) {
+                failCurrent(Command.ResultCode.TIMEOUT, "GATT 写入未在限定时间内完成");
+            }
+        }, WRITE_COMPLETION_WATCHDOG_MS);
+    }
+
+    private void cancelSendWatchdog() {
+        if (sendWatchdog != null) {
+            sendWatchdog.cancel();
+            sendWatchdog = null;
+        }
     }
 
     private void cancelResponseTimeout() {
@@ -997,10 +745,10 @@ final class CommandScheduler {
         if (currentNode != null) {
             currentNode.collectCommands(commands);
         }
-        for (Node node : pending) {
+        for (CommandNode node : requestQueue) {
             node.collectCommands(commands);
         }
-        boolean idle = currentNode == null && pending.isEmpty() && !executing;
+        boolean idle = currentNode == null && requestQueue.isEmpty() && !executing;
         stateListener.onStateChanged(new Snapshot(
                 executing, released, idle, sessionId, ready, commands));
     }
@@ -1016,115 +764,5 @@ final class CommandScheduler {
     /** 命令被撤销（会话切换/断开/释放）：不是设备侧失败，按 RESERVED 语义回报。 */
     private static CommandCompletion aborted(String message) {
         return CommandCompletion.stringResult(Command.ResultCode.RESERVED, message);
-    }
-
-    private static final class CacheEntry {
-        private final CommandCompletion completion;
-        private final long expiresAtMs;
-
-        private CacheEntry(CommandCompletion completion, long expiresAtMs) {
-            this.completion = completion;
-            this.expiresAtMs = expiresAtMs;
-        }
-    }
-
-    private static final class ResponseQuarantine {
-        private final String family;
-        private final Command command;
-        private final long expiresAtMs;
-
-        private ResponseQuarantine(String family, Command command, long expiresAtMs) {
-            this.family = family;
-            this.command = command;
-            this.expiresAtMs = expiresAtMs;
-        }
-    }
-
-    private static final class PreparedCommand {
-        private final Command command;
-        private final String payload;
-
-        private PreparedCommand(Command command, String payload) {
-            this.command = command;
-            this.payload = payload;
-        }
-    }
-
-    private static final class Node {
-        private Command primary;
-        private String payload;
-        private CommandPolicy policy;
-        private final CommandTransaction transaction;
-        private final List<PreparedCommand> transactionCommands;
-        private final List<Command> followers = new ArrayList<>();
-        private final List<String> bufferedFrames = new ArrayList<>();
-        private String queryIdentity;
-        private long generation;
-        private final long sessionId;
-        private long updatedAtMs;
-        private long attemptId;
-        private int transactionIndex;
-        private boolean writeStarted;
-        private boolean writeCompleted;
-        private CommandCompletion firstTransactionFailure;
-        private Command.CompletionListener currentCompletionListener;
-
-        private Node(Command primary,
-                     String payload,
-                     CommandPolicy policy,
-                     CommandTransaction transaction,
-                     List<PreparedCommand> transactionCommands,
-                     long generation,
-                     long sessionId,
-                     long updatedAtMs) {
-            this.primary = primary;
-            this.payload = payload;
-            this.policy = policy;
-            this.transaction = transaction;
-            this.transactionCommands = transactionCommands;
-            this.generation = generation;
-            this.sessionId = sessionId;
-            this.updatedAtMs = updatedAtMs;
-        }
-
-        static Node forCommand(Command command,
-                               String payload,
-                               CommandPolicy policy,
-                               long generation,
-                               long sessionId,
-                               long now) {
-            return new Node(
-                    command, payload, policy, null, null,
-                    generation, sessionId, now);
-        }
-
-        static Node forTransaction(CommandTransaction transaction,
-                                   List<PreparedCommand> commands,
-                                   long generation,
-                                   long sessionId,
-                                   long now) {
-            return new Node(
-                    null, null, null, transaction, commands,
-                    generation, sessionId, now);
-        }
-
-        void collectCommands(List<Command> target) {
-            if (transaction != null) {
-                for (PreparedCommand command : transactionCommands) {
-                    if (command.command.getCompletion() == null) {
-                        target.add(command.command);
-                    }
-                }
-                return;
-            }
-            if (primary != null && primary.getCompletion() == null) {
-                target.add(primary);
-            }
-            for (Command follower : followers) {
-                if (follower.getCompletion() == null) {
-                    target.add(follower);
-                }
-            }
-        }
     }
 }

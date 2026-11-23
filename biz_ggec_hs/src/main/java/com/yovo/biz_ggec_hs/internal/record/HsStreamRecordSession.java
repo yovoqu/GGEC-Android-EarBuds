@@ -9,9 +9,8 @@ import com.yovo.biz_ggec_hs.api.HsControl;
 import com.yovo.biz_ggec_hs.api.StreamRecordConfig;
 import com.yovo.biz_ggec_hs.api.StreamRecordListener;
 import com.yovo.biz_ggec_hs.internal.center.port.HsAudioDataLink;
-import com.yovo.biz_ggec_hs.internal.center.protocol.HsProtocolEngine;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StartStreamRecordCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StopStreamRecordCommand;
+import com.yovo.biz_ggec_hs.internal.center.HsProtocolEngine;
+import com.yovo.biz_ggec_hs.internal.center.command.HsCommandFactory;
 import com.yovo.biz_ggec_hs.internal.link.HsFailureMapper;
 import com.yovo.biz_ggec_hs.provider.lib_common.log.HsLog;
 import com.yovo.lib_ggec_audio.record.AudioCodecProviderPort;
@@ -96,7 +95,7 @@ public final class HsStreamRecordSession {
                 @Override
                 public void onReady() {
                     HsLog.i(TAG, "音频 Notify 通道就绪，发送 StartStreamRecordCommand");
-                    engine.submit(new StartStreamRecordCommand(), (command, completion) ->
+                    engine.submit(HsCommandFactory.startStreamRecord(), (command, completion) ->
                             reply.onReply(HsFailureMapper.ofCommandCode(completion.getCode())));
                 }
 
@@ -110,7 +109,7 @@ public final class HsStreamRecordSession {
 
         @Override
         public void stop(@NonNull StreamRecordPipeline.Reply<HsControl.Failure> reply) {
-            engine.submit(new StopStreamRecordCommand(), (command, completion) ->
+            engine.submit(HsCommandFactory.stopStreamRecord(), (command, completion) ->
                     reply.onReply(HsFailureMapper.ofCommandCode(completion.getCode())));
         }
 
