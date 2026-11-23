@@ -60,7 +60,7 @@ final class SpeechMultipart {
                 + YoTranscriptionRequest.FILENAME + "\"" + CRLF);
         write(out, "Content-Type: " + request.fileContentType() + CRLF);
         write(out, CRLF);
-        out.writeBytes(payload);
+        writeBytes(out, payload);
         write(out, CRLF);
 
         field(out, boundary, "model", request.model());
@@ -100,6 +100,11 @@ final class SpeechMultipart {
     }
 
     private static void write(ByteArrayOutputStream out, String value) {
-        out.writeBytes(value.getBytes(StandardCharsets.UTF_8));
+        writeBytes(out, value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** BAOS.write(byte[],int,int) 不抛 IOException；避开 API 33 才有的 writeBytes。 */
+    private static void writeBytes(ByteArrayOutputStream out, byte[] bytes) {
+        out.write(bytes, 0, bytes.length);
     }
 }

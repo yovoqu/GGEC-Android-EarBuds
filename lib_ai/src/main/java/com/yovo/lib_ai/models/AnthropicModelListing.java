@@ -21,7 +21,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.Iterator;
@@ -58,7 +57,20 @@ public final class AnthropicModelListing implements YoModelListing {
         if (cursor == null) {
             return path;
         }
-        return path + "&after_id=" + URLEncoder.encode(cursor, StandardCharsets.UTF_8);
+        return path + "&after_id=" + encodeCursor(cursor);
+    }
+
+    /**
+     * 用 {@code String} 版重载（Android 上 {@code URLEncoder.encode(String, Charset)} 要 API 33，
+     * minSdk 24 走不到），失败时退回原值——after_id 只会含 ASCII。
+     */
+    @NonNull
+    private static String encodeCursor(@NonNull String value) {
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException error) {
+            return value;
+        }
     }
 
     @NonNull

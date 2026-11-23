@@ -159,7 +159,7 @@ final class YoSynthesisCodec {
             return false;
         }
         byte[] bytes = Base64s.decode(base64);
-        audio.writeBytes(bytes);
+        audio.write(bytes, 0, bytes.length);
         return true;
     }
 

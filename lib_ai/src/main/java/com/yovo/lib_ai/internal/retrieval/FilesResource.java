@@ -205,6 +205,10 @@ public final class FilesResource implements YoFiles {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("fileId is required");
         }
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException error) {
+            throw new IllegalStateException("UTF-8 not supported", error);
+        }
     }
 }
