@@ -97,8 +97,9 @@ def dependencyPackagePrefixes = providers.provider {
     dependencyModules.get().collectEntries { String name -> [(name): "com.yovo.${name}"] }
 }
 
-// 本轮不处理的功能目录：record 入口保持现状，不纳入本轮扫描（不做任何改造）。
-def untouchedFeatureRoots = ['/com/ggec/earbuds/record/']
+// 已无搁置目录：record 入口并入 provider(biz_ggec_record)+domain(record)+wiring 分层，
+// 全量纳入本门禁扫描（Wave 2：删除原 record/ 豁免）。
+def untouchedFeatureRoots = []
 // 平台基线：共享 UI 原语等价于 androidx，仅 ui/** 可用。
 def platformBaselinePackages = ['com.yovo.lib_common.event']
 

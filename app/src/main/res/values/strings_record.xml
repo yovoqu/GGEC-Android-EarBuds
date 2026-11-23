@@ -34,4 +34,9 @@
     <string name="record_capture_started">正在录制 MP4…</string>
     <string name="record_capture_saved">已保存 %1$s（%2$d KB · %3$d 秒）</string>
     <string name="record_capture_failed">录制失败: %1$s</string>
+    <string name="record_scan_fail_bluetooth_disabled">蓝牙未开启</string>
+    <string name="record_scan_fail_permission_denied">缺少蓝牙权限</string>
+    <string name="record_scan_fail_ble_unsupported">设备不支持 BLE</string>
+    <string name="record_scan_fail_throttled">扫描过于频繁</string>
+    <string name="record_scan_fail_failed">扫描失败</string>
 </resources>

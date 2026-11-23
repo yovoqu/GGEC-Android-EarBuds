@@ -20,30 +20,38 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.ggec.earbuds.R;
-import com.ggec.earbuds.provider.lib_common.permission.PermissionProvider;
+import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
+import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
+import com.ggec.earbuds.domain.record.model.RecordAsrModel;
+import com.ggec.earbuds.domain.record.model.RecordConnectionState;
+import com.ggec.earbuds.domain.record.model.RecordLinkStats;
+import com.ggec.earbuds.domain.record.model.RecordNearbyDevice;
+import com.ggec.earbuds.domain.record.model.RecordScanFailure;
+import com.ggec.earbuds.domain.record.model.RecordSubtitleEvent;
+import com.ggec.earbuds.domain.record.model.RecordVideoCodec;
+import com.ggec.earbuds.domain.record.port.RecordControlPort;
+import com.ggec.earbuds.domain.record.port.RecordObserver;
+import com.ggec.earbuds.domain.record.port.RecordScanObserver;
+import com.ggec.earbuds.domain.record.port.RecordScanPort;
 import com.ggec.earbuds.record.wiring.RecordGraph;
 import com.google.android.material.button.MaterialButton;
 import com.yohu.youi.api.feedback.YoToast;
-import com.yovo.biz_ggec_record.api.RecordConnectionObserver;
-import com.yovo.biz_ggec_record.api.RecordNearbyObserver;
-import com.yovo.biz_ggec_record.api.RecordSessionObserver;
-import com.yovo.biz_ggec_record.model.RecordAsrModel;
-import com.yovo.biz_ggec_record.model.RecordConnectionState;
-import com.yovo.biz_ggec_record.model.RecordLinkStats;
-import com.yovo.biz_ggec_record.model.RecordNearbyDevice;
-import com.yovo.biz_ggec_record.model.RecordScanFailure;
-import com.yovo.biz_ggec_record.model.RecordSubtitleEvent;
-import com.yovo.biz_ggec_record.model.RecordVideoCodec;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Record 独立入口页：深色播放器布局，视频为主、控件沉底。
+ *
+ * <p>只依赖领域端口 {@link RecordControlPort}/{@link RecordScanPort} 与领域模型；不接触任何
+ * biz_ggec_record 类型。装配由 {@link RecordGraph}（wiring）完成并注入。</p>
  */
 public final class RecordMainActivity extends AppCompatActivity {
 
     private RecordGraph graph;
+    private RecordControlPort control;
+    private RecordScanPort scan;
+    private ScanPermissionRequest permissionRequest;
     private TextView statusView;
     private TextView statsView;
     private TextView subtitleFinalView;
@@ -78,6 +86,9 @@ public final class RecordMainActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_record_main);
         graph = new RecordGraph(getApplicationContext());
+        control = graph.control();
+        scan = graph.scan();
+        permissionRequest = graph.scanPermissionRequest(this);
 
         View root = findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
@@ -120,20 +131,20 @@ public final class RecordMainActivity extends AppCompatActivity {
         });
         findViewById(R.id.record_disconnect).setOnClickListener(v -> {
             stopScan();
-            graph.client().disconnect();
+            control.disconnect();
             videoPlaceholder.setVisibility(View.VISIBLE);
         });
         codecH264.setOnClickListener(v -> selectCodec(RecordVideoCodec.H264));
         codecH265.setOnClickListener(v -> selectCodec(RecordVideoCodec.H265));
         muteButton.setOnClickListener(v -> {
             muted = !muted;
-            graph.client().setMuted(muted);
+            control.setMuted(muted);
             muteButton.setText(muted ? R.string.record_unmute : R.string.record_mute);
             styleChip(muteButton, muted);
         });
         asrToggleButton.setOnClickListener(v -> {
             asrEnabled = !asrEnabled;
-            graph.client().setAsrEnabled(asrEnabled);
+            control.setAsrEnabled(asrEnabled);
             asrToggleButton.setText(asrEnabled ? R.string.record_asr_off : R.string.record_asr_on);
             styleChip(asrToggleButton, asrEnabled);
         });
@@ -141,7 +152,7 @@ public final class RecordMainActivity extends AppCompatActivity {
             asrModel = asrModel == RecordAsrModel.ZIPFORMER_SMALL
                     ? RecordAsrModel.PARAFORMER
                     : RecordAsrModel.ZIPFORMER_SMALL;
-            graph.client().setAsrModel(asrModel);
+            control.setAsrModel(asrModel);
             asrModelButton.setText(asrModel == RecordAsrModel.ZIPFORMER_SMALL
                     ? R.string.record_asr_model_zipformer
                     : R.string.record_asr_model_paraformer);
@@ -152,10 +163,10 @@ public final class RecordMainActivity extends AppCompatActivity {
             subtitlePartialView.setText("");
         });
         captureButton.setOnClickListener(v -> {
-            if (graph.client().isRecording()) {
-                graph.client().stopRecording();
+            if (control.isRecording()) {
+                control.stopRecording();
             } else {
-                graph.client().startRecording();
+                control.startRecording();
             }
         });
         resetCaptureButton();
@@ -186,12 +197,12 @@ public final class RecordMainActivity extends AppCompatActivity {
         });
 
         selectCodec(RecordVideoCodec.H265);
-        graph.client().setAsrEnabled(true);
-        graph.client().setAsrModel(RecordAsrModel.ZIPFORMER_SMALL);
+        control.setAsrEnabled(true);
+        control.setAsrModel(RecordAsrModel.ZIPFORMER_SMALL);
         styleChip(asrToggleButton, true);
         styleChip(muteButton, false);
 
-        graph.client().setConnectionObserver(new RecordConnectionObserver() {
+        control.setObserver(new RecordObserver() {
             @Override
             public void onConnectionStateChanged(@NonNull RecordConnectionState state) {
                 statusView.setText(labelFor(state));
@@ -217,8 +228,7 @@ public final class RecordMainActivity extends AppCompatActivity {
                 videoPlaceholder.setVisibility(View.VISIBLE);
                 refreshDeviceSection();
             }
-        });
-        graph.client().setSessionObserver(new RecordSessionObserver() {
+
             @Override
             public void onLinkStats(@NonNull RecordLinkStats stats) {
                 statsView.setText(getString(R.string.record_stats_format,
@@ -229,7 +239,7 @@ public final class RecordMainActivity extends AppCompatActivity {
 
             @Override
             public void onSubtitle(@NonNull RecordSubtitleEvent event) {
-                if (event.isFinalResult()) {
+                if (event.finalResult()) {
                     if (!event.text().isBlank()) {
                         if (finals.length() > 0) {
                             finals.append('\n');
@@ -288,8 +298,7 @@ public final class RecordMainActivity extends AppCompatActivity {
         stopScan();
         bindSurface(null);
         if (graph != null) {
-            graph.client().setConnectionObserver(null);
-            graph.client().setSessionObserver(null);
+            control.setObserver(null);
             graph.close();
             graph = null;
         }
@@ -301,12 +310,11 @@ public final class RecordMainActivity extends AppCompatActivity {
                                            @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        PermissionProvider.Result result = PermissionProvider.onRequestResult(
-                this, requestCode, permissions, grantResults);
+        ScanPermissionResult result = permissionRequest.onResult(requestCode, permissions, grantResults);
         if (!result.handled()) {
             return;
         }
-        if (result.allGranted() && pendingScan) {
+        if (result.granted() && pendingScan) {
             pendingScan = false;
             doStartScan();
         } else if (pendingScan) {
@@ -318,7 +326,7 @@ public final class RecordMainActivity extends AppCompatActivity {
 
     private void selectCodec(@NonNull RecordVideoCodec codec) {
         videoCodec = codec;
-        graph.client().setVideoCodec(codec);
+        control.setVideoCodec(codec);
         styleChip(codecH264, codec == RecordVideoCodec.H264);
         styleChip(codecH265, codec == RecordVideoCodec.H265);
     }
@@ -337,13 +345,13 @@ public final class RecordMainActivity extends AppCompatActivity {
             videoSurface.release();
         }
         videoSurface = surface;
-        if (graph != null) {
-            graph.client().setVideoSurface(surface);
+        if (control != null) {
+            control.setVideoSurface(surface);
         }
     }
 
     private void startScanFlow() {
-        if (PermissionProvider.requestBluetoothIfNeeded(this)) {
+        if (permissionRequest.ensureGranted()) {
             doStartScan();
             return;
         }
@@ -357,7 +365,7 @@ public final class RecordMainActivity extends AppCompatActivity {
         adapter.notifyDataSetChanged();
         refreshDeviceSection();
         statusView.setText(getString(R.string.record_status_scanning, 0));
-        graph.nearby().start(new RecordNearbyObserver() {
+        scan.start(new RecordScanObserver() {
             @Override
             public void onDevicesChanged(@NonNull List<RecordNearbyDevice> next) {
                 devices.clear();
@@ -369,7 +377,8 @@ public final class RecordMainActivity extends AppCompatActivity {
 
             @Override
             public void onScanFailed(@NonNull RecordScanFailure failure) {
-                statusView.setText(getString(R.string.record_status_failed, failure.message()));
+                statusView.setText(getString(R.string.record_status_failed,
+                        RecordScanFailureText.of(RecordMainActivity.this, failure)));
             }
         });
     }
@@ -380,13 +389,13 @@ public final class RecordMainActivity extends AppCompatActivity {
         statsView.setText(R.string.record_stats_idle);
         deviceList.setVisibility(View.GONE);
         deviceSectionTitle.setVisibility(View.GONE);
-        graph.client().connect(device.macAddress(), device.name());
+        control.connect(device.macAddress(), device.name());
     }
 
     private void stopScan() {
         pendingScan = false;
-        if (graph != null) {
-            graph.nearby().stop();
+        if (scan != null) {
+            scan.stop();
         }
     }
 
