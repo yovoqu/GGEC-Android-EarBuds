@@ -182,6 +182,23 @@ public final class WyDeviceLinkAdapter implements DeviceLinkPort {
     }
 
     @Override
+    public void writeWithProgress(String capabilityId, ControlValue value,
+                                  Runnable onStarted, Consumer<DeviceWriteResult> callback) {
+        WyDevice.Capability capability = WyValueMapper.capabilityOf(capabilityId);
+        sdk.write(capability, WyValueMapper.toWyControlValue(value), new WyControl.Callback() {
+            @Override
+            public void onStarted() {
+                onStarted.run();
+            }
+
+            @Override
+            public void onResult(WyControl.Outcome<Void> result) {
+                callback.accept(WyValueMapper.toWriteResult(result));
+            }
+        });
+    }
+
+    @Override
     public void perform(DeviceAction action, Consumer<DeviceWriteResult> callback) {
         sdk.perform(WyValueMapper.toWyAction(action),
                 result -> callback.accept(WyValueMapper.toWriteResult(result)));

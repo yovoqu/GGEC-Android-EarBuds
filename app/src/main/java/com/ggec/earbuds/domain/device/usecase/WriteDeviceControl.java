@@ -18,10 +18,21 @@ public final class WriteDeviceControl {
 
     public void execute(String capabilityId, ControlValue value,
                         Consumer<DeviceWriteResult> callback) {
+        execute(capabilityId, value, () -> { }, callback);
+    }
+
+    /**
+     * 带中间阶段的写入：{@code onStarted} 在设备受理（进入处理中）时回调一次，终态走 {@code callback}。
+     */
+    public void execute(String capabilityId, ControlValue value,
+                        Runnable onStarted,
+                        Consumer<DeviceWriteResult> callback) {
         if (capabilityId == null || capabilityId.isEmpty()) {
             throw new IllegalArgumentException("capabilityId required");
         }
         Objects.requireNonNull(value, "value");
-        port.write(capabilityId, value, callback);
+        Objects.requireNonNull(onStarted, "onStarted");
+        Objects.requireNonNull(callback, "callback");
+        port.writeWithProgress(capabilityId, value, onStarted, callback);
     }
 }

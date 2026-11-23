@@ -72,6 +72,40 @@ public final class DeviceGatewayTest {
     }
 
     @Test
+    public void writeWithProgressWithoutConnectionFailsNotReady() {
+        DeviceGateway gateway = gateway();
+        List<DeviceWriteResult> results = new ArrayList<>();
+        int[] started = {0};
+
+        gateway.writeWithProgress("EQ", new ControlValue.Toggle(true),
+                () -> started[0]++, results::add);
+
+        assertTrue(results.get(0) instanceof DeviceWriteResult.Failed failed
+                && failed.failure() == DeviceFailure.NOT_READY);
+        assertEquals("未连接不进入中间阶段", 0, started[0]);
+    }
+
+    @Test
+    public void writeWithProgressForwardsStartedAndResultToConnectedEndpoint() {
+        FakeEndpoint hs = new FakeEndpoint(DeviceTransport.BLE, HS_MODELS);
+        DeviceGateway gateway = gateway(hs);
+        gateway.connect(targetOf("M01"), settlement -> {
+        });
+
+        int[] started = {0};
+        List<DeviceWriteResult> results = new ArrayList<>();
+        gateway.writeWithProgress("ANC", new ControlValue.Toggle(true),
+                () -> started[0]++, results::add);
+
+        assertEquals("ANC", hs.link.lastWriteCapability);
+        assertTrue("中间阶段必须被网关转发到端点", hs.link.lastOnStarted != null);
+        hs.link.lastOnStarted.run();
+        assertEquals("onStarted 已透传到调用方", 1, started[0]);
+        hs.link.lastWriteCallback.accept(new DeviceWriteResult.Ok());
+        assertEquals(1, results.size());
+    }
+
+    @Test
     public void snapshotIsIdleWithoutConnection() {
         DeviceGateway gateway = gateway();
 
@@ -416,6 +450,19 @@ public final class DeviceGatewayTest {
         @Override
         public void write(@NonNull String capabilityId, @NonNull ControlValue value,
                           @NonNull Consumer<DeviceWriteResult> callback) {
+        }
+
+        String lastWriteCapability;
+        Runnable lastOnStarted;
+        Consumer<DeviceWriteResult> lastWriteCallback;
+
+        @Override
+        public void writeWithProgress(@NonNull String capabilityId, @NonNull ControlValue value,
+                                      @NonNull Runnable onStarted,
+                                      @NonNull Consumer<DeviceWriteResult> callback) {
+            lastWriteCapability = capabilityId;
+            lastOnStarted = onStarted;
+            lastWriteCallback = callback;
         }
 
         @Override

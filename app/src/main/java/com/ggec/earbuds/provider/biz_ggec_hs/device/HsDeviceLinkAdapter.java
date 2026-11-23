@@ -205,6 +205,23 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
     }
 
     @Override
+    public void writeWithProgress(String capabilityId, ControlValue value,
+                                  Runnable onStarted, Consumer<DeviceWriteResult> callback) {
+        HsDevice.Capability capability = HsValueMapper.capabilityOf(capabilityId);
+        sdk.write(capability, HsValueMapper.toHsControlValue(value), new HsControl.Callback() {
+            @Override
+            public void onStarted() {
+                onStarted.run();
+            }
+
+            @Override
+            public void onResult(HsControl.Outcome<Void> result) {
+                callback.accept(HsValueMapper.toWriteResult(result));
+            }
+        });
+    }
+
+    @Override
     public void perform(DeviceAction action, Consumer<DeviceWriteResult> callback) {
         sdk.perform(HsValueMapper.toHsAction(action),
                 result -> callback.accept(HsValueMapper.toWriteResult(result)));

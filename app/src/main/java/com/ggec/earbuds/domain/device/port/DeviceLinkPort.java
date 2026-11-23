@@ -63,6 +63,17 @@ public interface DeviceLinkPort {
     void write(@NonNull String capabilityId, @NonNull ControlValue value,
                @NonNull Consumer<DeviceWriteResult> callback);
 
+    /**
+     * 带中间阶段的写入：{@code onStarted} 在「命令已写入链路 / 设备已受理（进入处理中）」时回调，
+     * 最终结果仍只经 {@code callback}。默认实现不额外上报中间阶段（退化为 {@link #write}），
+     * 具备链路写完成信号的实现（HS/WY）应覆写以驱动 APP 的「发送 → 处理中 → 成功/失败」三态。
+     */
+    default void writeWithProgress(@NonNull String capabilityId, @NonNull ControlValue value,
+                                   @NonNull Runnable onStarted,
+                                   @NonNull Consumer<DeviceWriteResult> callback) {
+        write(capabilityId, value, callback);
+    }
+
     /** 执行一个类型化动作（找耳机、重命名、录音、双连接等）。 */
     void perform(@NonNull DeviceAction action, @NonNull Consumer<DeviceWriteResult> callback);
 

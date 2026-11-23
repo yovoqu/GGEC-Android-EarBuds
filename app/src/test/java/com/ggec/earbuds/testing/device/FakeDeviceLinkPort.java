@@ -29,6 +29,7 @@ public final class FakeDeviceLinkPort implements DeviceLinkPort {
     private DeviceSnapshot current = DeviceSnapshot.idle();
     private Consumer<ConnectSettlement> pendingSettlement;
     private Consumer<DeviceWriteResult> writeCallback;
+    private Runnable writeStarted;
 
     @Override
     public DeviceSnapshot snapshot() {
@@ -83,6 +84,14 @@ public final class FakeDeviceLinkPort implements DeviceLinkPort {
     }
 
     @Override
+    public void writeWithProgress(String capabilityId, ControlValue value,
+                                  Runnable onStarted, Consumer<DeviceWriteResult> callback) {
+        writes.add(capabilityId);
+        writeStarted = onStarted;
+        writeCallback = callback;
+    }
+
+    @Override
     public void perform(DeviceAction action, Consumer<DeviceWriteResult> callback) {
         actions.add(action);
         writeCallback = callback;
@@ -113,6 +122,15 @@ public final class FakeDeviceLinkPort implements DeviceLinkPort {
         Consumer<DeviceWriteResult> callback = writeCallback;
         if (callback != null) {
             callback.accept(result);
+        }
+    }
+
+    /** 让最近一次写入进入「已受理/处理中」阶段（触发 onStarted）。 */
+    public void settleStarted() {
+        Runnable started = writeStarted;
+        writeStarted = null;
+        if (started != null) {
+            started.run();
         }
     }
 

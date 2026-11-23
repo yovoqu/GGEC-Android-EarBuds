@@ -12,7 +12,8 @@ import org.junit.Test;
 import java.util.Optional;
 
 /**
- * 开关呈现规则：**值未知只影响「值怎么显示」，不影响「控件是否存在」**。
+ * 开关呈现规则：**值未知只影响「值怎么显示」，不影响「控件是否存在」**；写入未落地时
+ * **点击即先切换**（先呈现目标值）并**禁用重复点击**，成功后解除，失败回退。
  *
  * <p>这条锁死的是功能回归：协议只有 Set、没有 Query 的那批功能开关（VOLUME_ADAPTIVE /
  * WEAR_DETECT / VOICE_WAKEUP / FALL_ALERT / VOLUME_REMIND / INTERPRET）永远拿不到上报值，
@@ -25,8 +26,12 @@ public final class TogglePresentationTest {
 
     private static final DeviceSettingsUiState.WriteState IDLE =
             DeviceSettingsUiState.WriteState.IDLE;
-    private static final DeviceSettingsUiState.WriteState IN_FLIGHT =
-            DeviceSettingsUiState.WriteState.IN_FLIGHT;
+    private static final DeviceSettingsUiState.WriteState SENDING =
+            DeviceSettingsUiState.WriteState.SENDING;
+    private static final DeviceSettingsUiState.WriteState PROCESSING =
+            DeviceSettingsUiState.WriteState.PROCESSING;
+    private static final DeviceSettingsUiState.WriteState CONFIRMED =
+            DeviceSettingsUiState.WriteState.CONFIRMED;
     private static final DeviceSettingsUiState.WriteState FAILED =
             DeviceSettingsUiState.WriteState.FAILED;
 
@@ -80,24 +85,52 @@ public final class TogglePresentationTest {
     }
 
     @Test
-    public void inFlightWriteDisablesFurtherWrites() {
+    public void sendingWriteDisablesAndShowsTheTargetImmediately() {
         TogglePresentation presentation =
-                TogglePresentation.of(IN_FLIGHT, Optional.of(false), Optional.of(true), true);
+                TogglePresentation.of(SENDING, Optional.of(false), Optional.of(true), true);
 
-        assertFalse("写入未落地前不重复下发", presentation.enabled());
-        assertSame(IN_FLIGHT, presentation.writeState());
+        assertFalse("发送中不重复下发", presentation.enabled());
+        assertSame(SENDING, presentation.writeState());
         assertFalse(presentation.unknown());
-        assertFalse("上报值优先，不显示未确认值", presentation.position());
+        assertTrue("点击即先切换：发送中先呈现目标值", presentation.position());
     }
 
     @Test
-    public void failedWriteFallsBackToTheReportedValue() {
+    public void processingWriteStillDisablesAndShowsTheTarget() {
         TogglePresentation presentation =
-                TogglePresentation.of(FAILED, Optional.of(true), Optional.empty(), true);
+                TogglePresentation.of(PROCESSING, Optional.of(false), Optional.of(true), true);
 
-        assertSame(FAILED, presentation.writeState());
+        assertFalse("处理中仍禁用点击", presentation.enabled());
+        assertSame(PROCESSING, presentation.writeState());
+        assertTrue("处理中继续呈现目标值", presentation.position());
+    }
+
+    @Test
+    public void confirmedWriteKeepsTheUserTargetEvenIfDeviceReportsStale() {
+        TogglePresentation presentation =
+                TogglePresentation.of(CONFIRMED, Optional.of(false), Optional.of(true), true);
+
+        assertTrue("成功后解除禁用", presentation.enabled());
+        assertSame(CONFIRMED, presentation.writeState());
+        assertTrue("成功后保持用户目标值（设备上报可能滞后/不回读）", presentation.position());
+    }
+
+    @Test
+    public void confirmedWriteWithoutReportedValueKeepsTheUserTarget() {
+        TogglePresentation presentation =
+                TogglePresentation.of(CONFIRMED, Optional.empty(), Optional.of(true), true);
+
         assertTrue(presentation.enabled());
-        assertTrue("失败后回到设备上报值", presentation.position());
+        assertTrue(presentation.position());
+    }
+
+    @Test
+    public void failedWriteRevertsToReportedValue() {
+        TogglePresentation presentation =
+                TogglePresentation.of(FAILED, Optional.of(false), Optional.empty(), true);
+
+        assertTrue("失败后恢复可点击", presentation.enabled());
+        assertFalse("失败后回退到设备上报值", presentation.position());
     }
 
     @Test

@@ -192,12 +192,19 @@ public final class DeviceSettingsViewModelTest {
     }
 
     @Test
-    public void writeMarksInFlightThenConfirmedInTheUiState() {
+    public void writeMarksSendingThenProcessingThenConfirmedInTheUiState() {
         viewModel.onToggle("ANC", true);
 
-        DeviceSettingsUiState.WriteSlot inFlight = currentState().writeOf("ANC");
-        assertSame(DeviceSettingsUiState.WriteState.IN_FLIGHT, inFlight.state());
-        assertEquals(Optional.of(Boolean.TRUE), inFlight.toggleValue());
+        DeviceSettingsUiState.WriteSlot sending = currentState().writeOf("ANC");
+        assertSame(DeviceSettingsUiState.WriteState.SENDING, sending.state());
+        assertEquals(Optional.of(Boolean.TRUE), sending.toggleValue());
+
+        port.settleStarted();
+
+        DeviceSettingsUiState.WriteSlot processing = currentState().writeOf("ANC");
+        assertSame("链路写完成/设备受理后进入处理中",
+                DeviceSettingsUiState.WriteState.PROCESSING, processing.state());
+        assertEquals(Optional.of(Boolean.TRUE), processing.toggleValue());
 
         port.settleWrite(new DeviceWriteResult.Ok());
 

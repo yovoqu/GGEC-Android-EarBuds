@@ -34,11 +34,16 @@ public record LevelPresentation(boolean unknown, int value, boolean enabled,
         Objects.requireNonNull(writeState, "writeState");
         Objects.requireNonNull(reported, "reported");
         Objects.requireNonNull(pending, "pending");
-        OptionalInt position = reported.isPresent() ? reported : pending;
+        boolean targetWins = pending.isPresent()
+                && writeState != DeviceSettingsUiState.WriteState.FAILED
+                && writeState != DeviceSettingsUiState.WriteState.IDLE;
+        OptionalInt position = targetWins
+                ? pending
+                : (reported.isPresent() ? reported : pending);
         return new LevelPresentation(
                 reported.isEmpty(),
                 position.orElse(min),
-                interactive && writeState != DeviceSettingsUiState.WriteState.IN_FLIGHT,
+                interactive && !writeState.inFlight(),
                 writeState);
     }
 }

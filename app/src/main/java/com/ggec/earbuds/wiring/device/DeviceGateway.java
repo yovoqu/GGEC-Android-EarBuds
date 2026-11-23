@@ -277,6 +277,21 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
     }
 
     @Override
+    public void writeWithProgress(@NonNull String capabilityId, @NonNull ControlValue value,
+                                  @NonNull Runnable onStarted,
+                                  @NonNull Consumer<DeviceWriteResult> callback) {
+        Objects.requireNonNull(onStarted, "onStarted");
+        Objects.requireNonNull(callback, "callback");
+        DeviceEndpoint endpoint = connectedEndpoint();
+        if (endpoint == null) {
+            callback.accept(new DeviceWriteResult.Failed(DeviceFailure.NOT_READY));
+            return;
+        }
+        // 把「发送/处理中」中间阶段透到当前端点，生产链路才能驱动 SENDING→PROCESSING→终态。
+        endpoint.link().writeWithProgress(capabilityId, value, onStarted, callback);
+    }
+
+    @Override
     public void perform(@NonNull DeviceAction action,
                         @NonNull Consumer<DeviceWriteResult> callback) {
         Objects.requireNonNull(callback, "callback");

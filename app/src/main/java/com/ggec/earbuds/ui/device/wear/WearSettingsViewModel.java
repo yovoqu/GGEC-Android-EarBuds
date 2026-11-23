@@ -35,6 +35,11 @@ public final class WearSettingsViewModel extends ViewModel {
     private DeviceSnapshot snapshot = DeviceSnapshot.idle();
     private Subscription subscription;
     private boolean inFlight;
+    /**
+     * 本次写入的用户目标值（点击即先切换、成功后保持）。空表示没有进行中/刚成功的写入，回落到设备上报值。
+     * 失败或连接断开时清空。
+     */
+    private Optional<Boolean> pendingTarget = Optional.empty();
 
     public WearSettingsViewModel(@NonNull ObserveDevice observeDevice,
                                  @NonNull WriteDeviceControl writeControl) {
@@ -59,6 +64,11 @@ public final class WearSettingsViewModel extends ViewModel {
         snapshot = observeDevice.current();
         subscription = observeDevice.execute(next -> {
             snapshot = next;
+            if (next.connection() != ConnectionState.READY) {
+                // 连接不在就绪态：丢弃未确认目标，避免把上一台设备的意图带到新会话。
+                pendingTarget = Optional.empty();
+                inFlight = false;
+            }
             publish();
         });
         publish();
@@ -69,22 +79,29 @@ public final class WearSettingsViewModel extends ViewModel {
             return;
         }
         inFlight = true;
+        // 点击即先切换：先呈现目标值，禁用重复点击。
+        pendingTarget = Optional.of(enabled);
         publish();
         writeControl.execute(DeviceCapabilityIds.WEAR_DETECT, new ControlValue.Toggle(enabled),
                 result -> {
                     inFlight = false;
                     if (result instanceof DeviceWriteResult.Failed failed) {
+                        // 失败回退到设备上报值。
+                        pendingTarget = Optional.empty();
                         failures.postValue(failed.failure());
                     }
+                    // 成功：保留 pendingTarget，开关保持用户目标值（设备上报可能滞后/不回读）。
                     publish();
                 });
     }
 
     private void publish() {
         boolean ready = snapshot.connection() == ConnectionState.READY;
-        boolean checked = snapshot.state().value(DeviceCapabilityIds.WEAR_DETECT)
+        boolean reported = snapshot.state().value(DeviceCapabilityIds.WEAR_DETECT)
                 .flatMap(WearSettingsViewModel::toggleValue)
                 .orElse(false);
+        // 写入中/成功后以用户目标值为准；否则以设备上报值为准。
+        boolean checked = pendingTarget.orElse(reported);
         state.postValue(new WearSettingsUiState(ready, checked, ready && !inFlight));
     }
 

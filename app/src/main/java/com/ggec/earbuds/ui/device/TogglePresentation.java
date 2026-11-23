@@ -16,9 +16,9 @@ import java.util.Optional;
  *
  * <ul>
  *   <li>{@link #unknown()}：设备没有上报值，行上把值显示成「未上报」；</li>
- *   <li>{@link #position()}：开关位置——设备上报值优先；没有上报值时用写入槽里的未确认值；
- *       两者都没有则取关；</li>
- *   <li>{@link #enabled()}：是否可写——连接就绪且没有一次同能力的写入正在进行；</li>
+ *   <li>{@link #position()}：开关位置——写入过程中（SENDING/PROCESSING）与成功确认后（CONFIRMED）
+ *       优先呈现本次用户目标值（点击即先切换、成功后保持），失败或空闲时设备上报值优先；</li>
+ *   <li>{@link #enabled()}：是否可写——连接就绪且没有一次同能力的写入正在进行（SENDING/PROCESSING 时禁用）；</li>
  *   <li>{@link #writeState()}：本次写入的落地状态，界面据此显示「写入中 / 已确认 / 失败已回退」。</li>
  * </ul>
  *
@@ -40,10 +40,21 @@ public record TogglePresentation(boolean unknown, boolean position, boolean enab
         Objects.requireNonNull(writeState, "writeState");
         Objects.requireNonNull(reported, "reported");
         Objects.requireNonNull(pending, "pending");
+        // 点击即先切换：写入未落地（SENDING / PROCESSING）期间先呈现用户本次目标值（pending），
+        // 让开关立即翻到目标位置，同时 enabled=false 禁用重复点击；**命令成功后（CONFIRMED）继续
+        // 呈现用户选择的值**——设备可能不回读或回读滞后（HS02 实测：命令回执成功但状态上报仍为旧值），
+        // 以本次写入为准而非旧上报值；失败（FAILED）丢弃 pending 回退到设备上报值。
+        boolean targetWins = pending.isPresent()
+                && (writeState == DeviceSettingsUiState.WriteState.SENDING
+                || writeState == DeviceSettingsUiState.WriteState.PROCESSING
+                || writeState == DeviceSettingsUiState.WriteState.CONFIRMED);
+        boolean position = targetWins
+                ? pending.get()
+                : reported.or(() -> pending).orElse(Boolean.FALSE);
         return new TogglePresentation(
                 reported.isEmpty(),
-                reported.or(() -> pending).orElse(Boolean.FALSE),
-                interactive && writeState != DeviceSettingsUiState.WriteState.IN_FLIGHT,
+                position,
+                interactive && !writeState.inFlight(),
                 writeState);
     }
 }

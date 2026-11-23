@@ -16,8 +16,10 @@ public final class LevelPresentationTest {
 
     private static final DeviceSettingsUiState.WriteState IDLE =
             DeviceSettingsUiState.WriteState.IDLE;
-    private static final DeviceSettingsUiState.WriteState IN_FLIGHT =
-            DeviceSettingsUiState.WriteState.IN_FLIGHT;
+    private static final DeviceSettingsUiState.WriteState SENDING =
+            DeviceSettingsUiState.WriteState.SENDING;
+    private static final DeviceSettingsUiState.WriteState PROCESSING =
+            DeviceSettingsUiState.WriteState.PROCESSING;
     private static final DeviceSettingsUiState.WriteState CONFIRMED =
             DeviceSettingsUiState.WriteState.CONFIRMED;
 
@@ -62,13 +64,23 @@ public final class LevelPresentationTest {
     }
 
     @Test
-    public void inFlightWriteDisablesFurtherWrites() {
-        LevelPresentation presentation = LevelPresentation.of(IN_FLIGHT,
+    public void sendingWriteDisablesAndShowsTheTarget() {
+        LevelPresentation presentation = LevelPresentation.of(SENDING,
                 OptionalInt.empty(), OptionalInt.of(8), 0, true);
 
         assertFalse(presentation.enabled());
-        assertSame(IN_FLIGHT, presentation.writeState());
-        assertEquals("未确认值仍然显示", 8, presentation.value());
+        assertSame(SENDING, presentation.writeState());
+        assertEquals("发送中先呈现本次目标值", 8, presentation.value());
+    }
+
+    @Test
+    public void processingWriteStillDisablesAndShowsTheTarget() {
+        LevelPresentation presentation = LevelPresentation.of(PROCESSING,
+                OptionalInt.of(3), OptionalInt.of(8), 0, true);
+
+        assertFalse(presentation.enabled());
+        assertSame(PROCESSING, presentation.writeState());
+        assertEquals("处理中继续呈现本次目标值", 8, presentation.value());
     }
 
     @Test
@@ -79,6 +91,15 @@ public final class LevelPresentationTest {
         assertSame(CONFIRMED, presentation.writeState());
         assertEquals(8, presentation.value());
         assertTrue(presentation.unknown());
+    }
+
+    @Test
+    public void confirmedWriteKeepsTheUserTargetOverStaleReport() {
+        LevelPresentation presentation = LevelPresentation.of(CONFIRMED,
+                OptionalInt.of(3), OptionalInt.of(8), 0, true);
+
+        assertSame(CONFIRMED, presentation.writeState());
+        assertEquals("成功后保持用户目标值，不被旧上报值覆盖", 8, presentation.value());
     }
 
     @Test

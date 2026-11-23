@@ -40,9 +40,9 @@ import java.util.Optional;
  * {@link RunDeviceAction}（{@code DevicePort.perform}）。本类不拼协议字节、不推导值域、
  * 不吞失败：失败分类经 {@link #events()} 交给宿主播文案。</p>
  *
- * <p><b>写入状态的唯一来源</b>是 {@link #writes}：每次写入先落 {@code IN_FLIGHT}（带本次值），
- * 端口结果落 {@code CONFIRMED}（保留本次值，设备不回读也能显示）或 {@code FAILED}
- * （丢弃本次值 → 呈现自动回退到设备上报值）。视图层不再保存任何「未确认」副本。</p>
+ * <p><b>写入状态的唯一来源</b>是 {@link #writes}：每次写入先落 {@code SENDING}（带本次值），
+ * 链路写完成转 {@code PROCESSING}，端口结果落 {@code CONFIRMED}（保留本次值，设备不回读也能显示）
+ * 或 {@code FAILED}（丢弃本次值 → 呈现自动回退到设备上报值）。视图层不再保存任何「未确认」副本。</p>
  */
 public final class DeviceSettingsViewModel extends ViewModel implements SettingsInteractionListener {
 
@@ -113,11 +113,33 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         if (!isWritable()) {
             return;
         }
+        // 点击即先切换：立即落 SENDING 并带本次目标值，视图据此先翻到目标位置并禁用重复点击。
         putWrite(capabilityId,
                 new DeviceSettingsUiState.WriteSlot(
-                        DeviceSettingsUiState.WriteState.IN_FLIGHT, Optional.of(value)));
+                        DeviceSettingsUiState.WriteState.SENDING, Optional.of(value)));
         publish();
-        writeControl.execute(capabilityId, value, result -> onWriteResult(capabilityId, value, result));
+        writeControl.execute(capabilityId, value,
+                () -> onWriteStarted(capabilityId, value),
+                result -> onWriteResult(capabilityId, value, result));
+    }
+
+    /**
+     * 链路写完成 / 设备已受理：SENDING → PROCESSING（仍在途，仍禁用点击）。
+     * 只有当前槽仍是「本次值 + SENDING」时才推进，避免旧写入的迟到信号覆盖新写入或终态。
+     */
+    private void onWriteStarted(@NonNull String capabilityId, @NonNull ControlValue value) {
+        synchronized (this) {
+            DeviceSettingsUiState.WriteSlot slot = writes.get(capabilityId);
+            boolean stillSending = slot != null
+                    && slot.state() == DeviceSettingsUiState.WriteState.SENDING
+                    && slot.pendingValue().filter(v -> v.equals(value)).isPresent();
+            if (!stillSending) {
+                return;
+            }
+            writes.put(capabilityId, new DeviceSettingsUiState.WriteSlot(
+                    DeviceSettingsUiState.WriteState.PROCESSING, Optional.of(value)));
+        }
+        publish();
     }
 
     /** 类型化动作：重启、清除配对、查找耳机、录音等。 */
@@ -295,15 +317,33 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
         run(new DeviceAction.TransferRecord(files.get(0).fileId(), true));
     }
 
-    /** 写入落地：成功保留本次值（设备不回读时界面仍有确定呈现），失败丢弃本次值。 */
+    /**
+     * 写入落地：成功保留本次值（设备不回读时界面仍有确定呈现），失败丢弃本次值。
+     *
+     * <p>守卫：只有当前槽仍属于「本次 value 且在途（SENDING/PROCESSING）」时才落终态，
+     * 迟到结果、掉线清空后的旧结果、已被新写入替换的旧结果一律丢弃，避免污染当前槽。</p>
+     */
     private void onWriteResult(@NonNull String capabilityId, @NonNull ControlValue value,
                                @NonNull DeviceWriteResult result) {
-        DeviceSettingsUiState.WriteSlot slot = switch (result) {
-            case DeviceWriteResult.Ok ignored -> new DeviceSettingsUiState.WriteSlot(
-                    DeviceSettingsUiState.WriteState.CONFIRMED, Optional.of(value));
-            case DeviceWriteResult.Failed failed -> failedSlot(failed.failure());
-        };
-        putWrite(capabilityId, slot);
+        synchronized (this) {
+            DeviceSettingsUiState.WriteSlot current = writes.get(capabilityId);
+            boolean stillPending = current != null
+                    && current.state().inFlight()
+                    && current.pendingValue().filter(v -> v.equals(value)).isPresent();
+            if (!stillPending) {
+                return;
+            }
+            DeviceSettingsUiState.WriteSlot slot = switch (result) {
+                case DeviceWriteResult.Ok ignored -> new DeviceSettingsUiState.WriteSlot(
+                        DeviceSettingsUiState.WriteState.CONFIRMED, Optional.of(value));
+                case DeviceWriteResult.Failed failed -> new DeviceSettingsUiState.WriteSlot(
+                        DeviceSettingsUiState.WriteState.FAILED, Optional.empty());
+            };
+            writes.put(capabilityId, slot);
+            if (result instanceof DeviceWriteResult.Failed failed) {
+                events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
+            }
+        }
         publish();
     }
 
@@ -314,13 +354,6 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
             case DeviceWriteResult.Failed failed ->
                     events.postValue(new DeviceSettingsEvent.Failure(failed.failure()));
         }
-    }
-
-    @NonNull
-    private DeviceSettingsUiState.WriteSlot failedSlot(@NonNull DeviceFailure failure) {
-        events.postValue(new DeviceSettingsEvent.Failure(failure));
-        return new DeviceSettingsUiState.WriteSlot(
-                DeviceSettingsUiState.WriteState.FAILED, Optional.empty());
     }
 
     private synchronized void putWrite(@NonNull String capabilityId,
