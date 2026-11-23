@@ -4,7 +4,6 @@ import androidx.annotation.Nullable;
 
 import com.yovo.lib_ai.api.YoAiClient;
 import com.yovo.lib_ai.api.YoAiDiagnosticSource;
-import com.yovo.lib_ai.api.YoAiDiagnostics;
 import com.yovo.lib_ai.api.YoAnthropicMessages;
 import com.yovo.lib_ai.api.YoBatch;
 import com.yovo.lib_ai.api.YoChatCompletions;
