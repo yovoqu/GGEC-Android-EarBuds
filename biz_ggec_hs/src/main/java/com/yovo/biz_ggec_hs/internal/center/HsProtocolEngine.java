@@ -200,13 +200,14 @@ public final class HsProtocolEngine {
                     Command.ResultCode.RESERVED, "命令调度器已释放"));
             return;
         }
-        if (listener != null) {
-            command.addCompletionListener(listener);
-        }
         // H-02：首页/全局状态类查询返回的聚合 Map 必须落 DeviceDomainStore，
         // 否则电池与 EQ 状态只能依赖设备主动上报。此处做通用落地（仅取 String→String 项）。
         // 耳机颜色同样经这里落地：它是 OBJECT 形状的字符串结果，不是聚合 Map。
+        // 顺序：先注册“落域”，再注册“对外回执”，保证域更新先于 onResult（避免消费方在回调里同步读域读到旧值）。
         command.addCompletionListener(this::persistCompletion);
+        if (listener != null) {
+            command.addCompletionListener(listener);
+        }
         executor.execute(() -> scheduler.submit(command, sessionId));
     }
 

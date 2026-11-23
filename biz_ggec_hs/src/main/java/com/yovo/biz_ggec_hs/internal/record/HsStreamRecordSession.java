@@ -41,8 +41,8 @@ public final class HsStreamRecordSession {
 
     private static final String TAG = "HsStreamRecordSession";
 
-    /** 启动兜底：Notify 就绪并发送开始后，这么久内无音频/无 0x8004 则视为启动失败。 */
-    private static final long START_TIMEOUT_MS = 2_000L;
+    /** 启动兜底：从进入 STARTING（含等待 Notify 就绪）起，这么久内无音频/无 0x8004 则视为启动失败。 */
+    private static final long START_TIMEOUT_MS = 3_000L;
     /** 停止兜底：发送停止后这么久仍未判定停流则按 best-effort 收尾。 */
     private static final long STOP_TIMEOUT_MS = 3_000L;
     /** 音频静默判定：停止后连续这么久没有非控制音频切片，即认定设备已停止出流。 */
@@ -167,14 +167,16 @@ public final class HsStreamRecordSession {
                 stopSettled = false;
             }
             active = this;
+            // 从进入 STARTING 即计时（覆盖“等待 Notify 就绪”）；onReady 不再单独起表。
+            if (mainHandler != null) {
+                mainHandler.removeCallbacks(startTimeout);
+                mainHandler.postDelayed(startTimeout, START_TIMEOUT_MS);
+            }
             audioLink.startAudioNotify(new HsAudioDataLink.ReadyCallback() {
                 @Override
                 public void onReady() {
                     HsLog.i(TAG, "音频 Notify 通道就绪，单向发送 StartStreamRecordCommand");
                     engine.sendOneWay(HsCommandFactory.startStreamRecord());
-                    if (mainHandler != null) {
-                        mainHandler.postDelayed(startTimeout, START_TIMEOUT_MS);
-                    }
                 }
 
                 @Override
@@ -197,10 +199,19 @@ public final class HsStreamRecordSession {
 
         @Override
         public void stop(@NonNull StreamRecordPipeline.Reply<HsControl.Failure> reply) {
+            boolean alreadyStopping;
             synchronized (this) {
-                stopReply = reply;
-                phase = Phase.STOPPING;
-                lastAudioAtMs = System.currentTimeMillis();
+                alreadyStopping = phase == Phase.STOPPING && stopReply != null;
+                if (!alreadyStopping) {
+                    stopReply = reply;
+                    phase = Phase.STOPPING;
+                    lastAudioAtMs = System.currentTimeMillis();
+                }
+            }
+            if (alreadyStopping) {
+                // 已在停止中：幂等——第二个调用方直接按成功回调，不覆盖在途 stopReply。
+                reply.onReply(null);
+                return;
             }
             HsLog.i(TAG, "单向发送 StopStreamRecordCommand");
             engine.sendOneWay(HsCommandFactory.stopStreamRecord());
@@ -287,7 +298,13 @@ public final class HsStreamRecordSession {
         private void postReplyStart(HsControl.Failure failure) {
             StreamRecordPipeline.Reply<HsControl.Failure> r = startReply;
             startReply = null;
-            if (r != null) {
+            if (r == null) {
+                return;
+            }
+            if (mainHandler != null) {
+                // 与停止一致：开始回执（含失败收尾 detach→stopAudioNotify）派发到主线程，避免 BLE 回调栈重入。
+                mainHandler.post(() -> r.onReply(failure));
+            } else {
                 r.onReply(failure);
             }
         }
