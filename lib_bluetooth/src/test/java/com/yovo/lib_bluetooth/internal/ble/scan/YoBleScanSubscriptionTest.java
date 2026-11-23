@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import com.yovo.lib_bluetooth.api.BleScanFrameFilter;
 import com.yovo.lib_bluetooth.api.BleScanSubscription;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceId;
 import com.yovo.lib_bluetooth.model.ble.BleDeviceIdentity;

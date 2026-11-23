@@ -32,33 +32,6 @@ public final class YoBleReconnectPolicy {
         return isRetryableConnectFailure(rawStatus);
     }
 
-    public static boolean shouldAutoReconnectOnUnexpectedDrop(boolean wasConnectedOrReady,
-                                                              int currentAttempt,
-                                                              @NonNull BleConnectionConfig config,
-                                                              boolean userDisconnected,
-                                                              boolean adapterEnabled,
-                                                              boolean released) {
-        return shouldAutoReconnectOnUnexpectedDrop(
-                wasConnectedOrReady, currentAttempt, config,
-                userDisconnected, adapterEnabled, released, 0);
-    }
-
-    public static boolean shouldAutoReconnectOnUnexpectedDrop(boolean wasConnectedOrReady,
-                                                              int currentAttempt,
-                                                              @NonNull BleConnectionConfig config,
-                                                              boolean userDisconnected,
-                                                              boolean adapterEnabled,
-                                                              boolean released,
-                                                              int rawStatus) {
-        if (!wasConnectedOrReady || !config.autoConnect()
-                || userDisconnected || !adapterEnabled || released
-                || YoBleHciStatus.isLocalTerminated(rawStatus)) {
-            return false;
-        }
-        // 丢链后的 autoConnect 重连不计入 maxRetryCount，直到用户断开、适配器关闭或释放。
-        return true;
-    }
-
     /**
      * 计算距离上次 {@code close()} 所需满足的退避等待时长（至少保证 closeDelayMillis 防竞态）。
      */

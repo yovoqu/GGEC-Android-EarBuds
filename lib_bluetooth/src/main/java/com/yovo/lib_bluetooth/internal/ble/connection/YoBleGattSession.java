@@ -50,7 +50,7 @@ import java.util.function.LongSupplier;
 
 /**
  * 单设备连接会话。状态只在 state 线程变化。
- * autoConnect 关闭时丢链即结束；打开时首次直连，READY 之后的丢链改为无库超时的 autoConnect。
+ * 丢链即结束：不自动回连，重建只由上层显式 {@code connect()} 发起；建连失败仍按 {@code maxRetryCount} 有界重试。
  */
 public final class YoBleGattSession implements YoBleSessionContext {
 
@@ -123,7 +123,6 @@ public final class YoBleGattSession implements YoBleSessionContext {
     private BleFailure lastFailure;
     private long lastCloseAtMillis;
     private boolean userDisconnected;
-    private boolean backgroundAutoConnect;
     private boolean ended;
     @Nullable
     private YoBleConnectionPlatform.BleGattHandle handle;
@@ -219,7 +218,6 @@ public final class YoBleGattSession implements YoBleSessionContext {
         runtime.checkStateThread();
         ended = false;
         userDisconnected = false;
-        backgroundAutoConnect = false;
         retryAttempt = 0;
         lastFailure = null;
         transition(BleConnectionState.CONNECTING, "start");
@@ -245,6 +243,17 @@ public final class YoBleGattSession implements YoBleSessionContext {
         userDisconnected = true;
         finishTerminal(true, YoBleErrorMapper.failure(
                 BleErrorCode.RELEASED, MODULE, "session released", deviceId), false);
+    }
+
+    /**
+     * 取消仍在等待的重连定时器，并把重试次数置为终态；供会话替换时回收旧会话，
+     * 避免旧会话的 retryHandle 在替换后仍触发 connectGatt，产生同一设备的第二个 GATT 连接。
+     */
+    public void cancelPendingRetry() {
+        runtime.checkStateThread();
+        cancel(retryHandle);
+        retryHandle = null;
+        retryAttempt = connectionConfig.maxRetryCount();
     }
 
     public void onAdapterTurnedOff() {
@@ -315,8 +324,7 @@ public final class YoBleGattSession implements YoBleSessionContext {
             return;
         }
         long gen = ++generation;
-        boolean platformAuto = backgroundAutoConnect;
-        if (!platformAuto && connectionConfig.connectTimeoutMillis() > 0L) {
+        if (connectionConfig.connectTimeoutMillis() > 0L) {
             connectTimeout = runtime.stateDelayed(() -> {
                 if (gen == generation && stateMachine.state() == BleConnectionState.CONNECTING) {
                     failAttempt(gen, false, YoBleErrorMapper.failure(
@@ -326,7 +334,7 @@ public final class YoBleGattSession implements YoBleSessionContext {
         }
         YoBleConnectionPlatform.BleGattHandle opened;
         try {
-            opened = connectionPlatform.connectGatt(deviceId, platformAuto, new SessionListener(gen));
+            opened = connectionPlatform.connectGatt(deviceId, false, new SessionListener(gen));
         } catch (SecurityException security) {
             finishTerminal(false, YoBleErrorMapper.failure(
                     BleErrorCode.PERMISSION_CONNECT_DENIED, MODULE, "connectGatt security exception",
@@ -453,7 +461,6 @@ public final class YoBleGattSession implements YoBleSessionContext {
     private void finishInit() {
         notificationRouter.restoreSubscriptions(() -> {
             retryAttempt = 0;
-            backgroundAutoConnect = false;
             transition(BleConnectionState.READY, "ready");
             publish();
         });
@@ -477,16 +484,9 @@ public final class YoBleGattSession implements YoBleSessionContext {
         lastFailure = reason;
         boolean retryConnect = !wasUp && !userDisconnected && retryAttempt < connectionConfig.maxRetryCount()
                 && (YoBleHciStatus.isRetryableConnectFailure(status) || reason.errorCode() == BleErrorCode.CONNECT_FAILED);
-        boolean auto = YoBleReconnectPolicy.shouldAutoReconnectOnUnexpectedDrop(
-                wasUp, retryAttempt, connectionConfig, userDisconnected,
-                capabilityInspector.isAdapterEnabled(), runtime.isReleased(), status);
-        releaseGatt(reason, !(retryConnect || auto));
-        if (retryConnect || auto) {
-            if (auto) {
-                backgroundAutoConnect = true;
-            } else {
-                retryAttempt++;
-            }
+        releaseGatt(reason, !(retryConnect));
+        if (retryConnect) {
+            retryAttempt++;
             transition(BleConnectionState.DISCONNECTED, "retry-wait");
             publish();
             long wait = YoBleReconnectPolicy.computeWaitMillis(Math.max(1, retryAttempt), connectionConfig,

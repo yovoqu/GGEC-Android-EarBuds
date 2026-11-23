@@ -1,6 +1,5 @@
 package com.yovo.lib_bluetooth.api;
 
-import com.yovo.lib_bluetooth.model.ble.BleAdapterState;
 
 /**
  * 扫描能力快照：由平台真实查询得到，供上层决定"能不能把过滤/批处理下推到硬件"。

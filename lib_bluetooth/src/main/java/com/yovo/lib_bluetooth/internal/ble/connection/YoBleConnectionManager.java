@@ -462,6 +462,12 @@ public final class YoBleConnectionManager implements YoReleasable {
         if (previous != null) {
             endedOrder.remove(deviceId);
             sessions.remove(deviceId, previous);
+            if (!previous.isEnded()) {
+                // 旧会话可能处于 retry-wait（DISCONNECTED 未 ended）：先取消其重连定时器并强制回收，
+                // 再串行创建新会话，杜绝同一设备出现两个 connectGatt。
+                previous.cancelPendingRetry();
+                previous.forceClose();
+            }
         }
         long lastClosed = lastClosedAtMillis.getOrDefault(deviceId, 0L);
         YoBleGattSession session = new YoBleGattSession(

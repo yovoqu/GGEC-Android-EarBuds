@@ -27,7 +27,6 @@ import com.yovo.lib_bluetooth.model.ble.BleScanResult;
 import org.junit.After;
 import org.junit.Test;
 
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;

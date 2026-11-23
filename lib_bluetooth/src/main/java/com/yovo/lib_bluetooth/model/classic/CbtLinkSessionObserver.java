@@ -1,7 +1,6 @@
 package com.yovo.lib_bluetooth.model.classic;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 /**
  * 链路会话观察者：订阅「经典链路就绪」的全部状态迁移。

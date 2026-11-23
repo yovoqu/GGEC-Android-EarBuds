@@ -193,6 +193,8 @@ public final class YoBleNotificationRouter {
 
     public void dispatchCharacteristicChanged(@NonNull BleGattTarget source, @NonNull byte[] value) {
         context.runtime().checkStateThread();
+        // 保留一份“干净”的基准副本：每个消费者都拿到自己的 clone，任一消费者就地改数组
+        // 都不会污染其它 interceptor / subscriber / gattObserver。
         byte[] copy = value.clone();
         BleDeviceId deviceId = context.deviceId();
         for (Map.Entry<BleGattTarget, List<RawPacketInterceptor>> entry : interceptors.entrySet()) {
@@ -201,7 +203,7 @@ public final class YoBleNotificationRouter {
             }
             for (RawPacketInterceptor interceptor : new ArrayList<>(entry.getValue())) {
                 try {
-                    interceptor.onPacket(source, copy);
+                    interceptor.onPacket(source, copy.clone());
                 } catch (Throwable t) {
                     context.timeline().record(MODULE, "interceptor threw: " + t);
                 }
@@ -214,10 +216,10 @@ public final class YoBleNotificationRouter {
             Record record = entry.getValue();
             BleGattTarget key = entry.getKey();
             for (Subscriber subscriber : new ArrayList<>(record.subscribers)) {
-                context.runtime().callback(() -> subscriber.observer.onCharacteristicChanged(deviceId, key, copy));
+                context.runtime().callback(() -> subscriber.observer.onCharacteristicChanged(deviceId, key, copy.clone()));
             }
             for (BleGattObserver observer : new ArrayList<>(record.gattObservers)) {
-                context.runtime().callback(() -> observer.onCharacteristicChanged(deviceId, key, copy));
+                context.runtime().callback(() -> observer.onCharacteristicChanged(deviceId, key, copy.clone()));
             }
         }
     }
@@ -336,8 +338,12 @@ public final class YoBleNotificationRouter {
             return;
         }
         if (enable && mode == BleNotificationSetupMode.QUICK_SETUP) {
+            // QUICK_SETUP 语义是“快速本地使能”：本地 setCharacteristicNotification 后即回调就绪，
+            // 不再入队 CCCD 写。若继续写 CCCD，其 onFailed/onCancelled 会再次 finishChange，
+            // 让订阅者先收到 onNotificationEnabled 再收到 onNotificationFailed（终态翻转）。
             localSwitch(key, true);
             finishChange(key, record, epoch, true, null);
+            return;
         }
         byte[] cccd = enable ? cccdValue(info) : DISABLE;
         BleGattTarget cccdTarget = BleGattTarget.descriptor(
@@ -364,9 +370,7 @@ public final class YoBleNotificationRouter {
                 new CompletionHandler() {
                     @Override
                     public void onSuccess(@Nullable Object payload) {
-                        if (mode == BleNotificationSetupMode.QUICK_SETUP && enable) {
-                            return;
-                        }
+                        // QUICK_SETUP+enable 在上面已提前 return，不会走到这里；此处只剩 DEFAULT/COMPAT 与关闭流程。
                         finishChange(key, record, epoch, enable, null);
                     }
 

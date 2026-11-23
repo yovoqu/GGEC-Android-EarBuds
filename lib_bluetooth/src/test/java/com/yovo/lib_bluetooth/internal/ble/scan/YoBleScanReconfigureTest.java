@@ -48,15 +48,6 @@ public final class YoBleScanReconfigureTest {
     private static final java.util.Map<YoBleScanHub.Engine, YoBleScanHub> HUBS =
             new java.util.LinkedHashMap<>();
 
-    private static YoBleScanHub hubFor(YoBleScanHub.Engine engine) {
-        YoBleScanHub hub = HUBS.get(engine);
-        if (hub == null) {
-            hub = YoBleScanHub.forEngine(engine);
-            HUBS.put(engine, hub);
-        }
-        return hub;
-    }
-
     private static void releaseHubs() {
         for (YoBleScanHub hub : HUBS.values()) {
             hub.release();

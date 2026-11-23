@@ -3,7 +3,6 @@ package com.yovo.lib_bluetooth.internal.classic.platform.discovery;
 import com.yovo.lib_bluetooth.internal.platform.AndroidPlatform;
 
 import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
 
 import androidx.annotation.NonNull;

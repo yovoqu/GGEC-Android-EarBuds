@@ -1,6 +1,5 @@
 package com.yovo.lib_bluetooth.model.classic;
 
-import androidx.annotation.NonNull;
 
 /**
  * 链路会话句柄：取消订阅并释放会话资源。

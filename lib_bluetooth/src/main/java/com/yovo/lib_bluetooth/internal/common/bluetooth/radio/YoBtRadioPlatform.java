@@ -1,6 +1,5 @@
 package com.yovo.lib_bluetooth.internal.common.bluetooth.radio;
 
-import androidx.annotation.NonNull;
 
 /**
  * 底层硬件与蓝牙适配器交互平台接口，安全执行 cancelDiscovery、isDiscovering 等。

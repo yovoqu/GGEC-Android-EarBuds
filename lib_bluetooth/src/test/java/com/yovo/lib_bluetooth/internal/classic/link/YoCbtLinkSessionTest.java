@@ -50,7 +50,6 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 /**
  * {@link YoCbtLinkSession} 的状态机合同（确定性、无线程、无平台依赖）。
