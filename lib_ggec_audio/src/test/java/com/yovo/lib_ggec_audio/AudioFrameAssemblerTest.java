@@ -3,6 +3,7 @@ package com.yovo.lib_ggec_audio;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -180,14 +181,73 @@ public class AudioFrameAssemblerTest {
         AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
         byte[] control = new byte[]{0x05, (byte) 0x80, 0x01, 0x00, 0x01};
 
+        // 新语义：短切片不丢弃，先进累计缓冲等后续字节；此时尚未锁定。
         assertTrue(assembler.assemble(control).isEmpty());
-        assertEquals(0, assembler.pendingBytes());
+        assertEquals(control.length, assembler.pendingBytes());
         assertNull(assembler.getActiveFormat());
 
+        // 后续完整 168 包到达：滑过 5 字节前导，正常锁定并出帧（缓存后重同步）。
         List<byte[]> frames = assembler.assemble(dualHalf168(0, (byte) 0x55));
         assertEquals(AudioNotifyFormat.DUAL_HALF_168, assembler.getActiveFormat());
         assertEquals(2, frames.size());
         assertEquals(1, assembler.getLastDataIndex());
+        assertEquals(0, assembler.pendingBytes());
+    }
+
+    /** 合批：两个连续 440 包被 SPP 读线程合成一个 880 字节切片，仍须锁 DECA 并切出 20 帧。 */
+    @Test
+    public void batches880BytesInto20Frames() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
+        byte[] first = deca440(0, (byte) 0x22);
+        byte[] second = deca440(10, (byte) 0x22);
+        byte[] merged = new byte[first.length + second.length];
+        System.arraycopy(first, 0, merged, 0, first.length);
+        System.arraycopy(second, 0, merged, first.length, second.length);
+
+        List<byte[]> frames = assembler.assemble(merged);
+
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+        assertEquals(20, frames.size());
+        assertEquals(19, assembler.getLastDataIndex());
+        assertEquals((byte) 0x22, frames.get(0)[0]);
+    }
+
+    /** 拆包：一个 440 包被拆成 300 + 140 两次投喂，仍须锁 DECA 并按序切满 10 帧。 */
+    @Test
+    public void splits300Plus140Into10FramesInOrder() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
+        byte[] packet = deca440(0, (byte) 0x22);
+        byte[] head = new byte[300];
+        byte[] tail = new byte[packet.length - head.length];
+        System.arraycopy(packet, 0, head, 0, head.length);
+        System.arraycopy(packet, head.length, tail, 0, tail.length);
+
+        List<byte[]> first = assembler.assemble(head);
+        List<byte[]> second = assembler.assemble(tail);
+
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+        assertEquals(6, first.size());
+        assertEquals(4, second.size());
+        assertEquals(10, first.size() + second.size());
+        assertEquals(9, assembler.getLastDataIndex());
+    }
+
+    /** 前导垃圾：8 字节控制帧后紧跟 440 数据，滑移剔除前导后锁 DECA 出 10 帧。 */
+    @Test
+    public void dropsLeadingControlBytesThenLocks440() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
+        byte[] junk = new byte[]{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+        byte[] packet = deca440(0, (byte) 0x22);
+        byte[] merged = new byte[junk.length + packet.length];
+        System.arraycopy(junk, 0, merged, 0, junk.length);
+        System.arraycopy(packet, 0, merged, junk.length, packet.length);
+
+        List<byte[]> frames = assembler.assemble(merged);
+
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+        assertEquals(10, frames.size());
+        assertEquals(0, assembler.pendingBytes());
+        assertEquals(9, assembler.getLastDataIndex());
     }
 
     @Test
@@ -239,6 +299,39 @@ public class AudioFrameAssemblerTest {
 
         assertEquals(List.of(AudioNotifyFormat.DUAL_HALF_168), trace.locked);
         assertEquals(List.of("1->5"), trace.gaps);
+    }
+
+    /**
+     * 回归 P1：40B 流的首个 SPP 切片恰好是 164B（某更大包的首片）时，不得被
+     * “单子帧长度 164 → FULL_FRAME(步长 164)”快路径误锁；必须按多帧几何锁成 40B 步长。
+     */
+    @Test
+    public void partialFirstChunk164DoesNotMislockFullFrame() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
+        byte[] full = deca440(0, (byte) 0x2A);
+
+        List<byte[]> first = assembler.assemble(Arrays.copyOfRange(full, 0, 164));
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+
+        List<byte[]> rest = assembler.assemble(Arrays.copyOfRange(full, 164, full.length));
+        assertEquals(10, first.size() + rest.size());
+        for (byte[] frame : rest) {
+            assertEquals(AudioFrameContract.OPUS_BYTES_16K, frame.length);
+        }
+    }
+
+    /** 回归：首个切片 88B（半包）同样不得被误锁成 84B 步长。 */
+    @Test
+    public void partialFirstChunk88DoesNotMislockDualHalf() {
+        AudioFrameAssembler assembler = new AudioFrameAssembler(AudioFrameTrace.NONE, AudioWireByteOrder.BIG_ENDIAN);
+        byte[] full = deca440(0, (byte) 0x3B);
+
+        assertTrue(assembler.assemble(Arrays.copyOfRange(full, 0, 88)).isEmpty());
+        assertNull(assembler.getActiveFormat());
+
+        List<byte[]> rest = assembler.assemble(Arrays.copyOfRange(full, 88, full.length));
+        assertEquals(AudioNotifyFormat.DECA_40_440, assembler.getActiveFormat());
+        assertEquals(10, rest.size());
     }
 
     private static final class RecordingTrace implements AudioFrameTrace {

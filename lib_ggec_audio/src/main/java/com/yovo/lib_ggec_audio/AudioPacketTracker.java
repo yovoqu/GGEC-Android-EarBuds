@@ -45,11 +45,6 @@ final class AudioPacketTracker {
         return lastFrameIndex;
     }
 
-    /** 已确认的每包帧数；未知时为 -1。 */
-    int getFramesPerNotify() {
-        return framesPerNotify;
-    }
-
     /** 记录已确认的每包帧数（格式锁定后由装配器告知）。 */
     void setFramesPerNotify(int frames) {
         if (frames > 0) {
@@ -104,15 +99,5 @@ final class AudioPacketTracker {
         // 上限按每包帧数放宽，容忍整包丢失（最多 MAX_LOSS_MULTIPLE 包）。
         int step = framesPerNotify > 0 ? framesPerNotify : 1;
         return advance <= step * MAX_LOSS_MULTIPLE;
-    }
-
-    boolean isExactNext(int dataIndex) {
-        if (dataIndex < AudioFrameContract.STARTING_DATA_INDEX) {
-            return false;
-        }
-        if (lastFrameIndex < 0) {
-            return dataIndex == 0 || dataIndex == 1;
-        }
-        return dataIndex == lastFrameIndex + 1;
     }
 }

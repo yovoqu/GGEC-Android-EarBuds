@@ -13,31 +13,29 @@ import java.util.List;
  * <p>同族固件（HS / WY）共用同一套空口帧协议：4 字节 dataIndex + Opus 帧，一包可含 1~4 帧，
  * 也可能把一帧拆到两个 Notify。</p>
  *
- * <h3>切帧只有三种几何</h3>
- * <ol>
- *   <li><b>每帧一个头、包长是步长的整数倍</b>（176 / 440 / 168×2 / 328 / 旧 336）：
- *       相邻 Notify 首尾相接就是连续字节流，按固定步长推进即可；</li>
- *   <li><b>整包一个头、包内 N 帧 Opus 连续</b>（168 = 8B 头 + 4×40B）：
- *       一包一次推进，包内帧序号隐式递增；</li>
- *   <li><b>MTU 拆分</b>（包 168、步长 164）：步长不是包长的整数倍，包边界必然漂移，
- *       需要跨包补帧的专用状态机。</li>
- * </ol>
+ * <h3>输入是字节流，不是协议包</h3>
+ * <p>SPP 读线程会把当次读到与 {@code available()} 剩余合成一个 batch 回调，单次回调长度
+ * <b>不保证</b>等于协议包长：突发时可能是 880/1320，慢速时可能是 300+140。因此本类不假设
+ * 「回调边界 == 协议包边界」：每个切片<b>无条件</b>追加进累计缓冲，格式锁定改成在<b>累计缓冲</b>
+ * 上做几何自证（{@link AudioFormatDetector#scanStream}），与单次切片长度无关。切帧也一律在
+ * 累计缓冲上按步长推进。</p>
  *
- * <p>此前把第 2 种误判成「整包单帧 160B」，于是每包只切出 1 帧，交给 Opus 直接
- * {@code corrupted stream}，并且每包都被报成「前向跳号 缺口=3」——那 3 帧其实就在同一包内。</p>
+ * <h3>切帧几何</h3>
+ * <ol>
+ *   <li><b>每帧一个头、步长固定</b>（176 / 440 / 168×2 / 328 / 旧 336 / MTU 拆分）：
+ *       相邻切片首尾相接就是连续字节流，按固定步长推进即可；MTU 拆分（包 168、步长 164）
+ *       同样只是步长 164 的连续字节流，包边界漂移不影响按步长切帧；</li>
+ *   <li><b>整包一个头、包内 N 帧 Opus 连续</b>（168 = 8B 头 + 4×40B）：
+ *       一包一次推进，包内帧序号隐式递增。</li>
+ * </ol>
  */
 public final class AudioFrameAssembler {
 
-    private static final int DEFAULT_CAPACITY = 4096;
-
-    /** MTU 拆分：首包 164B 帧 + 4B 下一帧头。 */
-    private static final int MTU_FIRST_CHUNK = AudioFrameContract.NOTIFY_MTU_FIRST;
-    private static final int MTU_SECOND_OPUS_BYTES = AudioFrameContract.OPUS_BYTES_64K;
-    private static final int MTU_SECOND_SPILL_BYTES = MTU_FIRST_CHUNK - MTU_SECOND_OPUS_BYTES;
-    private static final int FULL_SUBFRAME = AudioFrameContract.SUBFRAME_164;
+    /** 累计缓冲初始容量：合批/探测都需要足够余量，避免丢头。 */
+    private static final int DEFAULT_CAPACITY = 16 * 1024;
 
     /** 未锁定格式时最多缓存多少字节；超过说明输入根本不是音频流，丢弃重新取证。 */
-    private static final int MAX_PROBE_BYTES = AudioFrameContract.NOTIFY_BURST_440 * 2;
+    private static final int MAX_PROBE_BYTES = AudioFrameContract.NOTIFY_BURST_440 * 8;
 
     private final byte[] buffer;
     private final AudioPacketTracker indexTracker;
@@ -48,10 +46,6 @@ public final class AudioFrameAssembler {
     private int size;
     @Nullable
     private AudioNotifyFormat lockedFormat;
-
-    /** 未锁定期间记录的首包证据：首帧序号与包长。 */
-    private int probeIndex = -1;
-    private int probeLength = -1;
 
     public AudioFrameAssembler() {
         this(DEFAULT_CAPACITY, AudioFrameTrace.NONE, AudioWireByteOrder.LITTLE_ENDIAN);
@@ -73,8 +67,7 @@ public final class AudioFrameAssembler {
     public AudioFrameAssembler(int initialCapacity,
                                @NonNull AudioFrameTrace trace,
                                @NonNull AudioWireByteOrder byteOrder) {
-        int minCapacity = AudioFrameContract.NOTIFY_LEGACY_DUAL_336 * 2;
-        this.buffer = new byte[Math.max(initialCapacity, minCapacity)];
+        this.buffer = new byte[Math.max(initialCapacity, DEFAULT_CAPACITY)];
         this.trace = trace;
         this.byteOrder = byteOrder;
         this.indexTracker = new AudioPacketTracker(trace);
@@ -88,8 +81,6 @@ public final class AudioFrameAssembler {
     public void reset() {
         size = 0;
         lockedFormat = null;
-        probeIndex = -1;
-        probeLength = -1;
         indexTracker.reset();
     }
 
@@ -107,113 +98,96 @@ public final class AudioFrameAssembler {
     }
 
     /**
-     * 投喂一个 Notify 切片，返回本次能还原出的完整 Opus 帧。
+     * 投喂一个 Notify / SPP 切片，返回本次能还原出的完整 Opus 帧。
      *
-     * @param chunk 一个 Notify 负载；null 或短于最小音频子帧时返回空表，且不进入缓冲
+     * <p>切片无论长短都先追加进累计缓冲（{@code null}/空除外），锁定与切帧都在累计缓冲上做，
+     * 因此合批、拆包、前导垃圾滑移都不会丢头失步。</p>
+     *
+     * @param chunk 一个 Notify / SPP 切片；{@code null} 或空时不影响缓冲，直接返回空表
      */
     @NonNull
     public List<byte[]> assemble(@Nullable byte[] chunk) {
-        if (chunk == null || chunk.length < AudioFrameContract.SUBFRAME_44) {
+        if (chunk == null || chunk.length == 0) {
             trace.onFormatUnresolved(chunk == null ? 0 : chunk.length, size);
             return Collections.emptyList();
         }
-        List<byte[]> frames = assembleInternal(chunk);
+
+        appendToBuffer(chunk);
+
+        if (lockedFormat == null) {
+            tryLockFormat(chunk.length);
+        }
+
+        List<byte[]> frames;
+        if (lockedFormat == null) {
+            if (size > MAX_PROBE_BYTES) {
+                clearPending();
+                trace.onFormatUnresolved(chunk.length, 0);
+            }
+            frames = Collections.emptyList();
+        } else {
+            frames = drainFrames(lockedFormat);
+        }
+
         int firstIndex = AudioFormatDetector.readIndex(chunk, 0, byteOrder);
         trace.onChunkProcessed(chunk, frames.size(), firstIndex);
         return frames;
     }
 
-    @NonNull
-    private List<byte[]> assembleInternal(@NonNull byte[] chunk) {
-        if (lockedFormat == null) {
-            AudioNotifyFormat detected = detect(chunk);
-            if (detected == null) {
-                // 证据不足（例如只有一个包，看不到相邻包序号差）：先缓存，等下一包。
-                appendToBuffer(chunk);
-                if (size > MAX_PROBE_BYTES) {
-                    clearPending();
-                    probeIndex = -1;
-                    probeLength = -1;
-                }
-                return Collections.emptyList();
+    /**
+     * 从累计缓冲里锁定线格式。
+     *
+     * <p>判定顺序（证据由强到弱，且始终与 chunk 长度解耦）：</p>
+     * <ol>
+     *   <li><b>整包长度快路径</b>：仅 176/440 这类 40B 子帧整包（与真实流步长 44 一致），
+     *       保留既有枚举断言；单子帧长度（44/84/164）绝不走快路径。</li>
+     *   <li><b>几何自证</b>：在累计缓冲上滑窗扫描（{@link AudioFormatDetector#scanStream}），
+     *       校验相邻帧头序号按步长连续递增；支持任意分片，并顺带剔除非零起始偏移前的前导垃圾。</li>
+     *   <li><b>单帧整包 164B</b>：仅当上面两步都证据不足时，按历史兼容格式放行。</li>
+     * </ol>
+     */
+    private void tryLockFormat(int chunkLength) {
+        // 1) 「整包长度族」快路径：仅 176/440 这类 40B 子帧几何（与真实流步长 44 一致），
+        //    保留既有 QUAD_40_176 / DECA_40_440 枚举断言；绝不接受单子帧长度（44/84/164），
+        //    否则一个更大包的首片（如 164B）会被误锁成 160B 步长，整场坏帧。
+        if (size == chunkLength
+                && (chunkLength == AudioFrameContract.NOTIFY_QUAD_176
+                    || chunkLength == AudioFrameContract.NOTIFY_BURST_440)
+                && AudioFormatDetector.readIndex(buffer, 0, byteOrder)
+                        >= AudioFrameContract.STARTING_DATA_INDEX) {
+            AudioNotifyFormat exact = AudioFormatDetector.exactNotifyFormatFor(chunkLength);
+            if (exact != null) {
+                lockFormat(exact, 0);
+                return;
             }
-            lockedFormat = detected;
-            indexTracker.setFramesPerNotify(detected.framesCoveredByNotify());
-            trace.onFormatLocked(detected);
         }
-        if (lockedFormat == AudioNotifyFormat.MTU_SPLIT) {
-            return appendMtuSplit(chunk);
+
+        // 2) 多帧几何自证优先：在累计缓冲上按步长验证相邻帧头序号连续递增。
+        //    合批/拆包/前导垃圾都靠这里，且与 chunk 长度无关。
+        AudioFormatDetector.StreamLock streamLock =
+                AudioFormatDetector.scanStream(buffer, size, byteOrder);
+        if (streamLock != null) {
+            lockFormat(streamLock.format, streamLock.startOffset);
+            return;
         }
-        appendToBuffer(chunk);
-        return drainFrames(lockedFormat);
+
+        // 3) 证据不足时，仅对「单帧整包 164B」这一历史兼容格式放行（HS 旧线格式）。
+        //    若它是某个更大包的首片，上面 scanStream 已能凭多帧几何锁定，不会走到这里。
+        if (size == chunkLength
+                && chunkLength == AudioFrameContract.SUBFRAME_164
+                && AudioFormatDetector.readIndex(buffer, 0, byteOrder)
+                        >= AudioFrameContract.STARTING_DATA_INDEX) {
+            lockFormat(AudioNotifyFormat.FULL_FRAME, 0);
+        }
     }
 
-    /**
-     * 判定线格式，两条路径按证据强度使用：
-     * <ol>
-     *   <li><b>包长唯一</b>（176 / 440 / 328 / 164 / 336）：首包即锁定，不必等第二个包；</li>
-     *   <li><b>包长歧义</b>（168 同时对应「2×84B」与「整包 8B 头 + 4×40B」）：
-     *       靠相邻包首帧序号差定夺，差就是上一包承载的帧数。</li>
-     * </ol>
-     *
-     * <p>包内嵌帧头（offset 84 / 164 出现「下一帧序号」）作为次级证据：
-     * 它能把 MTU 拆分从 168 家族里分出来，但不足以单独区分「整包一个头」的布局，
-     * 因为包内随机字节可能偶然命中。</p>
-     *
-     * @return {@code null} 表示证据不足，需要等下一个包
-     */
-    @Nullable
-    private AudioNotifyFormat detect(byte[] chunk) {
-        int index = AudioFormatDetector.readIndex(chunk, 0, byteOrder);
-        if (index < AudioFrameContract.STARTING_DATA_INDEX) {
-            return null;
+    private void lockFormat(@NonNull AudioNotifyFormat format, int startOffset) {
+        if (startOffset > 0) {
+            consumeBufferHead(startOffset);
         }
-
-        // 路径一：包长唯一 → 首包即可锁定。
-        AudioNotifyFormat unique = AudioFormatDetector.uniqueFormatFor(chunk.length);
-        if (unique != null) {
-            return unique;
-        }
-
-        // 路径二：包长歧义（168），先看包内嵌帧头。
-        boolean embeddedMtu = chunk.length >= AudioFrameContract.NOTIFY_QUAD_40_168
-                && AudioFormatDetector.readIndex(chunk, AudioFrameContract.SUBFRAME_164, byteOrder)
-                == index + 1;
-        boolean embeddedDual = chunk.length >= AudioFrameContract.NOTIFY_QUAD_40_168
-                && AudioFormatDetector.readIndex(chunk, AudioFrameContract.SUBFRAME_84, byteOrder)
-                == index + 1;
-
-        if (probeIndex < 0) {
-            probeIndex = index;
-            probeLength = chunk.length;
-            if (embeddedMtu) {
-                return AudioNotifyFormat.MTU_SPLIT;
-            }
-            if (embeddedDual) {
-                return AudioNotifyFormat.DUAL_HALF_168;
-            }
-            return null;
-        }
-
-        int advance = index - probeIndex;
-        if (advance > 0) {
-            AudioNotifyFormat byAdvance =
-                    AudioFormatDetector.formatFor(probeLength, chunk.length, advance);
-            if (byAdvance != null) {
-                return byAdvance;
-            }
-        }
-        if (embeddedMtu) {
-            return AudioNotifyFormat.MTU_SPLIT;
-        }
-        if (embeddedDual) {
-            return AudioNotifyFormat.DUAL_HALF_168;
-        }
-
-        // 序号回退或完全无匹配：重新取证，避免拿错误的历史做判定。
-        probeIndex = index;
-        probeLength = chunk.length;
-        return null;
+        lockedFormat = format;
+        indexTracker.setFramesPerNotify(format.framesCoveredByNotify());
+        trace.onFormatLocked(format);
     }
 
     @NonNull
@@ -253,14 +227,9 @@ public final class AudioFrameAssembler {
         }
     }
 
-    /** 每帧一个头、包长为步长整数倍：字节流连续，按固定步长推进。 */
-    @NonNull
-    private List<byte[]> drainPerFrameHeaderLayout(@NonNull AudioNotifyFormat format) {
-        List<byte[]> frames = new ArrayList<>();
-        drainPerFrameHeaderLayout(format, frames);
-        return frames;
-    }
-
+    /**
+     * 每帧一个头、步长固定：字节流连续，按固定步长推进（MTU 拆分的步长 164 也走这里）。
+     */
     private void drainPerFrameHeaderLayout(@NonNull AudioNotifyFormat format,
                                            @NonNull List<byte[]> frames) {
         int stride = format.getFrameStrideBytes();
@@ -280,91 +249,6 @@ public final class AudioFrameAssembler {
             indexTracker.accept(index);
             consumeBufferHead(stride);
         }
-    }
-
-    // ---------------------------------------------------------------------
-    // MTU 拆分：包长 168、步长 164，步长不是包长的整数倍，包边界跨帧漂移。
-    // 这段逻辑是现场验证过的专用状态机，不与上面的整数倍路径混用。
-    // ---------------------------------------------------------------------
-
-    private List<byte[]> appendMtuSplit(byte[] chunk) {
-        if (size == 0 && chunk.length == MTU_FIRST_CHUNK) {
-            return extractSingleFullFrame168(chunk);
-        }
-        if (size == AudioFrameContract.HEADER_BYTES && chunk.length == MTU_FIRST_CHUNK) {
-            return completeMtuSecondChunk(chunk);
-        }
-        if (size == AudioFrameContract.HEADER_LEGACY_BYTES && chunk.length == MTU_FIRST_CHUNK) {
-            appendToBuffer(chunk);
-            return extractFrameAtBufferHeadIfReady();
-        }
-        appendToBuffer(chunk);
-        return drainPerFrameHeaderLayout(AudioNotifyFormat.MTU_SPLIT);
-    }
-
-    /** 168B MTU 首段或单帧：164B 帧 + 可选 4B 下一帧头。 */
-    private List<byte[]> extractSingleFullFrame168(byte[] chunk) {
-        AudioNotifyFormat format = AudioNotifyFormat.MTU_SPLIT;
-        List<byte[]> frames = new ArrayList<>(1);
-        int index = AudioFormatDetector.readIndex(chunk, 0, byteOrder);
-        if (indexTracker.isPlausible(index)) {
-            frames.add(copyOpus(chunk, format.getHeaderBytes(), format.getEncodedOpusBytes()));
-            indexTracker.accept(index);
-        }
-        int trailerIndex = AudioFormatDetector.readIndex(chunk, format.getSubframeBytes(), byteOrder);
-        if (indexTracker.isExactNext(trailerIndex)) {
-            System.arraycopy(chunk, format.getSubframeBytes(), buffer, 0,
-                    AudioFrameContract.HEADER_BYTES);
-            size = AudioFrameContract.HEADER_BYTES;
-        } else {
-            clearPending();
-        }
-        return frames;
-    }
-
-    private List<byte[]> completeMtuSecondChunk(byte[] chunk) {
-        int dataIndex = AudioFormatDetector.readIndex(buffer, 0, byteOrder);
-        if (!indexTracker.isExactNext(dataIndex)) {
-            clearPending();
-            AudioNotifyFormat reDetected = detect(chunk);
-            if (reDetected == null) {
-                appendToBuffer(chunk);
-                return Collections.emptyList();
-            }
-            lockedFormat = reDetected;
-            indexTracker.setFramesPerNotify(reDetected.framesCoveredByNotify());
-            trace.onFormatLocked(reDetected);
-            appendToBuffer(chunk);
-            if (reDetected == AudioNotifyFormat.MTU_SPLIT) {
-                return drainPerFrameHeaderLayout(reDetected);
-            }
-            return drainFrames(reDetected);
-        }
-        byte[] opus = copyOpus(chunk, 0, MTU_SECOND_OPUS_BYTES);
-        indexTracker.accept(dataIndex);
-        List<byte[]> frames = new ArrayList<>(1);
-        frames.add(opus);
-        System.arraycopy(chunk, MTU_SECOND_OPUS_BYTES, buffer, 0, MTU_SECOND_SPILL_BYTES);
-        size = MTU_SECOND_SPILL_BYTES;
-        return frames;
-    }
-
-    private List<byte[]> extractFrameAtBufferHeadIfReady() {
-        if (size < FULL_SUBFRAME) {
-            return Collections.emptyList();
-        }
-        int dataIndex = AudioFormatDetector.readIndex(buffer, 0, byteOrder);
-        if (!indexTracker.isPlausible(dataIndex)) {
-            slideOneByte();
-            return drainPerFrameHeaderLayout(AudioNotifyFormat.MTU_SPLIT);
-        }
-        byte[] opus = copyOpus(buffer, AudioFrameContract.HEADER_BYTES,
-                AudioNotifyFormat.MTU_SPLIT.getEncodedOpusBytes());
-        List<byte[]> frames = new ArrayList<>(1);
-        frames.add(opus);
-        indexTracker.accept(dataIndex);
-        consumeBufferHead(FULL_SUBFRAME);
-        return frames;
     }
 
     // ---------------------------------------------------------------------

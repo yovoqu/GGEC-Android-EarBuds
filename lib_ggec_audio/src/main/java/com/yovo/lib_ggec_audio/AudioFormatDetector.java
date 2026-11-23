@@ -24,10 +24,90 @@ import androidx.annotation.Nullable;
  */
 final class AudioFormatDetector {
 
-    /** 允许的整包丢包倍数上限：差值是每包帧数的 1~4 倍仍可判定。 */
-    private static final int MAX_LOSS_MULTIPLE = 4;
+    /** 前导垃圾滑移上限：锁定时最多跳过这么多字节的前导控制/错位字节。 */
+    private static final int MAX_SKIP_BYTES = 64;
 
     private AudioFormatDetector() {
+    }
+
+    /**
+     * 累计缓冲上的一次格式锁定结果：命中的格式与有效起始偏移。
+     *
+     * <p>{@code startOffset > 0} 说明起始处有 {@code startOffset} 个前导垃圾字节需要先剔除。</p>
+     */
+    static final class StreamLock {
+
+        @NonNull
+        final AudioNotifyFormat format;
+        final int startOffset;
+
+        StreamLock(@NonNull AudioNotifyFormat format, int startOffset) {
+            this.format = format;
+            this.startOffset = startOffset;
+        }
+    }
+
+    /**
+     * 在<b>累计缓冲</b>上做几何自证，锁定线格式（与单次切片长度无关）。
+     *
+     * <p>SPP 是字节流，单次回调长度不代表协议包边界；这里只看累计缓冲里的字节几何：对候选
+     * 起始偏移 {@code p = 0..MAX_SKIP_BYTES} 读取首帧序号 {@code idx}，再按步长检查后续帧头序号
+     * 是否严格 {@code idx+1, idx+2, idx+3...}。连续帧头按步长递增是可靠几何证据，随机负载极难伪造，
+     * 因此可以同时解决「合批/拆包」与「前导控制字节滑移」两件事。</p>
+     *
+     * <p>按确认强度与步长从小到大依序验证（44 → 84 → 164 → 168），全部通过才命中；证据不足
+     * （字节还不够做后续校验）时返回 {@code null} 等更多数据。</p>
+     *
+     * @param buf       累计缓冲
+     * @param size      累计缓冲中的有效字节数（{@code buf} 物理长度可能更大，不得越界读）
+     * @param byteOrder 帧头字节序
+     * @return 命中的格式与起始偏移；证据不足返回 {@code null}
+     */
+    @Nullable
+    static StreamLock scanStream(@NonNull byte[] buf, int size, @NonNull AudioWireByteOrder byteOrder) {
+        int maxStart = Math.min(MAX_SKIP_BYTES, size - AudioFrameContract.HEADER_BYTES);
+        for (int p = 0; p <= maxStart; p++) {
+            int idx = readIndex(buf, p, byteOrder);
+            if (idx < AudioFrameContract.STARTING_DATA_INDEX) {
+                continue;
+            }
+
+            // stride 44：DECA_40_440（同样覆盖 QUAD_40_176 的 40B 子帧几何）。
+            if (p + AudioFrameContract.SUBFRAME_44 * 3 + AudioFrameContract.HEADER_BYTES <= size
+                    && readIndex(buf, p + AudioFrameContract.SUBFRAME_44, byteOrder) == idx + 1
+                    && readIndex(buf, p + AudioFrameContract.SUBFRAME_44 * 2, byteOrder) == idx + 2
+                    && readIndex(buf, p + AudioFrameContract.SUBFRAME_44 * 3, byteOrder) == idx + 3) {
+                return new StreamLock(AudioNotifyFormat.DECA_40_440, p);
+            }
+
+            // stride 84：DUAL_HALF_168（每帧一个头，18 字节内嵌帧头；不足第二帧则单点确认）。
+            if (p + AudioFrameContract.SUBFRAME_84 + AudioFrameContract.HEADER_BYTES <= size
+                    && readIndex(buf, p + AudioFrameContract.SUBFRAME_84, byteOrder) == idx + 1
+                    && (p + AudioFrameContract.NOTIFY_DUAL_168 + AudioFrameContract.HEADER_BYTES > size
+                        || readIndex(buf, p + AudioFrameContract.NOTIFY_DUAL_168, byteOrder) == idx + 2)) {
+                return new StreamLock(AudioNotifyFormat.DUAL_HALF_168, p);
+            }
+
+            // stride 164：MTU_SPLIT（与 FULL_FRAME 同一 164 子帧几何）。
+            if (p + AudioFrameContract.SUBFRAME_164 + AudioFrameContract.HEADER_BYTES <= size
+                    && readIndex(buf, p + AudioFrameContract.SUBFRAME_164, byteOrder) == idx + 1
+                    && (p + AudioFrameContract.SUBFRAME_164 * 2 + AudioFrameContract.HEADER_BYTES > size
+                        || readIndex(buf, p + AudioFrameContract.SUBFRAME_164 * 2, byteOrder) == idx + 2)) {
+                return new StreamLock(AudioNotifyFormat.MTU_SPLIT, p);
+            }
+
+            // stride 168：歧义消解——差 1 为旧 8B 头逐帧布局，差 4 为整包一个 8B 头。
+            if (p + AudioFrameContract.NOTIFY_QUAD_40_168 + AudioFrameContract.HEADER_BYTES <= size) {
+                int at168 = readIndex(buf, p + AudioFrameContract.NOTIFY_QUAD_40_168, byteOrder);
+                if (at168 == idx + 1) {
+                    return new StreamLock(AudioNotifyFormat.STANDARD_LEGACY, p);
+                }
+                if (at168 == idx + 4) {
+                    return new StreamLock(AudioNotifyFormat.QUAD_40_168, p);
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -80,6 +160,35 @@ final class AudioFormatDetector {
         return null;
     }
 
+    /**
+     * 只按「整包长度」匹配布局（{@code notifyBytes == packetLength}），且几何必须唯一。
+     *
+     * <p>与 {@link #uniqueFormatFor(int)} 的关键区别：<b>不接受单帧/子帧长度</b>。
+     * 单帧长度（44/84/164）可能只是某个更大包的首片，若据此锁定会选错步长；因此单帧长度
+     * 一律交给 {@link #scanStream} 用多帧几何自证判定。</p>
+     *
+     * @return 由整包长度唯一确定的布局；无匹配或几何歧义（如 168）返回 {@code null}
+     */
+    @Nullable
+    static AudioNotifyFormat exactNotifyFormatFor(int packetLength) {
+        AudioNotifyFormat found = null;
+        boolean ambiguous = false;
+        for (AudioNotifyFormat format : AudioNotifyFormat.values()) {
+            if (format.getNotifyBytes() != packetLength) {
+                continue;
+            }
+            if (found == null) {
+                found = format;
+            } else if (!sameGeometry(found, format)) {
+                ambiguous = true;
+            }
+        }
+        if (found == null || ambiguous) {
+            return null;
+        }
+        return canonical(found);
+    }
+
     /** 两个布局切出来的字节序列是否完全一致（布局、帧长、步长都相同）。 */
     private static boolean sameGeometry(@NonNull AudioNotifyFormat a,
                                         @NonNull AudioNotifyFormat b) {
@@ -105,56 +214,6 @@ final class AudioFormatDetector {
         // 单帧长度只对「每帧一个头」的布局成立；整包头布局的单帧不带头。
         return format.getLayout() == AudioNotifyFormat.FrameLayout.PER_FRAME_HEADER
                 && format.getSubframeBytes() == length;
-    }
-
-    /**
-     * 由「包长 + 首帧序号推进量」确定布局（用于包长歧义的场景）。
-     *
-     * <p>推进量是每包帧数的整数倍（丢整包时成倍）。同一包长下有多个候选时，
-     * 取「每包帧数最大且能整除推进量」的那个——它对丢包的容忍度最高，
-     * 也最符合「一包尽量多帧」的固件省电设计。</p>
-     *
-     * @param notifyBytes  稳态 Notify 包长
-     * @param indexAdvance 相邻包首帧序号之差
-     * @return 匹配的布局；无匹配返回 {@code null}
-     */
-    @Nullable
-    static AudioNotifyFormat formatFor(int notifyBytes, int indexAdvance) {
-        if (notifyBytes <= 0 || indexAdvance <= 0) {
-            return null;
-        }
-        AudioNotifyFormat best = null;
-        int bestFrames = 0;
-        for (AudioNotifyFormat format : AudioNotifyFormat.values()) {
-            if (format.getNotifyBytes() != notifyBytes) {
-                continue;
-            }
-            int frames = format.framesCoveredByNotify();
-            if (frames <= 0 || indexAdvance % frames != 0) {
-                continue;
-            }
-            if (indexAdvance / frames > MAX_LOSS_MULTIPLE) {
-                continue;
-            }
-            if (frames > bestFrames) {
-                best = format;
-                bestFrames = frames;
-            }
-        }
-        return best;
-    }
-
-    /**
-     * 首包长度与稳态长度可能不同（例如首包刚好完整、后续包才带上残段），
-     * 两个长度都试一次。
-     */
-    @Nullable
-    static AudioNotifyFormat formatFor(int firstLength, int steadyLength, int indexAdvance) {
-        AudioNotifyFormat matched = formatFor(steadyLength, indexAdvance);
-        if (matched != null) {
-            return matched;
-        }
-        return formatFor(firstLength, indexAdvance);
     }
 
     /**
