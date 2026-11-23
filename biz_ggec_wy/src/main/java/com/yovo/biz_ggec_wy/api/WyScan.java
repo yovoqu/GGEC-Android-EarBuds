@@ -1,7 +1,5 @@
 package com.yovo.biz_ggec_wy.api;
 
-import androidx.annotation.NonNull;
-
 import com.yovo.biz_ggec_wy.api.WyControl.Failure;
 import com.yovo.biz_ggec_wy.api.WyDevice.Radios;
 import com.yovo.biz_ggec_wy.api.WyDevice.Type;

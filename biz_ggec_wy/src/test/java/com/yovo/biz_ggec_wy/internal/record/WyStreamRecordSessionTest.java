@@ -16,6 +16,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -381,6 +382,148 @@ public class WyStreamRecordSessionTest {
                 }
             }
             tempDir.delete();
+        }
+    }
+
+    // ── WS-C：流式输入不再假设「回调边界 == 协议包边界」 ──────────────
+
+    /** 构造 WY01 现场的大端 440B / 10 帧数据包（每帧 4B 大端序号 + 40B Opus）。 */
+    private static byte[] deca440(int startIndex) {
+        byte[] packet = new byte[AudioFrameContract.NOTIFY_BURST_440];
+        for (int i = 0; i < AudioFrameContract.FRAMES_PER_BURST_10; i++) {
+            int idx = startIndex + i;
+            int off = i * AudioFrameContract.SUBFRAME_44;
+            packet[off] = (byte) ((idx >>> 24) & 0xFF);
+            packet[off + 1] = (byte) ((idx >>> 16) & 0xFF);
+            packet[off + 2] = (byte) ((idx >>> 8) & 0xFF);
+            packet[off + 3] = (byte) (idx & 0xFF);
+        }
+        return packet;
+    }
+
+    private static byte[] concat(byte[] a, byte[] b) {
+        byte[] out = new byte[a.length + b.length];
+        System.arraycopy(a, 0, out, 0, a.length);
+        System.arraycopy(b, 0, out, a.length, b.length);
+        return out;
+    }
+
+    /** 建会话、启动并回放 D5 成功，使 pipeline 进入录音态。 */
+    private WyStreamRecordSession startRecording(FakeRadio radio,
+                                                 FakeCodecProvider codecProvider,
+                                                 List<byte[]> receivedPcm,
+                                                 AtomicBoolean stopped) {
+        WyStreamRecordSession recordSession = new WyStreamRecordSession(
+                radio, codecProvider, new WyRecordPathResolver(null), new DirectDispatcher(),
+                Executors.newSingleThreadExecutor());
+        recordSession.startStreamRecord(StreamRecordConfig.streamOnly(), new StreamRecordListener() {
+            @Override
+            public void onStarted() {
+            }
+
+            @Override
+            public void onPcmFrame(@NonNull byte[] pcmData, float amplitude) {
+                receivedPcm.add(pcmData);
+            }
+
+            @Override
+            public void onStopped() {
+                stopped.set(true);
+            }
+        });
+        recordSession.onControlDataReceived(new byte[]{
+                (byte) 0x99, (byte) 0xEC, (byte) 0xD5, 0x00, 0x01, 0x00, 0x12, 0x34
+        });
+        assertTrue(recordSession.isStreamRecording());
+        return recordSession;
+    }
+
+    @Test
+    public void batched880Decodes20Frames() throws Exception {
+        FakeCodecProvider codecProvider = new FakeCodecProvider();
+        FakeRadio radio = new FakeRadio();
+        List<byte[]> receivedPcm = new ArrayList<>();
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        WyStreamRecordSession recordSession =
+                startRecording(radio, codecProvider, receivedPcm, stopped);
+        try {
+            // 一次 SPP 回调把两个连续 440B 包合批成 880B。
+            recordSession.onAudioChunkReceived(concat(deca440(0), deca440(10)));
+            Thread.sleep(150);
+            assertEquals(20, receivedPcm.size());
+        } finally {
+            recordSession.release();
+        }
+    }
+
+    @Test
+    public void split300And140Decodes10Frames() throws Exception {
+        FakeCodecProvider codecProvider = new FakeCodecProvider();
+        FakeRadio radio = new FakeRadio();
+        List<byte[]> receivedPcm = new ArrayList<>();
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        WyStreamRecordSession recordSession =
+                startRecording(radio, codecProvider, receivedPcm, stopped);
+        try {
+            byte[] full = deca440(0);
+            // 一个 440B 包被 SPP 拆成 300 + 140 两次回调。
+            recordSession.onAudioChunkReceived(Arrays.copyOfRange(full, 0, 300));
+            Thread.sleep(80);
+            recordSession.onAudioChunkReceived(Arrays.copyOfRange(full, 300, full.length));
+            Thread.sleep(150);
+            assertEquals(10, receivedPcm.size());
+        } finally {
+            recordSession.release();
+        }
+    }
+
+    @Test
+    public void shortAudioSlicesAreBufferedNotDropped() throws Exception {
+        FakeCodecProvider codecProvider = new FakeCodecProvider();
+        FakeRadio radio = new FakeRadio();
+        List<byte[]> receivedPcm = new ArrayList<>();
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        WyStreamRecordSession recordSession =
+                startRecording(radio, codecProvider, receivedPcm, stopped);
+        try {
+            byte[] full = deca440(0);
+            // 前 5 字节短切片不足一帧，应缓存而不是丢弃。
+            recordSession.onAudioChunkReceived(Arrays.copyOfRange(full, 0, 5));
+            Thread.sleep(80);
+            assertTrue(receivedPcm.isEmpty());
+            // 续上剩余 435 字节后应完整还原 10 帧。
+            recordSession.onAudioChunkReceived(Arrays.copyOfRange(full, 5, full.length));
+            Thread.sleep(150);
+            assertEquals(10, receivedPcm.size());
+        } finally {
+            recordSession.release();
+        }
+    }
+
+    @Test
+    public void audioChannelControlFramesDoNotEnterAudioPipeline() throws Exception {
+        FakeCodecProvider codecProvider = new FakeCodecProvider();
+        FakeRadio radio = new FakeRadio();
+        List<byte[]> receivedPcm = new ArrayList<>();
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        WyStreamRecordSession recordSession =
+                startRecording(radio, codecProvider, receivedPcm, stopped);
+        try {
+            // 音频通道夹带 START 控制帧：忽略，不进管线，录音状态不变。
+            recordSession.onAudioChunkReceived(WyStreamControlFrames.START.clone());
+            Thread.sleep(50);
+            assertTrue(recordSession.isStreamRecording());
+            assertTrue(receivedPcm.isEmpty());
+
+            // 音频通道夹带 STOP 控制帧：触发 stopByDevice，且不产生任何 PCM。
+            recordSession.onAudioChunkReceived(WyStreamControlFrames.STOP.clone());
+            Thread.sleep(150);
+            assertFalse(recordSession.isStreamRecording());
+            assertTrue(stopped.get());
+            assertTrue(radio.audioDisconnected);
+            assertTrue(receivedPcm.isEmpty());
+        } finally {
+            recordSession.release();
         }
     }
 }

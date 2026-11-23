@@ -98,12 +98,22 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     private boolean controlConnected;
     private boolean audioConnected;
 
+    /** 音频连接代次：每次新建音频通道递增，用于丢弃旧音频连接的迟到终态回调。 */
+    private int audioGeneration;
+
     @Nullable
     private CbtDeviceId currentDeviceId;
     @Nullable
     private SppStateListener currentListener;
     /** 会话代次：每次 connect/disconnect 递增，用于丢弃过期回调。 */
     private int generation;
+
+    /**
+     * 是否处于「本地主动关闭音频通道」窗口：由 {@link #disconnectAudioSpp()} 置位、
+     * {@link #connectAudioSpp} 起始与新连接建立后复位。用于把主动收尾产生的
+     * DISCONNECTED/FAILED 从对外 failure 中抹掉，避免正常停止被误报成 DEVICE_ERROR。
+     */
+    private boolean audioCloseIntended;
 
     public WyClassicRadio(@NonNull YoCbtClient client) {
         this.client = Objects.requireNonNull(client, "client");
@@ -311,14 +321,18 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     public void connectAudioSpp(@NonNull ActionCallback callback) {
         Objects.requireNonNull(callback, "callback");
         final int gen;
+        final int myAudioGen;
         final CbtDeviceId deviceId;
         final SppStateListener listener;
         synchronized (lock) {
+            // 每一次新的音频连接尝试都清掉上一轮的「主动关闭」标记。
+            audioCloseIntended = false;
             if (audioConnected) {
                 callback.onResult(true, null);
                 return;
             }
             gen = generation;
+            myAudioGen = ++audioGeneration;
             deviceId = currentDeviceId;
             listener = currentListener;
             if (deviceId == null || listener == null || !controlConnected) {
@@ -345,16 +359,28 @@ public final class WyClassicRadio implements WyClassicRadioPort {
                     public void onSppStateChanged(@NonNull CbtSppConnectionSnapshot snapshot) {
                         SppState state;
                         WyControl.Failure failure;
+                        boolean intendedClose;
                         synchronized (lock) {
-                            if (gen != generation) {
+                            if (gen != generation || myAudioGen != audioGeneration) {
+                                // 链路代次或音频连接代次已过期：丢弃旧音频连接的迟到终态。
                                 return;
                             }
                             applyChannelState(snapshot, false);
                             state = mapSppState(snapshot.state());
                             failure = snapshot.failure() != null
                                     ? mapFailure(snapshot.failure()) : null;
+                            if (state == SppState.CONNECTED) {
+                                // 新连接已建立：复位主动关闭标记。
+                                audioCloseIntended = false;
+                            }
+                            intendedClose = audioCloseIntended;
                         }
-                        listener.onAudioStateChanged(state, failure);
+                        // 本地主动关闭音频通道期间，终态不对外报 failure（正常收尾不是设备错误）。
+                        WyControl.Failure reportedFailure =
+                                intendedClose
+                                        && (state == SppState.DISCONNECTED || state == SppState.FAILED)
+                                        ? null : failure;
+                        listener.onAudioStateChanged(state, reportedFailure);
                         synchronized (this) {
                             if (callbackFired) {
                                 return;
@@ -412,6 +438,8 @@ public final class WyClassicRadio implements WyClassicRadioPort {
     @Override
     public void disconnectAudioSpp() {
         synchronized (lock) {
+            // 标记为主动关闭：迟到的 DISCONNECTED/FAILED 不对外报 DEVICE_ERROR。
+            audioCloseIntended = true;
             if (audioHandle != null) {
                 audioHandle.cancel();
                 audioHandle = null;
@@ -547,6 +575,8 @@ public final class WyClassicRadio implements WyClassicRadioPort {
             case PERMISSION_DENIED -> WyControl.Failure.PERMISSION_DENIED;
             case SPP_CONNECT_TIMEOUT, LINK_READINESS_TIMEOUT -> WyControl.Failure.TIMEOUT;
             case LINK_READINESS_REJECTED, BOND_FAILED -> WyControl.Failure.REJECTED;
+            // 通道被本地/远端关闭都属于「断开连接」，不是设备异常。
+            case SPP_LOCAL_CLOSED, SPP_REMOTE_CLOSED -> WyControl.Failure.DISCONNECTED;
             default -> WyControl.Failure.DEVICE_ERROR;
         };
     }

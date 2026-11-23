@@ -1,7 +1,6 @@
 package com.yovo.biz_ggec_wy.internal.link;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_wy.api.WyControl;
 import com.yovo.biz_ggec_wy.api.WyDevice;
@@ -12,7 +11,6 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;

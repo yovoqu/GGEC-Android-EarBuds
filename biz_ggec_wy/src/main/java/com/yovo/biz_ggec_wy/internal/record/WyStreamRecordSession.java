@@ -28,14 +28,6 @@ import java.util.concurrent.Executors;
  */
 public final class WyStreamRecordSession implements WyRecordApi {
 
-    private static final byte[] CMD_START_STREAM_RECORD = new byte[]{
-            (byte) 0x99, (byte) 0xEC, (byte) 0xD5, 0x00, 0x01, 0x00, 0x12, 0x34
-    };
-
-    private static final byte[] CMD_STOP_STREAM_RECORD = new byte[]{
-            (byte) 0x99, (byte) 0xEC, (byte) 0xD6, 0x00, 0x01, 0x00, 0x12, 0x34
-    };
-
     public interface MainDispatcher {
         void post(@NonNull Runnable r);
 
@@ -193,37 +185,43 @@ public final class WyStreamRecordSession implements WyRecordApi {
 
     /** 控制数据入口：Control SPP 接收到的协议帧。 */
     public void onControlDataReceived(@NonNull byte[] data) {
-        if (data == null || data.length < 8) {
+        if (data == null || data.length < WyStreamControlFrames.FRAME_LEN) {
             return;
         }
-        for (int i = 0; i <= data.length - 8; i++) {
+        for (int i = 0; i <= data.length - WyStreamControlFrames.FRAME_LEN; i++) {
             if ((data[i] & 0xFF) == 0x99 && (data[i + 1] & 0xFF) == 0xEC) {
                 int cmd = data[i + 2] & 0xFF;
-                int status = data[i + 5] & 0xFF;
-                if (cmd == 0xD5) {
+                int status = WyStreamControlFrames.statusAt(data, i);
+                if (cmd == WyStreamControlFrames.CMD_START) {
                     handleStartResponse(status);
-                } else if (cmd == 0xD6) {
+                } else if (cmd == WyStreamControlFrames.CMD_STOP) {
                     handleStopResponse(status);
                 }
             }
         }
     }
 
-    /** 音频数据入口：SPP 收到的原始音频字节。 */
+    /**
+     * 音频数据入口：SPP 收到的原始音频字节（任意长度，含 &lt; 44 的短切片）。
+     *
+     * <p>只做「控制帧 vs 音频字节」判别：精确 8 字节控制帧分流（停止→{@code stopByDevice}，
+     * 其它控制帧忽略且不进音频管线）；其余字节<b>原样</b>交给装配器按流缓存/组帧，不再按长度丢弃。</p>
+     */
     public void onAudioChunkReceived(@NonNull byte[] chunk) {
+        if (chunk == null || chunk.length == 0) {
+            return;
+        }
         if (!pipeline.isRecording()) {
             return;
         }
-        // 若音频流通道夹带控制指令帧（< 44 字节），分流并处理远端停止
-        if (chunk.length < 44) {
-            if (chunk.length >= 8 && (chunk[0] & 0xFF) == 0x99 && (chunk[1] & 0xFF) == 0xEC) {
-                int cmd = chunk[2] & 0xFF;
-                if (cmd == 0xD6) {
-                    WyRecordLog.INSTANCE.info("音频通道收到耳机端主动停止通知 (99 EC D6)");
-                    radio.disconnectAudioSpp();
-                    pipeline.stopByDevice();
-                }
-            }
+        if (WyStreamControlFrames.isStopFrame(chunk)) {
+            WyRecordLog.INSTANCE.info("音频通道收到耳机端主动停止通知 (99 EC D6)");
+            pipeline.stopByDevice();
+            return;
+        }
+        if (WyStreamControlFrames.isAnyControlFrame(chunk)) {
+            // 防御：控制帧夹带在音频通道时不得进入音频管线，否则会被当作音频字节污染缓冲。
+            WyRecordLog.INSTANCE.info("音频通道收到控制帧，忽略（不进音频管线）");
             return;
         }
         pipeline.onAudioChunk(chunk);
@@ -242,7 +240,7 @@ public final class WyStreamRecordSession implements WyRecordApi {
                 reply.onReply(null);
             } else {
                 WyRecordLog.INSTANCE.warn("随录随传开始失败，status=0x" + Integer.toHexString(status));
-                radio.disconnectAudioSpp();
+                // 不在此处断开音频：失败回执走 pipeline.finish → commands.detach() 统一断开（一次）。
                 reply.onReply(WyControl.Failure.REJECTED);
             }
         }
@@ -256,7 +254,7 @@ public final class WyStreamRecordSession implements WyRecordApi {
             cancelTimeoutLocked();
         }
         if (reply != null) {
-            radio.disconnectAudioSpp();
+            // 不在此处断开音频：pipeline.finish → commands.detach() 会统一断开（一次）。
             if (status == 0x00) {
                 WyRecordLog.INSTANCE.info("随录随传停止成功 (0x00)");
                 reply.onReply(null);
@@ -266,7 +264,6 @@ public final class WyStreamRecordSession implements WyRecordApi {
             }
         } else if (pipeline.isRecording()) {
             WyRecordLog.INSTANCE.info("收到耳机端主动停止随录随传通知 (99 EC D6)");
-            radio.disconnectAudioSpp();
             pipeline.stopByDevice();
         }
     }
@@ -302,31 +299,46 @@ public final class WyStreamRecordSession implements WyRecordApi {
                 synchronized (protocolLock) {
                     pendingStartReply = reply;
                     cancelTimeoutLocked();
-                    pendingTimeoutRunnable = () -> {
-                        synchronized (protocolLock) {
-                            if (pendingStartReply == reply) {
-                                pendingStartReply = null;
-                                WyRecordLog.INSTANCE.warn("随录随传开始命令超时");
-                                radio.disconnectAudioSpp();
-                                reply.onReply(WyControl.Failure.TIMEOUT);
-                            }
-                        }
-                    };
+                    pendingTimeoutRunnable = () -> notifyStartTimeout(reply);
                     mainDispatcher.postDelayed(pendingTimeoutRunnable, 5000L);
                 }
-                radio.sendControl(CMD_START_STREAM_RECORD, (sendSuccess, sendFailure) -> {
+                radio.sendControl(WyStreamControlFrames.START, (sendSuccess, sendFailure) -> {
                     if (!sendSuccess) {
-                        synchronized (protocolLock) {
-                            cancelTimeoutLocked();
-                            if (pendingStartReply == reply) {
-                                pendingStartReply = null;
-                                radio.disconnectAudioSpp();
-                                reply.onReply(sendFailure != null ? sendFailure : WyControl.Failure.DEVICE_ERROR);
-                            }
-                        }
+                        notifyStartSendFailed(reply, sendFailure);
                     }
                 });
             });
+        }
+
+        /** 开始命令超时：只在锁内摘除待回执，{@code onReply} 必须在锁外调用，避免 ABBA 死锁。 */
+        private void notifyStartTimeout(@NonNull StreamRecordPipeline.Reply<WyControl.Failure> reply) {
+            StreamRecordPipeline.Reply<WyControl.Failure> toNotify = null;
+            synchronized (protocolLock) {
+                if (pendingStartReply == reply) {
+                    pendingStartReply = null;
+                    toNotify = reply;
+                }
+            }
+            if (toNotify != null) {
+                WyRecordLog.INSTANCE.warn("随录随传开始命令超时");
+                toNotify.onReply(WyControl.Failure.TIMEOUT);
+            }
+        }
+
+        /** 开始命令发送失败：同上，回执在锁外触发。 */
+        private void notifyStartSendFailed(@NonNull StreamRecordPipeline.Reply<WyControl.Failure> reply,
+                                           @Nullable WyControl.Failure sendFailure) {
+            StreamRecordPipeline.Reply<WyControl.Failure> toNotify = null;
+            synchronized (protocolLock) {
+                cancelTimeoutLocked();
+                if (pendingStartReply == reply) {
+                    pendingStartReply = null;
+                    toNotify = reply;
+                }
+            }
+            if (toNotify != null) {
+                toNotify.onReply(sendFailure != null ? sendFailure : WyControl.Failure.DEVICE_ERROR);
+            }
         }
 
         @Override
@@ -335,30 +347,45 @@ public final class WyStreamRecordSession implements WyRecordApi {
             synchronized (protocolLock) {
                 pendingStopReply = reply;
                 cancelTimeoutLocked();
-                pendingTimeoutRunnable = () -> {
-                    synchronized (protocolLock) {
-                        if (pendingStopReply == reply) {
-                            pendingStopReply = null;
-                            WyRecordLog.INSTANCE.warn("随录随传停止命令超时");
-                            radio.disconnectAudioSpp();
-                            reply.onReply(WyControl.Failure.TIMEOUT);
-                        }
-                    }
-                };
+                pendingTimeoutRunnable = () -> notifyStopTimeout(reply);
                 mainDispatcher.postDelayed(pendingTimeoutRunnable, 5000L);
             }
-            radio.sendControl(CMD_STOP_STREAM_RECORD, (sendSuccess, sendFailure) -> {
+            radio.sendControl(WyStreamControlFrames.STOP, (sendSuccess, sendFailure) -> {
                 if (!sendSuccess) {
-                    synchronized (protocolLock) {
-                        cancelTimeoutLocked();
-                        if (pendingStopReply == reply) {
-                            pendingStopReply = null;
-                            radio.disconnectAudioSpp();
-                            reply.onReply(sendFailure != null ? sendFailure : WyControl.Failure.DEVICE_ERROR);
-                        }
-                    }
+                    notifyStopSendFailed(reply, sendFailure);
                 }
             });
+        }
+
+        /** 停止命令超时：回执在 protocolLock 之外触发。 */
+        private void notifyStopTimeout(@NonNull StreamRecordPipeline.Reply<WyControl.Failure> reply) {
+            StreamRecordPipeline.Reply<WyControl.Failure> toNotify = null;
+            synchronized (protocolLock) {
+                if (pendingStopReply == reply) {
+                    pendingStopReply = null;
+                    toNotify = reply;
+                }
+            }
+            if (toNotify != null) {
+                WyRecordLog.INSTANCE.warn("随录随传停止命令超时");
+                toNotify.onReply(WyControl.Failure.TIMEOUT);
+            }
+        }
+
+        /** 停止命令发送失败：回执在 protocolLock 之外触发。 */
+        private void notifyStopSendFailed(@NonNull StreamRecordPipeline.Reply<WyControl.Failure> reply,
+                                          @Nullable WyControl.Failure sendFailure) {
+            StreamRecordPipeline.Reply<WyControl.Failure> toNotify = null;
+            synchronized (protocolLock) {
+                cancelTimeoutLocked();
+                if (pendingStopReply == reply) {
+                    pendingStopReply = null;
+                    toNotify = reply;
+                }
+            }
+            if (toNotify != null) {
+                toNotify.onReply(sendFailure != null ? sendFailure : WyControl.Failure.DEVICE_ERROR);
+            }
         }
 
         @Override

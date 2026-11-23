@@ -1,7 +1,6 @@
 package com.yovo.biz_ggec_wy.internal.scan;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.biz_ggec_wy.api.WyControl;
 import com.yovo.biz_ggec_wy.api.WyScan;

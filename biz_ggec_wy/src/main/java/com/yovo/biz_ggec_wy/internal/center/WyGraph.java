@@ -13,8 +13,6 @@ import com.yovo.biz_ggec_wy.provider.lib_bluetooth.WyClassicRadio;
 import com.yovo.biz_ggec_wy.provider.lib_common.log.WyLog;
 import com.yovo.biz_ggec_wy.provider.lib_ggec_opus.WyOpusCodecProvider;
 
-import java.util.Objects;
-
 /**
  * 组合根：装配 Provider 适配层、中层协议与扫描/会话/录音组件。
  */
@@ -45,11 +43,13 @@ public final class WyGraph {
         WyClassicRadio radio = WyClassicRadio.open(target);
         WyOpusCodecProvider opusCodecProvider = new WyOpusCodecProvider();
         WyCatalogImpl catalog = new WyCatalogImpl();
-        WyRecordPathResolver pathResolver = new WyRecordPathResolver(target);
 
         WyClassicScanner scanner = new WyClassicScanner(radio);
-        WyStreamRecordSession recordSession = new WyStreamRecordSession(radio, opusCodecProvider, pathResolver);
         WySession session = new WySession(radio, catalog);
+        // 录音文件名带产品型号：绑定当前连接型号（连接前为空 → 命名回落 UNKNOWN）。
+        WyRecordPathResolver pathResolver = new WyRecordPathResolver(target,
+                () -> session.peer().modelId());
+        WyStreamRecordSession recordSession = new WyStreamRecordSession(radio, opusCodecProvider, pathResolver);
 
         // 音频数据路由：Audio SPP 接收到的原始音频字节送入录音会话
         session.setAudioChunkConsumer(recordSession::onAudioChunkReceived);

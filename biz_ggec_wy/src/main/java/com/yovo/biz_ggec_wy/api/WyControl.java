@@ -1,13 +1,9 @@
 package com.yovo.biz_ggec_wy.api;
 
-import androidx.annotation.NonNull;
-
 import com.yovo.biz_ggec_wy.api.WyDevice.Battery;
 import com.yovo.biz_ggec_wy.api.WyDevice.Info;
 import com.yovo.biz_ggec_wy.api.WyDevice.Radios;
 import com.yovo.biz_ggec_wy.api.WyDevice.Snapshot;
-
-import java.util.List;
 
 /**
  * WY 连接与设备交互。

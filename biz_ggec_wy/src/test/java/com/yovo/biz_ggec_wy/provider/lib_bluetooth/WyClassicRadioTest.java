@@ -19,6 +19,8 @@ import com.yovo.lib_bluetooth.model.classic.CbtDeviceSnapshot;
 import com.yovo.lib_bluetooth.model.classic.CbtDiagnosticReport;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtDiscoveryObserver;
+import com.yovo.lib_bluetooth.model.classic.CbtErrorCode;
+import com.yovo.lib_bluetooth.model.classic.CbtFailure;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkReadiness;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionConfig;
 import com.yovo.lib_bluetooth.model.classic.CbtLinkSessionHandle;
@@ -46,6 +48,7 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -64,6 +67,7 @@ public class WyClassicRadioTest {
         final List<WyClassicRadioPort.SppState> controlStates = new ArrayList<>();
         final List<WyControl.Failure> controlFailures = new ArrayList<>();
         final List<WyClassicRadioPort.SppState> audioStates = new ArrayList<>();
+        final List<WyControl.Failure> audioFailures = new ArrayList<>();
 
         @Override
         public void onControlStateChanged(@NonNull WyClassicRadioPort.SppState state,
@@ -76,6 +80,7 @@ public class WyClassicRadioTest {
         public void onAudioStateChanged(@NonNull WyClassicRadioPort.SppState state,
                                         @Nullable WyControl.Failure failure) {
             audioStates.add(state);
+            audioFailures.add(failure);
         }
 
         @Override
@@ -163,6 +168,20 @@ public class WyClassicRadioTest {
         void emitSpp(int index, @NonNull CbtSppConnectionState state) {
             CbtSppConnectionObserver observer = sppObservers.get(index);
             observer.onSppStateChanged(snapshot(state));
+        }
+
+        /** 模拟 SPP 通道以失败/带原因的终态上报（如 LOCAL_CLOSED / REMOTE_CLOSED）。 */
+        void emitSppFailure(int index, @NonNull CbtSppConnectionState state,
+                            @NonNull CbtErrorCode errorCode) {
+            CbtSppConnectionObserver observer = sppObservers.get(index);
+            CbtSppConnectionSnapshot snap = new CbtSppConnectionSnapshot(
+                    new CbtSppConnectionId("spp-test"),
+                    TARGET_ID,
+                    state,
+                    CbtSppEndpoint.uuid(WyClassicRadio.audioUuid()),
+                    new CbtFailure(errorCode, errorCode.name(), null, true, true, "test", TARGET_ID),
+                    -1);
+            observer.onSppStateChanged(snap);
         }
 
         private static CbtSppConnectionSnapshot snapshot(@NonNull CbtSppConnectionState state) {
@@ -522,5 +541,58 @@ public class WyClassicRadioTest {
                 listener.controlStates.get(listener.controlStates.size() - 1));
         assertEquals(WyControl.Failure.TIMEOUT,
                 listener.controlFailures.get(listener.controlFailures.size() - 1));
+    }
+
+    // ── WS-C：主动关闭音频通道不得被误报成 DEVICE_ERROR ──────────────
+
+    private static void connectControlAndAudio(FakeYoCbtClient client,
+                                               WyClassicRadio radio,
+                                               RecordingListener listener,
+                                               boolean[] audioConnected) {
+        radio.connect(TARGET_MAC, listener);
+        client.emitReady();
+        client.emitSpp(0, CbtSppConnectionState.CONNECTED);
+        radio.connectAudioSpp((success, f) -> audioConnected[0] = success);
+        client.emitSpp(1, CbtSppConnectionState.CONNECTED);
+    }
+
+    @Test
+    public void localAudioClose_isNotReportedAsDeviceError() {
+        FakeYoCbtClient client = new FakeYoCbtClient();
+        WyClassicRadio radio = new WyClassicRadio(client);
+        RecordingListener listener = new RecordingListener();
+        boolean[] audioConnected = new boolean[1];
+        connectControlAndAudio(client, radio, listener, audioConnected);
+        assertTrue(audioConnected[0]);
+        assertTrue(radio.isAudioConnected());
+
+        // 本地主动关闭音频通道，lib 随后以 DISCONNECTED + LOCAL_CLOSED 广播该主动关闭。
+        radio.disconnectAudioSpp();
+        client.emitSppFailure(1, CbtSppConnectionState.DISCONNECTED,
+                CbtErrorCode.SPP_LOCAL_CLOSED);
+
+        assertEquals(WyClassicRadioPort.SppState.DISCONNECTED,
+                listener.audioStates.get(listener.audioStates.size() - 1));
+        // 关键断言：正常收尾的 failure 必须为 null，而非 DEVICE_ERROR。
+        assertNull(listener.audioFailures.get(listener.audioFailures.size() - 1));
+        assertFalse(radio.isAudioConnected());
+    }
+
+    @Test
+    public void remoteAudioClose_mapsToDisconnected() {
+        FakeYoCbtClient client = new FakeYoCbtClient();
+        WyClassicRadio radio = new WyClassicRadio(client);
+        RecordingListener listener = new RecordingListener();
+        boolean[] audioConnected = new boolean[1];
+        connectControlAndAudio(client, radio, listener, audioConnected);
+
+        // 非本地主动关闭（远端关闭）应映射为 DISCONNECTED，而不是 DEVICE_ERROR。
+        client.emitSppFailure(1, CbtSppConnectionState.DISCONNECTED,
+                CbtErrorCode.SPP_REMOTE_CLOSED);
+
+        assertEquals(WyClassicRadioPort.SppState.DISCONNECTED,
+                listener.audioStates.get(listener.audioStates.size() - 1));
+        assertEquals(WyControl.Failure.DISCONNECTED,
+                listener.audioFailures.get(listener.audioFailures.size() - 1));
     }
 }
