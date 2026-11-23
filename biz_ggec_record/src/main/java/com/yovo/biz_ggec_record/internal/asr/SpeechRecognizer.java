@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_record.internal.asr;
 
 import android.content.Context;
 import android.content.res.AssetManager;
-import android.util.Log;
+import com.yovo.biz_ggec_record.provider.lib_common.log.RecordLog;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -213,7 +213,7 @@ public final class SpeechRecognizer {
             }
         } catch (Exception e) {
             if (isActive(id)) {
-                Log.e(TAG, "语音识别异常", e);
+                RecordLog.e(TAG, "语音识别异常", e);
                 Listener current = listener;
                 if (current != null) {
                     current.onAsrError("语音识别异常: " + e.getMessage());

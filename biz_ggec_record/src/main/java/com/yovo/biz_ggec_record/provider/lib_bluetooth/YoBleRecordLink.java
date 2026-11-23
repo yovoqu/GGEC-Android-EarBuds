@@ -1,7 +1,7 @@
 package com.yovo.biz_ggec_record.provider.lib_bluetooth;
 
 import android.content.Context;
-import android.util.Log;
+import com.yovo.biz_ggec_record.provider.lib_common.log.RecordLog;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -262,11 +262,11 @@ public final class YoBleRecordLink {
         Result<BleGattDatabaseSnapshot> result = client.getServices(target);
         if (!result.isSuccess() || result.getValue() == null) {
             String detail = result.getFailure() == null ? "无 GATT 快照" : result.getFailure().message();
-            Log.w(TAG, "getServices failed: " + detail);
+            RecordLog.w(TAG, "getServices failed: " + detail);
             return "GATT 服务未就绪: " + detail;
         }
         BleGattDatabaseSnapshot database = result.getValue();
-        Log.i(TAG, summarizeGatt(database));
+        RecordLog.i(TAG, summarizeGatt(database));
         BleGattServiceInfo service = database.findService(SERVICE_UUID);
         if (service == null) {
             return "设备 GATT 中未找到 Ambiq 服务 " + shortUuid(SERVICE_UUID)
@@ -580,7 +580,7 @@ public final class YoBleRecordLink {
         @Override
         public void onNotificationFailed(@NonNull BleFailure failure) {
             String detail = failure.errorCode() + ": " + failure.message();
-            Log.w(TAG, (videoChannel ? "video" : "audio") + " TX subscribe failed: " + detail);
+            RecordLog.w(TAG, (videoChannel ? "video" : "audio") + " TX subscribe failed: " + detail);
             // 缺特征时仍尝试另一路；两路都失败才整体失败。
             onSubscribeFinished(currentGeneration, videoChannel, false, detail);
         }

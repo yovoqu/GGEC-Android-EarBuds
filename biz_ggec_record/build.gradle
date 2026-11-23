@@ -40,6 +40,7 @@ android {
 
 dependencies {
     implementation project(':lib_bluetooth')
+    implementation project(':lib_common')
     // 录音文件命名复用 lib_ggec_audio.record.RecordFileName（型号+类型+时间的唯一格式化实现）。
     implementation project(':lib_ggec_audio')
     // 本地 AAR 不能 files() 进 library；经 :sherpa_onnx 包装后以 project 依赖引入。
@@ -59,6 +60,8 @@ tasks.register('checkBizGgecRecordBoundary') {
     doLast {
         def offenders = []
         def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
+        // 日志缝：media/asr/link 等内部目录允许引用 provider/lib_common/log（唯一日志入口）。
+        def logSeam = 'com.yovo.biz_ggec_record.provider.lib_common.log.'
 
         fileTree(bizGgecRecordRoot) {
             include 'src/main/java/**/*.java'
@@ -84,7 +87,7 @@ tasks.register('checkBizGgecRecordBoundary') {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
                 if (inInternalMedia && (line =~ /import\s+com\.yovo\.lib_bluetooth\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.provider\./
+                        || (line =~ /import\s+com\.yovo\.biz_ggec_record\.provider\./ && !line.contains(logSeam))
                         || line =~ /import\s+android\.bluetooth\./)) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }

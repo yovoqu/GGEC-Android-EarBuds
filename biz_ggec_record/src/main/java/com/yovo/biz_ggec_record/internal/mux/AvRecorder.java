@@ -6,7 +6,7 @@ import android.media.MediaMuxer;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
-import android.util.Log;
+import com.yovo.biz_ggec_record.provider.lib_common.log.RecordLog;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -195,7 +195,7 @@ public final class AvRecorder {
                 return;
             }
             if (output.exists() && !output.delete()) {
-                Log.w(TAG, "无法覆盖已有文件: " + output);
+                RecordLog.w(TAG, "无法覆盖已有文件: " + output);
             }
             muxer = new MediaMuxer(output.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
             outputFile = output;
@@ -496,7 +496,7 @@ public final class AvRecorder {
                 handler.removeCallbacks(csdTimeout);
                 csdTimeout = null;
             }
-            Log.i(TAG, "muxer started videoOnly=" + !wantAudio
+            RecordLog.i(TAG, "muxer started videoOnly=" + !wantAudio
                     + " file=" + (outputFile != null ? outputFile.getName() : "?"));
         } catch (RuntimeException e) {
             failAndCleanup("MediaMuxer.start 失败: " + e.getMessage());
@@ -559,7 +559,7 @@ public final class AvRecorder {
                     m.stop();
                 }
             } catch (RuntimeException e) {
-                Log.w(TAG, "muxer.stop: " + e.getMessage());
+                RecordLog.w(TAG, "muxer.stop: " + e.getMessage());
                 if (failMessage == null) {
                     failMessage = "结束录制失败: " + e.getMessage();
                 }
@@ -600,7 +600,7 @@ public final class AvRecorder {
     }
 
     private void failAndCleanup(@NonNull String message) {
-        Log.w(TAG, message);
+        RecordLog.w(TAG, message);
         finishLocked(false, message);
     }
 

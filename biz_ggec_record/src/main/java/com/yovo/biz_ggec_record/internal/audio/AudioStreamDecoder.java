@@ -5,7 +5,7 @@ import android.media.AudioFormat;
 import android.media.AudioTrack;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
-import android.util.Log;
+import com.yovo.biz_ggec_record.provider.lib_common.log.RecordLog;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -179,7 +179,7 @@ public final class AudioStreamDecoder {
             }
         } catch (Exception e) {
             if (running) {
-                Log.e(TAG, "音频解码异常", e);
+                RecordLog.e(TAG, "音频解码异常", e);
                 Listener current = listener;
                 if (current != null) {
                     current.onAudioError("音频解码异常: " + e.getMessage());
@@ -296,7 +296,7 @@ public final class AudioStreamDecoder {
                     outputChannels = changed.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
                     startAudioTrack(outputRate, outputChannels);
                     normalizer.reset();
-                    Log.i(TAG, "音频输出格式: " + outputRate + " Hz, " + outputChannels + " 声道");
+                    RecordLog.i(TAG, "音频输出格式: " + outputRate + " Hz, " + outputChannels + " 声道");
                 }
             }
         } finally {

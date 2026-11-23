@@ -2,7 +2,7 @@ package com.yovo.biz_ggec_record.internal.video;
 
 import android.media.MediaCodec;
 import android.media.MediaFormat;
-import android.util.Log;
+import com.yovo.biz_ggec_record.provider.lib_common.log.RecordLog;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
@@ -62,7 +62,7 @@ public final class VideoStreamDecoder {
         long pos = totalEnqueued.getAndAdd(data.length);
         if (pos < 256) {
             int n = Math.min(data.length, (int) (256 - pos));
-            Log.i(TAG, "HEAD " + pos + ".." + (pos + n - 1) + ": " + hex(data, 0, n));
+            RecordLog.i(TAG, "HEAD " + pos + ".." + (pos + n - 1) + ": " + hex(data, 0, n));
         }
         synchronized (enqueueLock) {
             splitNals(data);
@@ -295,7 +295,7 @@ public final class VideoStreamDecoder {
                     int cropTop = f.containsKey("crop-top") ? f.getInteger("crop-top") : 0;
                     w = cropRight - cropLeft + 1;
                     h = cropBottom - cropTop + 1;
-                    Log.i(TAG, "输出格式变化: " + w + "x" + h);
+                    RecordLog.i(TAG, "输出格式变化: " + w + "x" + h);
                     Listener current = listener;
                     if (current != null) {
                         current.onVideoSizeChanged(w, h);
@@ -305,14 +305,14 @@ public final class VideoStreamDecoder {
                 long nowMs = System.currentTimeMillis();
                 if (nowMs - lastStatLogMs > 5_000) {
                     lastStatLogMs = nowMs;
-                    Log.i(TAG, "stat: fed=" + fedBytes + "B out=" + decodedFrames.get()
+                    RecordLog.i(TAG, "stat: fed=" + fedBytes + "B out=" + decodedFrames.get()
                             + "帧 queue=" + (queuedBytes() / 1024) + "KB drop="
                             + droppedChunks.get());
                 }
             }
         } catch (Exception e) {
             if (running) {
-                Log.e(TAG, "解码器异常", e);
+                RecordLog.e(TAG, "解码器异常", e);
                 Listener current = listener;
                 if (current != null) {
                     current.onDecoderError("解码器异常: " + e.getMessage());
@@ -369,7 +369,7 @@ public final class VideoStreamDecoder {
         if (hdrStart >= end) {
             return;
         }
-        Log.i(TAG, "NAL #" + logged + " hdr: " + hex(nal, hdrStart, end - hdrStart));
+        RecordLog.i(TAG, "NAL #" + logged + " hdr: " + hex(nal, hdrStart, end - hdrStart));
     }
 
     @NonNull
