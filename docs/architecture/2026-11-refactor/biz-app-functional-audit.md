@@ -303,12 +303,23 @@ domain/device/model/DeviceWriteResult      { Ok | Failed(DeviceFailure) }   // �
 ### 9.2 复审记录、按设计取舍（未改，理由）
 
 - **成功后保持 pending（P1-1）**：用户明确要求「命令成功后开关显示其目标值」（§8.5 真机复验）。HS02 状态上报滞后/不回读时，如立即回采会"显示关闭"与需求相反。故成功后保持目标值；若设备实际未持久化，离开重进页面会如实反映设备状态。属**产品取舍**，非遗漏。
-- **快速路径 P1-2（回环帧误完成）**：HS02 请求/成功响应同形，首枚入站同族帧即设备应答；未观察到固件回环。已在 §8.1 记录；如需更严可在策略层声明"纯 Notify 应答通道"再启用快速路径。当前真机验证通过。
-- **`HsDeviceRecordSyncSession` 已出流即接受 / 无总体超时（P2-4）、0x8005 收尾在 BLE 回调线程（P2-5）**：文件同步为次要功能，且"已出流"确经命令触发；风险低，记录为已知边界，后续按需加固。
+- **快速路径 P1-2（回环帧误完成）**：HS02 请求/成功响应同形，首枚入站同族帧即设备应答；未观察到固件回环。**第三轮已改为按通道 opt-in**（`CommandScheduler.setTrustResponseAsWriteCompletion`，仅 HS 开启，默认关闭走可靠缓冲语义），见 §9.4。
+- **`HsDeviceRecordSyncSession` 已出流即接受 / 无总体超时（P2-4）、停止收尾延迟（P2-5）**：**第三轮已加固**——文件同步加总体超时兜底；随录随传停止加 ~3s 回执兜底，见 §9.4。
 
 ### 9.3 最终验证
 
 - 单测/门禁：`biz_ggec_hs 190 / biz_ggec_wy 34 / app 627` 全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
 - HS02 真机（复审修复版）：佩戴检测开关 `check=true` 且 `完成 code=0`；随录随传 开始 `code=0`、停止 `code=0` 并落盘（示例 674 帧 / 13.48s）。
+
+### 9.4 第三轮加固（已实施）
+
+1. **快速路径按通道 opt-in**：`CommandScheduler.setTrustResponseAsWriteCompletion(boolean)`，默认 `false`（写完成可靠通道走「缓冲待 onWriteCompleted 回放」的可靠语义）；仅 `HsProtocolEngine` 构造时开启。限制快速路径的适用范围，避免对回环/可靠写通道误判。单测：`matchingResponseCompletesEvenWhenWriteNeverReportsCompletion` 显式 opt-in；默认语义由既有 `responseBeforeWriteStartedIsBufferedNotDropped` 覆盖。
+2. **文件同步总体超时**：`HsDeviceRecordSyncSession` 增加 `SYNC_TOTAL_TIMEOUT_MS=120s` 兜底，超时 `cancelInternal("录音文件同步超时")`，避免永久「进行中」。
+3. **停止延迟优化**：`HsStreamRecordSession` 发出停止命令后启动 `STOP_FALLBACK_MS=3s` 兜底；设备停止应答偶发延迟（实测曾达十余秒）时，到点按 best-effort 收尾（`随录随传停止完成（停止回执超时兜底）`），不再让 UI 等满 15s 看门狗。
+   - 真机复验：停止在 ~3s 内完成（日志 `停止回执超时兜底`），文件正常落盘（218 帧 / 4.36s）。
+
+### 9.5 最终门禁（第三轮后）
+
+- `biz_ggec_hs 190 / biz_ggec_wy 34 / app 627` 全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
 
 
