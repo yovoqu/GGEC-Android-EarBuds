@@ -23,12 +23,14 @@ final class LateFrameGuard {
     /**
      * 登记迟到帧保护窗口。原 {@code CommandScheduler.quarantine(command, node)}。
      *
-     * @param command      已完成/中止的命令；为空或写未开始时忽略
-     * @param writeStarted 该命令是否已经进入过设备侧写入窗口
-     * @param nowMs        调度线程当前时间（毫秒）
+     * <p>命令非空即按族登记，不再以「写已开始」为门槛：响应帧驱动语义下没有写完成回调，
+     * 一旦命令进入发送/超时/完成任一路径，同族迟到帧都应被有界隔离。</p>
+     *
+     * @param command 已完成/中止的命令；为空则忽略
+     * @param nowMs   调度线程当前时间（毫秒）
      */
-    void register(Command command, boolean writeStarted, long nowMs) {
-        if (command == null || !writeStarted) {
+    void register(Command command, long nowMs) {
+        if (command == null) {
             return;
         }
         long guardMs;

@@ -17,16 +17,12 @@ final class CommandNode {
     String payload;
     CommandPolicy policy;
     final List<Command> followers = new ArrayList<>();
-    /** 写完成前到达的匹配帧暂存，待 {@code onWriteCompleted} 后按序回放（H-14）。 */
-    final List<String> bufferedFrames = new ArrayList<>();
     /** GET 单飞组的查询身份（{@code semanticKey#generation}），非 GET 为 {@code null}。 */
     String queryIdentity;
     long generation;
     final long sessionId;
     long updatedAtMs;
     long attemptId;
-    boolean writeStarted;
-    boolean writeCompleted;
     Command.CompletionListener currentCompletionListener;
 
     private CommandNode(Command primary,

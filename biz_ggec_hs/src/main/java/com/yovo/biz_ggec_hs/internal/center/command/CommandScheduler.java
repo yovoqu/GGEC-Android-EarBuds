@@ -19,13 +19,6 @@ public final class CommandScheduler {
 
     static final long SET_COALESCE_WINDOW_MS = 1000L;
     static final long COMMAND_INTERVAL_MS = 30L;
-    /**
-     * 下发后等待 GATT 写完成的兜底看门狗（毫秒）。响应超时只在 {@code onWriteCompleted} 之后才启动：
-     * 若链路对一次写既不回 {@code onCompleted} 也不回 {@code onTimeout}，没有这道看门狗，
-     * {@code executing}/{@code currentNode} 会永久为真，后续命令在 {@code executeNext} 处永久早退，
-     * 串行队列整体堵死。取值须大于链路自身单次 GATT 操作超时（lib 默认 10s），避免误杀慢写。
-     */
-    static final long WRITE_COMPLETION_WATCHDOG_MS = 15_000L;
 
     public interface Cancelable {
         void cancel();
@@ -40,15 +33,14 @@ public final class CommandScheduler {
     }
 
     public interface Transport {
-        public interface Callback {
-            void onStarted();
-
-            void onCompleted(int status);
-
-            void onTimeout();
-        }
-
-        boolean send(long sessionId, String payload, Callback callback);
+        /**
+         * 同步返回「是否被链路受理/已发送」。受理后由本类等待响应帧与有界响应超时；不再有写完成回调。
+         *
+         * @param sessionId 目标连接会话
+         * @param payload   已编码的十六进制命令载荷
+         * @return true 表示链路已受理该次下发；false 表示未受理，调度器立即按失败收尾
+         */
+        boolean send(long sessionId, String payload);
     }
 
     public interface StateListener {
@@ -119,21 +111,12 @@ public final class CommandScheduler {
     private Command currentCommand;
     private Cancelable responseTimeout;
     private Cancelable nextExecution;
-    private Cancelable sendWatchdog;
     private long sessionId;
     private boolean ready;
     private boolean executing;
     private boolean released;
     private long consistencyGeneration;
     private long attemptSequence;
-    /**
-     * 「匹配响应帧即视为写已送达」是否启用（默认 false）。
-     *
-     * <p>仅用于命令特征 GATT 写完成回调不可靠、但设备会在 Notify 通道回业务响应帧的通道（如 HS02）。
-     * 由链路/协议引擎显式开启（opt-in）；默认关闭走「缓冲待 onWriteCompleted 回放」的可靠语义，
-     * 避免对写完成可靠、或存在请求/响应回环的通道造成误判。</p>
-     */
-    private boolean trustResponseAsWriteCompletion;
 
     public CommandScheduler(Dispatcher dispatcher,
                      Transport transport,
@@ -144,14 +127,6 @@ public final class CommandScheduler {
         this.stateListener = stateListener;
         this.policyResolver = policyResolver;
         publishState();    }
-
-    /**
-     * 开启/关闭「匹配响应帧即视为写已送达」快速路径（opt-in，见字段说明）。
-     * 必须在命令提交前调用；HS 协议引擎在构造后开启。
-     */
-    public void setTrustResponseAsWriteCompletion(boolean trust) {
-        this.trustResponseAsWriteCompletion = trust;
-    }
 
     public void submit(Command command) {
         submit(command, sessionId);
@@ -336,7 +311,10 @@ public final class CommandScheduler {
     /**
      * 应答通道入口：仅尝试匹配当前命令，不处理主动事件。
      *
-     * @return true 表示帧被当前命令消费（含写窗口缓冲）
+     * <p>响应帧驱动完成：一旦受理（{@code transport.send} 返回 true）即置 SENT 并启动有界响应超时，
+     * 入站匹配帧即处理完成，不再依赖任何写完成回调。</p>
+     *
+     * @return true 表示帧被当前命令消费
      */
     public boolean onResponseCandidate(long frameSessionId, String frame) {
         if (frame == null) {
@@ -353,38 +331,6 @@ public final class CommandScheduler {
         if (command == null || node == null || !matches(command, frame)) {
             return false;
         }
-        if (!node.writeCompleted) {
-            // H-14：写完成前到达的匹配帧一律先缓冲（含 onStarted 之前的窗口），
-            // 待 onWriteCompleted 后按序回放；此前 writeStarted==false 时直接 return false 会静默丢帧。
-            node.bufferedFrames.add(frame);
-            if (!trustResponseAsWriteCompletion) {
-                // 默认语义：写完成回调可靠，缓冲等待 onWriteCompleted 回放即可。
-                return true;
-            }
-            // 真机适配（HS02 / 部分固件）：命令特征的 GATT 写可能永远不回报 onCharacteristicWrite，
-            // 但设备收到命令后会在 Notify 通道回业务响应帧。匹配响应帧本身即证明写已送达，
-            // 因此把它当作“写完成”的等价信号：取消发送看门狗、置 SENT 并使能响应超时，
-            // 立即处理该帧（及此前缓冲帧），不再无限等待可能永不触发的写完成回调而 10s 超时。
-            node.writeCompleted = true;
-            // 迟到帧隔离（lateFrameGuard）以 writeStarted 判定是否登记，快速路径必须一并置位。
-            node.writeStarted = true;
-            cancelSendWatchdog();
-            command.setState(Command.State.SENT);
-            startResponseTimeout(command, node, node.attemptId,
-                    initialResponseTimeoutMs(command, node));
-            long attemptId = node.attemptId;
-            List<String> buffered = new ArrayList<>(node.bufferedFrames);
-            node.bufferedFrames.clear();
-            for (String bufferedFrame : buffered) {
-                // 命令可能已在上一帧完成（完成回调是异步 post 的，currentCommand 尚未清空）：
-                // 终止态后不要再 processFrame，避免把 COMPLETED/FAILED 回退成 RECEIVING。
-                if (command.getCompletion() != null || !isCurrentAttempt(node, command, attemptId)) {
-                    break;
-                }
-                processFrame(command, bufferedFrame);
-            }
-            return true;
-        }
         processFrame(command, frame);
         return true;
     }
@@ -393,7 +339,7 @@ public final class CommandScheduler {
         cancelTimers();
         CommandNode node = currentNode;
         Command command = currentCommand;
-        lateFrameGuard.register(command, node != null && node.writeStarted, dispatcher.nowMs());
+        lateFrameGuard.register(command, dispatcher.nowMs());
         currentNode = null;
         currentCommand = null;
         executing = false;
@@ -416,7 +362,7 @@ public final class CommandScheduler {
 
         CommandNode active = currentNode;
         Command activeCommand = currentCommand;
-        lateFrameGuard.register(activeCommand, active != null && active.writeStarted, dispatcher.nowMs());
+        lateFrameGuard.register(activeCommand, dispatcher.nowMs());
         currentNode = null;
         currentCommand = null;
         executing = false;
@@ -500,9 +446,6 @@ public final class CommandScheduler {
 
         currentCommand = command;
         executing = true;
-        node.writeStarted = false;
-        node.writeCompleted = false;
-        node.bufferedFrames.clear();
         node.attemptId = ++attemptSequence;
         long attemptId = node.attemptId;
 
@@ -514,80 +457,23 @@ public final class CommandScheduler {
         if (!isCurrentAttempt(node, command, attemptId)) {
             return;
         }
-        armSendWatchdog(node, command, attemptId);
 
-        command.setState(Command.State.SENDING);
+        // 发送=同步「是否受理」：受理后置 SENT 并启动唯一有界响应超时，
+        // 入站匹配帧即处理完成，不再依赖任何写完成回调。
+        command.setState(Command.State.SENT);
         boolean accepted;
         try {
-            accepted = transport.send(node.sessionId, payload, new Transport.Callback() {
-                @Override
-                public void onStarted() {
-                    dispatcher.execute(() -> onWriteStarted(node, command, attemptId));
-                }
-
-                @Override
-                public void onCompleted(int status) {
-                    dispatcher.execute(() -> onWriteCompleted(node, command, attemptId, status));
-                }
-
-                @Override
-                public void onTimeout() {
-                    dispatcher.execute(() -> {
-                        if (isCurrentAttempt(node, command, attemptId)) {
-                            failCurrent(Command.ResultCode.TIMEOUT, "GATT 写入超时");
-                        }
-                    });
-                }
-            });
+            accepted = transport.send(node.sessionId, payload);
         } catch (RuntimeException e) {
-            HsLog.w(TAG, "GATT 写入请求执行异常", e);
-            failCurrent("GATT 写入请求执行异常");
+            HsLog.w(TAG, "命令发送请求执行异常", e);
+            failCurrent("命令发送请求执行异常");
             return;
         }
-        if (!accepted && isCurrentAttempt(node, command, attemptId)) {
-            failCurrent("GATT 写入请求未被接受");
-        }
-    }
-
-    private void onWriteStarted(CommandNode node, Command command, long attemptId) {
-        if (isCurrentAttempt(node, command, attemptId)) {
-            node.writeStarted = true;
-        }
-    }
-
-    private void onWriteCompleted(CommandNode node,
-                                  Command command,
-                                  long attemptId,
-                                  int status) {
-        if (!isCurrentAttempt(node, command, attemptId)) {
+        if (!accepted) {
+            failCurrent("命令发送未被链路受理");
             return;
         }
-        if (node.writeCompleted) {
-            // 快速路径已按匹配响应帧判定“写已送达”，真实写完成回调迟到时不再重复推进/重置超时。
-            return;
-        }
-        if (status != 0) {
-            failCurrent("GATT 写入失败，状态码=" + status);
-            return;
-        }
-
-        node.writeCompleted = true;
-        node.writeStarted = true;
-        cancelSendWatchdog();
-        command.setState(Command.State.SENT);
-        startResponseTimeout(
-                command, node, attemptId, initialResponseTimeoutMs(command, node));
-
-        if (!node.bufferedFrames.isEmpty()) {
-            List<String> buffered = new ArrayList<>(node.bufferedFrames);
-            node.bufferedFrames.clear();
-            for (String frame : buffered) {
-                if (command.getCompletion() != null || !isCurrentAttempt(node, command, attemptId)) {
-                    break;
-                }
-                processFrame(command, frame);
-            }
-        }
+        startResponseTimeout(command, node, attemptId, initialResponseTimeoutMs(command, node));
     }
 
     private void processFrame(Command command, String frame) {
@@ -621,10 +507,9 @@ public final class CommandScheduler {
         if (node != currentNode || command != currentCommand) {
             return;
         }
-        cancelSendWatchdog();
         if (completion != null
                 && completion.getCode() == Command.ResultCode.TIMEOUT) {
-            lateFrameGuard.register(command, node.writeStarted, dispatcher.nowMs());
+            lateFrameGuard.register(command, dispatcher.nowMs());
         }
         cancelResponseTimeout();
         detachCompletionListener(node, command);
@@ -697,8 +582,7 @@ public final class CommandScheduler {
             abortCurrent(reason);
             return;
         }
-        lateFrameGuard.register(command, currentNode != null && currentNode.writeStarted,
-                dispatcher.nowMs());
+        lateFrameGuard.register(command, dispatcher.nowMs());
         command.abort(CommandCompletion.stringResult(code, reason));
     }
 
@@ -756,24 +640,6 @@ public final class CommandScheduler {
     private void cancelTimers() {
         cancelResponseTimeout();
         cancelNextExecution();
-        cancelSendWatchdog();
-    }
-
-    private void armSendWatchdog(CommandNode node, Command command, long attemptId) {
-        cancelSendWatchdog();
-        sendWatchdog = dispatcher.schedule(() -> {
-            sendWatchdog = null;
-            if (isCurrentAttempt(node, command, attemptId) && !node.writeCompleted) {
-                failCurrent(Command.ResultCode.TIMEOUT, "GATT 写入未在限定时间内完成");
-            }
-        }, WRITE_COMPLETION_WATCHDOG_MS);
-    }
-
-    private void cancelSendWatchdog() {
-        if (sendWatchdog != null) {
-            sendWatchdog.cancel();
-            sendWatchdog = null;
-        }
     }
 
     private void cancelResponseTimeout() {

@@ -1,6 +1,7 @@
 package com.yovo.biz_ggec_hs.internal.center.command;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -19,11 +20,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 命令系统收发健壮性回归（H-14 写窗口丢帧 / 发送完成看门狗）。
+ * 命令系统收发健壮性回归（响应帧驱动完成，架构重构 P2）。
  *
  * <p>直接驱动包私有 {@link CommandScheduler}：内联 {@link CommandScheduler.Dispatcher} 让迁移同步发生，
- * 可控 {@link CommandScheduler.Transport} 让测试精确决定“何时回 onStarted/onCompleted、何时投喂应答帧”。
+ * 可控 {@link CommandScheduler.Transport} 让测试精确决定「是否受理」并在任意时刻投喂应答帧。
  * 不 sleep、不轮询，只用门闩等待。</p>
+ *
+ * <p>语义：{@code transport.send} 同步返回「是否受理」；受理后命令置 SENT 并启动唯一有界响应超时，
+ * 入站匹配响应帧即完成。不再存在任何写完成回调（onStarted/onCompleted/onTimeout）。</p>
  */
 public class HsCommandSystemHardeningTest {
 
@@ -31,16 +35,14 @@ public class HsCommandSystemHardeningTest {
     private static final String EQ_SET_MUSIC = "99EC830001001234";
     /** V11 EQ 回显应答（mode=0），与 {@link #EQ_SET_MUSIC} 同形。 */
     private static final String EQ_V11_RESPONSE = "99EC830001001234";
-    private static final String MAC = "00:11:22:33:44:55";
 
     /**
-     * H-14：应答在“已发出、尚未 onStarted/onCompleted”窗口内到达时必须被缓冲，而不是丢帧。
-     * 若丢帧，命令只能超时返回 TIMEOUT；缓冲回放则应成功。
+     * ① 受理后入站匹配响应帧 → 命令 SUCCESS 完成，全程不依赖任何写完成回调。
      */
     @Test
-    public void responseBeforeWriteStartedIsBufferedNotDropped() throws Exception {
+    public void acceptedThenMatchingResponseCompletesWithoutWriteCallback() throws Exception {
         ManualDispatcher dispatcher = new ManualDispatcher();
-        DeferredTransport transport = new DeferredTransport();
+        FakeTransport transport = new FakeTransport();
         CommandScheduler scheduler = newScheduler(dispatcher, transport);
 
         AtomicReference<CommandCompletion> result = new AtomicReference<>();
@@ -52,30 +54,29 @@ public class HsCommandSystemHardeningTest {
         });
 
         scheduler.submit(command, 1L);
-        assertNotNull("命令必须已下发并拿到写入回调", transport.callback);
 
-        // 尚未 onStarted：应答帧到达（旧实现会 return false 丢弃）。
-        boolean claimed = scheduler.onResponseCandidate(1L, EQ_V11_RESPONSE);
-        assertTrue("写完成前到达的匹配帧必须被当前命令认领（缓冲）", claimed);
+        assertEquals("受理即下发一次", 1, transport.sentPayloads.size());
+        assertEquals("下发的应是命令编码后的载荷", EQ_SET_MUSIC, transport.sentPayloads.get(0));
+        assertEquals("受理后命令状态应为 SENT", Command.State.SENT, command.getState());
 
-        // 现在才把写回调放出来：started -> completed，缓冲帧应被回放并完成命令。
-        transport.started();
-        transport.completed(0);
+        boolean claimed = transport.fireResponse(scheduler, 1L, EQ_V11_RESPONSE);
+        assertTrue("受理后的匹配响应帧必须被当前命令认领", claimed);
 
-        assertTrue("命令必须完成（缓冲回放）", done.await(3, TimeUnit.SECONDS));
+        assertTrue("入站匹配响应帧必须驱动完成", done.await(3, TimeUnit.SECONDS));
         assertNotNull(result.get());
-        assertEquals("应答被缓冲回放后应成功，而不是超时/丢弃",
+        assertEquals("匹配响应帧驱动完成，应为 SUCCESS",
                 Command.ResultCode.SUCCESS, result.get().getCode());
+        assertEquals("命令应落到 COMPLETED 终态", Command.State.COMPLETED, command.getState());
     }
 
     /**
-     * 发送完成看门狗：链路对一次写既不回 onCompleted 也不回 onTimeout 时，
-     * 看门狗必须把命令以 TIMEOUT 收尾，避免永久占用串行队列。
+     * ② {@code send} 同步返回 false（未被链路受理）→ 命令立即 FAILED，且不启动响应超时。
      */
     @Test
-    public void writeThatNeverCompletesTimesOutViaWatchdog() throws Exception {
+    public void rejectedSendFailsCommandImmediately() throws Exception {
         ManualDispatcher dispatcher = new ManualDispatcher();
-        DeferredTransport transport = new DeferredTransport();
+        FakeTransport transport = new FakeTransport();
+        transport.accept = false;
         CommandScheduler scheduler = newScheduler(dispatcher, transport);
 
         AtomicReference<CommandCompletion> result = new AtomicReference<>();
@@ -87,51 +88,73 @@ public class HsCommandSystemHardeningTest {
         });
 
         scheduler.submit(command, 1L);
-        assertNotNull(transport.callback);
-        // 完全不回调写入结果；手动触发已排队的看门狗任务。
+
+        assertTrue("未被受理必须立即收尾", done.await(3, TimeUnit.SECONDS));
+        assertNotNull(result.get());
+        assertEquals("未被链路受理应为 FAILED",
+                Command.ResultCode.FAILED, result.get().getCode());
+        assertEquals("命令应落到 FAILED 终态", Command.State.FAILED, command.getState());
+
+        // 未被受理时不存在响应超时：推进已排队任务（仅串行队列的下一轮 drain）也不应改写终态。
+        dispatcher.fireScheduled();
+        assertEquals("未被受理的命令不得被后续超时改写成 TIMEOUT",
+                Command.ResultCode.FAILED, result.get().getCode());
+    }
+
+    /**
+     * ③ 受理后无任何响应帧 → 驱动器推进排队的响应超时 → 命令 TIMEOUT。
+     */
+    @Test
+    public void acceptedWithoutResponseTimesOutViaResponseTimeout() throws Exception {
+        ManualDispatcher dispatcher = new ManualDispatcher();
+        FakeTransport transport = new FakeTransport();
+        CommandScheduler scheduler = newScheduler(dispatcher, transport);
+
+        AtomicReference<CommandCompletion> result = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        EQModeCommand command = new EQModeCommand(EQModeCommand.MUSIC_MODE);
+        command.addCompletionListener((cmd, completion) -> {
+            result.set(completion);
+            done.countDown();
+        });
+
+        scheduler.submit(command, 1L);
+
+        assertEquals("受理即下发一次", 1, transport.sentPayloads.size());
+        assertEquals("受理后命令状态应为 SENT", Command.State.SENT, command.getState());
+        assertEquals("受理后应只排队一个响应超时任务", 1, dispatcher.pendingCount());
+
+        // 不投喂任何响应帧，直接推进排队的响应超时任务。
         dispatcher.fireScheduled();
 
-        assertTrue("看门狗必须收尾命令", done.await(3, TimeUnit.SECONDS));
+        assertTrue("响应超时必须收尾命令", done.await(3, TimeUnit.SECONDS));
         assertNotNull(result.get());
-        assertEquals("写永不完成时必须以 TIMEOUT 收尾",
+        assertEquals("受理后无响应帧应以 TIMEOUT 收尾",
                 Command.ResultCode.TIMEOUT, result.get().getCode());
+        assertEquals("命令应落到 FAILED 终态", Command.State.FAILED, command.getState());
     }
 
     /**
-     * 真机回归（HS02）：设备收到命令后在 Notify 通道回匹配应答帧，但命令特征的 GATT 写
-     * 可能永远不回报 onCharacteristicWrite。匹配应答即证明写已送达，命令必须据此完成，
-     * 而不是缓冲后等到 10s GATT 超时。
+     * ④ 迟到帧隔离：超时后登记同族保护窗口，窗口内同族帧被隔离、同族重发让出延迟，窗口到期放行。
+     * 直接验证 {@link LateFrameGuard#register(Command, long)} 新签名（去掉写开始门槛）。
      */
     @Test
-    public void matchingResponseCompletesEvenWhenWriteNeverReportsCompletion() throws Exception {
-        ManualDispatcher dispatcher = new ManualDispatcher();
-        DeferredTransport transport = new DeferredTransport();
-        CommandScheduler scheduler = newScheduler(dispatcher, transport);
-        scheduler.setTrustResponseAsWriteCompletion(true);
-
-        AtomicReference<CommandCompletion> result = new AtomicReference<>();
-        CountDownLatch done = new CountDownLatch(1);
+    public void lateFrameGuardIsolatesSameFamilyAfterRegister() {
+        LateFrameGuard guard = new LateFrameGuard();
         EQModeCommand command = new EQModeCommand(EQModeCommand.MUSIC_MODE);
-        command.addCompletionListener((cmd, completion) -> {
-            result.set(completion);
-            done.countDown();
-        });
+        long now = 1_000L;
 
-        scheduler.submit(command, 1L);
-        assertNotNull(transport.callback);
-        // 关键：不调用 transport.started()/completed()，只喂匹配应答帧。
-        boolean claimed = scheduler.onResponseCandidate(1L, EQ_V11_RESPONSE);
-        assertTrue("匹配应答必须被当前命令认领", claimed);
+        guard.register(command, now);
 
-        assertTrue("设备回匹配应答即证明写已送达，命令必须完成",
-                done.await(3, TimeUnit.SECONDS));
-        assertNotNull(result.get());
-        assertEquals("匹配应答驱动完成，不得超时",
-                Command.ResultCode.SUCCESS, result.get().getCode());
+        assertTrue("登记后同族迟到帧应被隔离", guard.isQuarantined(EQ_V11_RESPONSE, now));
+        assertTrue("保护窗口内同族重发应让出延迟", guard.delayFor(command, now) > 0L);
+        assertFalse("保护窗口到期后应放行",
+                guard.isQuarantined(EQ_V11_RESPONSE, now + command.getLateResponseGuardMs() + 1L));
     }
 
     private static CommandScheduler newScheduler(ManualDispatcher dispatcher,
-                                                 DeferredTransport transport) {        CommandScheduler scheduler = new CommandScheduler(
+                                                 FakeTransport transport) {
+        CommandScheduler scheduler = new CommandScheduler(
                 dispatcher, transport, snapshot -> { }, new CommandPolicyRegistry());
         scheduler.setSession(1L, true);
         return scheduler;
@@ -159,6 +182,10 @@ public class HsCommandSystemHardeningTest {
             return 1_000L;
         }
 
+        int pendingCount() {
+            return scheduled.size();
+        }
+
         void fireScheduled() {
             List<Runnable> snapshot = new ArrayList<>(scheduled);
             scheduled.clear();
@@ -168,22 +195,20 @@ public class HsCommandSystemHardeningTest {
         }
     }
 
-    /** 只登记写入回调；由测试显式推进 onStarted / onCompleted。 */
-    private static final class DeferredTransport implements CommandScheduler.Transport {
-        private CommandScheduler.Transport.Callback callback;
+    /** 记录下发载荷、可配置是否受理；由测试显式投喂应答帧（{@link #fireResponse}）。 */
+    private static final class FakeTransport implements CommandScheduler.Transport {
+        private final List<String> sentPayloads = new ArrayList<>();
+        boolean accept = true;
 
         @Override
-        public boolean send(long sessionId, String payload, Callback callback) {
-            this.callback = callback;
-            return true;
+        public boolean send(long sessionId, String payload) {
+            sentPayloads.add(payload);
+            return accept;
         }
 
-        void started() {
-            callback.onStarted();
-        }
-
-        void completed(int status) {
-            callback.onCompleted(status);
+        /** 模拟设备在 Notify 通道回一帧业务响应，投递到调度器应答入口。 */
+        boolean fireResponse(CommandScheduler scheduler, long sessionId, String frame) {
+            return scheduler.onResponseCandidate(sessionId, frame);
         }
     }
 }

@@ -106,6 +106,8 @@ public final class CommandPolicyRegistry implements CommandPolicyResolver {
     private static final long SESSION_CACHE_MS = 3_000L;
     /** 拉录音列表、删除录音文件。设备侧处理长于命令默认 2s。 */
     private static final long RECORD_FILE_RESPONSE_TIMEOUT_MS = 5_000L;
+    /** 随录随传/文件传输命令的响应窗口（设备回执偶发较慢）。 */
+    private static final long STREAM_RECORD_RESPONSE_TIMEOUT_MS = 10_000L;
 
     private final Map<Class<? extends Command>, Definition> definitions = new HashMap<>();
 
@@ -195,13 +197,10 @@ public final class CommandPolicyRegistry implements CommandPolicyResolver {
                 StartCallRecordTransferCommand.class,
                 StartLocalRecordCommand.class,
                 StartAiTranslateCommand.class,
-                StartStreamRecordCommand.class,
-                StartTransmitRecordCommand.class,
                 StopAiTranslateCommand.class,
                 ExitAiTranslateCommand.class,
                 StopCallRecordTransferCommand.class,
                 StopLocalRecordCommand.class,
-                StopStreamRecordCommand.class,
                 FindAlertStopCommand.class,
                 RtcCalibrateCommand.class,
                 RawTransportCommand.class,
@@ -212,6 +211,13 @@ public final class CommandPolicyRegistry implements CommandPolicyResolver {
 
         registerAction(RECORD_FILE_RESPONSE_TIMEOUT_MS,
                 DeleteRecordFileCommand.class);
+
+        // 随录随传/文件传输命令：设备处理与回执可能较慢（HS02 实测停止回执偶发 >2s），
+        // 声明更长的响应窗口，避免默认 2s 误超时。属协议自描述的响应超时，非遗留补丁。
+        registerAction(STREAM_RECORD_RESPONSE_TIMEOUT_MS,
+                StartStreamRecordCommand.class,
+                StartTransmitRecordCommand.class,
+                StopStreamRecordCommand.class);
     }
 
     @Override

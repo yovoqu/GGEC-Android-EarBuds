@@ -38,6 +38,21 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class HsProtocolEngine {
     private static final String TAG = "HsProtocolEngine";
+    /** 命令写入的 no-op 回调：是否受理看 {@code link.write} 的布尔返回；命令完成只由入站响应帧驱动。 */
+    private static final HsCommandLink.WriteCallback NOOP_WRITE_CALLBACK =
+            new HsCommandLink.WriteCallback() {
+                @Override
+                public void onStarted() {
+                }
+
+                @Override
+                public void onCompleted(int status) {
+                }
+
+                @Override
+                public void onTimeout() {
+                }
+            };
     /** 已建立会话时再次 {@link #connect(String)}：旧会话以「换目标」结束。 */
     public static final String REASON_TARGET_SWITCHED = "连接目标已切换";
     /** 就绪看门狗超时的统一原因，由 {@link #onConnectAttemptTimedOut()} 上报。 */
@@ -99,9 +114,6 @@ public final class HsProtocolEngine {
                 new LinkTransport(),
                 snapshot -> { },
                 new CommandPolicyRegistry());
-        // HS 命令特征的 GATT 写完成回调不可靠（HS02 实测永不触发），成功/失败以设备在 Notify 通道
-        // 回的响应帧为准：对 HS 这一条通道开启「匹配响应帧即视为写已送达」的 opt-in 快速路径。
-        this.scheduler.setTrustResponseAsWriteCompletion(true);
         this.demux = new InboundFrameDemux(
                 (sessionId, frame) -> deviceReportsAccepted && events.onEvent(sessionId, frame),
                 scheduler::onResponseCandidate,
@@ -196,6 +208,30 @@ public final class HsProtocolEngine {
         // 耳机颜色同样经这里落地：它是 OBJECT 形状的字符串结果，不是聚合 Map。
         command.addCompletionListener(this::persistCompletion);
         executor.execute(() -> scheduler.submit(command, sessionId));
+    }
+
+    /**
+     * 单向发送：直接写链路、不进命令调度队列、不等待匹配响应。
+     *
+     * <p>用于「随录随传」这类由设备侧信号（音频出流 / 控制上报）驱动完成、而非命令回执驱动的流操作：
+     * 发送即完成（受理与否看 {@code link.write} 返回），完成状态由流状态机依据设备信号推进，
+     * 因此不占用串行命令队列、也不需要把在途命令 replay 掉。</p>
+     *
+     * @return 是否被链路受理（false：未就绪/未建会话/载荷非法）
+     */
+    public boolean sendOneWay(Command command) {
+        if (command == null || released || !sessionEstablished) {
+            return false;
+        }
+        final byte[] bytes;
+        try {
+            bytes = HsHex.decode(command.getCommandData());
+        } catch (IllegalArgumentException e) {
+            HsLog.w(TAG, "单向命令载荷非法，拒绝下发: " + command.getCommandData(), e);
+            return false;
+        }
+        HsLog.d(TAG, "BLE发送命令数据(单向): " + command.getCommandData());
+        return link.write(bytes, NOOP_WRITE_CALLBACK);
     }
 
     /**
@@ -519,7 +555,7 @@ public final class HsProtocolEngine {
 
     private final class LinkTransport implements CommandScheduler.Transport {
         @Override
-        public boolean send(long requestSessionId, String payload, Callback callback) {
+        public boolean send(long requestSessionId, String payload) {
             if (requestSessionId != sessionId || !sessionEstablished) {
                 return false;
             }
@@ -533,22 +569,8 @@ public final class HsProtocolEngine {
             }
             // Biz 层在 BLE 发送位置打印命令通道原始字节（与「BLE接收命令数据」配对，lib 层不打印）。
             HsLog.d(TAG, "BLE发送命令数据: " + payload);
-            return link.write(bytes, new HsCommandLink.WriteCallback() {
-                @Override
-                public void onStarted() {
-                    callback.onStarted();
-                }
-
-                @Override
-                public void onCompleted(int status) {
-                    callback.onCompleted(status);
-                }
-
-                @Override
-                public void onTimeout() {
-                    callback.onTimeout();
-                }
-            });
+            // 受理即“已发送”：命令完成只由入站响应帧驱动，不依赖 GATT 写完成回调（HS02 该回调不触发）。
+            return link.write(bytes, NOOP_WRITE_CALLBACK);
         }
     }
 
