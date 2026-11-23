@@ -1,7 +1,6 @@
 package com.yovo.biz_appupdate.internal.core;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.biz_appupdate.YoAppUpdate;
 import com.yovo.biz_appupdate.internal.model.AppUpdateConfig;

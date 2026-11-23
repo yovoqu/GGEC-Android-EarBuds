@@ -5,7 +5,6 @@ import android.text.TextUtils;
 import android.webkit.URLUtil;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.yovo.biz_appupdate.internal.contract.ApkStoragePort;
 import com.yovo.biz_appupdate.internal.contract.DownloadDirAccessPort;

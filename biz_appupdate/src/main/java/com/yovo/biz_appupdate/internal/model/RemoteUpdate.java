@@ -1,7 +1,6 @@
 package com.yovo.biz_appupdate.internal.model;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 /**
  * 远程 APP 更新信息。

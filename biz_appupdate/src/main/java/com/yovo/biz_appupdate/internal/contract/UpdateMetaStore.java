@@ -3,7 +3,6 @@ package com.yovo.biz_appupdate.internal.contract;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_appupdate.internal.model.DownloadedApk;
 import com.yovo.biz_appupdate.internal.model.RemoteUpdate;
 import com.yovo.biz_appupdate.internal.model.UpdateMeta;
 
