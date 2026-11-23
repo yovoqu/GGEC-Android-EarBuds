@@ -342,6 +342,23 @@ public final class CommandScheduler {
             // H-14：写完成前到达的匹配帧一律先缓冲（含 onStarted 之前的窗口），
             // 待 onWriteCompleted 后按序回放；此前 writeStarted==false 时直接 return false 会静默丢帧。
             node.bufferedFrames.add(frame);
+            // 真机适配（HS02 / 部分固件）：命令特征的 GATT 写可能永远不回报 onCharacteristicWrite，
+            // 但设备收到命令后会在 Notify 通道回业务响应帧。匹配响应帧本身即证明写已送达，
+            // 因此把它当作“写完成”的等价信号：取消发送看门狗、置 SENT 并使能响应超时，
+            // 立即处理该帧（及此前缓冲帧），不再无限等待可能永不触发的写完成回调而 10s 超时。
+            node.writeCompleted = true;
+            cancelSendWatchdog();
+            command.setState(Command.State.SENT);
+            startResponseTimeout(command, node, node.attemptId,
+                    initialResponseTimeoutMs(command, node));
+            List<String> buffered = new ArrayList<>(node.bufferedFrames);
+            node.bufferedFrames.clear();
+            for (String bufferedFrame : buffered) {
+                if (!isCurrentAttempt(node, command, node.attemptId)) {
+                    break;
+                }
+                processFrame(command, bufferedFrame);
+            }
             return true;
         }
         processFrame(command, frame);

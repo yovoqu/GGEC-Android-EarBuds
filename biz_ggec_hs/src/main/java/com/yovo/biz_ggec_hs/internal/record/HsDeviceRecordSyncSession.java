@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 设备录音文件同步传输会话管理（Notify 组包 → Opus 解码 → PCM 落盘）。
@@ -54,6 +55,14 @@ public final class HsDeviceRecordSyncSession {
 
     private volatile boolean syncing;
     private SyncProgressListener currentListener;
+
+    /**
+     * 本次同步是否已收到过「非控制」音频切片。
+     *
+     * <p>设备（如 HS02）可能不回 {@code StartTransmitRecordCommand} 的 ack，但音频通道已经在出数据；
+     * 只要收到过首段非控制切片，就可判定设备已接受传输，命令失败不应中止接收。</p>
+     */
+    private final AtomicBoolean transmitDataSeen = new AtomicBoolean(false);
 
     public HsDeviceRecordSyncSession(@NonNull HsProtocolEngine engine,
                                      @NonNull HsAudioDataLink audioLink,
@@ -90,6 +99,7 @@ public final class HsDeviceRecordSyncSession {
         this.currentListener = Objects.requireNonNull(listener, "listener");
         this.totalExpectedBytes = expectedTotalBytes;
         this.receivedBytes = 0;
+        this.transmitDataSeen.set(false);
         this.currentTargetFile = targetFile != null
                 ? targetFile
                 : pathResolver.generateDefaultTransferFile(fileId);
@@ -112,6 +122,10 @@ public final class HsDeviceRecordSyncSession {
                 engine.submit(HsCommandFactory.startTransmitRecord(targetIndex), (cmd, completion) -> {
                     if (completion.getCode() == Command.ResultCode.SUCCESS) {
                         HsLog.i(TAG, "设备接受传输指令，开始接收数据");
+                    } else if (transmitDataSeen.get()) {
+                        // 设备未回 ack，但音频通道已在出非控制数据：视为设备已接受，继续接收。
+                        HsLog.w(TAG, "启动传输命令未回 ack(code=" + completion.getCode()
+                                + ")，但音频通道已在出数据，按设备已接受继续接收");
                     } else {
                         HsLog.e(TAG, "启动文件传输失败: code=" + completion.getCode());
                         cancelInternal("设备拒绝传输");
@@ -147,6 +161,8 @@ public final class HsDeviceRecordSyncSession {
             HsLog.i(TAG, "文件同步通道收到控制包: len=" + chunk.length);
             return;
         }
+        // 收到首段非控制音频数据即视为设备已接受传输（可抵消命令通道 ack 缺失）。
+        transmitDataSeen.set(true);
         syncExecutor.execute(() -> {
             receivedBytes += chunk.length;
             int percentage = totalExpectedBytes > 0

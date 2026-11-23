@@ -97,9 +97,40 @@ public class HsCommandSystemHardeningTest {
                 Command.ResultCode.TIMEOUT, result.get().getCode());
     }
 
+    /**
+     * 真机回归（HS02）：设备收到命令后在 Notify 通道回匹配应答帧，但命令特征的 GATT 写
+     * 可能永远不回报 onCharacteristicWrite。匹配应答即证明写已送达，命令必须据此完成，
+     * 而不是缓冲后等到 10s GATT 超时。
+     */
+    @Test
+    public void matchingResponseCompletesEvenWhenWriteNeverReportsCompletion() throws Exception {
+        ManualDispatcher dispatcher = new ManualDispatcher();
+        DeferredTransport transport = new DeferredTransport();
+        CommandScheduler scheduler = newScheduler(dispatcher, transport);
+
+        AtomicReference<CommandCompletion> result = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        EQModeCommand command = new EQModeCommand(EQModeCommand.MUSIC_MODE);
+        command.addCompletionListener((cmd, completion) -> {
+            result.set(completion);
+            done.countDown();
+        });
+
+        scheduler.submit(command, 1L);
+        assertNotNull(transport.callback);
+        // 关键：不调用 transport.started()/completed()，只喂匹配应答帧。
+        boolean claimed = scheduler.onResponseCandidate(1L, EQ_V11_RESPONSE);
+        assertTrue("匹配应答必须被当前命令认领", claimed);
+
+        assertTrue("设备回匹配应答即证明写已送达，命令必须完成",
+                done.await(3, TimeUnit.SECONDS));
+        assertNotNull(result.get());
+        assertEquals("匹配应答驱动完成，不得超时",
+                Command.ResultCode.SUCCESS, result.get().getCode());
+    }
+
     private static CommandScheduler newScheduler(ManualDispatcher dispatcher,
-                                                 DeferredTransport transport) {
-        CommandScheduler scheduler = new CommandScheduler(
+                                                 DeferredTransport transport) {        CommandScheduler scheduler = new CommandScheduler(
                 dispatcher, transport, snapshot -> { }, new CommandPolicyRegistry());
         scheduler.setSession(1L, true);
         return scheduler;

@@ -30,6 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -307,7 +308,17 @@ public final class HsSessionImpl {
     }
 
     private void submit(Command command, HsControl.Callback callback) {
+        // 阶段映射：命令写入链路完成（SENT）→ 设备已受理「处理中」，回调一次 onStarted；
+        // 终态仍只走 onResult。onStarted 至多一次，且不会晚于终态之后重复触发。
+        AtomicBoolean started = new AtomicBoolean(false);
+        Command.StateListener startedListener = (cmd, state) -> {
+            if (state == Command.State.SENT && started.compareAndSet(false, true)) {
+                mainThread.post(callback::onStarted);
+            }
+        };
+        command.addStateListener(startedListener);
         engine.submit(command, (submitted, completion) -> mainThread.post(() -> {
+            command.removeStateListener(startedListener);
             applyCompletion(submitted, completion);
             callback.onResult(HsFailureMapper.writeResult(completion));
         }));

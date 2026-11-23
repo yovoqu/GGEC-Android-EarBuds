@@ -70,6 +70,18 @@ public abstract class Command {
         void onCommandCompleted(Command command, CommandCompletion completion);
     }
 
+    /**
+     * 命令状态观察者：状态机每次迁移都会回调（QUEUED/SENDING/SENT/RECEIVING/COMPLETED/FAILED）。
+     * 供上层做「发送中 → 处理中 → 终态」的阶段映射，不改变命令本身的行为。
+     *
+     * <p><b>线程契约：</b>回调发生在命令状态迁移所在线程（正常为引擎串行线程；经
+     * {@code replayCompletion} 路径时可能是 BLE/notify 线程），<b>不保证主线程</b>。
+     * 需要主线程的消费者必须自行切换（例如 {@code HsSessionImpl} 用主线程 Handler post）。</p>
+     */
+    public interface StateListener {
+        void onStateChanged(Command command, State state);
+    }
+
     public static final class Response {
         private static final Response PENDING = new Response(null);
 
@@ -102,6 +114,7 @@ public abstract class Command {
     private final AtomicBoolean schedulingClaimed = new AtomicBoolean(false);
     private final CopyOnWriteArrayList<CompletionListener> completionListeners =
             new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<StateListener> stateListeners = new CopyOnWriteArrayList<>();
 
     private volatile State state = State.QUEUED;
     private volatile String commandPrefix;
@@ -119,6 +132,26 @@ public abstract class Command {
     public void setState(State state) {
         this.state = state;
         HsLog.d(TAG, commandId + " 状态变更为 " + state);
+        for (StateListener listener : stateListeners) {
+            try {
+                listener.onStateChanged(this, state);
+            } catch (RuntimeException e) {
+                HsLog.e(TAG, "命令状态监听器执行失败: " + commandId, e);
+            }
+        }
+    }
+
+    /** 注册命令状态观察者（可选）。多次注册相同实例由调用方自行去重。 */
+    public final void addStateListener(StateListener listener) {
+        if (listener != null) {
+            stateListeners.add(listener);
+        }
+    }
+
+    public final void removeStateListener(StateListener listener) {
+        if (listener != null) {
+            stateListeners.remove(listener);
+        }
     }
 
     protected void setCommandPrefix(String prefix) {
@@ -279,6 +312,10 @@ public abstract class Command {
         completion = result;
         commandFinished = true;
         setState(result.isSuccess() ? State.COMPLETED : State.FAILED);
+        // 终态原因（TIMEOUT / FAILED / RESERVED 与文案）一并打印：仅凭「状态变更为 FAILED」
+        // 无法区分是 GATT 写超时、响应超时还是业务失败，排查 HS02 类失败时是必需证据。
+        HsLog.d(TAG, commandId + " 完成: code=" + result.getCode()
+                + " message=" + result.getMessage());
         for (CompletionListener listener : completionListeners) {
             if (completionListeners.remove(listener)) {
                 notifyListener(listener, result);

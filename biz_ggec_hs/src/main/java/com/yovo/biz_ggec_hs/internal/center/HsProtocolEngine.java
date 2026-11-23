@@ -486,6 +486,9 @@ public final class HsProtocolEngine {
             if (released) {
                 return;
             }
+            // Biz 层在 BLE 接收位置打印命令通道原始字节（lib 层不打印数据），与 WY 的
+            // 「SPP接收控制命令数据」对齐：命令通道下行字节、音频通道字节分开可查。
+            HsLog.d(TAG, "BLE接收命令数据: " + HsHex.preview(value, HsHex.PREVIEW_BYTES));
             // 通知可能在任意字节边界分片/粘包：先拼帧再逐帧扇出（H-03）。
             String chunk = HsHex.encode(value);
             executor.execute(() -> {
@@ -525,6 +528,8 @@ public final class HsProtocolEngine {
                 HsLog.w(TAG, "命令载荷不是合法十六进制，拒绝下发: " + payload, e);
                 return false;
             }
+            // Biz 层在 BLE 发送位置打印命令通道原始字节（与「BLE接收命令数据」配对，lib 层不打印）。
+            HsLog.d(TAG, "BLE发送命令数据: " + payload);
             return link.write(bytes, new HsCommandLink.WriteCallback() {
                 @Override
                 public void onStarted() {

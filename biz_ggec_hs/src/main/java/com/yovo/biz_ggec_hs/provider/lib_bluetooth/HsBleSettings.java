@@ -30,6 +30,17 @@ public final class HsBleSettings {
     public static final UUID AUDIO_WRITE_UUID =
             UUID.fromString("65786365-6c70-6f69-6e74-2e636f820004");
 
+    /**
+     * 命令通道写入类型。
+     *
+     * <p><b>真机结论（HS02 / motorola edge 60 pro）：</b>命令特征 {@link #WRITE_UUID} 用
+     * {@code WITH_RESPONSE} 时，固件不回 ATT Write Response，导致 lib 的写操作等满 10s
+     * {@code GATT_OPERATION_TIMEOUT}（实测停止/佩戴检测命令均 10s 超时失败）。故命令一律用
+     * {@code WITHOUT_RESPONSE} 发送（不等待 ATT 应答）；命令的成功/失败以设备在 Notify 通道
+     * 回的业务响应帧为准（HS02 实测写后约 84ms 即回 99ECxx 应答帧）。</p>
+     *
+     * <p>音频通道只订阅/接收通知、不向特征写入，不受本设置影响；本字段仅作用于命令特征。</p>
+     */
     public static final BleWriteType WRITE_TYPE = BleWriteType.WITHOUT_RESPONSE;
     public static final BleNotificationSetupMode NOTIFY_MODE = BleNotificationSetupMode.DEFAULT;
     public static final BleConnectionConfig CONNECTION = BleConnectionConfig.builder().build();

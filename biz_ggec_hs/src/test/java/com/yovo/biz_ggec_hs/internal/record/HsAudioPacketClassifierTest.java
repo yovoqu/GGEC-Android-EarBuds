@@ -55,4 +55,51 @@ public class HsAudioPacketClassifierTest {
         // 这里只断言“不被误判成音频帧/格式”，缓存字节数等于输入长度即可。
         assertEquals(stopNotify.length, assembler.pendingBytes());
     }
+
+    @Test
+    public void startSignalSemantics() {
+        byte[] startAck = new byte[]{0x04, (byte) 0x80, 0x01, 0x00, 0x00};
+
+        int cmdType = HsAudioPacketClassifier.resolveControlCmdType(startAck);
+
+        assertEquals(HsAudioPacketClassifier.CMD_TYPE_START, cmdType);
+        assertTrue(HsAudioPacketClassifier.isStartSignal(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isStopSignal(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isDelayNotice(cmdType));
+        assertEquals("开始出流(0x8004)", HsAudioPacketClassifier.describeControlCmdType(cmdType));
+    }
+
+    @Test
+    public void stopSignalSemantics() {
+        byte[] stopNotify = new byte[]{0x05, (byte) 0x80, 0x01, 0x00, 0x01};
+
+        int cmdType = HsAudioPacketClassifier.resolveControlCmdType(stopNotify);
+
+        assertEquals(HsAudioPacketClassifier.CMD_TYPE_STOP, cmdType);
+        assertTrue(HsAudioPacketClassifier.isStopSignal(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isStartSignal(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isDelayNotice(cmdType));
+        assertEquals("停止出流(0x8005)", HsAudioPacketClassifier.describeControlCmdType(cmdType));
+    }
+
+    @Test
+    public void delaySignalIsNeitherSuccessNorStop() {
+        byte[] delayReport = new byte[]{0x12, (byte) 0x80, 0x02, 0x00, 0x00, 0x00};
+
+        int cmdType = HsAudioPacketClassifier.resolveControlCmdType(delayReport);
+
+        assertEquals(HsAudioPacketClassifier.CMD_TYPE_DELAY, cmdType);
+        assertTrue(HsAudioPacketClassifier.isDelayNotice(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isStartSignal(cmdType));
+        assertTrue(!HsAudioPacketClassifier.isStopSignal(cmdType));
+        assertEquals("延时中(0x8012)", HsAudioPacketClassifier.describeControlCmdType(cmdType));
+    }
+
+    @Test
+    public void unknownControlTypeIsDescribedSafely() {
+        assertEquals("未知(0x0)", HsAudioPacketClassifier.describeControlCmdType(0));
+        assertTrue(!HsAudioPacketClassifier.isStartSignal(0));
+        assertTrue(!HsAudioPacketClassifier.isStopSignal(0));
+        assertTrue(!HsAudioPacketClassifier.isDelayNotice(0));
+    }
 }
