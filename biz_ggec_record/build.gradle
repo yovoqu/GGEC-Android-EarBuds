@@ -40,6 +40,8 @@ android {
 
 dependencies {
     implementation project(':lib_bluetooth')
+    // 录音文件命名复用 lib_ggec_audio.record.RecordFileName（型号+类型+时间的唯一格式化实现）。
+    implementation project(':lib_ggec_audio')
     // 本地 AAR 不能 files() 进 library；经 :sherpa_onnx 包装后以 project 依赖引入。
     // sherpa 只在本模块 internal/asr 使用，不得经 api 泄漏给消费者。
     implementation project(':sherpa_onnx')

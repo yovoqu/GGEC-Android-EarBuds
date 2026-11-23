@@ -15,7 +15,18 @@ import com.yovo.biz_ggec_record.model.RecordVideoCodec;
  */
 public interface YoRecordClient {
 
-    void connect(@NonNull String macAddress);
+    /**
+     * 连接设备。
+     *
+     * @param macAddress 设备 MAC
+     * @param deviceCode 录音文件命名用的设备标识（型号/广播名），可为 {@code null}（命名回落 UNKNOWN）
+     */
+    void connect(@NonNull String macAddress, @Nullable String deviceCode);
+
+    /** 兼容重载：不提供设备标识，录音文件命名回落 UNKNOWN。 */
+    default void connect(@NonNull String macAddress) {
+        connect(macAddress, null);
+    }
 
     void disconnect();
 
@@ -45,7 +56,8 @@ public interface YoRecordClient {
 
     /**
      * 边预览边录制：旁路封装当前压缩码流为 MP4。
-     * 默认写入应用专属目录 {@code record/ble_av_<ts>.mp4}。
+     * 默认写入应用专属目录 {@code record/<设备标识>_av_<yyyyMMdd_HHmmss>.mp4}；
+     * 未提供设备标识时回落 {@code UNKNOWN_av_<yyyyMMdd_HHmmss>.mp4}。
      * 未就绪或已在录制时通过 {@link RecordSessionObserver#onRecordingFailed} 回报。
      */
     void startRecording();

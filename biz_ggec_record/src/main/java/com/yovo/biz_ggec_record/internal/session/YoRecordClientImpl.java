@@ -24,6 +24,7 @@ import com.yovo.biz_ggec_record.model.RecordLinkStats;
 import com.yovo.biz_ggec_record.model.RecordSubtitleEvent;
 import com.yovo.biz_ggec_record.model.RecordVideoCodec;
 import com.yovo.biz_ggec_record.provider.lib_bluetooth.YoBleRecordLink;
+import com.yovo.lib_ggec_audio.record.RecordFileName;
 
 import java.io.File;
 import java.util.Objects;
@@ -62,6 +63,9 @@ public final class YoRecordClientImpl implements YoRecordClient {
     private RecordAsrModel asrModel = RecordAsrModel.ZIPFORMER_SMALL;
     @NonNull
     private volatile RecordConnectionState state = RecordConnectionState.IDLE;
+    /** 录音文件命名用的设备标识（型号/广播名）；连接时写入，空则命名回落 UNKNOWN。 */
+    @NonNull
+    private volatile String deviceCode = "";
 
     private long lastVideoBytes;
     private long lastAudioBytes;
@@ -230,8 +234,9 @@ public final class YoRecordClientImpl implements YoRecordClient {
     }
 
     @Override
-    public void connect(@NonNull String macAddress) {
+    public void connect(@NonNull String macAddress, @Nullable String deviceCode) {
         Objects.requireNonNull(macAddress, "macAddress");
+        this.deviceCode = deviceCode == null ? "" : deviceCode;
         setState(RecordConnectionState.CONNECTING);
         link.connect(macAddress);
     }
@@ -350,7 +355,8 @@ public final class YoRecordClientImpl implements YoRecordClient {
             dir = appContext.getFilesDir();
         }
         File out = new File(new File(dir, "record"),
-                "ble_av_" + System.currentTimeMillis() + ".mp4");
+                RecordFileName.build(deviceCode, RecordFileName.TYPE_AV,
+                        System.currentTimeMillis(), "mp4"));
         startRecording(out.getAbsolutePath());
     }
 
