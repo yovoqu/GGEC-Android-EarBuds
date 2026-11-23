@@ -272,7 +272,13 @@ public final class HsSessionImpl {
             return;
         }
         // 动作参数不合法同样属于调用方编程错误：当场抛出。
-        submit(router.commands(action), callback);
+        List<Command> commands = router.commands(action);
+        if (commands.isEmpty()) {
+            // 命令层不下发的动作（如 STREAM 录音，改由事件驱动承载）：立即给出终态，避免空命令导致回调永不触发。
+            postResult(callback, new HsControl.Outcome.Err<>(HsControl.Failure.UNSUPPORTED_CAPABILITY));
+            return;
+        }
+        submit(commands, callback);
     }
 
     public void close() {

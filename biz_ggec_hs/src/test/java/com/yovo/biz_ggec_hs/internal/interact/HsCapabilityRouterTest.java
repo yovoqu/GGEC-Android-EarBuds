@@ -49,8 +49,6 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.SoundQualityModeCo
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeAdaptiveCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeRemindCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.SimultaneousInterpretationCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StartStreamRecordCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StopStreamRecordCommand;
 
 import org.junit.Test;
 
@@ -187,11 +185,11 @@ public final class HsCapabilityRouterTest {
                 payloads(new HsControl.Action.ResetControl()));
         assertEquals(List.of(new StartLocalRecordCommand().getCommandData()),
                 payloads(new HsControl.Action.StartRecord(HsControl.Action.RecordMode.LOCAL)));
-        assertEquals(List.of(new StartStreamRecordCommand().getCommandData()),
+        assertEquals(List.of(),
                 payloads(new HsControl.Action.StartRecord(HsControl.Action.RecordMode.STREAM)));
         assertEquals(List.of(new StopLocalRecordCommand().getCommandData()),
                 payloads(new HsControl.Action.StopRecord(HsControl.Action.RecordMode.LOCAL)));
-        assertEquals(List.of(new StopStreamRecordCommand().getCommandData()),
+        assertEquals(List.of(),
                 payloads(new HsControl.Action.StopRecord(HsControl.Action.RecordMode.STREAM)));
         assertEquals(List.of(new GetRecordIdListCommand(0, 12).getCommandData()),
                 payloads(new HsControl.Action.ReadRecordList()));

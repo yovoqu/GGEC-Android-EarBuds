@@ -54,8 +54,6 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.SoundQualityModeCo
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeAdaptiveCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeRemindCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.SimultaneousInterpretationCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StartStreamRecordCommand;
-import com.yovo.biz_ggec_hs.internal.center.protocol.streamrecordcmd.StopStreamRecordCommand;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -218,14 +216,16 @@ public final class HsCapabilityRouter {
             case HsControl.Action.Rename rename ->
                     List.of(new DeviceRenameCommand(text(rename.name(), "设备名")));
             case HsControl.Action.ClearPairing clearPairing -> List.of(new ClearPairingCommand());
-            case HsControl.Action.StartRecord startRecord -> List.of(switch (startRecord.mode()) {
-                case LOCAL -> new StartLocalRecordCommand();
-                case STREAM -> new StartStreamRecordCommand();
-            });
-            case HsControl.Action.StopRecord stopRecord -> List.of(switch (stopRecord.mode()) {
-                case LOCAL -> new StopLocalRecordCommand();
-                case STREAM -> new StopStreamRecordCommand();
-            });
+            case HsControl.Action.StartRecord startRecord -> switch (startRecord.mode()) {
+                case LOCAL -> List.of(new StartLocalRecordCommand());
+                // 随录随传由事件驱动 RecordPort/HsStreamRecordSession 经 sendOneWay 承载，命令层不再下发 99ECD5/99ECD6 事务命令
+                case STREAM -> List.of();
+            };
+            case HsControl.Action.StopRecord stopRecord -> switch (stopRecord.mode()) {
+                case LOCAL -> List.of(new StopLocalRecordCommand());
+                // 随录随传由事件驱动 RecordPort/HsStreamRecordSession 经 sendOneWay 承载，命令层不再下发 99ECD5/99ECD6 事务命令
+                case STREAM -> List.of();
+            };
             case HsControl.Action.ReadRecordList readRecordList ->
                     List.of(new GetRecordIdListCommand(RECORD_LIST_PAGE, RECORD_LIST_LIMIT));
             case HsControl.Action.TransferRecord transferRecord -> List.of(transferRecord.start()
