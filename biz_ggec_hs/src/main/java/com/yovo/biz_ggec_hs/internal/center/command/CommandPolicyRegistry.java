@@ -195,12 +195,10 @@ public final class CommandPolicyRegistry implements CommandPolicyResolver {
                 CleanRecordCommand.class,
                 SyncRecordFileIdOpCommand.class,
                 StartCallRecordTransferCommand.class,
-                StartLocalRecordCommand.class,
                 StartAiTranslateCommand.class,
                 StopAiTranslateCommand.class,
                 ExitAiTranslateCommand.class,
                 StopCallRecordTransferCommand.class,
-                StopLocalRecordCommand.class,
                 FindAlertStopCommand.class,
                 RtcCalibrateCommand.class,
                 RawTransportCommand.class,
@@ -212,12 +210,14 @@ public final class CommandPolicyRegistry implements CommandPolicyResolver {
         registerAction(RECORD_FILE_RESPONSE_TIMEOUT_MS,
                 DeleteRecordFileCommand.class);
 
-        // 随录随传/文件传输命令：设备处理与回执可能较慢（HS02 实测停止回执偶发 >2s），
+        // 随录随传/文件录音/文件传输命令：设备处理与回执可能较慢（HS02 实测停止/开始回执偶发 >2s），
         // 声明更长的响应窗口，避免默认 2s 误超时。属协议自描述的响应超时，非遗留补丁。
         registerAction(STREAM_RECORD_RESPONSE_TIMEOUT_MS,
                 StartStreamRecordCommand.class,
                 StartTransmitRecordCommand.class,
-                StopStreamRecordCommand.class);
+                StopStreamRecordCommand.class,
+                StartLocalRecordCommand.class,
+                StopLocalRecordCommand.class);
     }
 
     @Override
