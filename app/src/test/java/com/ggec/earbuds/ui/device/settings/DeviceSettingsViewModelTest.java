@@ -26,6 +26,7 @@ import com.ggec.earbuds.testing.device.FakeDeviceLinkPort;
 import com.ggec.earbuds.testing.device.MemoryDeviceRosterRepository;
 import com.ggec.earbuds.ui.device.CurveEditorSeed;
 import com.ggec.earbuds.ui.device.DeviceProfileFixtures;
+import com.ggec.earbuds.ui.device.WriteState;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -196,20 +197,20 @@ public final class DeviceSettingsViewModelTest {
         viewModel.onToggle("ANC", true);
 
         DeviceSettingsUiState.WriteSlot sending = currentState().writeOf("ANC");
-        assertSame(DeviceSettingsUiState.WriteState.SENDING, sending.state());
+        assertSame(WriteState.SENDING, sending.state());
         assertEquals(Optional.of(Boolean.TRUE), sending.toggleValue());
 
         port.settleStarted();
 
         DeviceSettingsUiState.WriteSlot processing = currentState().writeOf("ANC");
         assertSame("链路写完成/设备受理后进入处理中",
-                DeviceSettingsUiState.WriteState.PROCESSING, processing.state());
+                WriteState.PROCESSING, processing.state());
         assertEquals(Optional.of(Boolean.TRUE), processing.toggleValue());
 
         port.settleWrite(new DeviceWriteResult.Ok());
 
         DeviceSettingsUiState.WriteSlot confirmed = currentState().writeOf("ANC");
-        assertSame(DeviceSettingsUiState.WriteState.CONFIRMED, confirmed.state());
+        assertSame(WriteState.CONFIRMED, confirmed.state());
         assertEquals("设备不回读也必须保留用户的选择",
                 Optional.of(Boolean.TRUE), confirmed.toggleValue());
     }
@@ -221,7 +222,7 @@ public final class DeviceSettingsViewModelTest {
         viewModel.onToggle("ANC", false);
 
         assertEquals("在途期间重复写入必须被忽略", List.of("ANC"), port.writes);
-        assertSame(DeviceSettingsUiState.WriteState.SENDING,
+        assertSame(WriteState.SENDING,
                 currentState().writeOf("ANC").state());
     }
 
@@ -234,7 +235,7 @@ public final class DeviceSettingsViewModelTest {
         port.settleWrite(new DeviceWriteResult.Failed(DeviceFailure.REJECTED));
 
         DeviceSettingsUiState.WriteSlot failed = currentState().writeOf("ANC");
-        assertSame(DeviceSettingsUiState.WriteState.FAILED, failed.state());
+        assertSame(WriteState.FAILED, failed.state());
         assertTrue("失败必须丢弃未确认值，呈现自动回退", failed.pendingValue().isEmpty());
         assertTrue(events.stream().anyMatch(
                 event -> event instanceof DeviceSettingsEvent.Failure failure

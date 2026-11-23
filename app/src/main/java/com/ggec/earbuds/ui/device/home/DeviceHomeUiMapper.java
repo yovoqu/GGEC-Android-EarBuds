@@ -20,6 +20,7 @@ import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.ggec.earbuds.ui.device.DeviceFormats;
 import com.ggec.earbuds.ui.device.DeviceGroupLabels;
+import com.ggec.earbuds.ui.device.TogglePresentation;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -188,7 +189,7 @@ public final class DeviceHomeUiMapper {
     @NonNull
     private static List<DeviceHomeUiState.ToggleCard> quickToggles(
             @NonNull DeviceProfileView profile, @NonNull DeviceState state,
-            @NonNull Map<String, DeviceHomeUiState.WriteSlot> writes, boolean enabled) {
+            @NonNull Map<String, DeviceHomeUiState.WriteSlot> writes, boolean interactive) {
         List<DeviceHomeUiState.ToggleCard> out = new ArrayList<>();
         for (String id : QUICK_TOGGLE_IDS) {
             if (!profile.supports(id)) {
@@ -198,20 +199,17 @@ public final class DeviceHomeUiMapper {
             if (capability.kind() != DeviceCapabilityKind.TOGGLE) {
                 continue;
             }
-            boolean base = toggle(state, id).orElse(false);
-            boolean checked = base;
-            boolean pending = false;
-            DeviceHomeUiState.WriteSlot slot = writes.get(id);
-            if (slot != null) {
-                if (slot.state() == DeviceHomeUiState.WriteState.PENDING) {
-                    pending = true;
-                    checked = slot.value().orElse(base);
-                } else if (slot.state() == DeviceHomeUiState.WriteState.CONFIRMED) {
-                    checked = slot.value().orElse(base);
-                }
-            }
+            // 与设置页同一套呈现裁定：reported=设备上报值，pending=写入槽里的本次目标值，
+            // interactive=连接就绪。位置优先用户目标（SENDING/PROCESSING/CONFIRMED），
+            // in-flight 时 enabled=false（禁用重复点击）。
+            Optional<Boolean> reported = toggle(state, id);
+            DeviceHomeUiState.WriteSlot slot =
+                    writes.getOrDefault(id, DeviceHomeUiState.WriteSlot.idle());
+            TogglePresentation presentation = TogglePresentation.of(
+                    slot.state(), reported, slot.toggleValue(), interactive);
             out.add(new DeviceHomeUiState.ToggleCard(id, capability.title(),
-                    DeviceGroupLabels.toggleIcon(id), checked, enabled, pending,
+                    DeviceGroupLabels.toggleIcon(id), presentation.position(),
+                    presentation.enabled(), presentation.writeState().inFlight(),
                     DeviceHomeUiState.CardSize.FULL));
         }
         return out;

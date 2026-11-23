@@ -7,6 +7,7 @@ import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.device.model.DualConnectionView;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
+import com.ggec.earbuds.ui.device.WriteState;
 
 import java.util.List;
 import java.util.Map;
@@ -39,40 +40,6 @@ public record DeviceSettingsUiState(
         writes = Map.copyOf(Objects.requireNonNull(writes, "writes"));
         dualConnection = Objects.requireNonNull(dualConnection, "dualConnection");
         recordFiles = List.copyOf(Objects.requireNonNull(recordFiles, "recordFiles"));
-    }
-
-    /**
-     * 一次控件写入的生命周期（APP 层对「命令状态」的抽象：发送 / 处理中 / 成功 / 失败）。
-     *
-     * <pre>
-     * IDLE --(用户操作)--> SENDING --(链路写完成/设备受理)--> PROCESSING --(端口 Ok)--> CONFIRMED
-     *                         \----------------(端口失败)------------------------------> FAILED
-     * </pre>
-     *
-     * <p>状态 ↔ 命令阶段的映射：</p>
-     * <ul>
-     *   <li>{@code IDLE}：空闲，未发起命令；</li>
-     *   <li>{@code SENDING}：发送中——命令已提交、正在写入链路（用户点击后立即进入，
-     *       驱动「点击即先切换 + 禁用重复点击」）；</li>
-     *   <li>{@code PROCESSING}：处理中——链路写完成 / 设备已受理，等待最终回执（仍禁用点击）；</li>
-     *   <li>{@code CONFIRMED}：成功——设备已确认，解除禁用；</li>
-     *   <li>{@code FAILED}：失败——丢弃本次值，解除禁用并回退到设备上报值。</li>
-     * </ul>
-     *
-     * <p>{@code CONFIRMED} 保留本次写入值：设备没有 Query 能力时回读不到，界面仍需显示用户的选择；
-     * {@code FAILED} 丢弃写入值，呈现回到设备上报值（回退由状态驱动，不再由视图手工撤销）。</p>
-     */
-    public enum WriteState {
-        IDLE,
-        SENDING,
-        PROCESSING,
-        CONFIRMED,
-        FAILED;
-
-        /** 是否处于「未落地」阶段（发送中或处理中）：此时应禁用重复点击并乐观呈现目标值。 */
-        public boolean inFlight() {
-            return this == SENDING || this == PROCESSING;
-        }
     }
 
     /** 一个能力 id 的写入槽：状态 + 本次写入的值（未确认值）。 */

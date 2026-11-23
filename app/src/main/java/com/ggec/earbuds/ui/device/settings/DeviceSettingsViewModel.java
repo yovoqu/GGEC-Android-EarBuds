@@ -24,6 +24,7 @@ import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.RunDeviceAction;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
+import com.ggec.earbuds.ui.device.WriteState;
 import com.ggec.earbuds.ui.device.settings.section.SettingsInteractionListener;
 import com.yovo.lib_common.event.OneShotLiveData;
 
@@ -132,7 +133,7 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
             activeSeq.put(capabilityId, seq);
             // 点击即先切换：立即落 SENDING 并带本次目标值，视图据此先翻到目标位置并禁用重复点击。
             writes.put(capabilityId, new DeviceSettingsUiState.WriteSlot(
-                    DeviceSettingsUiState.WriteState.SENDING, Optional.of(value)));
+                    WriteState.SENDING, Optional.of(value)));
         }
         publish();
         writeControl.execute(capabilityId, value,
@@ -150,11 +151,11 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
                 return;
             }
             DeviceSettingsUiState.WriteSlot slot = writes.get(capabilityId);
-            if (slot == null || slot.state() != DeviceSettingsUiState.WriteState.SENDING) {
+            if (slot == null || slot.state() != WriteState.SENDING) {
                 return;
             }
             writes.put(capabilityId, new DeviceSettingsUiState.WriteSlot(
-                    DeviceSettingsUiState.WriteState.PROCESSING, Optional.of(value)));
+                    WriteState.PROCESSING, Optional.of(value)));
         }
         publish();
     }
@@ -354,9 +355,9 @@ public final class DeviceSettingsViewModel extends ViewModel implements Settings
             activeSeq.remove(capabilityId);
             DeviceSettingsUiState.WriteSlot slot = switch (result) {
                 case DeviceWriteResult.Ok ignored -> new DeviceSettingsUiState.WriteSlot(
-                        DeviceSettingsUiState.WriteState.CONFIRMED, Optional.of(value));
+                        WriteState.CONFIRMED, Optional.of(value));
                 case DeviceWriteResult.Failed failed -> new DeviceSettingsUiState.WriteSlot(
-                        DeviceSettingsUiState.WriteState.FAILED, Optional.empty());
+                        WriteState.FAILED, Optional.empty());
             };
             writes.put(capabilityId, slot);
             if (result instanceof DeviceWriteResult.Failed failed) {

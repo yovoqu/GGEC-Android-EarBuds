@@ -23,6 +23,7 @@ import com.ggec.earbuds.domain.device.model.DeviceStatus;
 import com.ggec.earbuds.domain.device.model.RecordOrigin;
 import com.ggec.earbuds.domain.device.model.WearState;
 import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
+import com.ggec.earbuds.ui.device.WriteState;
 
 import org.junit.Test;
 
@@ -99,7 +100,7 @@ public final class DeviceHomeUiMapperTest {
     public void noInlineTogglesOnHome() {
         Map<String, DeviceHomeUiState.WriteSlot> writes = Map.of("WEAR_DETECT",
                 new DeviceHomeUiState.WriteSlot(
-                        DeviceHomeUiState.WriteState.PENDING, Optional.of(true)));
+                        WriteState.SENDING, Optional.of(true)));
 
         DeviceHomeUiState state = MAPPER.map(
                 new DeviceRoster(List.of(live()), Optional.of(ID)), entries(), writes);

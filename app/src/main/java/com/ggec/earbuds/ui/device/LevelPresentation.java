@@ -2,8 +2,6 @@ package com.ggec.earbuds.ui.device;
 
 import androidx.annotation.NonNull;
 
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-
 import java.util.Objects;
 import java.util.OptionalInt;
 
@@ -19,14 +17,14 @@ import java.util.OptionalInt;
  * </ul>
  */
 public record LevelPresentation(boolean unknown, int value, boolean enabled,
-                                @NonNull DeviceSettingsUiState.WriteState writeState) {
+                                @NonNull WriteState writeState) {
 
     public LevelPresentation {
         Objects.requireNonNull(writeState, "writeState");
     }
 
     @NonNull
-    public static LevelPresentation of(@NonNull DeviceSettingsUiState.WriteState writeState,
+    public static LevelPresentation of(@NonNull WriteState writeState,
                                        @NonNull OptionalInt reported,
                                        @NonNull OptionalInt pending,
                                        int min,
@@ -36,7 +34,7 @@ public record LevelPresentation(boolean unknown, int value, boolean enabled,
         Objects.requireNonNull(pending, "pending");
         boolean targetWins = pending.isPresent()
                 && (writeState.inFlight()
-                || writeState == DeviceSettingsUiState.WriteState.CONFIRMED);
+                || writeState == WriteState.CONFIRMED);
         OptionalInt position = targetWins
                 ? pending
                 : (reported.isPresent() ? reported : pending);

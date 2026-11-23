@@ -5,8 +5,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-
 import org.junit.Test;
 
 import java.util.OptionalInt;
@@ -14,14 +12,14 @@ import java.util.OptionalInt;
 /** 档位呈现规则：值未知不影响可写性（与开关同一条裁定），呈现状态全部来自入参。 */
 public final class LevelPresentationTest {
 
-    private static final DeviceSettingsUiState.WriteState IDLE =
-            DeviceSettingsUiState.WriteState.IDLE;
-    private static final DeviceSettingsUiState.WriteState SENDING =
-            DeviceSettingsUiState.WriteState.SENDING;
-    private static final DeviceSettingsUiState.WriteState PROCESSING =
-            DeviceSettingsUiState.WriteState.PROCESSING;
-    private static final DeviceSettingsUiState.WriteState CONFIRMED =
-            DeviceSettingsUiState.WriteState.CONFIRMED;
+    private static final WriteState IDLE =
+            WriteState.IDLE;
+    private static final WriteState SENDING =
+            WriteState.SENDING;
+    private static final WriteState PROCESSING =
+            WriteState.PROCESSING;
+    private static final WriteState CONFIRMED =
+            WriteState.CONFIRMED;
 
     @Test
     public void unknownValueStillYieldsAWritableSlider() {

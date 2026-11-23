@@ -6,8 +6,10 @@ import androidx.annotation.StringRes;
 
 import com.ggec.earbuds.domain.device.model.BatterySnapshot;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
+import com.ggec.earbuds.ui.device.WriteState;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -112,18 +114,18 @@ public record DeviceHomeUiState(@NonNull String title,
         }
     }
 
-    /** 写入状态（内联开关用）。 */
-    public enum WriteState {
-        PENDING,
-        CONFIRMED,
-        FAILED
-    }
-
-    /** 一次写入槽：带本次值，失败即丢弃（呈现回退到设备上报值）。 */
-    public record WriteSlot(@NonNull WriteState state, @NonNull Optional<Boolean> value) {
+    /** 一次写入槽：带本次值，失败即丢弃（呈现回退到设备上报值）；状态复用顶层 {@link WriteState}。 */
+    public record WriteSlot(@NonNull WriteState state, @NonNull Optional<Boolean> toggleValue) {
 
         public WriteSlot {
-            value = value == null ? Optional.empty() : value;
+            Objects.requireNonNull(state, "state");
+            toggleValue = toggleValue == null ? Optional.empty() : toggleValue;
+        }
+
+        /** 从未写过：空闲、无值。 */
+        @NonNull
+        public static WriteSlot idle() {
+            return new WriteSlot(WriteState.IDLE, Optional.empty());
         }
     }
 }

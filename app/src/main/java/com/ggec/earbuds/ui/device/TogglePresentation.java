@@ -27,14 +27,14 @@ import java.util.Optional;
  * 本记录是它的纯函数投影。</p>
  */
 public record TogglePresentation(boolean unknown, boolean position, boolean enabled,
-                                 @NonNull DeviceSettingsUiState.WriteState writeState) {
+                                 @NonNull WriteState writeState) {
 
     public TogglePresentation {
         Objects.requireNonNull(writeState, "writeState");
     }
 
     @NonNull
-    public static TogglePresentation of(@NonNull DeviceSettingsUiState.WriteState writeState,
+    public static TogglePresentation of(@NonNull WriteState writeState,
                                         @NonNull Optional<Boolean> reported,
                                         @NonNull Optional<Boolean> pending,
                                         boolean interactive) {
@@ -46,9 +46,9 @@ public record TogglePresentation(boolean unknown, boolean position, boolean enab
         // 呈现用户选择的值**——设备可能不回读或回读滞后（HS02 实测：命令回执成功但状态上报仍为旧值），
         // 以本次写入为准而非旧上报值；失败（FAILED）丢弃 pending 回退到设备上报值。
         boolean targetWins = pending.isPresent()
-                && (writeState == DeviceSettingsUiState.WriteState.SENDING
-                || writeState == DeviceSettingsUiState.WriteState.PROCESSING
-                || writeState == DeviceSettingsUiState.WriteState.CONFIRMED);
+                && (writeState == WriteState.SENDING
+                || writeState == WriteState.PROCESSING
+                || writeState == WriteState.CONFIRMED);
         boolean position = targetWins
                 ? pending.get()
                 : reported.or(() -> pending).orElse(Boolean.FALSE);

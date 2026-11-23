@@ -15,6 +15,7 @@ import com.ggec.earbuds.domain.device.model.PairedDeviceView;
 import com.ggec.earbuds.domain.device.model.RecordFileView;
 import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.ggec.earbuds.ui.device.DeviceProfileFixtures;
+import com.ggec.earbuds.ui.device.WriteState;
 
 import org.junit.Test;
 
@@ -125,7 +126,7 @@ public final class DeviceSettingsUiMapperTest {
                 DeviceProfileFixtures.capability("ANC", "降噪",
                         DeviceCapabilityGroup.CONTROL, DeviceCapabilityKind.TOGGLE));
         DeviceSettingsUiState.WriteSlot slot = new DeviceSettingsUiState.WriteSlot(
-                DeviceSettingsUiState.WriteState.CONFIRMED,
+                WriteState.CONFIRMED,
                 Optional.of(new ControlValue.Toggle(true)));
 
         DeviceSettingsUiState state = mapper.map(DeviceCapabilityGroup.CONTROL,
@@ -134,7 +135,7 @@ public final class DeviceSettingsUiMapperTest {
 
         assertSame(slot, state.writeOf("ANC"));
         assertEquals(Optional.of(Boolean.TRUE), state.writeOf("ANC").toggleValue());
-        assertSame(DeviceSettingsUiState.WriteState.IDLE, state.writeOf("unknown").state());
+        assertSame(WriteState.IDLE, state.writeOf("unknown").state());
     }
 
     @Test

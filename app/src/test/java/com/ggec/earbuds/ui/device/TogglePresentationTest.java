@@ -5,8 +5,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
-import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiState;
-
 import org.junit.Test;
 
 import java.util.Optional;
@@ -19,21 +17,21 @@ import java.util.Optional;
  * WEAR_DETECT / VOICE_WAKEUP / FALL_ALERT / VOLUME_REMIND / INTERPRET）永远拿不到上报值，
  * 如果「未上报」时取消开关，它们就永远发不出写入。</p>
  *
- * <p>呈现是纯函数：写入状态（{@link DeviceSettingsUiState.WriteState}）与两个值都是入参，
+ * <p>呈现是纯函数：写入状态（{@link WriteState}）与两个值都是入参，
  * 本类不持有任何未确认副本。</p>
  */
 public final class TogglePresentationTest {
 
-    private static final DeviceSettingsUiState.WriteState IDLE =
-            DeviceSettingsUiState.WriteState.IDLE;
-    private static final DeviceSettingsUiState.WriteState SENDING =
-            DeviceSettingsUiState.WriteState.SENDING;
-    private static final DeviceSettingsUiState.WriteState PROCESSING =
-            DeviceSettingsUiState.WriteState.PROCESSING;
-    private static final DeviceSettingsUiState.WriteState CONFIRMED =
-            DeviceSettingsUiState.WriteState.CONFIRMED;
-    private static final DeviceSettingsUiState.WriteState FAILED =
-            DeviceSettingsUiState.WriteState.FAILED;
+    private static final WriteState IDLE =
+            WriteState.IDLE;
+    private static final WriteState SENDING =
+            WriteState.SENDING;
+    private static final WriteState PROCESSING =
+            WriteState.PROCESSING;
+    private static final WriteState CONFIRMED =
+            WriteState.CONFIRMED;
+    private static final WriteState FAILED =
+            WriteState.FAILED;
 
     @Test
     public void unknownValueStillYieldsAnEnabledSwitch() {
