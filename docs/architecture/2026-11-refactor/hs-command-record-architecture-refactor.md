@@ -185,3 +185,28 @@ IDLE ──start()──► STARTING ──首片音频/0x8004──► RECORDIN
 3. **无主线程退化**：`HsStreamRecordSession` 的计时依赖 `mainHandler`，无 Looper 环境退化（生产不涉及）。
 4. **文件同步**：`StartTransmitRecordCommand` 仍走调度器 10s 窗口，若设备同样不回执属同类隐患，真机未覆盖。
 
+---
+
+## 8. 一步到位收尾（A/B/C 已实施）
+
+### 8.1 A：删除 RECORD_STREAM 命令调度死双轨
+- `HsCapabilityRouter.commands(Action)`：`StartRecord/StopRecord(STREAM)` 返回**空列表**（不再生成 `Start/StopStreamRecordCommand`）；`LOCAL` 不变；`capabilityOf(STREAM)` 仍 `RECORD_STREAM`。
+- `HsSessionImpl.perform`：命令列表为空→立即 `Err(UNSUPPORTED_CAPABILITY)`（避免空命令挂起）。
+- `HsCapabilityRouterTest`：STREAM 断言改为空列表。
+- 随录随传命令类保留（`HsStreamRecordSession` 经 `sendOneWay` 使用）。**真实入口 `RecordActivity`/`RecordPort` 事件驱动不变**。
+
+### 8.2 B：文件同步事件驱动
+- `HsDeviceRecordSyncSession`：`sendOneWay(StartTransmitRecordCommand/CancelTransmitRecordCommand)` 启动/取消，不再 `engine.submit` 等命令回执；完成以**数据进度**驱动——`receivedBytes>=expectedTotalBytes`（已知大小时）或**数据静默 1.5s 判定传完**（设备文件大小当前调用方传 0，故为主路径），外加 120s 总超时兜底；收尾统一主线程退订 + 单线程关资源。
+- 未新增单测（Android/native 依赖，JVM 单测无法构造）；**未真机覆盖**（缺设备文件传输触发路径）。
+
+### 8.3 C：命令核心补测
+- `HsCommandSystemHardeningTest` +4 用例（确定性 `ManualDispatcher` 手动时钟/`fireScheduled`）：多帧 inter-frame 重臂与完成后忽略、GET 单飞+缓存 TTL、SET 同值合并（JOIN_CURRENT）、SET 异值顶替（SUPERSEDE）。
+
+### 8.4 验证
+- 全量门禁：`biz_ggec_hs 188 / biz_ggec_wy 34 / app 627` 全绿；`checkBizGgecHsBoundary`、`checkBizProtocolPurity`、`:app:assembleDebug` 通过。
+- HS02 真机：佩戴检测 `code=0`（off→on）；随录随传 启动 162ms（首帧音频驱动）、停止 ≤3s 有界兜底、落盘 222 帧/4.44s。
+
+### 8.5 余项（记录）
+- APP 设置页 `RECORD_STREAM` 死按钮（RECORD 组经 `DeviceSettingsActivity` 不可达）未删除；命令层已切断，若触达仅返回 `UNSUPPORTED_CAPABILITY`，不影响真实 `RecordActivity` 入口。彻底移除需改 `HsControl.Action` 公共 API 与 UI 接线，属产品决策。
+- 文件同步缺真机覆盖；`HsRecordManager.syncDeviceRecord` 仍传 `expectedTotalBytes=0`，现依赖数据静默判定（1.5s），建议后续从录音列表带出真实大小。
+
