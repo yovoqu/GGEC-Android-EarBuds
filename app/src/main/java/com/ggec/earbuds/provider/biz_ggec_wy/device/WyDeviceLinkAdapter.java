@@ -278,7 +278,7 @@ public final class WyDeviceLinkAdapter implements DeviceLinkPort {
     @NonNull
     private static String capabilityKey(@NonNull WyDevice.Capability capability) {
         return switch (capability) {
-            case CONNECTION, RECORD_STREAM, DEVICE_INFO, BATTERY -> capability.name();
+            case CONNECTION, RECORD_STREAM, AI_CHAT, DEVICE_INFO, BATTERY -> capability.name();
         };
     }
 

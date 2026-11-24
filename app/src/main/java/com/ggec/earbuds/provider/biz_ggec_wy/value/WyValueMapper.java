@@ -45,6 +45,7 @@ public final class WyValueMapper {
         return switch (group) {
             case CONTROL -> DeviceCapabilityGroup.CONTROL;
             case RECORD -> DeviceCapabilityGroup.RECORD;
+            case AI -> DeviceCapabilityGroup.AI;
             case ABOUT -> DeviceCapabilityGroup.ABOUT;
         };
     }

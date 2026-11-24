@@ -18,7 +18,7 @@ import java.util.List;
  */
 final class DeviceHomeSectionsView {
 
-    private static final int SLOT_COUNT = 5;
+    private static final int SLOT_COUNT = 6;
 
     private final DeviceTheme theme;
     private final LinearLayout view;

@@ -17,6 +17,7 @@ import com.ggec.earbuds.ui.ai.widget.AiHeaderActionButton;
 final class AiChatHeaderView extends LinearLayout {
 
     interface Listener {
+        void onBack();
         void onHistory();
         void onCall();
         void onMore();
@@ -37,6 +38,14 @@ final class AiChatHeaderView extends LinearLayout {
         header.setPadding(theme.dp(AiTheme.PAGE_INSET), theme.dp(AiTheme.SPACE_XS),
                 theme.dp(AiTheme.PAGE_INSET), 0);
 
+        AiHeaderActionButton back = new AiHeaderActionButton(activity, theme, AiHeaderActionButton.Style.NEUTRAL)
+                .icon(R.drawable.ic_ai_back)
+                .contentDesc(R.string.ai_call_close)
+                .onClick(v -> listener.onBack());
+        LinearLayout.LayoutParams backParams = AiHeaderActionButton.createLinearLayoutParams(theme);
+        backParams.setMarginEnd(theme.dp(AiTheme.SPACE_S));
+        header.addView(back, backParams);
+
         AiHeaderActionButton history = new AiHeaderActionButton(activity, theme, AiHeaderActionButton.Style.NEUTRAL)
                 .icon(R.drawable.ic_ai_history)
                 .contentDesc(R.string.ai_history_entry)
@@ -44,7 +53,7 @@ final class AiChatHeaderView extends LinearLayout {
         header.addView(history, AiHeaderActionButton.createLinearLayoutParams(theme));
 
         TextView title = theme.text(AiTheme.TEXT_HEADLINE, theme.text1, AiTheme.Weight.MEDIUM);
-        title.setText(R.string.ai_title);
+        title.setText(R.string.device_entry_ai_chat);
         LayoutParams titleParams = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         titleParams.setMarginStart(theme.dp(AiTheme.SPACE_M));
         header.addView(title, titleParams);

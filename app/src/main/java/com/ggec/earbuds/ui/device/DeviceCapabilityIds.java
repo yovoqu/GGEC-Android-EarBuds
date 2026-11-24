@@ -29,6 +29,7 @@ public final class DeviceCapabilityIds {
     /** 首页内联的常用开关（通用 TOGGLE 能力）：游戏模式、佩戴检测。 */
     public static final String GAME_MODE = "GAME_MODE";
     public static final String WEAR_DETECT = "WEAR_DETECT";
+    public static final String AI_CHAT = "AI_CHAT";
 
     public static final String FIND_EAR = "FIND_EAR";
     public static final String RENAME = "RENAME";

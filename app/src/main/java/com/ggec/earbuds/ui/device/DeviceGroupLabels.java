@@ -21,6 +21,7 @@ public final class DeviceGroupLabels {
             case FUNCTION -> R.string.device_entry_function;
             case DUAL_CONNECTION -> R.string.device_entry_dual;
             case RECORD -> R.string.device_entry_record;
+            case AI -> R.string.device_entry_ai_chat;
             case ABOUT -> R.string.device_entry_about;
         };
     }
@@ -33,6 +34,7 @@ public final class DeviceGroupLabels {
             case FUNCTION -> R.drawable.ic_hw_settings;
             case DUAL_CONNECTION -> R.drawable.ic_dev_dual;
             case RECORD -> R.drawable.ic_hw_record;
+            case AI -> R.drawable.ic_ai_chat;
             case ABOUT -> R.drawable.ic_hw_about;
         };
     }

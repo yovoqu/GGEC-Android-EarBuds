@@ -13,10 +13,10 @@ import java.util.List;
 public class ShellRepositoryImplTest {
 
     @Test
-    public void loadsDeviceAi() {
+    public void loadsDeviceOnly() {
         List<ShellTab> tabs = new ShellRepositoryImpl(new ShellCatalogSource(), new ShellTabMapper()).loadTabs();
 
-        assertEquals(List.of(ShellDestination.DEVICE, ShellDestination.AI),
+        assertEquals(List.of(ShellDestination.DEVICE),
                 tabs.stream().map(ShellTab::destination).toList());
     }
 

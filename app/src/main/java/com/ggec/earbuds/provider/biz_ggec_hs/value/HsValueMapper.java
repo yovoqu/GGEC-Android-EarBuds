@@ -57,6 +57,7 @@ public final class HsValueMapper {
             case FUNCTION -> DeviceCapabilityGroup.FUNCTION;
             case DUAL_CONNECTION -> DeviceCapabilityGroup.DUAL_CONNECTION;
             case RECORD -> DeviceCapabilityGroup.RECORD;
+            case AI -> DeviceCapabilityGroup.AI;
             case ABOUT -> DeviceCapabilityGroup.ABOUT;
         };
     }

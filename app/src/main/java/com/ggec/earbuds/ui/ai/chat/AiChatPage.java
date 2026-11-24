@@ -47,7 +47,7 @@ public final class AiChatPage implements AiMessageActions {
     private final Runnable onHistory;
 
     public AiChatPage(@NonNull AppCompatActivity activity, @NonNull AiChatViewModel viewModel,
-                      @NonNull Runnable onHistory) {
+                      @NonNull Runnable onBack, @NonNull Runnable onHistory) {
         this.activity = activity;
         this.viewModel = viewModel;
         this.onHistory = onHistory;
@@ -84,6 +84,11 @@ public final class AiChatPage implements AiMessageActions {
             }
         });
         header = new AiChatHeaderView(activity, theme, new AiChatHeaderView.Listener() {
+            @Override
+            public void onBack() {
+                onBack.run();
+            }
+
             @Override
             public void onHistory() {
                 onHistory.run();

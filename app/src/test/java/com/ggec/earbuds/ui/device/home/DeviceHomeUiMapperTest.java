@@ -79,12 +79,12 @@ public final class DeviceHomeUiMapperTest {
         assertFalse(state.statusOnline());
     }
 
-    /** 五个固定版块，卡片按性质与宽度归位（含半列入口卡）。 */
+    /** 六个固定版块，卡片按性质与宽度归位（含半列入口卡）。 */
     @Test
     public void sectionsCarryTheHarmonyOsGrouping() {
         DeviceHomeUiState state = MAPPER.map(
                 new DeviceRoster(List.of(live()), Optional.of(ID)), entries(), Map.of());
-        assertEquals(5, state.sections().size());
+        assertEquals(6, state.sections().size());
 
         // 0 设备连接中心：双连接（整列入口卡）
         assertEquals(R.string.device_section_connection, state.sections().get(0).titleRes());
@@ -101,10 +101,14 @@ public final class DeviceHomeUiMapperTest {
         assertEquals(R.string.device_section_wear, state.sections().get(3).titleRes());
         assertEquals(List.of(), toggleIds(state.sections().get(3)));
         assertEquals(1, countPageCard(state.sections().get(3)));
-        // 4 更多：查找设备页面卡 + 本机设置/录音/关于设备（共 4 张 → 偶数全两列）
-        assertEquals(R.string.device_section_more, state.sections().get(4).titleRes());
+        // 4 AI：独立「AI 对话」入口（HS02 / WY01 支持）
+        assertEquals(R.string.device_section_ai, state.sections().get(4).titleRes());
+        assertEquals(List.of(), toggleIds(state.sections().get(4)));
         assertEquals(1, countPageCard(state.sections().get(4)));
-        List<DeviceHomeUiState.EntryCard> moreEntries = entryCards(state.sections().get(4));
+        // 5 更多：查找设备页面卡 + 本机设置/录音/关于设备（共 4 张 → 偶数全两列）
+        assertEquals(R.string.device_section_more, state.sections().get(5).titleRes());
+        assertEquals(1, countPageCard(state.sections().get(5)));
+        List<DeviceHomeUiState.EntryCard> moreEntries = entryCards(state.sections().get(5));
         assertEquals(3, moreEntries.size());
         assertEquals(DeviceHomeUiState.CardSize.HALF, moreEntries.get(0).size());
         assertEquals(DeviceHomeUiState.CardSize.HALF, moreEntries.get(1).size());
@@ -182,6 +186,8 @@ public final class DeviceHomeUiMapperTest {
                         DeviceCapabilityKind.TOGGLE, List.of(), Optional.empty()),
                 new DeviceCapabilityView("WEAR_DETECT", "佩戴检测", DeviceCapabilityGroup.CONTROL,
                         DeviceCapabilityKind.TOGGLE, List.of(), Optional.empty()),
+                new DeviceCapabilityView("AI_CHAT", "AI 对话", DeviceCapabilityGroup.AI,
+                        DeviceCapabilityKind.GATE, List.of(), Optional.empty()),
                 new DeviceCapabilityView("VOLUME_ADAPTIVE", "音量自适应", DeviceCapabilityGroup.MUSIC,
                         DeviceCapabilityKind.TOGGLE, List.of(), Optional.empty()));
     }

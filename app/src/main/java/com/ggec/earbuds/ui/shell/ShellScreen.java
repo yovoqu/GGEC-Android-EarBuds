@@ -3,12 +3,14 @@ package com.ggec.earbuds.ui.shell;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.lifecycle.ViewModelProvider;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
 import com.ggec.earbuds.domain.shell.ShellDestination;
+import com.ggec.earbuds.ui.ai.chat.AiChatActivity;
 import com.ggec.earbuds.ui.ai.chat.AiChatPage;
 import com.ggec.earbuds.ui.ai.chat.AiChatViewModel;
 import com.ggec.earbuds.ui.common.YoComponents;
@@ -45,7 +47,9 @@ final class ShellScreen {
     private final ViewModelProvider.Factory homeFactory;
     private final Listener listener;
     private final YoComponents components = new YoComponents();
+    @Nullable
     private final YoTabs tabs;
+    private final View root;
 
     private AiChatPage aiPage;
     private DeviceHomePage devicePage;
@@ -61,17 +65,24 @@ final class ShellScreen {
         this.aiFactory = aiFactory;
         this.homeFactory = homeFactory;
         this.listener = listener;
-        tabs = createTabs(viewModel.current());
-        components.own(tabs::destroy);
+        ShellUiState initial = viewModel.current();
+        if (initial.tabs().size() <= 1) {
+            this.tabs = null;
+            this.root = createPage(initial.tabs().get(0));
+        } else {
+            this.tabs = createTabs(initial);
+            this.root = this.tabs.getView();
+            components.own(this.tabs::destroy);
+        }
     }
 
     @NonNull
     View view() {
-        return tabs.getView();
+        return root;
     }
 
     void render(@NonNull ShellUiState state) {
-        if (tabs.getSelectedId() != state.selectedTabId()) {
+        if (tabs != null && tabs.getSelectedId() != state.selectedTabId()) {
             tabs.setSelectedId(state.selectedTabId());
         }
     }
@@ -113,7 +124,7 @@ final class ShellScreen {
             case AI -> {
                 AiChatViewModel chat = new ViewModelProvider(activity, aiFactory)
                         .get(AiChatViewModel.class);
-                aiPage = new AiChatPage(activity, chat, listener::onAIHistory);
+                aiPage = new AiChatPage(activity, chat, () -> {}, listener::onAIHistory);
                 yield aiPage.view();
             }
             case DEVICE -> {
@@ -181,6 +192,10 @@ final class ShellScreen {
         public void onOpenPage(@NonNull String pageId) {
             if (DeviceHomeUiMapper.PAGE_WEAR_SETTINGS.equals(pageId)) {
                 activity.startActivity(WearSettingsActivity.intent(activity));
+                return;
+            }
+            if (DeviceHomeUiMapper.PAGE_AI_CHAT.equals(pageId)) {
+                activity.startActivity(AiChatActivity.intent(activity));
                 return;
             }
             activity.startActivity(FindDeviceActivity.intent(activity));

@@ -12,5 +12,6 @@ public enum DeviceCapabilityGroup {
     FUNCTION,
     DUAL_CONNECTION,
     RECORD,
+    AI,
     ABOUT
 }

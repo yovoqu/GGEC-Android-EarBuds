@@ -55,6 +55,9 @@ public final class DeviceHomeUiMapper {
             new Spec(R.string.device_section_wear,
                     List.of(),
                     List.of()),
+            new Spec(R.string.device_section_ai,
+                    List.of(),
+                    List.of()),
             new Spec(R.string.device_section_more,
                     List.of(DeviceCapabilityGroup.FUNCTION, DeviceCapabilityGroup.RECORD,
                             DeviceCapabilityGroup.ABOUT),
@@ -63,6 +66,7 @@ public final class DeviceHomeUiMapper {
     /** 独立页 id：首页「页面卡」据此路由到对应 Activity。 */
     public static final String PAGE_FIND_DEVICE = "find_device";
     public static final String PAGE_WEAR_SETTINGS = "wear_settings";
+    public static final String PAGE_AI_CHAT = "ai_chat";
 
     /** 首页不再内联任何快捷开关（游戏模式/佩戴检测均已下沉到二级页）。 */
     private static final List<String> QUICK_TOGGLE_IDS = List.of();
@@ -99,6 +103,8 @@ public final class DeviceHomeUiMapper {
         Optional<DeviceProfileView> profile = catalog.model(active.id().modelId());
         boolean wearSupported = profile.map(p -> p.supports(DeviceCapabilityIds.WEAR_DETECT))
                 .orElse(false);
+        boolean aiSupported = profile.map(p -> p.supports(DeviceCapabilityIds.AI_CHAT))
+                .orElse(false);
         Map<String, DeviceHomeUiState.ToggleCard> toggleById = new LinkedHashMap<>();
         for (DeviceHomeUiState.ToggleCard toggle : profile
                 .map(view -> quickToggles(view, active.state(), writes, active.status().ready()))
@@ -118,6 +124,11 @@ public final class DeviceHomeUiMapper {
                 // 「佩戴」改为独立「佩戴设置」入口（不再在首页内联开关）。
                 cards.add(new DeviceHomeUiState.PageCard(PAGE_WEAR_SETTINGS,
                         R.string.wear_settings_title, R.drawable.ic_hw_wear,
+                        DeviceHomeUiState.CardSize.HALF));
+            } else if (spec.titleRes() == R.string.device_section_ai && aiSupported) {
+                // 「AI」版块下的「AI 对话」入口（HS02 / WY01 支持）。
+                cards.add(new DeviceHomeUiState.PageCard(PAGE_AI_CHAT,
+                        R.string.device_entry_ai_chat, R.drawable.ic_ai_chat,
                         DeviceHomeUiState.CardSize.HALF));
             }
             for (String id : spec.toggleIds()) {

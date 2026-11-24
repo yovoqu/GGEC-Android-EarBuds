@@ -144,6 +144,7 @@
     <string name="device_entry_function">本机设置</string>
     <string name="device_entry_dual">双连接</string>
     <string name="device_entry_record">录音</string>
+    <string name="device_entry_ai_chat">AI 对话</string>
     <string name="device_entry_about">关于设备</string>
     <string name="device_home_functions">功能</string>
     <string name="device_home_features">常用设置</string>
@@ -153,6 +154,7 @@
     <string name="device_section_sound">声音</string>
     <string name="device_section_interaction">交互</string>
     <string name="device_section_wear">佩戴</string>
+    <string name="device_section_ai">AI</string>
     <string name="device_section_more">更多</string>
     <string name="device_hero_image">设备图片</string>
     <string name="device_hero_image_desc">设备主图占位</string>

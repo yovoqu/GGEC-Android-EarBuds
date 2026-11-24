@@ -27,6 +27,7 @@ final class AiChatInsets {
 
     private View root;
     private int statusBarTop;
+    private int navBarBottom;
     private int tabsInset;
     private int imeInset;
 
@@ -46,6 +47,7 @@ final class AiChatInsets {
         this.root = root;
         ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
             statusBarTop = YoSystemBar.systemBarsAndCutout(insets).top;
+            navBarBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
             imeInset = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             apply();
             return insets;
@@ -68,7 +70,7 @@ final class AiChatInsets {
         if (root != null) {
             root.setPadding(0, statusBarTop, 0, 0);
         }
-        int bottom = Math.max(imeInset, tabsInset) + theme.dp(COMPOSER_BOTTOM_GAP_DP);
+        int bottom = Math.max(imeInset, Math.max(tabsInset, navBarBottom)) + theme.dp(COMPOSER_BOTTOM_GAP_DP);
         if (composer.getPaddingBottom() != bottom) {
             composer.setPadding(composer.getPaddingLeft(), composer.getPaddingTop(),
                     composer.getPaddingRight(), bottom);

@@ -36,6 +36,12 @@
 
         <!-- 通话页是全屏单页：竖屏、不参与多任务快照的缩略图（里面可能有正在念的内容）。 -->
         <activity
+            android:name=".ui.ai.chat.AiChatActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.ai.call.AiCallActivity"
             android:excludeFromRecents="true"
             android:exported="false"
