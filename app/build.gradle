@@ -18,15 +18,26 @@ android {
         }
 
         versionCode = 1
-        versionName = '1.0'
+        versionName = '1.0.0'
 
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
     }
 
+    signingConfigs {
+        release {
+            storeFile file('D:/A_yoprogram/Github_Gallery/GGEC-Android-AutoTools/keystore/release.jks')
+            keyAlias 'ggec'
+            keyPassword 'ggec123456'
+            storePassword 'ggec123456'
+        }
+    }
+
     buildTypes {
         release {
-            minifyEnabled = false
+            minifyEnabled = true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 
