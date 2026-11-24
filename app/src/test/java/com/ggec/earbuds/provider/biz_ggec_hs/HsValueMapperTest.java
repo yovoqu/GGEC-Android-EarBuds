@@ -220,4 +220,18 @@ public final class HsValueMapperTest {
 
         assertEquals(1, mapped.size());
     }
+
+    @Test
+    public void batteryMapsFieldByField() {
+        com.ggec.earbuds.domain.device.model.BatterySnapshot snapshot =
+                HsValueMapper.toBatterySnapshot(new HsDevice.Battery(80, 85, 100, true, 3));
+        assertEquals(80, snapshot.left());
+        assertEquals(85, snapshot.right());
+        assertEquals(100, snapshot.caseLevel());
+        assertTrue(snapshot.caseCharging());
+
+        com.ggec.earbuds.domain.device.model.BatterySnapshot unknown =
+                HsValueMapper.toBatterySnapshot(null);
+        assertEquals(com.ggec.earbuds.domain.device.model.BatterySnapshot.unknown(), unknown);
+    }
 }

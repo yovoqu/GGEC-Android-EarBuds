@@ -42,7 +42,27 @@ public final class ObserveDeviceRosterTest {
         DeviceRecord record = projection.current().find(DeviceFixtures.ID).orElseThrow();
         assertEquals(RecordOrigin.LIVE, record.status().origin());
         assertEquals(ConnectionState.CONNECTING, record.status().connection());
-        assertEquals(30, record.facts().battery().left());
+        assertEquals(BatterySnapshot.unknown(), record.facts().battery());
+        assertTrue(projection.current().activeId().isPresent());
+    }
+
+    @Test
+    public void liveSessionReadyOverlaysLiveFacts() {
+        MemoryDeviceRosterRepository repository =
+                new MemoryDeviceRosterRepository(new DeviceRoster(List.of(archived()), Optional.empty()));
+        FakeDeviceLinkPort port = new FakeDeviceLinkPort();
+        DeviceSession session = new DeviceSession(port);
+        ObserveDeviceRoster projection = new ObserveDeviceRoster(repository, session, () -> 2000L);
+
+        new OpenDevice(session).execute(DeviceFixtures.target(), settlement -> {
+        });
+        port.emit(DeviceFixtures.ready("2.0.0", 88));
+
+        DeviceRecord record = projection.current().find(DeviceFixtures.ID).orElseThrow();
+        assertEquals(RecordOrigin.LIVE, record.status().origin());
+        assertEquals(ConnectionState.READY, record.status().connection());
+        assertEquals(88, record.facts().battery().left());
+        assertEquals("2.0.0", record.facts().firmware());
         assertTrue(projection.current().activeId().isPresent());
     }
 

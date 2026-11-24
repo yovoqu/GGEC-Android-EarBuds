@@ -117,6 +117,19 @@ public final class DeviceSessionTest {
     }
 
     @Test
+    public void deviceDisconnectFromConnectingReturnsToIdleAndClearsTarget() {
+        FakeDeviceLinkPort port = new FakeDeviceLinkPort();
+        DeviceSession session = new DeviceSession(port);
+        session.open(DeviceFixtures.target(), settlement -> {
+        });
+
+        port.emit(DeviceFixtures.disconnected());
+
+        assertTrue(session.state() instanceof SessionState.Idle);
+        assertFalse(session.target().isPresent());
+    }
+
+    @Test
     public void failedSettlementMovesConnectingToFailedAndKeepsTarget() {
         FakeDeviceLinkPort port = new FakeDeviceLinkPort();
         DeviceSession session = new DeviceSession(port);

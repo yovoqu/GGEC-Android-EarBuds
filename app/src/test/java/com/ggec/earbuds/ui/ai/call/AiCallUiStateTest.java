@@ -23,6 +23,18 @@ import java.util.List;
 public class AiCallUiStateTest {
 
     @Test
+    public void idleProvidesSafeInitialState() {
+        AiCallUiState idle = AiCallUiState.idle(VoiceDuplex.FULL_DUPLEX);
+        assertEquals(AiCallUiState.Phase.IDLE, idle.phase());
+        assertEquals(R.string.ai_call_phase_idle, idle.title());
+        assertEquals(VoiceDuplex.FULL_DUPLEX, idle.duplex());
+        assertTrue(idle.speakerOn());
+        assertTrue(idle.captionsVisible());
+        assertFalse(idle.live());
+        assertFalse(idle.ended());
+    }
+
+    @Test
     public void connectingAndPermissionDeniedProvideSafeInitialStates() {
         AiCallUiState connecting = AiCallUiState.connecting(VoiceDuplex.FULL_DUPLEX);
         assertEquals(AiCallUiState.Phase.CONNECTING, connecting.phase());

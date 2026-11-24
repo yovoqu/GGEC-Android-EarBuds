@@ -386,6 +386,18 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
         @Override
         public void onDeviceEvent(@NonNull HsControl.Event event) {
             switch (event) {
+                case HsControl.Event.BatteryChanged changed -> {
+                    synchronized (lock) {
+                        if (sessionSnapshot != null) {
+                            sessionSnapshot = new HsDevice.Snapshot(
+                                    sessionSnapshot.connection(),
+                                    changed.battery(),
+                                    sessionSnapshot.deviceInfo(),
+                                    sessionSnapshot.values());
+                        }
+                    }
+                    publish();
+                }
                 case HsControl.Event.DualConnectionChanged changed -> {
                     synchronized (lock) {
                         dualConnection = Optional.of(
@@ -444,19 +456,26 @@ public final class HsDeviceLinkAdapter implements DeviceLinkPort {
 
     /**
      * 调用方须持锁。连接态变化只改连接态本身；连接结束（{@link HsControl.State#DISCONNECTED}）
-     * 同时失效本会话的设备事实，避免断开后仍显示上一台设备的双连接列表与录音列表。
+     * 同时失效本会话的全部设备事实（电量重置为未知、能力清空、双连接与录音列表归空），
+     * 避免断开后继续显示旧设备的事实。
      */
     private void applyConnectionLocked(@NonNull HsControl.State state) {
+        if (state == HsControl.State.DISCONNECTED) {
+            sessionSnapshot = new HsDevice.Snapshot(
+                    state,
+                    unknownBattery(),
+                    new HsDevice.Info(HsDevice.Info.UNKNOWN_FIRMWARE, HsDevice.Info.UNKNOWN_EAR_COLOR, HsDevice.Ear.UNKNOWN),
+                    Map.of());
+            dualConnection = Optional.empty();
+            recordFiles = List.of();
+            return;
+        }
         HsDevice.Snapshot previous = sessionSnapshot;
         sessionSnapshot = new HsDevice.Snapshot(
                 state,
                 previous == null ? unknownBattery() : previous.battery(),
                 deviceInfoOf(previous),
                 previous == null ? Map.of() : previous.values());
-        if (state == HsControl.State.DISCONNECTED) {
-            dualConnection = Optional.empty();
-            recordFiles = List.of();
-        }
     }
 
     @NonNull

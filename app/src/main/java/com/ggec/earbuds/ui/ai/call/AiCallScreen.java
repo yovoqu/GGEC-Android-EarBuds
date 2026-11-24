@@ -36,6 +36,7 @@ public final class AiCallScreen {
         void onToggleDuplex();
         void onMicMuted(boolean micMuted);
         void onSpeaker(boolean speaker);
+        void onStartCall();
         void onHangUp();
         void onInterrupt();
         void onAction(@NonNull AiCallUiState.Action action);
@@ -101,6 +102,11 @@ public final class AiCallScreen {
             @Override
             public void onSpeaker(boolean speaker) {
                 listener.onSpeaker(speaker);
+            }
+
+            @Override
+            public void onStartCall() {
+                listener.onStartCall();
             }
 
             @Override
@@ -193,9 +199,7 @@ public final class AiCallScreen {
             case LISTENING -> AiFluidVisualizerView.VisualPhase.LISTENING;
             case THINKING -> AiFluidVisualizerView.VisualPhase.THINKING;
             case SPEAKING -> AiFluidVisualizerView.VisualPhase.SPEAKING;
-            case OFFLINE -> AiFluidVisualizerView.VisualPhase.OFFLINE;
-            // 没有麦克风权限时链路根本没建立：光晕按离线静止渲染，不再是「正在连接」的假动作。
-            case PERMISSION_DENIED -> AiFluidVisualizerView.VisualPhase.OFFLINE;
+            case IDLE, OFFLINE, PERMISSION_DENIED -> AiFluidVisualizerView.VisualPhase.OFFLINE;
         };
         visualizerView.setPhase(vPhase);
         visualizerView.setAudioLevel(state.meter());

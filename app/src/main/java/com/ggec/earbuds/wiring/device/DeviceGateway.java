@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.ggec.earbuds.domain.device.model.ConnectSettlement;
+import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.ControlValue;
 import com.ggec.earbuds.domain.device.model.DeviceAction;
 import com.ggec.earbuds.domain.device.model.DeviceFailure;
@@ -509,6 +510,13 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
         }
         for (Consumer<DeviceSnapshot> listener : linkListeners) {
             listener.accept(snapshot);
+        }
+        if (snapshot.connection() == ConnectionState.DISCONNECTED) {
+            synchronized (lock) {
+                if (connectedTransport == endpoint.transport()) {
+                    connectedTransport = null;
+                }
+            }
         }
     }
 

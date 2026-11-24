@@ -108,7 +108,7 @@ public final class AiCallHeaderView extends RelativeLayout {
         statusText = theme.text(AiTheme.TEXT_SUBHEAD, theme.text1, AiTheme.Weight.MEDIUM);
         statusText.setSingleLine(true);
         statusText.setEllipsize(TextUtils.TruncateAt.END);
-        statusText.setText(R.string.ai_call_phase_connecting);
+        statusText.setText(R.string.ai_call_phase_idle);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusParams.leftMargin = theme.dp(6f);
@@ -186,7 +186,7 @@ public final class AiCallHeaderView extends RelativeLayout {
             case LISTENING -> theme.callPalette(AiTheme.CallPhase.LISTENING).colorC();
             case SPEAKING, CONNECTING -> theme.brand;
             case THINKING -> theme.callPalette(AiTheme.CallPhase.THINKING).colorB();
-            case OFFLINE, PERMISSION_DENIED -> theme.text3;
+            case IDLE, OFFLINE, PERMISSION_DENIED -> theme.text3;
         };
         if (dotColor != lastDotColor) {
             lastDotColor = dotColor;

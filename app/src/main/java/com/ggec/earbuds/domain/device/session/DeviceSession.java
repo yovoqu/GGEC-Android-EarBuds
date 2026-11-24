@@ -179,9 +179,8 @@ public final class DeviceSession {
             if (snapshot.connection() == ConnectionState.READY
                     && state instanceof SessionState.Connecting connecting) {
                 state = new SessionState.Ready(connecting.target());
-            } else if (snapshot.connection() == ConnectionState.DISCONNECTED
-                    && state instanceof SessionState.Ready) {
-                // 设备主动断开：会话结束，目标清空。
+            } else if (snapshot.connection() == ConnectionState.DISCONNECTED) {
+                // 设备主动断开或远端掉线：会话结束，目标清空。
                 state = new SessionState.Idle();
             }
         }

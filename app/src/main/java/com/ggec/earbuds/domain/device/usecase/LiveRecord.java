@@ -63,19 +63,16 @@ final class LiveRecord {
         ConnectionState connection = snapshot.connection();
         boolean ready = connection == ConnectionState.READY;
         boolean disconnected = connection == ConnectionState.DISCONNECTED;
-        // 断开后只留身份元信息：电量/固件/佩戴这些实时值属于「会话内的事实」，
-        // 掉线后继续展示旧数值会把历史当成现状。
+        // 核心架构不变式：会话实时事实（电量/固件/佩戴）与能力控制值仅在就绪态（READY）成立。
+        // 在连接中（CONNECTING）、断开（DISCONNECTED）或空闲态，严禁复活任何旧数据，
+        // 必须且只能是 unknown() 与空能力表，彻底杜绝连接中闪烁旧电量或断开后残留旧开关。
         DeviceFacts facts = ready
                 ? new DeviceFacts(snapshot.battery(), snapshot.firmware(),
                         snapshot.wearState(), snapshot.earColor())
-                : disconnected
-                        ? DeviceFacts.unknown()
-                        : existing.map(DeviceRecord::facts).orElse(DeviceFacts.unknown());
+                : DeviceFacts.unknown();
         DeviceState state = ready
                 ? snapshot.state()
-                : disconnected
-                        ? new DeviceState(Map.of())
-                        : existing.map(DeviceRecord::state).orElse(new DeviceState(Map.of()));
+                : new DeviceState(Map.of());
         DeviceStatus status = disconnected
                 ? DeviceStatus.archived(nowMillis)
                 : new DeviceStatus(RecordOrigin.LIVE, connection, nowMillis);

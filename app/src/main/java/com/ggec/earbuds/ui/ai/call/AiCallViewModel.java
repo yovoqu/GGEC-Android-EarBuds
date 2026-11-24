@@ -44,7 +44,7 @@ public final class AiCallViewModel extends ViewModel {
     private final Ticker ticker;
 
     private final MutableLiveData<AiCallUiState> uiState =
-            new MutableLiveData<>(AiCallUiState.connecting(VoiceDuplex.defaultMode()));
+            new MutableLiveData<>(AiCallUiState.idle(VoiceDuplex.defaultMode()));
     /** 一次性提示（当前只有双工切换的说明文案），由页面消费后清空。 */
     private final OneShotLiveData<Integer> toasts = new OneShotLiveData<>();
 
@@ -261,6 +261,11 @@ public final class AiCallViewModel extends ViewModel {
     public void hangUp() {
         stopTimer();
         release();
+        AiCallUiState current = requireState(uiState.getValue());
+        if (current.live()) {
+            uiState.setValue(current.withPhase(AiCallUiState.Phase.OFFLINE, R.string.ai_call_phase_ended)
+                    .withMeter(0f));
+        }
     }
 
     @Override

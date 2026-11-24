@@ -173,6 +173,7 @@ public final class HsValueMapper {
                     new HsControl.Action.ConnectPairedDevice(connect.address());
             case DeviceAction.DisconnectPairedDevice disconnect ->
                     new HsControl.Action.DisconnectPairedDevice(disconnect.address());
+            case DeviceAction.SyncDeviceState ignored -> new HsControl.Action.SyncDeviceState();
         };
     }
 
@@ -250,5 +251,17 @@ public final class HsValueMapper {
             mapped.add(toRecordFileView(file));
         }
         return List.copyOf(mapped);
+    }
+
+    public static com.ggec.earbuds.domain.device.model.BatterySnapshot toBatterySnapshot(
+            HsDevice.Battery battery) {
+        if (battery == null) {
+            return com.ggec.earbuds.domain.device.model.BatterySnapshot.unknown();
+        }
+        return new com.ggec.earbuds.domain.device.model.BatterySnapshot(
+                battery.leftLevel(),
+                battery.rightLevel(),
+                battery.caseLevel(),
+                battery.caseCharging());
     }
 }

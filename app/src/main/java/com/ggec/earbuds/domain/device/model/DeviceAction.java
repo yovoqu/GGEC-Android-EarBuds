@@ -89,4 +89,8 @@ public sealed interface DeviceAction {
             Objects.requireNonNull(address, "address");
         }
     }
+
+    /** 同步设备状态（如连接后聚合状态：电量、固件版本、配置快照等）。 */
+    record SyncDeviceState() implements DeviceAction {
+    }
 }

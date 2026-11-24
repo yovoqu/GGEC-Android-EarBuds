@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.view.WindowManager;
 import com.yohu.youi.api.feedback.YoToast;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -78,6 +79,13 @@ public final class AiCallActivity extends AppCompatActivity {
                 YoToast.show(this, getString(messageRes));
             }
         });
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                exitPage();
+            }
+        });
     }
 
     @NonNull
@@ -89,15 +97,9 @@ public final class AiCallActivity extends AppCompatActivity {
         return container;
     }
 
-    @Override
-    protected void onStart() {
-        super.onStart();
+    private void handleStartCall() {
         if (hasMicrophone()) {
             startCall();
-            return;
-        }
-        if (permissionRequested) {
-            viewModel.permissionDenied();
             return;
         }
         permissionRequested = true;
@@ -110,7 +112,7 @@ public final class AiCallActivity extends AppCompatActivity {
         }
     }
 
-    private void hangUp() {
+    private void exitPage() {
         if (finishing) {
             return;
         }
@@ -128,7 +130,12 @@ public final class AiCallActivity extends AppCompatActivity {
 
         @Override
         public void onClose() {
-            hangUp();
+            exitPage();
+        }
+
+        @Override
+        public void onStartCall() {
+            handleStartCall();
         }
 
         @Override
@@ -139,12 +146,10 @@ public final class AiCallActivity extends AppCompatActivity {
         @Override
         public void onAction(@NonNull AiCallUiState.Action action) {
             if (action == AiCallUiState.Action.RETRY) {
-                viewModel.retry();
+                handleStartCall();
             } else if (action == AiCallUiState.Action.SETTINGS) {
-                finishing = true;
-                viewModel.hangUp();
+                exitPage();
                 startActivity(AiSettingsActivity.intent(AiCallActivity.this));
-                finish();
             }
         }
 
@@ -170,7 +175,7 @@ public final class AiCallActivity extends AppCompatActivity {
 
         @Override
         public void onHangUp() {
-            hangUp();
+            viewModel.hangUp();
         }
     }
 }

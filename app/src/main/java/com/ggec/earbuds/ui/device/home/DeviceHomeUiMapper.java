@@ -137,8 +137,12 @@ public final class DeviceHomeUiMapper {
             sections.add(new DeviceHomeUiState.Section(spec.titleRes(), reflow(cards)));
         }
 
+        BatterySnapshot battery = active.status().ready()
+                ? active.facts().battery()
+                : BatterySnapshot.unknown();
+
         return new DeviceHomeUiState(nameOf(active), subtitle(active), choices, sections,
-                active.facts().battery(), statusText(active), active.status().ready(),
+                battery, statusText(active), active.status().ready(),
                 R.string.device_home_empty_title, R.string.device_home_empty_body);
     }
 

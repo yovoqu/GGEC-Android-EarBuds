@@ -51,6 +51,7 @@ public record AiCallUiState(
     }
 
     public enum Phase {
+        IDLE,
         CONNECTING,
         LISTENING,
         THINKING,
@@ -64,6 +65,32 @@ public record AiCallUiState(
         NONE,
         SETTINGS,
         RETRY
+    }
+
+    @NonNull
+    public static AiCallUiState idle() {
+        return idle(VoiceDuplex.defaultMode());
+    }
+
+    @NonNull
+    public static AiCallUiState idle(@NonNull VoiceDuplex duplex) {
+        return new AiCallUiState(
+                Phase.IDLE,
+                R.string.ai_call_phase_idle,
+                null,
+                Action.NONE,
+                false,
+                false,
+                true,
+                0,
+                true,
+                Objects.requireNonNull(duplex, "duplex"),
+                null,
+                null,
+                List.of(),
+                0f,
+                List.of()
+        );
     }
 
     @NonNull
@@ -149,7 +176,7 @@ public record AiCallUiState(
     public boolean live() {
         return switch (phase) {
             case CONNECTING, LISTENING, THINKING, SPEAKING -> true;
-            case OFFLINE, PERMISSION_DENIED -> false;
+            case IDLE, OFFLINE, PERMISSION_DENIED -> false;
         };
     }
 
@@ -157,7 +184,7 @@ public record AiCallUiState(
     public boolean ended() {
         return switch (phase) {
             case OFFLINE -> true;
-            case CONNECTING, LISTENING, THINKING, SPEAKING, PERMISSION_DENIED -> false;
+            case IDLE, CONNECTING, LISTENING, THINKING, SPEAKING, PERMISSION_DENIED -> false;
         };
     }
 
@@ -166,6 +193,13 @@ public record AiCallUiState(
         int m = durationSeconds / 60;
         int s = durationSeconds % 60;
         return String.format(Locale.US, "%02d:%02d", m, s);
+    }
+
+    @NonNull
+    public AiCallUiState withPhase(@NonNull Phase nextPhase, @StringRes int nextTitle) {
+        return new AiCallUiState(nextPhase, nextTitle, reason, action, interruptible, micMuted, speakerOn,
+                durationSeconds, captionsVisible, duplex, requestedDuplex, activeSource,
+                availableSources, meter, subtitleItems);
     }
 
     @NonNull
@@ -239,7 +273,8 @@ public record AiCallUiState(
     @NonNull
     private static Phase phase(@NonNull AiVoiceSnapshot.State state) {
         return switch (state) {
-            case CONNECTING, IDLE -> Phase.CONNECTING;
+            case IDLE -> Phase.IDLE;
+            case CONNECTING -> Phase.CONNECTING;
             case LISTENING -> Phase.LISTENING;
             case THINKING -> Phase.THINKING;
             case SPEAKING -> Phase.SPEAKING;
@@ -250,7 +285,8 @@ public record AiCallUiState(
     @StringRes
     private static int title(@NonNull AiVoiceSnapshot.State state) {
         return switch (state) {
-            case IDLE, CONNECTING -> R.string.ai_call_phase_connecting;
+            case IDLE -> R.string.ai_call_phase_idle;
+            case CONNECTING -> R.string.ai_call_phase_connecting;
             case LISTENING -> R.string.ai_call_phase_listening;
             case THINKING -> R.string.ai_call_phase_thinking;
             case SPEAKING -> R.string.ai_call_phase_speaking;

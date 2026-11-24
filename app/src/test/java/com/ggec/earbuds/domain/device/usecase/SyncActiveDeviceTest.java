@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.ggec.earbuds.domain.device.model.BatterySnapshot;
 import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceIdentity;
 import com.ggec.earbuds.domain.device.model.DeviceTarget;
@@ -72,6 +73,30 @@ public final class SyncActiveDeviceTest {
         assertEquals("", record.facts().firmware());
         assertTrue(record.identity().hasClassicAddress());
         assertTrue(repository.current().activeId().isPresent());
+    }
+
+    @Test
+    public void connectingDoesNotInheritFactsFromExistingRecord() {
+        long[] now = {1000L};
+        MemoryDeviceRosterRepository repository = new MemoryDeviceRosterRepository();
+        FakeDeviceLinkPort port = new FakeDeviceLinkPort();
+        DeviceSession session = new DeviceSession(port);
+        new SyncActiveDevice(repository, session, () -> now[0]).start();
+        new OpenDevice(session).execute(DeviceFixtures.target(), settlement -> {
+        });
+        port.emit(DeviceFixtures.ready("2.0.1", 77));
+        port.emit(DeviceFixtures.disconnected());
+
+        // 重新发起连接尝试（处于 CONNECTING 状态）
+        new OpenDevice(session).execute(DeviceFixtures.target(), settlement -> {
+        });
+
+        DeviceRecord record = repository.current().find(DeviceFixtures.ID).orElseThrow();
+        assertEquals(ConnectionState.CONNECTING, record.status().connection());
+        // 连接中严禁复活旧电量或旧固件版本
+        assertFalse(record.facts().known());
+        assertEquals("", record.facts().firmware());
+        assertEquals(BatterySnapshot.unknown(), record.facts().battery());
     }
 
 

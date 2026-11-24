@@ -31,6 +31,7 @@ public final class AiCallControlsView extends LinearLayout {
     public interface Listener {
         void onMicMuted(boolean micMuted);
         void onSpeaker(boolean speaker);
+        void onStartCall();
         void onHangUp();
     }
 
@@ -39,6 +40,8 @@ public final class AiCallControlsView extends LinearLayout {
     private static final float TOP_RADIUS_DP = 24f;
     @ColorInt private static final int HANGUP_RED = AiTheme.HANGUP_START;
     @ColorInt private static final int HANGUP_RED_END = AiTheme.HANGUP_END;
+    @ColorInt private static final int CALL_GREEN = AiTheme.CALL_START;
+    @ColorInt private static final int CALL_GREEN_END = AiTheme.CALL_END;
 
     private final AiTheme theme;
 
@@ -47,7 +50,10 @@ public final class AiCallControlsView extends LinearLayout {
     private final ImageView speakerButton;
     private final GradientDrawable micBg;
     private final GradientDrawable speakerBg;
+    private final GradientDrawable heroBg;
 
+    private final Listener listener;
+    private boolean currentLive;
     private boolean micMuted;
     private boolean speakerOn = true;
 
@@ -56,11 +62,12 @@ public final class AiCallControlsView extends LinearLayout {
     @Nullable
     private Boolean renderedSpeakerOn;
     @Nullable
-    private Boolean renderedEnded;
+    private Boolean renderedLive;
 
     public AiCallControlsView(@NonNull Context context, @NonNull AiTheme theme, @NonNull Listener listener) {
         super(context);
         this.theme = theme;
+        this.listener = listener;
 
         setOrientation(VERTICAL);
         setGravity(Gravity.CENTER_HORIZONTAL);
@@ -114,8 +121,13 @@ public final class AiCallControlsView extends LinearLayout {
         micButton.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), micBg, null));
         FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMicMuted(!micMuted));
 
+        heroBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{CALL_GREEN, CALL_GREEN_END}
+        );
+        heroBg.setShape(GradientDrawable.OVAL);
         hangUpButton = createHeroButton(HERO_BUTTON_SIZE, 15f);
-        FrameLayout hangUpSlot = createControlSlot(hangUpButton, v -> listener.onHangUp());
+        FrameLayout hangUpSlot = createControlSlot(hangUpButton, v -> onHeroButtonClicked());
 
         speakerBg = new GradientDrawable();
         speakerBg.setShape(GradientDrawable.OVAL);
@@ -132,7 +144,7 @@ public final class AiCallControlsView extends LinearLayout {
 
         applyMicLook(false);
         applySpeakerLook(true);
-        applyHangUpLook(false);
+        applyHeroLook(false);
     }
 
     public void render(@NonNull AiCallUiState state) {
@@ -145,8 +157,17 @@ public final class AiCallControlsView extends LinearLayout {
         if (renderedSpeakerOn == null || renderedSpeakerOn != state.speakerOn()) {
             applySpeakerLook(state.speakerOn());
         }
-        if (renderedEnded == null || renderedEnded != state.ended()) {
-            applyHangUpLook(state.ended());
+        boolean live = state.live();
+        if (renderedLive == null || renderedLive != live) {
+            applyHeroLook(live);
+        }
+    }
+
+    private void onHeroButtonClicked() {
+        if (currentLive) {
+            listener.onHangUp();
+        } else {
+            listener.onStartCall();
         }
     }
 
@@ -192,10 +213,18 @@ public final class AiCallControlsView extends LinearLayout {
         }
     }
 
-    private void applyHangUpLook(boolean ended) {
-        renderedEnded = ended;
-        hangUpButton.setContentDescription(getContext().getString(
-                ended ? R.string.ai_call_close : R.string.ai_call_hang_up));
+    private void applyHeroLook(boolean live) {
+        renderedLive = live;
+        currentLive = live;
+        if (live) {
+            heroBg.setColors(new int[]{HANGUP_RED, HANGUP_RED_END});
+            hangUpButton.setImageResource(R.drawable.ic_ai_call_hangup);
+            hangUpButton.setContentDescription(getContext().getString(R.string.ai_call_hang_up));
+        } else {
+            heroBg.setColors(new int[]{CALL_GREEN, CALL_GREEN_END});
+            hangUpButton.setImageResource(R.drawable.ic_ai_call_start);
+            hangUpButton.setContentDescription(getContext().getString(R.string.ai_call_start));
+        }
     }
 
     private FrameLayout createControlSlot(View button, OnClickListener onClick) {
@@ -229,14 +258,8 @@ public final class AiCallControlsView extends LinearLayout {
         iv.setLayoutParams(new ViewGroup.LayoutParams(sizePx, sizePx));
         iv.setPadding(padPx, padPx, padPx, padPx);
         iv.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        iv.setImageResource(R.drawable.ic_ai_call_hangup);
+        iv.setImageResource(R.drawable.ic_ai_call_start);
         iv.setColorFilter(Color.WHITE);
-
-        GradientDrawable heroBg = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[]{HANGUP_RED, HANGUP_RED_END}
-        );
-        heroBg.setShape(GradientDrawable.OVAL);
         iv.setBackground(new RippleDrawable(ColorStateList.valueOf(0x40FFFFFF), heroBg, null));
         return iv;
     }

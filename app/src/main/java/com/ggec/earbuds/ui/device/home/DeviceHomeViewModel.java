@@ -16,6 +16,7 @@ import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.usecase.ListDeviceEntries;
 import com.ggec.earbuds.domain.device.usecase.ObserveDeviceRoster;
 import com.ggec.earbuds.domain.device.usecase.OpenDevice;
+import com.ggec.earbuds.domain.device.usecase.SyncDeviceState;
 import com.ggec.earbuds.domain.device.usecase.WriteDeviceControl;
 import com.ggec.earbuds.ui.device.WriteState;
 import com.ggec.earbuds.ui.device.roster.DeviceRosterEvent;
@@ -40,6 +41,7 @@ public final class DeviceHomeViewModel extends ViewModel {
     private final OpenDevice openDevice;
     private final WriteDeviceControl writeControl;
     private final DeviceHomeUiMapper mapper;
+    private final SyncDeviceState syncDeviceState;
 
     private final MutableLiveData<DeviceHomeUiState> uiState = new MutableLiveData<>();
     private final OneShotLiveData<DeviceRosterEvent> events = new OneShotLiveData<>();
@@ -61,11 +63,21 @@ public final class DeviceHomeViewModel extends ViewModel {
                                @NonNull OpenDevice openDevice,
                                @NonNull WriteDeviceControl writeControl,
                                @NonNull DeviceHomeUiMapper mapper) {
+        this(observeRoster, listEntries, openDevice, writeControl, mapper, null);
+    }
+
+    public DeviceHomeViewModel(@NonNull ObserveDeviceRoster observeRoster,
+                               @NonNull ListDeviceEntries listEntries,
+                               @NonNull OpenDevice openDevice,
+                               @NonNull WriteDeviceControl writeControl,
+                               @NonNull DeviceHomeUiMapper mapper,
+                               @androidx.annotation.Nullable SyncDeviceState syncDeviceState) {
         this.observeRoster = Objects.requireNonNull(observeRoster, "observeRoster");
         this.listEntries = Objects.requireNonNull(listEntries, "listEntries");
         this.openDevice = Objects.requireNonNull(openDevice, "openDevice");
         this.writeControl = Objects.requireNonNull(writeControl, "writeControl");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.syncDeviceState = syncDeviceState;
     }
 
     @NonNull
@@ -216,16 +228,28 @@ public final class DeviceHomeViewModel extends ViewModel {
 
     private void onRoster(@NonNull DeviceRoster next) {
         synchronized (this) {
-            roster = next;
-            boolean ready = next.activeRecord()
+            boolean isReady = next.activeRecord()
                     .map(record -> record.live() && record.status().ready()).orElse(false);
-            if (!ready) {
+            roster = next;
+            if (!isReady) {
                 // 写入事实属于当前连接：断开后旧槽不得在新设备上复活；在途序号一并作废。
                 writes.clear();
                 activeSeq.clear();
             }
         }
         publish();
+    }
+
+    /**
+     * 手动触发同步设备状态（下拉刷新或重试）。
+     */
+    public void syncState() {
+        if (!isWritable() || syncDeviceState == null) {
+            return;
+        }
+        syncDeviceState.execute(result -> {
+            // 状态同步完成
+        });
     }
 
     private void publish() {

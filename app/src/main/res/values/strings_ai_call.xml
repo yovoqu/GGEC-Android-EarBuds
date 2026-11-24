@@ -12,6 +12,7 @@
     <string name="ai_call_mode_realtime">实时语音对话</string>
 
     <!-- 状态：一行只说明"它现在在做什么"，不写"请稍候"这类空话 -->
+    <string name="ai_call_phase_idle">准备就绪</string>
     <string name="ai_call_phase_connecting">正在接通</string>
     <string name="ai_call_phase_listening">正在聆听</string>
     <string name="ai_call_phase_thinking">正在思考</string>
@@ -29,6 +30,7 @@
     <string name="ai_call_unmute">取消静音</string>
     <string name="ai_call_speaker_to_earpiece">切到听筒</string>
     <string name="ai_call_speaker_to_speaker">切到扬声器</string>
+    <string name="ai_call_start">开始通话</string>
     <string name="ai_call_hang_up">挂断</string>
     <string name="ai_call_close">结束通话</string>
     <string name="ai_call_interrupt">打断回答</string>

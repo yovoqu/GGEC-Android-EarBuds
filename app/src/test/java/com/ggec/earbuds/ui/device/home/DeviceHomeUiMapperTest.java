@@ -64,6 +64,21 @@ public final class DeviceHomeUiMapperTest {
         assertTrue(state.hasContent());
     }
 
+    @Test
+    public void connectingDeviceHidesBattery() {
+        DeviceRecord connecting = new DeviceRecord(ID, "", identity(),
+                new DeviceStatus(RecordOrigin.LIVE, ConnectionState.CONNECTING, NOW),
+                new DeviceFacts(new BatterySnapshot(80, 70, 60, true), "1.0.3",
+                        WearState.UNKNOWN, 2),
+                new DeviceState(Map.of()));
+        DeviceHomeUiState state = MAPPER.map(
+                new DeviceRoster(List.of(connecting), Optional.of(ID)), entries(), Map.of());
+
+        assertEquals(BatterySnapshot.unknown(), state.battery());
+        assertEquals(R.string.device_state_connecting, state.statusTextRes());
+        assertFalse(state.statusOnline());
+    }
+
     /** 五个固定版块，卡片按性质与宽度归位（含半列入口卡）。 */
     @Test
     public void sectionsCarryTheHarmonyOsGrouping() {

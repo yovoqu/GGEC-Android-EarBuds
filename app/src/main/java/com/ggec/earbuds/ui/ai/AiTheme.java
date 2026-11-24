@@ -100,6 +100,8 @@ public final class AiTheme {
     public static final int CALL_PAGE_DARK_MID = 0xFF0F172A;
     public static final int HANGUP_START = 0xFFEF4444;
     public static final int HANGUP_END = 0xFFDC2626;
+    public static final int CALL_START = 0xFF10B981;
+    public static final int CALL_END = 0xFF059669;
 
     /** 声场配色按语义阶段取，不按调用点各写一份色值。 */
     public enum CallPhase {

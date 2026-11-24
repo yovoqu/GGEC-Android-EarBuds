@@ -44,6 +44,16 @@ public class AiCallViewModelTest {
     }
 
     @Test
+    public void initialStateIsIdle() {
+        assertFalse(viewModel.isStarted());
+        AiCallUiState state = viewModel.uiState().getValue();
+        assertEquals(AiCallUiState.Phase.IDLE, state.phase());
+        assertEquals(R.string.ai_call_phase_idle, state.title());
+        assertFalse(state.live());
+        assertFalse(state.ended());
+    }
+
+    @Test
     public void startInitializesConnectingStateAndStartsSession() {
         assertFalse(viewModel.isStarted());
         viewModel.start();
@@ -67,6 +77,22 @@ public class AiCallViewModelTest {
 
         assertTrue(fakeSession.stopped);
         assertTrue(viewModel.isStarted());
+    }
+
+    @Test
+    public void hangUpTransitionsLiveCallToOffline() {
+        viewModel.start();
+        assertTrue(viewModel.uiState().getValue().live());
+
+        viewModel.hangUp();
+
+        assertFalse(viewModel.isStarted());
+        assertTrue(fakeSession.stopped);
+        AiCallUiState state = viewModel.uiState().getValue();
+        assertEquals(AiCallUiState.Phase.OFFLINE, state.phase());
+        assertEquals(R.string.ai_call_phase_ended, state.title());
+        assertTrue(state.ended());
+        assertFalse(state.live());
     }
 
     @Test

@@ -77,6 +77,14 @@ public interface DeviceLinkPort {
     /** 执行一个类型化动作（找耳机、重命名、录音、双连接等）。 */
     void perform(@NonNull DeviceAction action, @NonNull Consumer<DeviceWriteResult> callback);
 
+    /**
+     * 同步设备状态（如连接就绪后拉取首页聚合信息：电量、固件版本、配置快照等）。
+     * 默认退化为执行 {@link DeviceAction.SyncDeviceState} 动作。
+     */
+    default void syncState(@NonNull Consumer<DeviceWriteResult> callback) {
+        perform(new DeviceAction.SyncDeviceState(), callback);
+    }
+
     /** 释放端口持有的底层资源。由装配根在进程生命周期结束时调用。 */
     void close();
 }
