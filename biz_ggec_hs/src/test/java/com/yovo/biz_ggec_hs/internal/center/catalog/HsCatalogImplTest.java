@@ -49,12 +49,13 @@ public final class HsCatalogImplTest {
         Set<HsDevice.Capability> hs01 = catalog.model("HS01").orElseThrow().capabilities();
         Set<HsDevice.Capability> hs02 = catalog.model("HS02").orElseThrow().capabilities();
         assertEquals(28, hs01.size());
-        assertEquals(35, hs02.size());
+        assertEquals(36, hs02.size());
         assertEquals("HS02 必须是 HS01 的超集", true, hs02.containsAll(hs01));
         Set<HsDevice.Capability> extra = new HashSet<>(hs02);
         extra.removeAll(hs01);
         assertEquals(Set.of(HsDevice.Capability.DUAL_CONNECTION, HsDevice.Capability.DUAL_CONNECTION_DEVICES,
                 HsDevice.Capability.CUSTOM_EQ, HsDevice.Capability.TOUCH_DOUBLE,
+                HsDevice.Capability.AI_CHAT,
                 HsDevice.Capability.SERVICE_STATUS, HsDevice.Capability.BEGINNER_MODE,
                 HsDevice.Capability.INTERPRET), extra);
         assertTrue(hs01.contains(HsDevice.Capability.TOUCH_TAP));

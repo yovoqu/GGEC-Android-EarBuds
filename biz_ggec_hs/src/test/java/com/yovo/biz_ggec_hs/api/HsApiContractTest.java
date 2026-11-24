@@ -121,8 +121,8 @@ public final class HsApiContractTest {
 
     @Test
     public void capabilityVocabularyIsClosed() {
-        assertEquals(35, HsDevice.Capability.values().length);
-        assertEquals(6, HsDevice.Group.values().length);
+        assertEquals(36, HsDevice.Capability.values().length);
+        assertEquals(7, HsDevice.Group.values().length);
         assertEquals(7, HsDevice.Form.values().length);
         assertEquals(16, HsControl.Failure.values().length);
         assertEquals(4, HsControl.State.values().length);

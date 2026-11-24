@@ -125,7 +125,7 @@ public final class HsCapabilityRouter {
             case CONNECTION, DUAL_CONNECTION_DEVICES, BATTERY, FIND_EAR, DEVICE_INFO,
                  RENAME, REBOOT, CLEAR_PAIRING,
                  RESET_CONTROL, RECORD_LOCAL, RECORD_STREAM, RECORD_LIST, RECORD_TRANSFER,
-                 AI_ASSISTANT, SERVICE_STATUS, OTA, OFFLINE_LOG, CLASSIC_BT -> false;
+                 AI_ASSISTANT, AI_CHAT, SERVICE_STATUS, OTA, OFFLINE_LOG, CLASSIC_BT -> false;
         };
     }
 
@@ -138,7 +138,7 @@ public final class HsCapabilityRouter {
             case CONNECTION, DUAL_CONNECTION, BATTERY, SOUND_QUALITY, EQ_MODE, CUSTOM_EQ,
                  LDAC, VOLUME_ADAPTIVE, TOUCH_LONG, TOUCH_SHORT, TOUCH_DOUBLE, TOUCH_TAP,
                  WEAR_DETECT, VOICE_WAKEUP, GAME_MODE, FALL_ALERT, VOLUME_REMIND,
-                 DEVICE_INFO, AI_ASSISTANT, SERVICE_STATUS, BEGINNER_MODE, INTERPRET,
+                 DEVICE_INFO, AI_ASSISTANT, AI_CHAT, SERVICE_STATUS, BEGINNER_MODE, INTERPRET,
                  OTA, OFFLINE_LOG, CLASSIC_BT -> false;
         };
     }
@@ -171,7 +171,7 @@ public final class HsCapabilityRouter {
             case CONNECTION, DUAL_CONNECTION_DEVICES, BATTERY, FIND_EAR, DEVICE_INFO,
                  RENAME, REBOOT, CLEAR_PAIRING,
                  RESET_CONTROL, RECORD_LOCAL, RECORD_STREAM, RECORD_LIST, RECORD_TRANSFER,
-                 AI_ASSISTANT, SERVICE_STATUS, OTA, OFFLINE_LOG, CLASSIC_BT ->
+                 AI_ASSISTANT, AI_CHAT, SERVICE_STATUS, OTA, OFFLINE_LOG, CLASSIC_BT ->
                     throw new IllegalArgumentException("能力不可写: " + capability);
         };
     }
@@ -289,7 +289,7 @@ public final class HsCapabilityRouter {
                  WEAR_DETECT, VOICE_WAKEUP, FALL_ALERT, FIND_EAR, VOLUME_REMIND,
                  DEVICE_INFO, RENAME, REBOOT, CLEAR_PAIRING,
                  RECORD_LOCAL, RECORD_STREAM, RECORD_LIST, RECORD_TRANSFER,
-                 AI_ASSISTANT, SERVICE_STATUS, INTERPRET, OTA, OFFLINE_LOG,
+                 AI_ASSISTANT, AI_CHAT, SERVICE_STATUS, INTERPRET, OTA, OFFLINE_LOG,
                  CLASSIC_BT -> null;
         };
     }

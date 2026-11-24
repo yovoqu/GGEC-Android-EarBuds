@@ -69,10 +69,11 @@ public final class HsCatalogImpl {
             HsDevice.Capability.RECORD_LIST, HsDevice.Capability.RECORD_TRANSFER, HsDevice.Capability.AI_ASSISTANT,
             HsDevice.Capability.OTA, HsDevice.Capability.OFFLINE_LOG, HsDevice.Capability.CLASSIC_BT));
 
-    /** HS02 在 HS01 之上多出的 7 项能力。 */
+    /** HS02 在 HS01 之上多出的能力。 */
     private static final Set<HsDevice.Capability> HS02_EXTRA = EnumSet.of(
             HsDevice.Capability.DUAL_CONNECTION, HsDevice.Capability.DUAL_CONNECTION_DEVICES,
             HsDevice.Capability.CUSTOM_EQ, HsDevice.Capability.TOUCH_DOUBLE,
+            HsDevice.Capability.AI_CHAT,
             HsDevice.Capability.SERVICE_STATUS, HsDevice.Capability.BEGINNER_MODE, HsDevice.Capability.INTERPRET);
 
     /** EQ 模式选项（协议取值 0..5）。 */
@@ -375,6 +376,8 @@ public final class HsCatalogImpl {
             case RECORD_TRANSFER -> of(capability, "录音传输", HsDevice.Group.RECORD,
                     HsDevice.Form.ACTION, List.of());
             case AI_ASSISTANT -> of(capability, "AI 助手", HsDevice.Group.FUNCTION,
+                    HsDevice.Form.GATE, List.of());
+            case AI_CHAT -> of(capability, "AI 对话", HsDevice.Group.AI,
                     HsDevice.Form.GATE, List.of());
             case SERVICE_STATUS -> of(capability, "服务状态", HsDevice.Group.FUNCTION,
                     HsDevice.Form.GATE, List.of());
