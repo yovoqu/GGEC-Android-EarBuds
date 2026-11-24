@@ -113,6 +113,27 @@ public final class DeviceGatewayTest {
     }
 
     @Test
+    public void adoptsEndpointReadySnapshotAfterTransientDisconnectClearedRoute() {
+        FakeEndpoint hs = new FakeEndpoint(DeviceTransport.BLE, HS_MODELS);
+        DeviceGateway gateway = gateway(hs);
+        List<DeviceSnapshot> observed = new ArrayList<>();
+        gateway.observe(observed::add);
+
+        gateway.connect(targetOf("M02"), settlement -> {
+        });
+        // 模拟同链路重连时旧 GATT 先触发一次 DISCONNECTED，随后新链路升至 READY
+        hs.link.emit(snapshotOf(ConnectionState.DISCONNECTED, "M02"));
+        assertEquals(ConnectionState.IDLE, gateway.snapshot().connection());
+
+        DeviceSnapshot ready = snapshotOf(ConnectionState.READY, "M02");
+        hs.link.emit(ready);
+
+        assertEquals(ConnectionState.READY, gateway.snapshot().connection());
+        assertEquals("M02", gateway.snapshot().modelId());
+        assertEquals(ConnectionState.READY, observed.get(observed.size() - 1).connection());
+    }
+
+    @Test
     public void connectRoutesToTheEndpointOwningTheModel() {
         FakeEndpoint hs = new FakeEndpoint(DeviceTransport.BLE, HS_MODELS);
         FakeEndpoint wy = new FakeEndpoint(DeviceTransport.CLASSIC, WY_MODELS);
@@ -514,6 +535,10 @@ public final class DeviceGatewayTest {
 
         @Override
         public void startStreamRecord(@NonNull StreamRecordObserver observer) {
+        }
+
+        @Override
+        public void startStreamAudio(@NonNull StreamAudioObserver observer) {
         }
 
         @Override

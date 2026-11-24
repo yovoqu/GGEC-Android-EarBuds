@@ -24,6 +24,11 @@ public final class RecordAvRecordPort implements RecordPort {
     }
 
     @Override
+    public void startStreamAudio(@NonNull StreamAudioObserver observer) {
+        observer.onError(RecordFailure.UNSUPPORTED);
+    }
+
+    @Override
     public void stopStreamRecord(@NonNull Consumer<RecordOutcome> onComplete) {
         onComplete.accept(RecordOutcome.failed(RecordFailure.UNSUPPORTED));
     }

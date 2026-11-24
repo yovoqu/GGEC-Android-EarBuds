@@ -335,6 +335,17 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
     }
 
     @Override
+    public void startStreamAudio(@NonNull StreamAudioObserver observer) {
+        Objects.requireNonNull(observer, "observer");
+        RecordPort record = recordPort();
+        if (record == null) {
+            observer.onError(RecordFailure.NOT_CONNECTED);
+            return;
+        }
+        record.startStreamAudio(observer);
+    }
+
+    @Override
     public void stopStreamRecord(@NonNull Consumer<RecordOutcome> onComplete) {
         RecordPort record = recordPort();
         if (record == null) {
@@ -505,8 +516,15 @@ public final class DeviceGateway implements DeviceLinkPort, RecordPort {
 
     private void onEndpointSnapshot(@NonNull DeviceEndpoint endpoint,
                                     @NonNull DeviceSnapshot snapshot) {
-        if (connectedTransport != endpoint.transport()) {
-            return;
+        synchronized (lock) {
+            ConnectionState connection = snapshot.connection();
+            if (connectedTransport == null
+                    && (connection == ConnectionState.CONNECTING || connection == ConnectionState.READY)) {
+                connectedTransport = endpoint.transport();
+            }
+            if (connectedTransport != endpoint.transport()) {
+                return;
+            }
         }
         for (Consumer<DeviceSnapshot> listener : linkListeners) {
             listener.accept(snapshot);

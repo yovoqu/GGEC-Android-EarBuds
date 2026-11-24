@@ -279,6 +279,11 @@ public final class RecordViewModelTest {
         }
 
         @Override
+        public void startStreamAudio(StreamAudioObserver observer) {
+            streamStarts++;
+        }
+
+        @Override
         public void stopStreamRecord(Consumer<RecordOutcome> onComplete) {
             onComplete.accept(RecordOutcome.ok());
         }

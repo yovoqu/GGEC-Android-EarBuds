@@ -35,6 +35,10 @@ public final class WyRecordAdapter implements RecordPort {
 
     /** 随录随传按 provider 默认位置同时分发实时 PCM 并落盘；端口契约不再带自定义文件名/目录。 */
     private static final StreamRecordConfig STREAM_CONFIG = StreamRecordConfig.both(null, null);
+    /** 纯音频流模式（AI 实时语音上行，不落盘）。 */
+    private static final StreamRecordConfig STREAM_AUDIO_ONLY_CONFIG = StreamRecordConfig.streamOnly();
+    /** 随录随传解码输出固定为 16kHz / 16bit / 单声道 PCM（见 AudioFrameContract.SAMPLE_RATE）。 */
+    private static final int STREAM_SAMPLE_RATE_HZ = 16_000;
 
     private final YoWySdk sdk;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -96,6 +100,36 @@ public final class WyRecordAdapter implements RecordPort {
                     stopDurationTicker();
                     observer.onStateChanged(StreamAudioSessionState.idle());
                 });
+            }
+        });
+    }
+
+    @Override
+    public void startStreamAudio(@NonNull StreamAudioObserver observer) {
+        Objects.requireNonNull(observer, "observer");
+        sdk.record().startStreamRecord(STREAM_AUDIO_ONLY_CONFIG, new StreamRecordListener() {
+            @Override
+            public void onStarted() {
+                observer.onStarted();
+            }
+
+            @Override
+            public void onPcmFrame(@NonNull byte[] pcmData, float amplitude) {
+                observer.onPcm(pcmData, STREAM_SAMPLE_RATE_HZ);
+            }
+
+            @Override
+            public void onFileSaved(@NonNull File file, long durationMs, long fileSizeBytes) {
+            }
+
+            @Override
+            public void onError(@NonNull String message) {
+                observer.onError(RecordFailure.DEVICE_ERROR);
+            }
+
+            @Override
+            public void onStopped() {
+                observer.onStopped();
             }
         });
     }

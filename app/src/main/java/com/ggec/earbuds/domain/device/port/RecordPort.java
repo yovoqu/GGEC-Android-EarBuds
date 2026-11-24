@@ -32,8 +32,19 @@ public interface RecordPort {
         void onError(@NonNull RecordFailure failure);
     }
 
+    /** 仅实时 PCM 音频流回调（不落盘，直接回调在解码线程，供 AI 实时语音上行使用）。 */
+    interface StreamAudioObserver {
+        void onStarted();
+        void onPcm(@NonNull byte[] pcm16, int sampleRateHz);
+        void onError(@NonNull RecordFailure failure);
+        void onStopped();
+    }
+
     /** 启动随录随传（按 provider 默认落盘位置同时分发实时状态与波形幅度） */
     void startStreamRecord(@NonNull StreamRecordObserver observer);
+
+    /** 启动纯音频流随录随传（不落盘，实时分发 PCM16 帧） */
+    void startStreamAudio(@NonNull StreamAudioObserver observer);
 
     /** 停止随录随传 */
     void stopStreamRecord(@NonNull Consumer<RecordOutcome> onComplete);
