@@ -42,12 +42,12 @@ public final class WyDevice {
 
     /** 能力 id。机型是否支持，看 {@link Product#capabilities()}。 */
     public enum Capability {
-        CONNECTION, RECORD_STREAM, DEVICE_INFO, BATTERY
+        CONNECTION, RECORD_STREAM, AI_CHAT, DEVICE_INFO, BATTERY
     }
 
     /** 设置分组。 */
     public enum Group {
-        CONTROL, RECORD, ABOUT
+        CONTROL, RECORD, AI, ABOUT
     }
 
     /** 控件形态。{@code LEVEL} 必须带值域；{@code GATE} 只做能力门控。 */

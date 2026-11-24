@@ -27,6 +27,7 @@ public final class WyCatalogImpl {
     private static final Set<WyDevice.Capability> WY01_CAPABILITIES = Collections.unmodifiableSet(EnumSet.of(
             WyDevice.Capability.CONNECTION,
             WyDevice.Capability.RECORD_STREAM,
+            WyDevice.Capability.AI_CHAT,
             WyDevice.Capability.DEVICE_INFO,
             WyDevice.Capability.BATTERY
     ));
@@ -57,6 +58,15 @@ public final class WyCatalogImpl {
                 "随录随传",
                 WyDevice.Group.RECORD,
                 WyDevice.Form.ACTION,
+                List.of(),
+                Optional.empty()
+        ));
+
+        features.put(WyDevice.Capability.AI_CHAT, new WyDevice.Feature(
+                WyDevice.Capability.AI_CHAT,
+                "AI 对话",
+                WyDevice.Group.AI,
+                WyDevice.Form.GATE,
                 List.of(),
                 Optional.empty()
         ));

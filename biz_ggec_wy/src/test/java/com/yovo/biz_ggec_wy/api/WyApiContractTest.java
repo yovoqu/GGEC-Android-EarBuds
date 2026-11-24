@@ -25,6 +25,7 @@ public class WyApiContractTest {
 
         assertTrue(catalog.supports("WY01", WyDevice.Capability.CONNECTION));
         assertTrue(catalog.supports("WY01", WyDevice.Capability.RECORD_STREAM));
+        assertTrue(catalog.supports("WY01", WyDevice.Capability.AI_CHAT));
         assertTrue(catalog.supports("WY01", WyDevice.Capability.DEVICE_INFO));
         assertTrue(catalog.supports("WY01", WyDevice.Capability.BATTERY));
     }
@@ -36,5 +37,10 @@ public class WyApiContractTest {
         assertNotNull(feature);
         assertEquals(WyDevice.Group.RECORD, feature.group());
         assertEquals(WyDevice.Form.ACTION, feature.kind());
+
+        WyDevice.Feature aiFeature = catalog.feature("WY01", WyDevice.Capability.AI_CHAT);
+        assertNotNull(aiFeature);
+        assertEquals(WyDevice.Group.AI, aiFeature.group());
+        assertEquals(WyDevice.Form.GATE, aiFeature.kind());
     }
 }
