@@ -179,12 +179,38 @@ public final class ScanViewModelTest {
         assertTrue("失败后重新开扫", port.isScanning());
     }
 
+    @Test
+    public void recordLaunchModelEmitsOpenRecordWithoutSessionConnect() {
+        RecordingLinkPort port = new RecordingLinkPort();
+        ScanViewModel vm = viewModel(port, catalog("AMBIQ", "M01"), GRANTED, Set.of("AMBIQ"));
+        vm.toggleScan();
+        port.emitBatch(List.of(new ScanResult("AMBIQ", "Glasses", "AA:BB:CC:DD:EE:FF", -40)));
+
+        vm.connect(vm.uiState().getValue().results().get(0));
+
+        assertEquals(new ScanConnectOutcome.OpenRecord("AA:BB:CC:DD:EE:FF", "Glasses"),
+                vm.connectOutcomes().getValue());
+        assertFalse(vm.isConnecting());
+        assertTrue(vm.uiState().getValue().phase() instanceof ScanPhase.Idle);
+        assertTrue(port.connects.isEmpty());
+        assertFalse(port.isScanning());
+    }
+
     @NonNull
     private static ScanViewModel viewModel(@NonNull RecordingLinkPort port,
                                            @NonNull DeviceCapabilityCatalog catalog,
                                            @NonNull ScanPermissionPort permission) {
+        return viewModel(port, catalog, permission, Set.of());
+    }
+
+    @NonNull
+    private static ScanViewModel viewModel(@NonNull RecordingLinkPort port,
+                                           @NonNull DeviceCapabilityCatalog catalog,
+                                           @NonNull ScanPermissionPort permission,
+                                           @NonNull Set<String> recordLaunchModelIds) {
         DeviceSession session = new DeviceSession(port);
-        return new ScanViewModel(new ScanDevices(port), new OpenDevice(session), catalog, permission);
+        return new ScanViewModel(new ScanDevices(port), new OpenDevice(session), catalog, permission,
+                recordLaunchModelIds);
     }
 
     @NonNull

@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModelProvider;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
+import com.ggec.earbuds.record.ui.RecordMainActivity;
 import com.ggec.earbuds.ui.common.YoUi;
 import com.ggec.earbuds.ui.device.DeviceFailureText;
 import com.ggec.earbuds.wiring.AppContainer;
@@ -83,6 +84,9 @@ public final class ScanActivity extends AppCompatActivity {
         });
         viewModel.connectOutcomes().observe(this, outcome -> {
             if (outcome instanceof ScanConnectOutcome.Succeeded) {
+                finish();
+            } else if (outcome instanceof ScanConnectOutcome.OpenRecord openRecord) {
+                startActivity(RecordMainActivity.intent(this, openRecord.address(), openRecord.name()));
                 finish();
             } else if (outcome instanceof ScanConnectOutcome.Failed failed) {
                 YoToast.showWarning(this, getString(DeviceFailureText.message(failed.failure())));

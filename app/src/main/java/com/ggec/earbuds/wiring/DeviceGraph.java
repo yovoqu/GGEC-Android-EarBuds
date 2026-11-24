@@ -39,16 +39,20 @@ import com.ggec.earbuds.ui.device.scan.ScanViewModel;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsUiMapper;
 import com.ggec.earbuds.ui.device.settings.DeviceSettingsViewModel;
 import com.ggec.earbuds.ui.device.settings.SettingsSectionFactory;
+import com.ggec.earbuds.domain.device.model.DeviceTransport;
 import com.ggec.earbuds.wiring.device.DeviceCatalog;
 import com.ggec.earbuds.wiring.device.DeviceEndpoint;
 import com.ggec.earbuds.wiring.device.DeviceEndpoints;
 import com.ggec.earbuds.wiring.device.DeviceGateway;
 import com.ggec.earbuds.wiring.device.HsDeviceEndpoint;
+import com.ggec.earbuds.wiring.device.RecordDeviceEndpoint;
 import com.ggec.earbuds.wiring.device.WyDeviceEndpoint;
 
 import java.io.File;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.LongSupplier;
 
@@ -91,7 +95,9 @@ public final class DeviceGraph {
         Context app = appContext.getApplicationContext();
         this.appContext = app;
         this.endpoints = new DeviceEndpoints(List.<DeviceEndpoint>of(
-                new HsDeviceEndpoint(app), new WyDeviceEndpoint(app)));
+                new HsDeviceEndpoint(app),
+                new WyDeviceEndpoint(app),
+                new RecordDeviceEndpoint(app)));
         this.gateway = new DeviceGateway(endpoints);
         this.catalog = new DeviceCatalog(endpoints.models());
         this.recordPort = gateway;
@@ -131,7 +137,20 @@ public final class DeviceGraph {
     @NonNull
     public ViewModelProvider.Factory scanFactory() {
         return new Factory<>(ScanViewModel.class,
-                () -> new ScanViewModel(scanDevices, openDevice, catalog, scanPermission));
+                () -> new ScanViewModel(scanDevices, openDevice, catalog, scanPermission,
+                        recordLaunchModelIds()));
+    }
+
+    /** BLE_AV 端点上的机型：扫描页点连接时分流到 Record UI，不经 DeviceSession。 */
+    @NonNull
+    private Set<String> recordLaunchModelIds() {
+        Set<String> ids = new LinkedHashSet<>();
+        endpoints.of(DeviceTransport.BLE_AV).ifPresent(endpoint -> {
+            for (var profile : endpoint.catalog().models()) {
+                ids.add(profile.modelId());
+            }
+        });
+        return Set.copyOf(ids);
     }
 
     @NonNull

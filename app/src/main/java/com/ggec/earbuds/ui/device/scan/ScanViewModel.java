@@ -37,6 +37,7 @@ public final class ScanViewModel extends ViewModel {
     private final ScanDevices scanDevices;
     private final OpenDevice openDevice;
     private final ScanPermissionPort scanPermission;
+    private final Set<String> recordLaunchModelIds;
     private final List<ScanFilterOption> filterOptions;
 
     private final Object lock = new Object();
@@ -53,10 +54,13 @@ public final class ScanViewModel extends ViewModel {
     public ScanViewModel(@NonNull ScanDevices scanDevices,
                          @NonNull OpenDevice openDevice,
                          @NonNull DeviceCapabilityCatalog catalog,
-                         @NonNull ScanPermissionPort scanPermission) {
+                         @NonNull ScanPermissionPort scanPermission,
+                         @NonNull Set<String> recordLaunchModelIds) {
         this.scanDevices = scanDevices;
         this.openDevice = openDevice;
         this.scanPermission = scanPermission;
+        this.recordLaunchModelIds = Set.copyOf(
+                Objects.requireNonNull(recordLaunchModelIds, "recordLaunchModelIds"));
         this.filterOptions = buildFilterOptions(catalog);
         this.selectedFilterModelId = defaultModelId(this.filterOptions);
         this.scanDevices.filterModels(selectedFilterSet());
@@ -176,6 +180,21 @@ public final class ScanViewModel extends ViewModel {
     }
 
     public void connect(@NonNull ScanItem item) {
+        if (recordLaunchModelIds.contains(item.modelId())) {
+            ScanUiState idle;
+            synchronized (lock) {
+                if (phase.connecting()) {
+                    return;
+                }
+                scanToken++;
+                phase = new ScanPhase.Idle();
+                idle = buildStateLocked();
+            }
+            scanDevices.stop();
+            publish(idle);
+            publishOutcome(new ScanConnectOutcome.OpenRecord(item.address(), item.name()));
+            return;
+        }
         final int epoch;
         ScanUiState connecting;
         synchronized (lock) {
