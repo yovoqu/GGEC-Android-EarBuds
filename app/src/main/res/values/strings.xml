@@ -120,7 +120,7 @@
     <string name="device_rename">重命名设备</string>
     <string name="device_forget">忘记此设备</string>
     <string name="device_home_empty_title">还没有可管理的设备</string>
-    <string name="device_home_empty_body">打开耳机并靠近手机，点右上角 + 添加一台设备。之后这里会是它的功能入口。</string>
+    <string name="device_home_empty_body">打开设备并靠近手机，点右上角 + 添加一台设备。之后这里会是它的功能入口。</string>
     <string name="device_home_disconnected_body">当前没有连接中的设备。点标题右侧的下拉选择已保存的设备，或点 + 添加新设备。</string>
     <string name="device_entry_count">%1$d 项设置</string>
     <string name="device_more">更多操作</string>
@@ -157,7 +157,7 @@
     <string name="device_hero_image">设备图片</string>
     <string name="device_hero_image_desc">设备主图占位</string>
     <string name="device_empty_title">还没有连接耳机</string>
-    <string name="device_empty_body">打开耳机并靠近手机，点右上角 + 添加设备。</string>
+    <string name="device_empty_body">打开设备并靠近手机，点右上角 + 添加设备。</string>
     <string name="device_settings_empty_body">请先返回设备页添加并连接耳机，连接后即可查看和调整此项设置。</string>
 
     <!-- 扫描 -->
@@ -166,17 +166,17 @@
     <string name="device_scan_filter_desc">筛选设备类型</string>
     <string name="device_scan_start">开始搜索</string>
     <string name="device_scan_stop">停止搜索</string>
-    <string name="device_scan_idle_title">搜索附近的耳机</string>
+    <string name="device_scan_idle_title">搜索附近的设备</string>
     <string name="device_scan_idle_body">点击下方按钮开始搜索。</string>
-    <string name="device_scan_searching">正在搜索附近的耳机…</string>
-    <string name="device_scan_searching_hint">请确认耳机已开启并靠近手机；若长时间未发现，请停止后稍等片刻再搜索（系统会限制过于频繁的搜索）。</string>
-    <string name="device_scan_empty_title">没有发现附近的耳机</string>
-    <string name="device_scan_empty_body">打开耳机配对模式并靠近手机后重新搜索。</string>
-    <string name="device_scan_no_model_title">暂无可搜的耳机机型</string>
-    <string name="device_scan_no_model_body">当前版本没有可用的耳机机型目录，请更新应用后再搜索。</string>
-    <string name="device_scan_found_count">发现 %1$d 台附近耳机</string>
+    <string name="device_scan_searching">正在搜索附近的设备…</string>
+    <string name="device_scan_searching_hint">请确认设备已开启并靠近手机；若长时间未发现，请停止后稍等片刻再搜索（系统会限制过于频繁的搜索）。</string>
+    <string name="device_scan_empty_title">没有发现附近的设备</string>
+    <string name="device_scan_empty_body">打开设备配对模式并靠近手机后重新搜索。</string>
+    <string name="device_scan_no_model_title">暂无可搜的设备机型</string>
+    <string name="device_scan_no_model_body">当前版本没有可用的设备机型目录，请更新应用后再搜索。</string>
+    <string name="device_scan_found_count">发现 %1$d 台附近设备</string>
     <string name="device_scan_error_bluetooth_disabled">蓝牙未开启，请先开启手机蓝牙后再搜索。</string>
-    <string name="device_scan_error_permission">需要蓝牙权限才能搜索附近耳机。</string>
+    <string name="device_scan_error_permission">需要蓝牙权限才能搜索附近设备。</string>
     <string name="device_scan_error_permission_settings">蓝牙权限已被关闭，请前往系统设置开启后再搜索。</string>
     <string name="device_scan_error_location_disabled">请先开启系统位置信息服务后再搜索蓝牙设备。</string>
     <string name="device_scan_error_ble_unsupported">当前设备不支持低功耗蓝牙扫描。</string>
@@ -360,7 +360,7 @@
     <!-- 设备台账（多设备管理） -->
     <string name="ai_call_error_unknown">出了点问题，请重试。</string>
     <string name="device_roster_empty_title">还没有可管理的设备</string>
-    <string name="device_roster_empty_body">打开耳机并靠近手机，点右上角 + 添加一台设备。之后每台设备的最后状态都会留在这里。</string>
+    <string name="device_roster_empty_body">打开设备并靠近手机，点右上角 + 添加一台设备。之后每台设备的最后状态都会留在这里。</string>
     <string name="device_roster_battery">电量 %1$s</string>
     <string name="device_roster_firmware">固件 %1$s</string>
     <string name="device_roster_status_just_now">刚刚同步</string>

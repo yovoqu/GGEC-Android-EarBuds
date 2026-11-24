@@ -1,5 +1,7 @@
 package com.ggec.earbuds.record.ui;
 
+import android.content.Context;
+import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -45,8 +47,13 @@ import java.util.List;
  *
  * <p>只依赖领域端口 {@link RecordControlPort}/{@link RecordScanPort} 与领域模型；不接触任何
  * biz_ggec_record 类型。装配由 {@link RecordGraph}（wiring）完成并注入。</p>
+ *
+ * <p>可由主壳扫描页经 {@link #EXTRA_MAC} 直达并自动连接，不经 DeviceSession。</p>
  */
 public final class RecordMainActivity extends AppCompatActivity {
+
+    public static final String EXTRA_MAC = "extra_mac";
+    public static final String EXTRA_NAME = "extra_name";
 
     private RecordGraph graph;
     private RecordControlPort control;
@@ -79,6 +86,23 @@ public final class RecordMainActivity extends AppCompatActivity {
     private RecordVideoCodec videoCodec = RecordVideoCodec.H265;
     @Nullable
     private Surface videoSurface;
+
+    @NonNull
+    public static Intent intent(@NonNull Context context) {
+        return new Intent(context, RecordMainActivity.class);
+    }
+
+    @NonNull
+    public static Intent intent(@NonNull Context context,
+                                @NonNull String macAddress,
+                                @Nullable String name) {
+        Intent intent = intent(context);
+        intent.putExtra(EXTRA_MAC, macAddress);
+        if (name != null && !name.isEmpty()) {
+            intent.putExtra(EXTRA_NAME, name);
+        }
+        return intent;
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -285,6 +309,29 @@ public final class RecordMainActivity extends AppCompatActivity {
                 statusView.setText(getString(R.string.record_capture_failed, message));
             }
         });
+
+        maybeConnectFromIntent();
+    }
+
+    /** 主壳扫描分流：带 MAC 进入时直接连设备，跳过本页附近列表。 */
+    private void maybeConnectFromIntent() {
+        Intent intent = getIntent();
+        if (intent == null) {
+            return;
+        }
+        String mac = intent.getStringExtra(EXTRA_MAC);
+        if (mac == null || mac.isBlank()) {
+            return;
+        }
+        String name = intent.getStringExtra(EXTRA_NAME);
+        if (name == null) {
+            name = "";
+        }
+        statusView.setText(R.string.record_state_connecting);
+        statsView.setText(R.string.record_stats_idle);
+        deviceList.setVisibility(View.GONE);
+        deviceSectionTitle.setVisibility(View.GONE);
+        control.connect(mac.trim(), name);
     }
 
     private void resetCaptureButton() {

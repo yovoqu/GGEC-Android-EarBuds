@@ -4,8 +4,12 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
+import com.yovo.biz_ggec_record.api.RecordProductCatalog;
 import com.yovo.biz_ggec_record.api.RecordRuntime;
 import com.yovo.biz_ggec_record.assembly.RecordAssembly;
+import com.yovo.biz_ggec_record.model.RecordProduct;
+
+import java.util.List;
 
 /**
  * Record 运行时入口。一次 {@link #open(Context)} 创建附近扫描与音视频会话共用的运行时。
@@ -18,5 +22,11 @@ public final class YoRecordSdk {
     @NonNull
     public static RecordRuntime open(@NonNull Context context) {
         return RecordAssembly.open(context);
+    }
+
+    /** 产品目录投影；与运行时实例无关。 */
+    @NonNull
+    public static List<RecordProduct> products() {
+        return RecordProductCatalog.products();
     }
 }

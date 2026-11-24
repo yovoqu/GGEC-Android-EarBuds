@@ -8,9 +8,15 @@ package com.ggec.earbuds.domain.device.model;
  */
 public enum DeviceTransport {
 
-    /** BLE：连接、控制与随录随传的音频通道都走 GATT。 */
+    /** BLE：HS 耳机连接、控制与随录随传的音频通道都走 GATT。 */
     BLE,
 
     /** 经典蓝牙：控制与音频走 SPP。 */
-    CLASSIC
+    CLASSIC,
+
+    /**
+     * Ambiq 音视频录播专用 BLE 会话。
+     * 与 {@link #BLE} 分离，避免 Gateway 按传输路由时与 HS 端点冲突。
+     */
+    BLE_AV
 }
