@@ -6,7 +6,11 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
+import com.ggec.earbuds.domain.ai.port.Subscription;
+import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
@@ -16,6 +20,7 @@ import com.yovo.lib_common.event.OneShotLiveData;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 通话页 ViewModel：严格单向数据流，{@link AiCallUiState} 是通话的唯一状态真源。
@@ -42,6 +47,7 @@ public final class AiCallViewModel extends ViewModel {
 
     private final AiVoiceSessionFactory factory;
     private final Ticker ticker;
+    private final Subscription settingsSubscription;
 
     private final MutableLiveData<AiCallUiState> uiState =
             new MutableLiveData<>(AiCallUiState.idle(VoiceDuplex.defaultMode()));
@@ -49,6 +55,8 @@ public final class AiCallViewModel extends ViewModel {
     private final OneShotLiveData<Integer> toasts = new OneShotLiveData<>();
 
     private final Object sessionLock = new Object();
+
+    private boolean duplexOverridden;
 
     @Nullable
     private SourceRequest pendingSource;
@@ -68,9 +76,30 @@ public final class AiCallViewModel extends ViewModel {
         }
     };
 
-    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory, @NonNull Ticker ticker) {
+    public AiCallViewModel(@NonNull AiVoiceSessionFactory factory,
+                           @NonNull Ticker ticker,
+                           @NonNull LoadAiSettings loadSettings,
+                           @NonNull ObserveAiSettings observeSettings) {
         this.factory = Objects.requireNonNull(factory, "factory");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
+        this.settingsSubscription = Objects.requireNonNull(observeSettings, "observeSettings")
+                .execute(this::onSettings);
+        CompletableFuture<AiSettings> initial = Objects.requireNonNull(loadSettings, "loadSettings")
+                .executeAsync();
+        if (initial.isDone()) {
+            if (!initial.isCompletedExceptionally()) {
+                AiSettings loaded = initial.getNow(null);
+                if (loaded != null) {
+                    applyConfiguredDuplex(loaded.voice().defaultDuplex(), false);
+                }
+            }
+        } else {
+            initial.whenComplete((loaded, failure) -> {
+                if (failure == null && loaded != null) {
+                    applyConfiguredDuplex(loaded.voice().defaultDuplex(), true);
+                }
+            });
+        }
     }
 
     /** 页面唯一界面状态流：阶段、按钮、双工、输入源、电平与字幕都在这里。 */
@@ -99,7 +128,7 @@ public final class AiCallViewModel extends ViewModel {
             if (session != null) {
                 return;
             }
-            created = factory.create();
+            created = factory.create(current.duplex());
             session = created;
             source = pendingSource;
         }
@@ -108,15 +137,10 @@ public final class AiCallViewModel extends ViewModel {
                 .withMicMuted(current.micMuted())
                 .withSpeakerOn(current.speakerOn())
                 .withCaptionsVisible(current.captionsVisible())
-                .withRequestedDuplex(current.requestedDuplex())
                 .withDurationSeconds(0)
                 .withMeter(0f)
                 .withSubtitleItems(List.of()));
 
-        VoiceDuplex requested = current.requestedDuplex();
-        if (requested != null) {
-            created.setDuplex(requested);
-        }
         if (current.micMuted()) {
             created.setMicMuted(true);
         }
@@ -150,7 +174,6 @@ public final class AiCallViewModel extends ViewModel {
                 .withMicMuted(current.micMuted())
                 .withSpeakerOn(current.speakerOn())
                 .withCaptionsVisible(current.captionsVisible())
-                .withRequestedDuplex(current.requestedDuplex())
                 .withDurationSeconds(current.durationSeconds())
                 .withMeter(0f)
                 .withSubtitleItems(List.of()));
@@ -193,6 +216,7 @@ public final class AiCallViewModel extends ViewModel {
         Objects.requireNonNull(mode, "mode");
         AiVoiceSession running;
         synchronized (sessionLock) {
+            duplexOverridden = true;
             running = session;
         }
         uiState.setValue(requireState(uiState.getValue()).withDuplex(mode));
@@ -270,8 +294,31 @@ public final class AiCallViewModel extends ViewModel {
 
     @Override
     protected void onCleared() {
+        settingsSubscription.cancel();
         stopTimer();
         release();
+    }
+
+    private void onSettings(@NonNull AiSettings settings) {
+        applyConfiguredDuplex(settings.voice().defaultDuplex(), true);
+    }
+
+    private void applyConfiguredDuplex(@NonNull VoiceDuplex configured, boolean async) {
+        synchronized (sessionLock) {
+            if (duplexOverridden || session != null) {
+                return;
+            }
+        }
+        AiCallUiState current = requireState(uiState.getValue());
+        if (current.live() || current.duplex() == configured) {
+            return;
+        }
+        AiCallUiState next = current.withDuplex(configured);
+        if (async) {
+            uiState.postValue(next);
+        } else {
+            uiState.setValue(next);
+        }
     }
 
     private void release() {
@@ -297,7 +344,6 @@ public final class AiCallViewModel extends ViewModel {
                 .withSpeakerOn(previous.speakerOn())
                 .withCaptionsVisible(previous.captionsVisible())
                 .withDurationSeconds(previous.durationSeconds())
-                .withRequestedDuplex(previous.requestedDuplex())
                 .withMeter(level)
                 .withSubtitleItems(AiSubtitleMapper.fromDomainTurns(snapshot.turns()));
 

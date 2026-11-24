@@ -166,9 +166,9 @@ public final class AiGraph {
      */
     @NonNull
     public AiVoiceSessionFactory voiceSessions() {
-        return () -> new RealtimeVoiceSession(settings, credentials,
+        return initialDuplex -> new RealtimeVoiceSession(settings, credentials,
                 audioSourceCatalog, new AndroidAudioPlayback(context),
-                new RealtimeLinkAdapter(), clock, voiceState, voiceTimer);
+                new RealtimeLinkAdapter(), clock, voiceState, voiceTimer, initialDuplex);
     }
 
     private final class Factory implements ViewModelProvider.Factory {
@@ -180,7 +180,11 @@ public final class AiGraph {
                 return modelClass.cast(newChatViewModel());
             }
             if (AiCallViewModel.class.equals(modelClass)) {
-                return modelClass.cast(new AiCallViewModel(voiceSessions(), new MainThreadTicker()));
+                return modelClass.cast(new AiCallViewModel(
+                        voiceSessions(),
+                        new MainThreadTicker(),
+                        new LoadAiSettings(settings),
+                        new ObserveAiSettings(settings)));
             }
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(

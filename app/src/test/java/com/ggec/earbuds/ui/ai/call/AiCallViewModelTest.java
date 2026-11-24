@@ -11,10 +11,21 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.data.ai.voice.ExternalPcmAudioSource;
+import com.ggec.earbuds.domain.ai.model.AiFailure;
+import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
+import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.model.AiSettingsPersistenceStatus;
+import com.ggec.earbuds.domain.ai.model.AiVoiceModel;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
+import com.ggec.earbuds.domain.ai.port.AiSettingsRepository;
+import com.ggec.earbuds.domain.ai.port.Subscription;
+import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
+import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
+import com.ggec.earbuds.testing.ai.AiFixtures;
+import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 
 import org.junit.Before;
@@ -22,6 +33,9 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 
 /**
  * 通话页 ViewModel 单元测试：
@@ -34,13 +48,27 @@ public class AiCallViewModelTest {
 
     private FakeVoiceSession fakeSession;
     private FakeTicker fakeTicker;
+    private MemorySettingsRepository settingsRepo;
     private AiCallViewModel viewModel;
 
     @Before
     public void setUp() {
         fakeSession = new FakeVoiceSession();
         fakeTicker = new FakeTicker();
-        viewModel = new AiCallViewModel(() -> fakeSession, fakeTicker);
+        settingsRepo = new MemorySettingsRepository(AiSettings.EMPTY);
+        viewModel = newViewModel(settingsRepo);
+    }
+
+    private AiCallViewModel newViewModel(AiSettingsRepository repo) {
+        return new AiCallViewModel(
+                initialDuplex -> {
+                    fakeSession.initialDuplex = initialDuplex;
+                    fakeSession.duplex = initialDuplex;
+                    return fakeSession;
+                },
+                fakeTicker,
+                new LoadAiSettings(repo),
+                new ObserveAiSettings(repo));
     }
 
     @Test
@@ -65,8 +93,7 @@ public class AiCallViewModelTest {
         assertTrue(state.speakerOn());
         assertTrue(state.captionsVisible());
         assertEquals(0, state.durationSeconds());
-        assertNull("未手动切换双工时，交由会话内部按设置默认值决策",
-                fakeSession.explicitDuplexSet);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, fakeSession.initialDuplex);
     }
 
     @Test
@@ -247,8 +274,47 @@ public class AiCallViewModelTest {
         viewModel.start();
 
         assertTrue(fakeSession.micMuted);
-        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.explicitDuplexSet);
+        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.initialDuplex);
         assertEquals("bt:sco:1", fakeSession.selectedSourceId);
+    }
+
+    @Test
+    public void initialIdleStateAndStartedSessionReflectConfiguredFullDuplex() {
+        MemorySettingsRepository fullRepo = new MemorySettingsRepository(
+                AiFixtures.settings(null,
+                        AiFixtures.voice(AiVoiceModel.QWEN, "sk-test")
+                                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
+        AiCallViewModel fullVm = newViewModel(fullRepo);
+
+        assertEquals("进入页面即展示设置中的全双工，而非先显示半双工",
+                VoiceDuplex.FULL_DUPLEX, fullVm.uiState().getValue().duplex());
+
+        fullVm.start();
+        assertEquals(VoiceDuplex.FULL_DUPLEX, fullVm.uiState().getValue().duplex());
+        assertEquals(VoiceDuplex.FULL_DUPLEX, fakeSession.initialDuplex);
+    }
+
+    @Test
+    public void asyncSettingsLoadUpdatesIdleDuplexUnlessUserOverrodeIt() {
+        CompletableFuture<AiSettings> pending = new CompletableFuture<>();
+        MemorySettingsRepository backing = new MemorySettingsRepository(AiSettings.EMPTY);
+        AiSettingsRepository deferredRepo = new DeferredSettingsRepository(backing, pending);
+        AiCallViewModel deferredVm = newViewModel(deferredRepo);
+        assertEquals(VoiceDuplex.HALF_DUPLEX, deferredVm.uiState().getValue().duplex());
+
+        pending.complete(AiFixtures.settings(null,
+                AiFixtures.voice(AiVoiceModel.QWEN, "sk-test")
+                        .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
+
+        assertEquals(VoiceDuplex.FULL_DUPLEX, deferredVm.uiState().getValue().duplex());
+
+        // 用户在通话前手动切回半双工后，后续设置变更不得覆盖用户本通选择
+        deferredVm.setDuplex(VoiceDuplex.HALF_DUPLEX);
+        backing.update(s -> s.withVoice(s.voice().withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
+        assertEquals(VoiceDuplex.HALF_DUPLEX, deferredVm.uiState().getValue().duplex());
+
+        deferredVm.start();
+        assertEquals(VoiceDuplex.HALF_DUPLEX, fakeSession.initialDuplex);
     }
 
     @Test
@@ -285,8 +351,8 @@ public class AiCallViewModelTest {
         boolean micMuted = false;
         boolean speakerphone = true;
         boolean interrupted = false;
+        VoiceDuplex initialDuplex;
         VoiceDuplex duplex = VoiceDuplex.defaultMode();
-        VoiceDuplex explicitDuplexSet;
         String selectedSourceId;
         AiAudioSource customSource;
         Listener listener;
@@ -315,7 +381,6 @@ public class AiCallViewModelTest {
         @Override
         public void setDuplex(@NonNull VoiceDuplex duplex) {
             this.duplex = duplex;
-            this.explicitDuplexSet = duplex;
         }
 
         @Override
@@ -331,6 +396,66 @@ public class AiCallViewModelTest {
         @Override
         public void interrupt() {
             this.interrupted = true;
+        }
+    }
+
+    private static final class DeferredSettingsRepository implements AiSettingsRepository {
+        private final MemorySettingsRepository delegate;
+        private final CompletableFuture<AiSettings> pending;
+
+        DeferredSettingsRepository(MemorySettingsRepository delegate, CompletableFuture<AiSettings> pending) {
+            this.delegate = delegate;
+            this.pending = pending;
+        }
+
+        @Override
+        public AiSettings load() {
+            return delegate.load();
+        }
+
+        @Override
+        public CompletableFuture<AiSettings> loadAsync() {
+            return pending;
+        }
+
+        @Override
+        public boolean ready() {
+            return pending.isDone();
+        }
+
+        @Override
+        public AiSettings update(UnaryOperator<AiSettings> change) {
+            return delegate.update(change);
+        }
+
+        @Override
+        public AiPlatformConfig savePlatform(AiPlatformConfig platform, String apiKey) {
+            return delegate.savePlatform(platform, apiKey);
+        }
+
+        @Override
+        public AiSettings saveVoiceKey(AiVoiceModel model, String apiKey) {
+            return delegate.saveVoiceKey(model, apiKey);
+        }
+
+        @Override
+        public Subscription observe(Consumer<AiSettings> observer) {
+            return delegate.observe(observer);
+        }
+
+        @Override
+        public Subscription observePersistenceStatus(Consumer<AiSettingsPersistenceStatus> observer) {
+            return delegate.observePersistenceStatus(observer);
+        }
+
+        @Override
+        public Subscription observePersistenceFailures(Consumer<AiFailure> observer) {
+            return delegate.observePersistenceFailures(observer);
+        }
+
+        @Override
+        public CompletableFuture<Void> flush() {
+            return delegate.flush();
         }
     }
 }

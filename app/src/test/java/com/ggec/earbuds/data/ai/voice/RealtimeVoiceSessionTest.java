@@ -486,34 +486,8 @@ public class RealtimeVoiceSessionTest {
     }
 
     @Test
-    public void sessionReadsConfiguredDefaultDuplexWhenNotPinned() {
-        MemorySettingsRepository fullDefaultRepo = new MemorySettingsRepository(
-                AiFixtures.settings(null,
-                        AiFixtures.voice(VOICE_MODEL, API_KEY)
-                                .withDefaultDuplex(VoiceDuplex.FULL_DUPLEX)));
-        session = new RealtimeVoiceSession(fullDefaultRepo,
-                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
-                catalog, playback, link, clock, Runnable::run, timer);
-
-        session.start(snapshots::add);
-        assertEquals("开场连接阶段即采用设置页的默认模式", VoiceDuplex.FULL_DUPLEX, last().duplex());
-
-        link.opened();
-        assertEquals("Opened 不得把默认模式冲回旧值", VoiceDuplex.FULL_DUPLEX, last().duplex());
-        link.audio(FakeAudioSource.pcm(480));
-        builtinMic.emit(FakeAudioSource.pcm(FRAME_BYTES));
-        assertEquals(1, link.appended.size());
-
-        link.speechStarted();
-        assertEquals(1, playback.flushes);
-        assertEquals(1, link.cancels);
-    }
-
-    @Test
     public void preOpenedSetDuplexIsPreservedAcrossOpened() {
-        session = new RealtimeVoiceSession(settings,
-                new FakeCredentialStore().withVoiceKey(VOICE_MODEL, API_KEY),
-                catalog, playback, link, clock, Runnable::run, timer);
+        newSession(VoiceDuplex.HALF_DUPLEX);
 
         session.start(snapshots::add);
         assertEquals(VoiceDuplex.HALF_DUPLEX, last().duplex());

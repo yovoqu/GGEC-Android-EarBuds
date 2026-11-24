@@ -3,6 +3,7 @@ package com.ggec.earbuds.ui.ai.call;
 import androidx.annotation.NonNull;
 
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
+import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 
 /**
  * 造一路语音会话的工厂。
@@ -16,5 +17,5 @@ public interface AiVoiceSessionFactory {
 
     /** 每次通话要一条新的会话；实现方不要复用已经 {@code stop()} 过的实例。 */
     @NonNull
-    AiVoiceSession create();
+    AiVoiceSession create(@NonNull VoiceDuplex initialDuplex);
 }

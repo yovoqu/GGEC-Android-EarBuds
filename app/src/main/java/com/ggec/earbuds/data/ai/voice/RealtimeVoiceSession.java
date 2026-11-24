@@ -78,7 +78,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     // ---- 只在 executor 线程上读写 ----
     @Nullable
     private Listener listener;
-    private boolean duplexPinned;
     private boolean uplinkActive;
     private boolean observingCatalog;
     @Nullable
@@ -98,26 +97,13 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull AiRealtimeLink link,
             @NonNull AiClock clock,
             @NonNull Executor executor,
-            @NonNull ScheduledExecutorService timer) {
-        this(settings, credentials, sourceCatalog, playback, link, clock, executor, timer,
-                null, THINKING_TIMEOUT_MS);
-    }
-
-    public RealtimeVoiceSession(
-            @NonNull AiSettingsRepository settings,
-            @NonNull AiCredentialStore credentials,
-            @NonNull AiAudioSourceCatalog sourceCatalog,
-            @NonNull AiAudioPlayback playback,
-            @NonNull AiRealtimeLink link,
-            @NonNull AiClock clock,
-            @NonNull Executor executor,
             @NonNull ScheduledExecutorService timer,
             @NonNull VoiceDuplex duplex) {
         this(settings, credentials, sourceCatalog, playback, link, clock, executor, timer,
-                Objects.requireNonNull(duplex, "duplex"), THINKING_TIMEOUT_MS);
+                duplex, THINKING_TIMEOUT_MS);
     }
 
-    /** 单测可直接用它把 THINKING 超时压到毫秒级；生产只走上面两个构造器。 */
+    /** 单测可直接用它把 THINKING 超时压到毫秒级；生产只走上面构造器。 */
     RealtimeVoiceSession(
             @NonNull AiSettingsRepository settings,
             @NonNull AiCredentialStore credentials,
@@ -127,7 +113,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             @NonNull AiClock clock,
             @NonNull Executor executor,
             @NonNull ScheduledExecutorService timer,
-            @Nullable VoiceDuplex explicitDuplex,
+            @NonNull VoiceDuplex duplex,
             long thinkingTimeoutMillis) {
         if (thinkingTimeoutMillis <= 0L) {
             throw new IllegalArgumentException("thinkingTimeoutMillis must be positive");
@@ -141,9 +127,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.timer = Objects.requireNonNull(timer, "timer");
         this.thinkingTimeoutMillis = thinkingTimeoutMillis;
-        this.duplexPinned = explicitDuplex != null;
-        this.model = VoiceCallReducer.Model.initial(
-                explicitDuplex != null ? explicitDuplex : VoiceDuplex.defaultMode());
+        this.model = VoiceCallReducer.Model.initial(Objects.requireNonNull(duplex, "duplex"));
         this.uplink = new AudioUplinkPipeline(
                 link,
                 clock,
@@ -181,10 +165,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     @Override
     public void setDuplex(@NonNull VoiceDuplex duplex) {
         Objects.requireNonNull(duplex, "duplex");
-        dispatch(() -> {
-            duplexPinned = true;
-            apply(new VoiceCallEvent.SetDuplex(duplex));
-        });
+        dispatch(() -> apply(new VoiceCallEvent.SetDuplex(duplex)));
     }
 
     @Override
@@ -257,9 +238,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         } catch (AiFailure unusable) {
             apply(new VoiceCallEvent.Failed(unusable));
             return;
-        }
-        if (!duplexPinned && plan.defaultDuplex() != model.duplex()) {
-            model = model.withDuplex(plan.defaultDuplex());
         }
         apply(new VoiceCallEvent.Start());
         try {
@@ -575,8 +553,7 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
             // 载荷只有分类：界面按 kind 出文案，这里不放英文说明。
             throw new AiFailure(AiFailureKind.VOICE_NOT_CONFIGURED, null);
         }
-        return new RealtimePlan(voice.effectiveBaseUrl(), apiKey, voice.resolvedRealtimeModel(),
-                voice.defaultDuplex());
+        return new RealtimePlan(voice.effectiveBaseUrl(), apiKey, voice.resolvedRealtimeModel());
     }
 
     @NonNull
@@ -585,6 +562,6 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
         return detail == null || detail.isBlank() ? error.getClass().getSimpleName() : detail;
     }
 
-    private record RealtimePlan(String baseUrl, String apiKey, String model, VoiceDuplex defaultDuplex) {
+    private record RealtimePlan(String baseUrl, String apiKey, String model) {
     }
 }
