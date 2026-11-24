@@ -60,6 +60,7 @@ public final class HsSessionImpl {
     private final MainThread mainThread;
     private final HsConnectReadyTimeout readyTimeout;
     private final CopyOnWriteArrayList<HsControl.Listener> observers = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<HsControl.EventListener> eventListeners = new CopyOnWriteArrayList<>();
     private volatile HsSessionState state = HsSessionState.idle();
     private volatile HsControl.Dual dual;
     /** 当前连接目标机型声明的能力集合；机型未登记时为空集（写入/动作一律不支持）。 */
@@ -225,6 +226,15 @@ public final class HsSessionImpl {
         observers.remove(observer);
     }
 
+    public void observeEvents(HsControl.EventListener listener) {
+        Objects.requireNonNull(listener, "listener");
+        eventListeners.addIfAbsent(listener);
+    }
+
+    public void removeEvents(HsControl.EventListener listener) {
+        eventListeners.remove(listener);
+    }
+
     public HsControl.Outcome<HsControl.Value> read(HsDevice.Capability capability) {
         if (capability == null) {
             throw new IllegalArgumentException("能力不能为空");
@@ -272,7 +282,7 @@ public final class HsSessionImpl {
             return;
         }
         // 动作参数不合法同样属于调用方编程错误：当场抛出。
-        List<Command> commands = router.commands(action);
+        List<Command> commands = router.commands(action, connectedModelId);
         if (commands.isEmpty()) {
             // 命令层不下发的动作（如 STREAM 录音，改由事件驱动承载）：立即给出终态，避免空命令导致回调永不触发。
             postResult(callback, new HsControl.Outcome.Err<>(HsControl.Failure.UNSUPPORTED_CAPABILITY));
@@ -397,6 +407,9 @@ public final class HsSessionImpl {
         for (HsControl.Listener observer : observers) {
             dispatch(() -> observer.onDeviceEvent(event));
         }
+        for (HsControl.EventListener listener : eventListeners) {
+            dispatch(() -> listener.onDeviceEvent(event));
+        }
     }
 
     private void dispatchSnapshot() {
@@ -480,6 +493,8 @@ public final class HsSessionImpl {
         public void onBatteryChanged(DeviceDomainStore.BatterySnapshot snapshot,
                                      int fields,
                                      int code) {
+            HsDevice.Battery battery = HsSnapshotAssembler.toBattery(snapshot);
+            dispatchEvent(new HsControl.Event.BatteryChanged(battery));
             dispatchSnapshot();
         }
 

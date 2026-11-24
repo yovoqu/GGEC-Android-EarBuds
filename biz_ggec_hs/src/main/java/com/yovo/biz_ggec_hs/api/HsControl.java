@@ -91,6 +91,9 @@ public final class HsControl {
 
         record DisconnectPairedDevice(String address) implements Action {
         }
+
+        record SyncDeviceState() implements Action {
+        }
     }
 
     public interface Callback {
@@ -130,7 +133,18 @@ public final class HsControl {
         }
     }
 
+    /**
+     * 专职订阅设备主动上报事件的监听器。
+     */
+    @FunctionalInterface
+    public interface EventListener {
+        void onDeviceEvent(Event event);
+    }
+
     public sealed interface Event {
+        record BatteryChanged(HsDevice.Battery battery) implements Event {
+        }
+
         record PairedDevicesChanged(List<Paired> devices) implements Event {
         }
 

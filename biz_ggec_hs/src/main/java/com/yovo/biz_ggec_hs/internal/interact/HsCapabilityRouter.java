@@ -194,6 +194,7 @@ public final class HsCapabilityRouter {
             case HsControl.Action.SetPriorityPairedDevice setPriority -> HsDevice.Capability.DUAL_CONNECTION_DEVICES;
             case HsControl.Action.ConnectPairedDevice connectPaired -> HsDevice.Capability.DUAL_CONNECTION_DEVICES;
             case HsControl.Action.DisconnectPairedDevice disconnectPaired -> HsDevice.Capability.DUAL_CONNECTION_DEVICES;
+            case HsControl.Action.SyncDeviceState syncDeviceState -> HsDevice.Capability.DEVICE_INFO;
         };
     }
 
@@ -204,7 +205,17 @@ public final class HsCapabilityRouter {
      * @throws IllegalArgumentException 动作参数不合法
      */
     public List<Command> commands(HsControl.Action action) {
+        return commands(action, "");
+    }
+
+    /**
+     * 带当前机型上下文的动作命令映射。用于同步设备状态等与机型绑定的动作。
+     *
+     * @throws IllegalArgumentException 动作参数不合法
+     */
+    public List<Command> commands(HsControl.Action action, String modelId) {
         return switch (action) {
+            case HsControl.Action.SyncDeviceState syncDeviceState -> sessionBootstrapQueries(modelId);
             case HsControl.Action.FindEar findEar -> switch (findEar.side()) {
                 case LEFT -> List.of(new FindAlertLeftCommand(true));
                 case RIGHT -> List.of(new FindAlertRightCommand(true));

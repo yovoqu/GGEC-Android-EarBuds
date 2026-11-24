@@ -98,6 +98,11 @@ public final class HsBatteryProjectionTest {
                     harness.awaitSnapshot(snapshot -> snapshot.battery().leftLevel() == 1
                             && snapshot.battery().rightLevel() == 2
                             && snapshot.battery().caseLevel() == 3));
+            assertTrue("必须派发 BatteryChanged 主动上报事件",
+                    harness.awaitDeviceEvent(event -> event instanceof HsControl.Event.BatteryChanged changed
+                            && changed.battery().leftLevel() == 1
+                            && changed.battery().rightLevel() == 2
+                            && changed.battery().caseLevel() == 3));
         } finally {
             harness.close();
         }
@@ -114,6 +119,7 @@ public final class HsBatteryProjectionTest {
                 new HsSessionImpl(engine, new HsCatalogImpl(), new FakeMainThread(), new ReadyClassicRadio(),
                 new HsDeviceInfoIntake(new com.yovo.biz_ggec_hs.internal.interact.HsCapabilityRouter()));
         private final List<HsDevice.Snapshot> snapshots = new CopyOnWriteArrayList<>();
+        private final List<HsControl.Event> events = new CopyOnWriteArrayList<>();
         private final Object lock = new Object();
         private volatile boolean ready;
 
@@ -132,6 +138,11 @@ public final class HsBatteryProjectionTest {
                 @Override
                 public void onSnapshotChanged(HsDevice.Snapshot snapshot) {
                     snapshots.add(snapshot);
+                }
+
+                @Override
+                public void onDeviceEvent(HsControl.Event event) {
+                    events.add(event);
                 }
             });
         }
@@ -170,6 +181,24 @@ public final class HsBatteryProjectionTest {
                 while (true) {
                     for (HsDevice.Snapshot snapshot : snapshots) {
                         if (condition.test(snapshot)) {
+                            return true;
+                        }
+                    }
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0L) {
+                        return false;
+                    }
+                    lock.wait(Math.min(remaining, 50L));
+                }
+            }
+        }
+
+        private boolean awaitDeviceEvent(Predicate<HsControl.Event> condition) throws InterruptedException {
+            long deadline = System.currentTimeMillis() + AWAIT_TIMEOUT_MILLIS;
+            synchronized (lock) {
+                while (true) {
+                    for (HsControl.Event event : events) {
+                        if (condition.test(event)) {
                             return true;
                         }
                     }

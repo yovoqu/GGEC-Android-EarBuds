@@ -109,6 +109,17 @@ public final class YoHsSdk {
         graph.link().removeObserver(listener);
     }
 
+    /**
+     * 专职订阅设备主动上报事件。
+     */
+    public void watchEvents(@NonNull HsControl.EventListener listener) {
+        graph.link().observeEvents(listener);
+    }
+
+    public void unwatchEvents(@NonNull HsControl.EventListener listener) {
+        graph.link().removeEvents(listener);
+    }
+
     @NonNull
     public HsDevice.Snapshot snapshot() {
         return graph.link().snapshot();

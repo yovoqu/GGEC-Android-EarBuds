@@ -65,6 +65,18 @@ public final class HsSnapshotAssembler {
      * 协议电平文本到结构化电量的唯一转换点：{@code --} 是未知，其余是十进制。
      * 域状态在写入前已把非协议文本归为未知，因此这里不做第二套容错。
      */
+    public static HsDevice.Battery toBattery(DeviceDomainStore.BatterySnapshot snapshot) {
+        if (snapshot == null) {
+            return new HsDevice.Battery(
+                    HsDevice.Battery.UNKNOWN_LEVEL,
+                    HsDevice.Battery.UNKNOWN_LEVEL,
+                    HsDevice.Battery.UNKNOWN_LEVEL,
+                    false,
+                    0);
+        }
+        return battery(snapshot);
+    }
+
     private static HsDevice.Battery battery(DeviceDomainStore.BatterySnapshot snapshot) {
         return new HsDevice.Battery(
                 level(snapshot.getLeftLevel()),

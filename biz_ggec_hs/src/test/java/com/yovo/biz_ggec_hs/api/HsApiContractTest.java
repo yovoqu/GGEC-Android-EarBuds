@@ -54,11 +54,13 @@ public final class HsApiContractTest {
         assertEquals(HsControl.Action.FindEar.Side.BOTH,
                 new HsControl.Action.FindEar(HsControl.Action.FindEar.Side.BOTH).side());
         assertTrue(new HsControl.Action.ResetControl() instanceof HsControl.Action);
+        assertTrue(new HsControl.Action.SyncDeviceState() instanceof HsControl.Action);
     }
 
     @Test
     public void eventsCoverEveryReportedChannel() {
         List<HsControl.Event> events = List.of(
+                new HsControl.Event.BatteryChanged(new HsDevice.Battery(80, 80, 100, false, 0)),
                 new HsControl.Event.PairedDevicesChanged(List.of()),
                 new HsControl.Event.DualConnectionChanged(
                         new HsControl.Dual(true, "", List.of())),
@@ -71,7 +73,7 @@ public final class HsApiContractTest {
                 new HsControl.Event.BeginnerModeChanged(1, 2),
                 new HsControl.Event.EarExchangeChanged(1),
                 new HsControl.Event.VoiceAssistantChanged(0, 1));
-        assertEquals(10, events.size());
+        assertEquals(11, events.size());
     }
 
     @Test

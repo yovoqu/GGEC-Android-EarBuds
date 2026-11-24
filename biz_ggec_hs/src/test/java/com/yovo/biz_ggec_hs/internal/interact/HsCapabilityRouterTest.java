@@ -23,6 +23,9 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.ClearPairingComma
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.DeviceRebootCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.DeviceRenameCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.GetRecordIdListCommand;
+import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.GlobalStatusCommand;
+import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.HomePageStatusV12FirstCommand;
+import com.yovo.biz_ggec_hs.internal.center.protocol.devicecmd.HomePageStatusV12SecCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd.ConnectPhoneCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd.DeleteParingDeviceCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.dualconnectioncmd.DisconnectPhoneCommand;
@@ -45,6 +48,7 @@ import com.yovo.biz_ggec_hs.internal.center.protocol.inbound.DeviceDomainStore;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.CustomEQRealtimeCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.EQModeCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.LDACCommand;
+import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.LDACQueryCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.SoundQualityModeCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeAdaptiveCommand;
 import com.yovo.biz_ggec_hs.internal.center.protocol.musiccmd.VolumeRemindCommand;
@@ -233,6 +237,28 @@ public final class HsCapabilityRouterTest {
         assertEquals(HsDevice.Capability.REBOOT, router.capabilityOf(new HsControl.Action.Reboot()));
         assertEquals(HsDevice.Capability.RESET_CONTROL,
                 router.capabilityOf(new HsControl.Action.ResetControl()));
+        assertEquals(HsDevice.Capability.DEVICE_INFO,
+                router.capabilityOf(new HsControl.Action.SyncDeviceState()));
+    }
+
+    @Test
+    public void syncDeviceStateMapsToModelSpecificBootstrapQueries() {
+        List<String> hs01Commands = new java.util.ArrayList<>();
+        for (Command c : router.commands(new HsControl.Action.SyncDeviceState(), "HS01")) {
+            hs01Commands.add(c.getCommandData());
+        }
+        assertEquals(List.of(new GlobalStatusCommand().getCommandData(), new LDACQueryCommand().getCommandData()),
+                hs01Commands);
+
+        List<String> hs02Commands = new java.util.ArrayList<>();
+        for (Command c : router.commands(new HsControl.Action.SyncDeviceState(), "HS02")) {
+            hs02Commands.add(c.getCommandData());
+        }
+        assertEquals(List.of(
+                new HomePageStatusV12FirstCommand().getCommandData(),
+                new HomePageStatusV12SecCommand().getCommandData(),
+                new LDACQueryCommand().getCommandData()),
+                hs02Commands);
     }
 
     @Test
