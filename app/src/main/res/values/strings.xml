@@ -160,6 +160,8 @@
     <string name="device_hero_image_desc">设备主图占位</string>
     <string name="device_empty_title">还没有连接耳机</string>
     <string name="device_empty_body">打开设备并靠近手机，点右上角 + 添加设备。</string>
+    <string name="device_home_app_version">APP 版本 v%1$s</string>
+    <string name="device_home_check_update">检查更新</string>
     <string name="device_settings_empty_body">请先返回设备页添加并连接耳机，连接后即可查看和调整此项设置。</string>
 
     <!-- 扫描 -->

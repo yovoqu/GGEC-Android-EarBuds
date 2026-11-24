@@ -5,6 +5,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.Space;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -41,6 +42,8 @@ public final class DeviceHomePage {
         void onOpenPage(@NonNull String pageId);
 
         void onQuickToggle(@NonNull String capabilityId, boolean enabled);
+
+        void onCheckAppUpdate();
     }
 
     private final AppCompatActivity activity;
@@ -53,6 +56,7 @@ public final class DeviceHomePage {
     private final NestedScrollView scroll;
     private final LinearLayout contentColumn;
     private final DeviceHomeSectionsView sections;
+    private final View contentFooter;
     private final LinearLayout emptyBox;
     private final TextView emptyTitle;
     private final TextView emptyBody;
@@ -88,6 +92,8 @@ public final class DeviceHomePage {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         sections = new DeviceHomeSectionsView(activity, theme, listener);
+        contentFooter = DeviceHomeFooterView.create(activity, theme, components,
+                listener::onCheckAppUpdate);
 
         emptyBox = new LinearLayout(activity);
         emptyBox.setOrientation(LinearLayout.VERTICAL);
@@ -102,6 +108,10 @@ public final class DeviceHomePage {
         emptyBody.setLineSpacing(theme.dpf(DeviceTheme.LINE_SPACING_EXTRA), 1f);
         emptyBody.setPadding(0, theme.dp(DeviceTheme.SPACE_S), 0, 0);
         emptyBox.addView(emptyBody, DeviceLayouts.matchWrap());
+        emptyBox.addView(new Space(activity), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        emptyBox.addView(DeviceHomeFooterView.create(activity, theme, components,
+                listener::onCheckAppUpdate), DeviceLayouts.matchWrap());
         emptyBox.setVisibility(View.GONE);
         host.addView(emptyBox, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -177,13 +187,16 @@ public final class DeviceHomePage {
                 DeviceLayouts.pageInset(theme, DeviceTheme.SPACE_S, 0f));
         sections.render(state.sections());
         contentColumn.addView(sections.view(),
-                DeviceLayouts.verticalOnly(theme, 0f, DeviceTheme.SPACE_XL));
+                DeviceLayouts.verticalOnly(theme, 0f, DeviceTheme.SPACE_L));
+        contentColumn.addView(contentFooter, DeviceLayouts.matchWrap());
     }
 
     private void applyScrollBottom(int systemBottom) {
         lastSystemBottom = systemBottom;
         int bottom = Math.max(systemBottom, bottomInset) + theme.dp(DeviceTheme.SPACE_XL);
         scroll.setPadding(0, 0, 0, bottom);
+        emptyBox.setPadding(theme.dp(DeviceTheme.PAGE_INSET), theme.dp(DeviceTheme.EMPTY_TOP),
+                theme.dp(DeviceTheme.PAGE_INSET), bottom);
     }
 
     private View buildHeader() {

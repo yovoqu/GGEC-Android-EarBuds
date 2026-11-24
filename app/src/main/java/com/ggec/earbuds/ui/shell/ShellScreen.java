@@ -206,5 +206,10 @@ final class ShellScreen {
             home.toggle(capabilityId, enabled);
         }
 
+        @Override
+        public void onCheckAppUpdate() {
+            // 预留 UI 入口：检查更新功能暂不接入。
+        }
+
     }
 }
