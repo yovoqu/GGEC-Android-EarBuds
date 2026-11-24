@@ -31,7 +31,7 @@ public record AiCallUiState(
         @NonNull Action action,
         boolean interruptible,
         boolean micMuted,
-        boolean speakerOn,
+        @NonNull OutputMode outputMode,
         int durationSeconds,
         boolean captionsVisible,
         @NonNull VoiceDuplex duplex,
@@ -43,6 +43,7 @@ public record AiCallUiState(
     public AiCallUiState {
         Objects.requireNonNull(phase, "phase");
         Objects.requireNonNull(action, "action");
+        Objects.requireNonNull(outputMode, "outputMode");
         Objects.requireNonNull(duplex, "duplex");
         availableSources = List.copyOf(availableSources);
         subtitleItems = List.copyOf(subtitleItems);
@@ -65,6 +66,19 @@ public record AiCallUiState(
         RETRY
     }
 
+    public enum MicMode {
+        PHONE_MIC,
+        BLUETOOTH_MIC,
+        MUTED
+    }
+
+    public enum OutputMode {
+        BLUETOOTH,
+        EARPIECE,
+        SPEAKER,
+        MUTED
+    }
+
     @NonNull
     public static AiCallUiState idle() {
         return idle(VoiceDuplex.defaultMode());
@@ -79,7 +93,7 @@ public record AiCallUiState(
                 Action.NONE,
                 false,
                 false,
-                true,
+                OutputMode.SPEAKER,
                 0,
                 true,
                 Objects.requireNonNull(duplex, "duplex"),
@@ -104,7 +118,7 @@ public record AiCallUiState(
                 Action.NONE,
                 false,
                 false,
-                true,
+                OutputMode.SPEAKER,
                 0,
                 true,
                 Objects.requireNonNull(duplex, "duplex"),
@@ -129,7 +143,7 @@ public record AiCallUiState(
                 Action.NONE,
                 false,
                 false,
-                true,
+                OutputMode.SPEAKER,
                 0,
                 true,
                 Objects.requireNonNull(duplex, "duplex"),
@@ -155,7 +169,7 @@ public record AiCallUiState(
                         : Action.NONE,
                 state == AiVoiceSnapshot.State.THINKING || state == AiVoiceSnapshot.State.SPEAKING,
                 snapshot.micMuted(),
-                true,
+                OutputMode.SPEAKER,
                 0,
                 true,
                 snapshot.duplex(),
@@ -182,6 +196,48 @@ public record AiCallUiState(
         };
     }
 
+    /** 底部 MIC 按钮当前对应的三态模式（静音优先，其次蓝牙设备 MIC，否则手机 MIC）。 */
+    @NonNull
+    public MicMode micMode() {
+        if (micMuted) {
+            return MicMode.MUTED;
+        }
+        if (activeSource != null && AiAudioSource.BLUETOOTH_STREAM_ID.equals(activeSource.id())) {
+            return MicMode.BLUETOOTH_MIC;
+        }
+        return MicMode.PHONE_MIC;
+    }
+
+    /** 当前输入源是否已选中蓝牙设备 MIC（含静音状态）。 */
+    public boolean bluetoothMicSelected() {
+        return activeSource != null && AiAudioSource.BLUETOOTH_STREAM_ID.equals(activeSource.id());
+    }
+
+    /** 蓝牙设备播放仅在未选择蓝牙设备 MIC 录音时可选。 */
+    public boolean bluetoothOutputAvailable() {
+        return !bluetoothMicSelected();
+    }
+
+    /** 当前是否有支持随录随传音频流的蓝牙设备可用。 */
+    public boolean bluetoothMicAvailable() {
+        for (AiAudioSource.Descriptor source : availableSources) {
+            if (AiAudioSource.BLUETOOTH_STREAM_ID.equals(source.id())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    public String bluetoothMicLabel() {
+        for (AiAudioSource.Descriptor source : availableSources) {
+            if (AiAudioSource.BLUETOOTH_STREAM_ID.equals(source.id())) {
+                return source.label();
+            }
+        }
+        return null;
+    }
+
     @NonNull
     public String formattedDuration() {
         int m = durationSeconds / 60;
@@ -191,35 +247,36 @@ public record AiCallUiState(
 
     @NonNull
     public AiCallUiState withPhase(@NonNull Phase nextPhase, @StringRes int nextTitle) {
-        return new AiCallUiState(nextPhase, nextTitle, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(nextPhase, nextTitle, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, captionsVisible, duplex, activeSource,
                 availableSources, meter, subtitleItems);
     }
 
     @NonNull
-    public AiCallUiState withSpeakerOn(boolean value) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, value,
+    public AiCallUiState withOutputMode(@NonNull OutputMode value) {
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted,
+                Objects.requireNonNull(value, "outputMode"),
                 durationSeconds, captionsVisible, duplex, activeSource,
                 availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withDurationSeconds(int value) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 value, captionsVisible, duplex, activeSource,
                 availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withCaptionsVisible(boolean value) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, value, duplex, activeSource,
                 availableSources, meter, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withMicMuted(boolean value) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, value, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, value, outputMode,
                 durationSeconds, captionsVisible, duplex, activeSource,
                 availableSources, meter, subtitleItems);
     }
@@ -227,7 +284,7 @@ public record AiCallUiState(
     /** 写入当前通话的双工模式。 */
     @NonNull
     public AiCallUiState withDuplex(@NonNull VoiceDuplex value) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, captionsVisible, value, activeSource,
                 availableSources, meter, subtitleItems);
     }
@@ -236,7 +293,7 @@ public record AiCallUiState(
     public AiCallUiState withSources(
             @Nullable AiAudioSource.Descriptor nextActiveSource,
             @NonNull List<AiAudioSource.Descriptor> nextAvailableSources) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, captionsVisible, duplex, nextActiveSource,
                 nextAvailableSources, meter, subtitleItems);
     }
@@ -245,14 +302,14 @@ public record AiCallUiState(
     @NonNull
     public AiCallUiState withMeter(float value) {
         float clamped = Math.max(0f, Math.min(1f, value));
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, captionsVisible, duplex, activeSource,
                 availableSources, clamped, subtitleItems);
     }
 
     @NonNull
     public AiCallUiState withSubtitleItems(@NonNull List<AiSubtitleItem> items) {
-        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, speakerOn,
+        return new AiCallUiState(phase, title, reason, action, interruptible, micMuted, outputMode,
                 durationSeconds, captionsVisible, duplex, activeSource,
                 availableSources, meter, List.copyOf(items));
     }

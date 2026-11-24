@@ -7,7 +7,9 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
 import com.ggec.earbuds.domain.ai.model.AiSettings;
+import com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
+import com.ggec.earbuds.domain.ai.port.AiAudioSourceCatalog;
 import com.ggec.earbuds.domain.ai.port.Subscription;
 import com.ggec.earbuds.domain.ai.usecase.LoadAiSettings;
 import com.ggec.earbuds.domain.ai.usecase.ObserveAiSettings;
@@ -47,16 +49,19 @@ public final class AiCallViewModel extends ViewModel {
 
     private final AiVoiceSessionFactory factory;
     private final Ticker ticker;
+    private final AiAudioSourceCatalog sourceCatalog;
     private final Subscription settingsSubscription;
+    private final AiAudioSourceCatalog.Observer catalogObserver = this::onAvailableSourcesChanged;
 
     private final MutableLiveData<AiCallUiState> uiState =
             new MutableLiveData<>(AiCallUiState.idle(VoiceDuplex.defaultMode()));
-    /** 一次性提示（当前只有双工切换的说明文案），由页面消费后清空。 */
+    /** 一次性提示（双工切换说明 / 蓝牙设备不可用提示），由页面消费后清空。 */
     private final OneShotLiveData<Integer> toasts = new OneShotLiveData<>();
 
     private final Object sessionLock = new Object();
 
     private boolean duplexOverridden;
+    private boolean userRequestedPhoneMic;
 
     @Nullable
     private SourceRequest pendingSource;
@@ -79,9 +84,17 @@ public final class AiCallViewModel extends ViewModel {
     public AiCallViewModel(@NonNull AiVoiceSessionFactory factory,
                            @NonNull Ticker ticker,
                            @NonNull LoadAiSettings loadSettings,
-                           @NonNull ObserveAiSettings observeSettings) {
+                           @NonNull ObserveAiSettings observeSettings,
+                           @NonNull AiAudioSourceCatalog sourceCatalog) {
         this.factory = Objects.requireNonNull(factory, "factory");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
+        this.sourceCatalog = Objects.requireNonNull(sourceCatalog, "sourceCatalog");
+        this.sourceCatalog.addObserver(catalogObserver);
+        AiAudioSource def = this.sourceCatalog.defaultSource();
+        uiState.setValue(requireState(uiState.getValue())
+                .withSources(def != null ? def.descriptor() : null,
+                        this.sourceCatalog.availableSources()));
+
         this.settingsSubscription = Objects.requireNonNull(observeSettings, "observeSettings")
                 .execute(this::onSettings);
         CompletableFuture<AiSettings> initial = Objects.requireNonNull(loadSettings, "loadSettings")
@@ -115,7 +128,13 @@ public final class AiCallViewModel extends ViewModel {
 
     /** 失败后重试：先结束当前会话再起一条，供页面一键调用。 */
     public void retry() {
-        hangUp();
+        stopTimer();
+        release();
+        AiCallUiState current = requireState(uiState.getValue());
+        if (current.live()) {
+            uiState.setValue(current.withPhase(AiCallUiState.Phase.OFFLINE, R.string.ai_call_phase_ended)
+                    .withMeter(0f));
+        }
         start();
     }
 
@@ -135,8 +154,9 @@ public final class AiCallViewModel extends ViewModel {
 
         uiState.setValue(AiCallUiState.connecting(current.duplex())
                 .withMicMuted(current.micMuted())
-                .withSpeakerOn(current.speakerOn())
+                .withOutputMode(current.outputMode())
                 .withCaptionsVisible(current.captionsVisible())
+                .withSources(current.activeSource(), current.availableSources())
                 .withDurationSeconds(0)
                 .withMeter(0f)
                 .withSubtitleItems(List.of()));
@@ -151,7 +171,7 @@ public final class AiCallViewModel extends ViewModel {
             }
         }
         created.start(this::publishSnapshot);
-        created.setSpeakerphone(current.speakerOn());
+        created.setOutputRoute(toOutputRoute(current.outputMode()));
         startTimer();
     }
 
@@ -172,7 +192,7 @@ public final class AiCallViewModel extends ViewModel {
         stopTimer();
         uiState.setValue(AiCallUiState.permissionDenied(current.duplex())
                 .withMicMuted(current.micMuted())
-                .withSpeakerOn(current.speakerOn())
+                .withOutputMode(current.outputMode())
                 .withCaptionsVisible(current.captionsVisible())
                 .withDurationSeconds(current.durationSeconds())
                 .withMeter(0f)
@@ -195,20 +215,31 @@ public final class AiCallViewModel extends ViewModel {
         setMicMuted(!requireState(uiState.getValue()).micMuted());
     }
 
-    /** 扬声器 / 听筒（或耳机）输出路由切换。 */
-    public void setSpeakerphone(boolean speaker) {
+    /** 蓝牙设备 / 听筒 / 扬声器 / 静音 输出路由切换。 */
+    public void setOutputMode(@NonNull AiCallUiState.OutputMode mode) {
+        Objects.requireNonNull(mode, "mode");
+        AiCallUiState current = requireState(uiState.getValue());
+        if (mode == AiCallUiState.OutputMode.BLUETOOTH && current.bluetoothMicSelected()) {
+            return;
+        }
         AiVoiceSession running;
         synchronized (sessionLock) {
             running = session;
         }
-        uiState.setValue(requireState(uiState.getValue()).withSpeakerOn(speaker));
+        uiState.setValue(current.withOutputMode(mode));
         if (running != null) {
-            running.setSpeakerphone(speaker);
+            running.setOutputRoute(toOutputRoute(mode));
         }
     }
 
-    public void toggleSpeaker() {
-        setSpeakerphone(!requireState(uiState.getValue()).speakerOn());
+    @NonNull
+    private static AiAudioOutputRoute toOutputRoute(@NonNull AiCallUiState.OutputMode mode) {
+        return switch (mode) {
+            case BLUETOOTH -> AiAudioOutputRoute.BLUETOOTH;
+            case EARPIECE -> AiAudioOutputRoute.EARPIECE;
+            case SPEAKER -> AiAudioOutputRoute.SPEAKER;
+            case MUTED -> AiAudioOutputRoute.MUTED;
+        };
     }
 
     /** 双工通信方式切换操作（全双工/半双工，严格单点控制）。 */
@@ -238,6 +269,49 @@ public final class AiCallViewModel extends ViewModel {
         return requireState(uiState.getValue()).duplex();
     }
 
+    /** 切换为手机 MIC 并解除静音。 */
+    public void selectPhoneMic() {
+        userRequestedPhoneMic = true;
+        setMicMuted(false);
+        AiAudioSource phone = findPhoneMicSource();
+        if (phone != null) {
+            selectAudioSource(phone.descriptor().id());
+        }
+    }
+
+    @Nullable
+    private AiAudioSource findPhoneMicSource() {
+        for (AiAudioSource.Descriptor descriptor : sourceCatalog.availableSources()) {
+            if (descriptor.kind() == AiAudioSource.Kind.BUILTIN_MIC) {
+                AiAudioSource resolved = sourceCatalog.resolve(descriptor.id());
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
+        }
+        return sourceCatalog.defaultSource();
+    }
+
+    /** 切换为蓝牙设备随录随传音频流并解除静音；若设备未就绪或不支持则提示。 */
+    public void selectBluetoothMic() {
+        AiAudioSource bt = sourceCatalog.resolve(AiAudioSource.BLUETOOTH_STREAM_ID);
+        if (bt == null) {
+            toasts.setValue(R.string.ai_call_mic_bluetooth_unavailable);
+            return;
+        }
+        userRequestedPhoneMic = false;
+        setMicMuted(false);
+        if (requireState(uiState.getValue()).outputMode() == AiCallUiState.OutputMode.BLUETOOTH) {
+            setOutputMode(AiCallUiState.OutputMode.SPEAKER);
+        }
+        selectAudioSource(AiAudioSource.BLUETOOTH_STREAM_ID);
+    }
+
+    /** 静音 MIC。 */
+    public void muteMic() {
+        setMicMuted(true);
+    }
+
     /** 按输入源 id 热切换音频流源（内置麦 / 蓝牙 / USB / 外部注册源）。 */
     public void selectAudioSource(@NonNull String sourceId) {
         Objects.requireNonNull(sourceId, "sourceId");
@@ -248,6 +322,12 @@ public final class AiCallViewModel extends ViewModel {
         }
         if (running != null) {
             running.selectAudioSource(sourceId);
+        } else {
+            AiAudioSource resolved = sourceCatalog.resolve(sourceId);
+            if (resolved != null) {
+                AiCallUiState current = requireState(uiState.getValue());
+                uiState.setValue(current.withSources(resolved.descriptor(), current.availableSources()));
+            }
         }
     }
 
@@ -281,10 +361,11 @@ public final class AiCallViewModel extends ViewModel {
         }
     }
 
-    /** 挂断通话。 */
+    /** 挂断通话：彻底停止会话与蓝牙设备录音流。 */
     public void hangUp() {
         stopTimer();
         release();
+        releaseBluetoothStream();
         AiCallUiState current = requireState(uiState.getValue());
         if (current.live()) {
             uiState.setValue(current.withPhase(AiCallUiState.Phase.OFFLINE, R.string.ai_call_phase_ended)
@@ -294,9 +375,41 @@ public final class AiCallViewModel extends ViewModel {
 
     @Override
     protected void onCleared() {
+        sourceCatalog.removeObserver(catalogObserver);
         settingsSubscription.cancel();
         stopTimer();
         release();
+        releaseBluetoothStream();
+    }
+
+    private void releaseBluetoothStream() {
+        AiAudioSource bt = sourceCatalog.resolve(AiAudioSource.BLUETOOTH_STREAM_ID);
+        if (bt != null) {
+            bt.release();
+        }
+    }
+
+    private void onAvailableSourcesChanged(@NonNull List<AiAudioSource.Descriptor> sources) {
+        AiVoiceSession running;
+        boolean resetPendingToDefault = false;
+        synchronized (sessionLock) {
+            running = session;
+            if (running == null && pendingSource instanceof SourceRequest.Id id
+                    && sourceCatalog.resolve(id.sourceId()) == null) {
+                pendingSource = null;
+                resetPendingToDefault = true;
+            }
+        }
+        if (running != null) {
+            return;
+        }
+        AiCallUiState current = requireState(uiState.getValue());
+        AiAudioSource.Descriptor active = current.activeSource();
+        if (resetPendingToDefault || (active != null && sourceCatalog.resolve(active.id()) == null)) {
+            AiAudioSource def = sourceCatalog.defaultSource();
+            active = def != null ? def.descriptor() : null;
+        }
+        uiState.postValue(current.withSources(active, sources));
     }
 
     private void onSettings(@NonNull AiSettings settings) {
@@ -341,7 +454,7 @@ public final class AiCallViewModel extends ViewModel {
         float level = snapshot.state() == AiVoiceSnapshot.State.LISTENING
                 ? snapshot.inputLevel() : 0f;
         AiCallUiState mapped = AiCallUiState.fromSnapshot(snapshot)
-                .withSpeakerOn(previous.speakerOn())
+                .withOutputMode(previous.outputMode())
                 .withCaptionsVisible(previous.captionsVisible())
                 .withDurationSeconds(previous.durationSeconds())
                 .withMeter(level)
@@ -353,6 +466,12 @@ public final class AiCallViewModel extends ViewModel {
             // 重新进入推进阶段（例如失败后同一条会话恢复）时续上计时；已在计时的不重置倒计时。
             startTimer();
         }
+        if (previous.micMode() == AiCallUiState.MicMode.BLUETOOTH_MIC
+                && mapped.micMode() == AiCallUiState.MicMode.PHONE_MIC
+                && !userRequestedPhoneMic) {
+            toasts.postValue(R.string.ai_call_mic_bluetooth_fallback);
+        }
+        userRequestedPhoneMic = false;
         if (!Objects.equals(previous, mapped)) {
             uiState.postValue(mapped);
         }

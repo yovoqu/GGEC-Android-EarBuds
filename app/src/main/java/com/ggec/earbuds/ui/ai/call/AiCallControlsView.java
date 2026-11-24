@@ -29,8 +29,8 @@ import com.ggec.earbuds.ui.ai.AiTheme;
 public final class AiCallControlsView extends LinearLayout {
 
     public interface Listener {
-        void onMicMuted(boolean micMuted);
-        void onSpeaker(boolean speaker);
+        void onMicMenuRequested(@NonNull View anchor);
+        void onSpeakerMenuRequested(@NonNull View anchor);
         void onStartCall();
         void onHangUp();
     }
@@ -54,13 +54,11 @@ public final class AiCallControlsView extends LinearLayout {
 
     private final Listener listener;
     private boolean currentLive;
-    private boolean micMuted;
-    private boolean speakerOn = true;
 
     @Nullable
-    private Boolean renderedMicMuted;
+    private AiCallUiState.MicMode renderedMicMode;
     @Nullable
-    private Boolean renderedSpeakerOn;
+    private AiCallUiState.OutputMode renderedOutputMode;
     @Nullable
     private Boolean renderedLive;
 
@@ -119,7 +117,7 @@ public final class AiCallControlsView extends LinearLayout {
         micBg.setShape(GradientDrawable.OVAL);
         micButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
         micButton.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), micBg, null));
-        FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMicMuted(!micMuted));
+        FrameLayout micSlot = createControlSlot(micButton, v -> listener.onMicMenuRequested(micButton));
 
         heroBg = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
@@ -133,7 +131,7 @@ public final class AiCallControlsView extends LinearLayout {
         speakerBg.setShape(GradientDrawable.OVAL);
         speakerButton = createCircleButton(SIDE_BUTTON_SIZE, 12f);
         speakerButton.setBackground(new RippleDrawable(ColorStateList.valueOf(theme.brandSoft), speakerBg, null));
-        FrameLayout speakerSlot = createControlSlot(speakerButton, v -> listener.onSpeaker(!speakerOn));
+        FrameLayout speakerSlot = createControlSlot(speakerButton, v -> listener.onSpeakerMenuRequested(speakerButton));
 
         addDockItem(buttonsRow, micSlot);
         addDockItem(buttonsRow, hangUpSlot);
@@ -142,20 +140,19 @@ public final class AiCallControlsView extends LinearLayout {
         addView(buttonsRow, new LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        applyMicLook(false);
-        applySpeakerLook(true);
+        applyMicLook(AiCallUiState.MicMode.PHONE_MIC);
+        applySpeakerLook(AiCallUiState.OutputMode.SPEAKER);
         applyHeroLook(false);
     }
 
     public void render(@NonNull AiCallUiState state) {
-        this.micMuted = state.micMuted();
-        this.speakerOn = state.speakerOn();
-
-        if (renderedMicMuted == null || renderedMicMuted != state.micMuted()) {
-            applyMicLook(state.micMuted());
+        AiCallUiState.MicMode micMode = state.micMode();
+        if (renderedMicMode != micMode) {
+            applyMicLook(micMode);
         }
-        if (renderedSpeakerOn == null || renderedSpeakerOn != state.speakerOn()) {
-            applySpeakerLook(state.speakerOn());
+        AiCallUiState.OutputMode outputMode = state.outputMode();
+        if (renderedOutputMode != outputMode) {
+            applySpeakerLook(outputMode);
         }
         boolean live = state.live();
         if (renderedLive == null || renderedLive != live) {
@@ -179,37 +176,64 @@ public final class AiCallControlsView extends LinearLayout {
         setPadding(padH, padTop, padH, padBottom);
     }
 
-    private void applyMicLook(boolean muted) {
-        renderedMicMuted = muted;
-        if (muted) {
-            micBg.setColor(theme.warningSoft);
-            micBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.warning);
-            micButton.setImageResource(R.drawable.ic_ai_call_mic_off);
-            micButton.setColorFilter(theme.warning);
-            micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_muted_label));
-        } else {
-            micBg.setColor(theme.fill);
-            micBg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
-            micButton.setImageResource(R.drawable.ic_ai_call_mic);
-            micButton.setColorFilter(theme.text1);
-            micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_label));
+    private void applyMicLook(@NonNull AiCallUiState.MicMode mode) {
+        renderedMicMode = mode;
+        switch (mode) {
+            case MUTED -> {
+                micBg.setColor(theme.warningSoft);
+                micBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.warning);
+                micButton.setImageResource(R.drawable.ic_ai_call_mic_off);
+                micButton.setColorFilter(theme.warning);
+                micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_muted_label));
+            }
+            case BLUETOOTH_MIC -> {
+                micBg.setColor(theme.brandSoft);
+                micBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
+                micButton.setImageResource(R.drawable.ic_ai_call_bluetooth);
+                micButton.setColorFilter(theme.brand);
+                micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_bluetooth));
+            }
+            case PHONE_MIC -> {
+                micBg.setColor(theme.fill);
+                micBg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
+                micButton.setImageResource(R.drawable.ic_ai_call_mic);
+                micButton.setColorFilter(theme.text1);
+                micButton.setContentDescription(getContext().getString(R.string.ai_call_mic_label));
+            }
         }
     }
 
-    private void applySpeakerLook(boolean speaker) {
-        renderedSpeakerOn = speaker;
-        if (speaker) {
-            speakerBg.setColor(theme.brandSoft);
-            speakerBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
-            speakerButton.setImageResource(R.drawable.ic_ai_call_speaker);
-            speakerButton.setColorFilter(theme.brand);
-            speakerButton.setContentDescription(getContext().getString(R.string.ai_call_speaker_label));
-        } else {
-            speakerBg.setColor(theme.fill);
-            speakerBg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
-            speakerButton.setImageResource(R.drawable.ic_ai_call_earpiece);
-            speakerButton.setColorFilter(theme.text1);
-            speakerButton.setContentDescription(getContext().getString(R.string.ai_call_earpiece_label));
+    private void applySpeakerLook(@NonNull AiCallUiState.OutputMode mode) {
+        renderedOutputMode = mode;
+        switch (mode) {
+            case MUTED -> {
+                speakerBg.setColor(theme.warningSoft);
+                speakerBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.warning);
+                speakerButton.setImageResource(R.drawable.ic_ai_call_speaker_off);
+                speakerButton.setColorFilter(theme.warning);
+                speakerButton.setContentDescription(getContext().getString(R.string.ai_call_output_muted_label));
+            }
+            case BLUETOOTH -> {
+                speakerBg.setColor(theme.brandSoft);
+                speakerBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
+                speakerButton.setImageResource(R.drawable.ic_ai_call_bluetooth);
+                speakerButton.setColorFilter(theme.brand);
+                speakerButton.setContentDescription(getContext().getString(R.string.ai_call_output_bluetooth));
+            }
+            case SPEAKER -> {
+                speakerBg.setColor(theme.brandSoft);
+                speakerBg.setStroke(Math.max(1, theme.dp(1.2f)), theme.brand);
+                speakerButton.setImageResource(R.drawable.ic_ai_call_speaker);
+                speakerButton.setColorFilter(theme.brand);
+                speakerButton.setContentDescription(getContext().getString(R.string.ai_call_speaker_label));
+            }
+            case EARPIECE -> {
+                speakerBg.setColor(theme.fill);
+                speakerBg.setStroke(Math.max(1, theme.dp(1f)), theme.cardStroke);
+                speakerButton.setImageResource(R.drawable.ic_ai_call_earpiece);
+                speakerButton.setColorFilter(theme.text1);
+                speakerButton.setContentDescription(getContext().getString(R.string.ai_call_earpiece_label));
+            }
         }
     }
 

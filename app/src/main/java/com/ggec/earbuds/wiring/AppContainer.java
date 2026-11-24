@@ -13,6 +13,7 @@ import com.ggec.earbuds.provider.biz_appupdate.AppUpdateProviders;
 import com.ggec.earbuds.provider.lib_common.download.YoDownloadProvider;
 import com.ggec.earbuds.provider.lib_common.log.YoLogProvider;
 import com.ggec.earbuds.provider.lib_common.refresh_rate.WindowProvider;
+import com.ggec.earbuds.wiring.device.DeviceBluetoothAudioSourceBridge;
 
 /**
  * 进程装配根：唯一创建应用级图、唯一触碰 provider 的地方。
@@ -25,6 +26,7 @@ public final class AppContainer {
     private final AiGraph ai;
     private final ShellGraph shell;
     private final DeviceGraph device;
+    private final DeviceBluetoothAudioSourceBridge bluetoothAudioBridge;
     private final AppUpdateProviders appUpdate;
     private final AppExecutors executors;
 
@@ -41,6 +43,9 @@ public final class AppContainer {
         // 设备子图的跟踪由装配根显式启动：DeviceGraph 构造期不自行订阅会话，
         // release() 里的停止因此一定与这次启动成对。
         device.start();
+        bluetoothAudioBridge = new DeviceBluetoothAudioSourceBridge(
+                device.observeDevice(), device.recordPort(), ai.audioSourceCatalog());
+        bluetoothAudioBridge.start();
         // 下载引擎是更新能力的底层依赖（启动检查会 queryAll 恢复断点续传任务），
         // 必须在 AppUpdateProviders 之前装好，否则 YoDownload.queryAll 抛未初始化。
         YoDownloadProvider.install(appContext);
@@ -92,6 +97,7 @@ public final class AppContainer {
      * 因此这里是 best-effort。
      */
     public void release() {
+        bluetoothAudioBridge.stop();
         device.release();
     }
 

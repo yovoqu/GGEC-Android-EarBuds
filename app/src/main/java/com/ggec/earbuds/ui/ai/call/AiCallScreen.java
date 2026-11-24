@@ -6,12 +6,16 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.ggec.earbuds.R;
 import com.ggec.earbuds.ui.ai.AiTheme;
+import com.ggec.earbuds.ui.common.YoComponents;
+import com.yohu.youi.api.navigation.YoMenu;
 
 /**
  * 通话页全景布局容器 (AiCallScreen)：
@@ -34,26 +38,40 @@ public final class AiCallScreen {
         void onClose();
         void onToggleSubtitles();
         void onToggleDuplex();
-        void onMicMuted(boolean micMuted);
-        void onSpeaker(boolean speaker);
+        void onSelectPhoneMic();
+        void onSelectBluetoothMic();
+        void onMuteMic();
+        void onSelectOutputMode(@NonNull AiCallUiState.OutputMode mode);
         void onStartCall();
         void onHangUp();
         void onInterrupt();
         void onAction(@NonNull AiCallUiState.Action action);
     }
 
+    private static final int MENU_PHONE_MIC = 1;
+    private static final int MENU_BLUETOOTH_MIC = 2;
+    private static final int MENU_MUTE = 3;
+    private static final int MENU_OUTPUT_BLUETOOTH = 11;
+    private static final int MENU_OUTPUT_EARPIECE = 12;
+    private static final int MENU_OUTPUT_SPEAKER = 13;
+    private static final int MENU_OUTPUT_MUTED = 14;
     private static final float VISUALIZER_SIZE = 210f;
 
     private final AiTheme theme;
+    private final Listener listener;
+    private final YoComponents components = new YoComponents();
     private final ConstraintLayout root;
     private final AiCallHeaderView headerView;
     private final AiFluidVisualizerView visualizerView;
     private final AiCallSubtitleView subtitleView;
     private final AiCallErrorView errorView;
     private final AiCallControlsView controlsView;
+    @Nullable
+    private AiCallUiState latestState;
 
     public AiCallScreen(@NonNull AiTheme theme, @NonNull Listener listener) {
         this.theme = theme;
+        this.listener = listener;
         Context context = theme.context;
         root = new ConstraintLayout(context);
         root.setId(View.generateViewId());
@@ -95,13 +113,13 @@ public final class AiCallScreen {
         // 2. 底部黄金三键悬浮控制舱 (ai_call_controls)
         controlsView = new AiCallControlsView(context, theme, new AiCallControlsView.Listener() {
             @Override
-            public void onMicMuted(boolean micMuted) {
-                listener.onMicMuted(micMuted);
+            public void onMicMenuRequested(@NonNull View anchor) {
+                showMicMenu(anchor);
             }
 
             @Override
-            public void onSpeaker(boolean speaker) {
-                listener.onSpeaker(speaker);
+            public void onSpeakerMenuRequested(@NonNull View anchor) {
+                showSpeakerMenu(anchor);
             }
 
             @Override
@@ -190,6 +208,7 @@ public final class AiCallScreen {
     }
 
     public void render(@NonNull AiCallUiState state) {
+        latestState = state;
         headerView.render(state);
         controlsView.render(state);
         errorView.render(state.reason(), state.action());
@@ -211,6 +230,117 @@ public final class AiCallScreen {
             visualizerView.setVisibility(View.VISIBLE);
             subtitleView.renderItems(state.subtitleItems(), state.captionsVisible());
         }
+    }
+
+    public void destroy() {
+        components.close();
+    }
+
+    private void showMicMenu(@NonNull View anchor) {
+        Context context = theme.context;
+        AiCallUiState state = latestState;
+        AiCallUiState.MicMode mode = state != null ? state.micMode() : AiCallUiState.MicMode.PHONE_MIC;
+        boolean btAvailable = state != null && state.bluetoothMicAvailable();
+        String btLabel = state != null ? state.bluetoothMicLabel() : null;
+
+        YoMenu.Item phoneItem = YoMenu.Item.of(MENU_PHONE_MIC, context.getString(R.string.ai_call_mic_phone))
+                .startIcon(R.drawable.ic_ai_call_mic)
+                .selected(mode == AiCallUiState.MicMode.PHONE_MIC)
+                .selectIcon(mode == AiCallUiState.MicMode.PHONE_MIC);
+
+        YoMenu.Item bluetoothItem = YoMenu.Item.of(MENU_BLUETOOTH_MIC, context.getString(R.string.ai_call_mic_bluetooth))
+                .startIcon(R.drawable.ic_ai_call_bluetooth)
+                .enabled(btAvailable)
+                .selected(mode == AiCallUiState.MicMode.BLUETOOTH_MIC)
+                .selectIcon(mode == AiCallUiState.MicMode.BLUETOOTH_MIC);
+        if (btLabel != null && !btLabel.isBlank()) {
+            bluetoothItem.subtitle(btLabel);
+        }
+
+        YoMenu.Item muteItem = YoMenu.Item.of(MENU_MUTE, context.getString(R.string.ai_call_mic_mute))
+                .startIcon(R.drawable.ic_ai_call_mic_off)
+                .selected(mode == AiCallUiState.MicMode.MUTED)
+                .selectIcon(mode == AiCallUiState.MicMode.MUTED);
+
+        YoMenu menu = YoMenu.create(context)
+                .addItem(phoneItem)
+                .addItem(bluetoothItem)
+                .addItem(muteItem)
+                .setAnchorView(anchor)
+                .setPlacement(YoMenu.Placement.TOP_LEFT)
+                .setOnItemClickListener(id -> {
+                    if (id == MENU_PHONE_MIC) {
+                        listener.onSelectPhoneMic();
+                    } else if (id == MENU_BLUETOOTH_MIC) {
+                        listener.onSelectBluetoothMic();
+                    } else if (id == MENU_MUTE) {
+                        listener.onMuteMic();
+                    }
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
+    }
+
+    private void showSpeakerMenu(@NonNull View anchor) {
+        Context context = theme.context;
+        AiCallUiState state = latestState;
+        AiCallUiState.OutputMode mode = state != null
+                ? state.outputMode()
+                : AiCallUiState.OutputMode.SPEAKER;
+
+        boolean btOutputAvailable = state == null || state.bluetoothOutputAvailable();
+
+        YoMenu.Item bluetoothItem = YoMenu.Item.of(
+                        MENU_OUTPUT_BLUETOOTH,
+                        context.getString(R.string.ai_call_output_bluetooth))
+                .startIcon(R.drawable.ic_ai_call_bluetooth)
+                .enabled(btOutputAvailable)
+                .selected(mode == AiCallUiState.OutputMode.BLUETOOTH)
+                .selectIcon(mode == AiCallUiState.OutputMode.BLUETOOTH);
+
+        YoMenu.Item earpieceItem = YoMenu.Item.of(
+                        MENU_OUTPUT_EARPIECE,
+                        context.getString(R.string.ai_call_earpiece_label))
+                .startIcon(R.drawable.ic_ai_call_earpiece)
+                .selected(mode == AiCallUiState.OutputMode.EARPIECE)
+                .selectIcon(mode == AiCallUiState.OutputMode.EARPIECE);
+
+        YoMenu.Item speakerItem = YoMenu.Item.of(
+                        MENU_OUTPUT_SPEAKER,
+                        context.getString(R.string.ai_call_speaker_label))
+                .startIcon(R.drawable.ic_ai_call_speaker)
+                .selected(mode == AiCallUiState.OutputMode.SPEAKER)
+                .selectIcon(mode == AiCallUiState.OutputMode.SPEAKER);
+
+        YoMenu.Item muteItem = YoMenu.Item.of(
+                        MENU_OUTPUT_MUTED,
+                        context.getString(R.string.ai_call_output_mute))
+                .startIcon(R.drawable.ic_ai_call_speaker_off)
+                .selected(mode == AiCallUiState.OutputMode.MUTED)
+                .selectIcon(mode == AiCallUiState.OutputMode.MUTED);
+
+        YoMenu menu = YoMenu.create(context)
+                .addItem(bluetoothItem)
+                .addItem(earpieceItem)
+                .addItem(speakerItem)
+                .addItem(muteItem)
+                .setAnchorView(anchor)
+                .setPlacement(YoMenu.Placement.TOP_RIGHT)
+                .setOnItemClickListener(id -> {
+                    if (id == MENU_OUTPUT_BLUETOOTH) {
+                        listener.onSelectOutputMode(AiCallUiState.OutputMode.BLUETOOTH);
+                    } else if (id == MENU_OUTPUT_EARPIECE) {
+                        listener.onSelectOutputMode(AiCallUiState.OutputMode.EARPIECE);
+                    } else if (id == MENU_OUTPUT_SPEAKER) {
+                        listener.onSelectOutputMode(AiCallUiState.OutputMode.SPEAKER);
+                    } else if (id == MENU_OUTPUT_MUTED) {
+                        listener.onSelectOutputMode(AiCallUiState.OutputMode.MUTED);
+                    }
+                })
+                .build();
+        components.own(menu::destroy);
+        menu.show();
     }
 
 }

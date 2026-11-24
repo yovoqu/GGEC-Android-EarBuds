@@ -184,7 +184,8 @@ public final class AiGraph {
                         voiceSessions(),
                         new MainThreadTicker(),
                         new LoadAiSettings(settings),
-                        new ObserveAiSettings(settings)));
+                        new ObserveAiSettings(settings),
+                        audioSourceCatalog));
             }
             if (AiSettingsViewModel.class.equals(modelClass)) {
                 return modelClass.cast(new AiSettingsViewModel(

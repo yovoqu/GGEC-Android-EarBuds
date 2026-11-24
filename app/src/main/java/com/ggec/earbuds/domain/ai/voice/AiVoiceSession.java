@@ -2,6 +2,7 @@ package com.ggec.earbuds.domain.ai.voice;
 
 import androidx.annotation.NonNull;
 
+import com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 
 /**
@@ -36,8 +37,8 @@ public interface AiVoiceSession {
     /** 直接指定并热切换到一个自定义音频输入源实例。 */
     void setAudioSource(@NonNull AiAudioSource source);
 
-    /** 切换扬声器/听筒路由。 */
-    void setSpeakerphone(boolean speaker);
+    /** 切换下行音频输出路由（蓝牙设备 / 听筒 / 扬声器 / 静音）。 */
+    void setOutputRoute(@NonNull AiAudioOutputRoute route);
 
     /** 用户插话：立刻停止正在生成的回答并回到聆听。 */
     void interrupt();

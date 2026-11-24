@@ -11,6 +11,7 @@ import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 
 import java.util.ArrayDeque;
@@ -56,6 +57,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
 
     private AudioManager audioManager;
     private boolean ownsAudioMode;
+    private volatile AiAudioOutputRoute currentRoute = AiAudioOutputRoute.SPEAKER;
 
     public AndroidAudioPlayback(@NonNull Context context) {
         this.context = Objects.requireNonNull(context, "context").getApplicationContext();
@@ -91,7 +93,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             int bufferBytes = Math.max(minBufferBytes > 0 ? minBufferBytes : rate, 4096) * 2;
             AudioTrack created = new AudioTrack.Builder()
                     .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build())
                     .setAudioFormat(new AudioFormat.Builder()
@@ -106,6 +108,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
                 created.release();
                 throw new IllegalStateException("AudioTrack init failed");
             }
+            created.setVolume(currentRoute == AiAudioOutputRoute.MUTED ? 0f : 1f);
             created.play();
             track = created;
             playedSampleRateHz = rate;
@@ -114,6 +117,7 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
             writer.setDaemon(true);
             writer.start();
         }
+        setOutputRoute(currentRoute);
     }
 
     @Override
@@ -168,24 +172,62 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
     }
 
     @Override
-    public void setSpeakerphone(boolean speaker) {
+    public void setOutputRoute(@NonNull AiAudioOutputRoute route) {
+        Objects.requireNonNull(route, "route");
+        currentRoute = route;
+        AudioTrack active;
+        synchronized (lock) {
+            active = track;
+        }
+        if (active != null && active.getState() == AudioTrack.STATE_INITIALIZED) {
+            try {
+                active.setVolume(route == AiAudioOutputRoute.MUTED ? 0f : 1f);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        if (route == AiAudioOutputRoute.MUTED) {
+            return;
+        }
         AudioManager manager = manager();
         if (manager == null) {
             return;
         }
         try {
-            if (!ownsAudioMode) {
-                manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                ownsAudioMode = true;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                AudioDeviceInfo target = communicationDevice(manager, speaker);
-                if (target != null) {
-                    manager.setCommunicationDevice(target);
-                    return;
+            if (route == AiAudioOutputRoute.EARPIECE) {
+                if (!ownsAudioMode) {
+                    manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                    ownsAudioMode = true;
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    AudioDeviceInfo target = communicationDevice(manager, route);
+                    if (target != null) {
+                        manager.setCommunicationDevice(target);
+                    }
+                } else {
+                    manager.setSpeakerphoneOn(false);
+                }
+                if (active != null) {
+                    AudioDeviceInfo earpiece = findOutputDevice(manager, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+                    active.setPreferredDevice(earpiece);
+                }
+                return;
             }
-            manager.setSpeakerphoneOn(speaker);
+            // SPEAKER / BLUETOOTH 使用 USAGE_MEDIA + MODE_NORMAL，避免触发经典蓝牙 HFP/SCO 占用导致耳机拒绝 BLE 随录随传。
+            if (ownsAudioMode) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    manager.clearCommunicationDevice();
+                } else {
+                    manager.setSpeakerphoneOn(false);
+                }
+                manager.setMode(AudioManager.MODE_NORMAL);
+                ownsAudioMode = false;
+            }
+            if (active != null) {
+                AudioDeviceInfo preferred = route == AiAudioOutputRoute.SPEAKER
+                        ? findOutputDevice(manager, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                        : findBluetoothOutputDevice(manager);
+                active.setPreferredDevice(preferred);
+            }
         } catch (RuntimeException ignored) {
         }
     }
@@ -288,33 +330,49 @@ public final class AndroidAudioPlayback implements AiAudioPlayback {
         return audioManager;
     }
 
-    /** 在可用通信设备里按外放/非外放优先路由查找目标设备；找不到返回 null 退回旧开关。 */
+    /** 在可用通信设备里按蓝牙/听筒/扬声器路由查找目标设备；找不到返回 null 退回旧开关。 */
     @Nullable
-    private static AudioDeviceInfo communicationDevice(@NonNull AudioManager manager, boolean speaker) {
+    private static AudioDeviceInfo communicationDevice(@NonNull AudioManager manager,
+                                                         @NonNull AiAudioOutputRoute route) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return null;
         }
         List<AudioDeviceInfo> devices = manager.getAvailableCommunicationDevices();
-        if (speaker) {
-            return findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+        return switch (route) {
+            case SPEAKER -> findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+            case EARPIECE -> findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+            case BLUETOOTH -> {
+                AudioDeviceInfo ble = findByType(devices, AudioDeviceInfo.TYPE_BLE_HEADSET);
+                yield ble != null ? ble : findByType(devices, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
+            }
+            case MUTED -> null;
+        };
+    }
+
+    @Nullable
+    private static AudioDeviceInfo findBluetoothOutputDevice(@NonNull AudioManager manager) {
+        AudioDeviceInfo a2dp = findOutputDevice(manager, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP);
+        if (a2dp != null) {
+            return a2dp;
         }
-        AudioDeviceInfo preferred = findByType(devices, AudioDeviceInfo.TYPE_BLE_HEADSET);
-        if (preferred != null) {
-            return preferred;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            AudioDeviceInfo ble = findOutputDevice(manager, AudioDeviceInfo.TYPE_BLE_HEADSET);
+            if (ble != null) {
+                return ble;
+            }
         }
-        preferred = findByType(devices, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
-        if (preferred != null) {
-            return preferred;
+        return findOutputDevice(manager, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
+    }
+
+    @Nullable
+    private static AudioDeviceInfo findOutputDevice(@NonNull AudioManager manager, int targetType) {
+        AudioDeviceInfo[] outputs = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+        for (AudioDeviceInfo device : outputs) {
+            if (device.getType() == targetType) {
+                return device;
+            }
         }
-        preferred = findByType(devices, AudioDeviceInfo.TYPE_WIRED_HEADSET);
-        if (preferred != null) {
-            return preferred;
-        }
-        preferred = findByType(devices, AudioDeviceInfo.TYPE_USB_HEADSET);
-        if (preferred != null) {
-            return preferred;
-        }
-        return findByType(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+        return null;
     }
 
     @Nullable

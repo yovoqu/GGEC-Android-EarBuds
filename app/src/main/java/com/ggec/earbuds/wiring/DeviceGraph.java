@@ -197,6 +197,16 @@ public final class DeviceGraph {
         syncActiveDevice.stop();
     }
 
+    @NonNull
+    ObserveDevice observeDevice() {
+        return observeDevice;
+    }
+
+    @NonNull
+    RecordPort recordPort() {
+        return recordPort;
+    }
+
     private interface Builder<T extends ViewModel> {
         T create();
     }

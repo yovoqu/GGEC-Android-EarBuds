@@ -1,5 +1,7 @@
 package com.ggec.earbuds.domain.ai.port;
 
+import androidx.annotation.NonNull;
+
 /**
  * 播放。语音交流模式播实时模型回传的音频块。
  *
@@ -34,8 +36,8 @@ public interface AiAudioPlayback {
      */
     Heard captureHeard();
 
-    /** 扬声器 true / 听筒 false。 */
-    void setSpeakerphone(boolean speaker);
+    /** 切换下行音频输出路由（蓝牙设备 / 听筒 / 扬声器 / 静音）。 */
+    void setOutputRoute(@NonNull AiAudioOutputRoute route);
 
     /** 停止并释放。幂等。 */
     void stop();

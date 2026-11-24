@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.ggec.earbuds.R;
+import com.ggec.earbuds.data.ai.voice.BluetoothStreamAudioSource;
 import com.ggec.earbuds.data.ai.voice.ExternalPcmAudioSource;
 import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiPlatformConfig;
@@ -25,6 +26,8 @@ import com.ggec.earbuds.domain.ai.voice.AiVoiceSession;
 import com.ggec.earbuds.domain.ai.voice.AiVoiceSnapshot;
 import com.ggec.earbuds.domain.ai.voice.VoiceDuplex;
 import com.ggec.earbuds.testing.ai.AiFixtures;
+import com.ggec.earbuds.testing.ai.FakeAudioSource;
+import com.ggec.earbuds.testing.ai.FakeAudioSourceCatalog;
 import com.ggec.earbuds.testing.ai.MemorySettingsRepository;
 import com.ggec.earbuds.ui.ai.call.subtitle.AiSubtitleItem;
 
@@ -48,6 +51,8 @@ public class AiCallViewModelTest {
 
     private FakeVoiceSession fakeSession;
     private FakeTicker fakeTicker;
+    private FakeAudioSourceCatalog sourceCatalog;
+    private FakeAudioSource phoneMic;
     private MemorySettingsRepository settingsRepo;
     private AiCallViewModel viewModel;
 
@@ -55,6 +60,11 @@ public class AiCallViewModelTest {
     public void setUp() {
         fakeSession = new FakeVoiceSession();
         fakeTicker = new FakeTicker();
+        phoneMic = new FakeAudioSource("android:builtin:default",
+                AiAudioSource.Kind.BUILTIN_MIC, "手机麦克风", 16_000);
+        sourceCatalog = new FakeAudioSourceCatalog()
+                .withSource(phoneMic)
+                .setDefaultSourceId("android:builtin:default");
         settingsRepo = new MemorySettingsRepository(AiSettings.EMPTY);
         viewModel = newViewModel(settingsRepo);
     }
@@ -68,7 +78,8 @@ public class AiCallViewModelTest {
                 },
                 fakeTicker,
                 new LoadAiSettings(repo),
-                new ObserveAiSettings(repo));
+                new ObserveAiSettings(repo),
+                sourceCatalog);
     }
 
     @Test
@@ -90,7 +101,7 @@ public class AiCallViewModelTest {
         assertTrue(fakeSession.started);
         AiCallUiState state = viewModel.uiState().getValue();
         assertEquals(AiCallUiState.Phase.CONNECTING, state.phase());
-        assertTrue(state.speakerOn());
+        assertEquals(AiCallUiState.OutputMode.SPEAKER, state.outputMode());
         assertTrue(state.captionsVisible());
         assertEquals(0, state.durationSeconds());
         assertEquals(VoiceDuplex.HALF_DUPLEX, fakeSession.initialDuplex);
@@ -147,13 +158,21 @@ public class AiCallViewModelTest {
     }
 
     @Test
-    public void speakerphoneUpdatesSessionAndUiState() {
+    public void outputModeUpdatesSessionAndUiState() {
         viewModel.start();
-        assertTrue(viewModel.uiState().getValue().speakerOn());
+        assertEquals(AiCallUiState.OutputMode.SPEAKER, viewModel.uiState().getValue().outputMode());
 
-        viewModel.setSpeakerphone(false);
-        assertFalse(fakeSession.speakerphone);
-        assertFalse(viewModel.uiState().getValue().speakerOn());
+        viewModel.setOutputMode(AiCallUiState.OutputMode.BLUETOOTH);
+        assertEquals(com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute.BLUETOOTH, fakeSession.outputRoute);
+        assertEquals(AiCallUiState.OutputMode.BLUETOOTH, viewModel.uiState().getValue().outputMode());
+
+        viewModel.setOutputMode(AiCallUiState.OutputMode.EARPIECE);
+        assertEquals(com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute.EARPIECE, fakeSession.outputRoute);
+        assertEquals(AiCallUiState.OutputMode.EARPIECE, viewModel.uiState().getValue().outputMode());
+
+        viewModel.setOutputMode(AiCallUiState.OutputMode.MUTED);
+        assertEquals(com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute.MUTED, fakeSession.outputRoute);
+        assertEquals(AiCallUiState.OutputMode.MUTED, viewModel.uiState().getValue().outputMode());
     }
 
     @Test
@@ -318,6 +337,42 @@ public class AiCallViewModelTest {
     }
 
     @Test
+    public void micMenuSwitchesBetweenPhoneBluetoothAndMute() {
+        assertFalse(viewModel.uiState().getValue().bluetoothMicAvailable());
+        assertEquals(AiCallUiState.MicMode.PHONE_MIC, viewModel.uiState().getValue().micMode());
+
+        // 未连接蓝牙设备时选择蓝牙 MIC 提示不可用且不改变当前状态
+        viewModel.selectBluetoothMic();
+        assertEquals(Integer.valueOf(R.string.ai_call_mic_bluetooth_unavailable),
+                viewModel.toasts().getValue());
+        assertEquals(AiCallUiState.MicMode.PHONE_MIC, viewModel.uiState().getValue().micMode());
+
+        // 蓝牙设备就绪后可切换到蓝牙 MIC，再静音、再切回手机 MIC 自动解除静音
+        FakeAudioSource btMic = new FakeAudioSource(BluetoothStreamAudioSource.SOURCE_ID,
+                AiAudioSource.Kind.BLUETOOTH_BLE, "HS02", 16_000);
+        sourceCatalog.registerExternal(btMic);
+        assertTrue(viewModel.uiState().getValue().bluetoothMicAvailable());
+
+        viewModel.selectBluetoothMic();
+        assertEquals(AiCallUiState.MicMode.BLUETOOTH_MIC, viewModel.uiState().getValue().micMode());
+
+        viewModel.muteMic();
+        assertEquals(AiCallUiState.MicMode.MUTED, viewModel.uiState().getValue().micMode());
+        assertTrue(viewModel.uiState().getValue().micMuted());
+
+        viewModel.selectPhoneMic();
+        assertEquals(AiCallUiState.MicMode.PHONE_MIC, viewModel.uiState().getValue().micMode());
+        assertFalse(viewModel.uiState().getValue().micMuted());
+
+        // 选中蓝牙 MIC 后再断开蓝牙，IDLE 态自动回退到手机 MIC
+        viewModel.selectBluetoothMic();
+        assertEquals(AiCallUiState.MicMode.BLUETOOTH_MIC, viewModel.uiState().getValue().micMode());
+        sourceCatalog.unregisterExternal(BluetoothStreamAudioSource.SOURCE_ID);
+        assertFalse(viewModel.uiState().getValue().bluetoothMicAvailable());
+        assertEquals(AiCallUiState.MicMode.PHONE_MIC, viewModel.uiState().getValue().micMode());
+    }
+
+    @Test
     public void midCallSourceSwitchingDelegatesToSession() {
         viewModel.start();
         viewModel.selectAudioSource("usb:1");
@@ -349,7 +404,8 @@ public class AiCallViewModelTest {
         boolean started = false;
         boolean stopped = false;
         boolean micMuted = false;
-        boolean speakerphone = true;
+        com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute outputRoute =
+                com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute.SPEAKER;
         boolean interrupted = false;
         VoiceDuplex initialDuplex;
         VoiceDuplex duplex = VoiceDuplex.defaultMode();
@@ -374,8 +430,8 @@ public class AiCallViewModelTest {
         }
 
         @Override
-        public void setSpeakerphone(boolean speakerphone) {
-            this.speakerphone = speakerphone;
+        public void setOutputRoute(@NonNull com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute route) {
+            this.outputRoute = route;
         }
 
         @Override

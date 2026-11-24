@@ -1,7 +1,9 @@
 package com.ggec.earbuds.testing.ai;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 
 import java.util.ArrayList;
@@ -18,8 +20,8 @@ public final class FakeAudioPlayback implements AiAudioPlayback {
     public int starts;
     public int stops;
     public int flushes;
-    public int speakerphoneChanges;
-    public boolean speakerphone;
+    public int outputRouteChanges;
+    public AiAudioOutputRoute outputRoute = AiAudioOutputRoute.SPEAKER;
     public int sampleRateHz;
     public final List<byte[]> written = new ArrayList<>();
     public final List<String> writtenItemIds = new ArrayList<>();
@@ -61,9 +63,9 @@ public final class FakeAudioPlayback implements AiAudioPlayback {
     }
 
     @Override
-    public void setSpeakerphone(boolean speaker) {
-        speakerphoneChanges++;
-        speakerphone = speaker;
+    public void setOutputRoute(@NonNull AiAudioOutputRoute route) {
+        outputRouteChanges++;
+        outputRoute = route;
     }
 
     @Override

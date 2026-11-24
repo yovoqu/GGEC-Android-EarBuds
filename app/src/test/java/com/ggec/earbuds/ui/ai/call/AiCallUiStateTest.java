@@ -28,7 +28,7 @@ public class AiCallUiStateTest {
         assertEquals(AiCallUiState.Phase.IDLE, idle.phase());
         assertEquals(R.string.ai_call_phase_idle, idle.title());
         assertEquals(VoiceDuplex.FULL_DUPLEX, idle.duplex());
-        assertTrue(idle.speakerOn());
+        assertEquals(AiCallUiState.OutputMode.SPEAKER, idle.outputMode());
         assertTrue(idle.captionsVisible());
         assertFalse(idle.live());
         assertFalse(idle.ended());
@@ -40,7 +40,7 @@ public class AiCallUiStateTest {
         assertEquals(AiCallUiState.Phase.CONNECTING, connecting.phase());
         assertEquals(R.string.ai_call_phase_connecting, connecting.title());
         assertEquals(VoiceDuplex.FULL_DUPLEX, connecting.duplex());
-        assertTrue(connecting.speakerOn());
+        assertEquals(AiCallUiState.OutputMode.SPEAKER, connecting.outputMode());
         assertTrue(connecting.captionsVisible());
         assertNull(connecting.activeSource());
         assertTrue(connecting.availableSources().isEmpty());
@@ -132,14 +132,14 @@ public class AiCallUiStateTest {
                 "builtin:1", AiAudioSource.Kind.BUILTIN_MIC, "手机麦", 16_000);
         AiCallUiState base = AiCallUiState.connecting()
                 .withDurationSeconds(125)
-                .withSpeakerOn(false)
+                .withOutputMode(AiCallUiState.OutputMode.EARPIECE)
                 .withCaptionsVisible(false)
                 .withMicMuted(true)
                 .withDuplex(VoiceDuplex.FULL_DUPLEX)
                 .withSources(mic, List.of(mic));
 
         assertEquals("02:05", base.formattedDuration());
-        assertFalse(base.speakerOn());
+        assertEquals(AiCallUiState.OutputMode.EARPIECE, base.outputMode());
         assertFalse(base.captionsVisible());
         assertTrue(base.micMuted());
         assertEquals(VoiceDuplex.FULL_DUPLEX, base.duplex());

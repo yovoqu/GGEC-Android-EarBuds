@@ -88,6 +88,14 @@ public final class AiCallActivity extends AppCompatActivity {
         });
     }
 
+    @Override
+    protected void onDestroy() {
+        if (screen != null) {
+            screen.destroy();
+        }
+        super.onDestroy();
+    }
+
     @NonNull
     private AppContainer container() {
         AppContainer container = AppContainer.from(this);
@@ -154,13 +162,23 @@ public final class AiCallActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onMicMuted(boolean micMuted) {
-            viewModel.setMicMuted(micMuted);
+        public void onSelectPhoneMic() {
+            viewModel.selectPhoneMic();
         }
 
         @Override
-        public void onSpeaker(boolean speaker) {
-            viewModel.setSpeakerphone(speaker);
+        public void onSelectBluetoothMic() {
+            viewModel.selectBluetoothMic();
+        }
+
+        @Override
+        public void onMuteMic() {
+            viewModel.muteMic();
+        }
+
+        @Override
+        public void onSelectOutputMode(@NonNull AiCallUiState.OutputMode mode) {
+            viewModel.setOutputMode(mode);
         }
 
         @Override

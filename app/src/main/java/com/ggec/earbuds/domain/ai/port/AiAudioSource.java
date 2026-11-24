@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public interface AiAudioSource {
 
+    /** 蓝牙设备随录随传音频流的统一源标识（供目录注册与 UI 路由共用）。 */
+    String BLUETOOTH_STREAM_ID = "bluetooth:stream";
+
     /** 输入源硬件/传输形态分类。 */
     enum Kind {
         BUILTIN_MIC,
@@ -65,8 +68,13 @@ public interface AiAudioSource {
      */
     void start(@NonNull Listener listener);
 
-    /** 停止生产并释放占用资源。必须幂等。 */
+    /** 停止生产（或从上行管线解绑）。必须幂等。 */
     void stop();
+
+    /** 退出通话页或挂断时彻底释放底层硬件/蓝牙录音流。必须幂等。 */
+    default void release() {
+        stop();
+    }
 
     interface Listener {
         /**

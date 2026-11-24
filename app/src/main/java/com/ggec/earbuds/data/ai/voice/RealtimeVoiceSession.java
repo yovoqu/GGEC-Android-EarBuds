@@ -7,6 +7,7 @@ import com.ggec.earbuds.domain.ai.model.AiFailure;
 import com.ggec.earbuds.domain.ai.model.AiFailureKind;
 import com.ggec.earbuds.domain.ai.model.AiSettings;
 import com.ggec.earbuds.domain.ai.model.AiVoiceConfig;
+import com.ggec.earbuds.domain.ai.port.AiAudioOutputRoute;
 import com.ggec.earbuds.domain.ai.port.AiAudioPlayback;
 import com.ggec.earbuds.domain.ai.port.AiAudioSource;
 import com.ggec.earbuds.domain.ai.port.AiAudioSourceCatalog;
@@ -194,8 +195,9 @@ public final class RealtimeVoiceSession implements AiVoiceSession {
     }
 
     @Override
-    public void setSpeakerphone(boolean speaker) {
-        dispatch(() -> playback.setSpeakerphone(speaker));
+    public void setOutputRoute(@NonNull AiAudioOutputRoute route) {
+        Objects.requireNonNull(route, "route");
+        dispatch(() -> playback.setOutputRoute(route));
     }
 
     @Override

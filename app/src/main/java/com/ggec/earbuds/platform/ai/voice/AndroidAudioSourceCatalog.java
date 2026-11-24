@@ -87,13 +87,6 @@ public final class AndroidAudioSourceCatalog implements AiAudioSourceCatalog {
     @Nullable
     @Override
     public AiAudioSource defaultSource() {
-        List<AiAudioSource.Descriptor> all = availableSources();
-        for (AiAudioSource.Descriptor candidate : all) {
-            AiAudioSource resolved = resolve(candidate.id());
-            if (resolved != null) {
-                return resolved;
-            }
-        }
         return new AndroidMicAudioSource(context);
     }
 
