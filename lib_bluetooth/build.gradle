@@ -37,7 +37,7 @@ dependencies {
 }
 
 // ── 结构性边界门禁 ────────────────────────────────────────────────────────────
-// 权威规则见 docs/architecture/2026-11-refactor/design.md §1.2 / §8。
+// 权威规则见 docs/architecture/2026-11-app-rebuild/architecture-rules.md。
 // 判定只用目录事实（provider/**、api/**、model/**、internal/**、spi/**、根包），
 // 不含任何类名、文件名或路径白名单；边界错了修边界，不放宽门禁。
 
@@ -189,9 +189,9 @@ tasks.register('checkLibBluetoothScanMechanismOnly') {
         def offenders = []
         // 口径（lead 裁决，勿改）：**裸 `deviceType` 不封** —— 它是平台蓝牙设备类型
         // （BleDeviceType ← BluetoothDevice.getType()、YoCbtDeviceType ← BluetoothClass.Device），
-        // 属 product-taxonomy §2.2 允许 lib 处理的通用 BLE 概念；本门禁只封**产品分类学标识**。
+        // 属通用 BLE 概念（允许 lib 处理）；本门禁只封**产品分类学标识**。
         //
-        // 产品分类学词汇（见 docs/architecture/2026-11-refactor/product-taxonomy.md §2.2）：
+        // 产品分类学词汇：
         // 产品型号 / 项目 / 能力 / 产品形态类型（biz 的 HsDeviceType）。
         //
         // 不要为了"看起来更严"把裸 `deviceType` 加进下面的列表：那会逼着改 BleDeviceIdentity.deviceType()

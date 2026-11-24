@@ -1,7 +1,7 @@
 # 全仓「数据源 + 架构」梳理与模块耦合审查（2026-11 full-review）
 
 > 方法：YoAgentDocs `task.architecture-review` + `playbook/architecture-review`（六段式、按所有权切范围）+ `checklists/architecture-review`；
-> 权威契约：`docs/architecture/2026-11-app-rebuild/architecture-rules.md`、`docs/architecture/2026-11-refactor/design.md`；
+> 权威契约：`docs/architecture/2026-11-app-rebuild/architecture-rules.md`；
 > 公共规则：`rules/common/architecture.md`、`rules/common/stack-layering.md`、`rules/by-type/android/README.md`、`rules/by-type/ui-kit/*`。
 >
 > 角色：`architect`（梳理 + 审查 + 分波次重构）。本文件为审查记录，不改业务语义。

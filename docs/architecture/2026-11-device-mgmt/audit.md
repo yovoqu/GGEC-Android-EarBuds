@@ -3,7 +3,7 @@
 > 方法：YoAgentDocs `task.architecture-review` + `playbook/architecture-review`（六段式）+ `checklists/architecture-review` + `rules/common/architecture.md` + `rules/by-type/android`。
 > 波次：本轮为「设备域重画」这一刀。只读审查按所有权切四片（A AI 实现层 / B AI 界面层 / C 设备 UI 与壳 / D 设备域与门禁），互不重叠。
 > 证据等级：审查阶段无真机运行观察，链路节点一律「已读到」；「推断」不进结论。改造后的运行证据见 `verification.md`。
-> 覆盖：`app/src/main/java` 428 个文件全部覆盖（A 126 / B 98 / C 75 / D 129 含 provider 与门禁）；另读 `app/src/test` 78 个文件、`build.gradle`、`docs/architecture/2026-11-refactor/design.md`。
+> 覆盖：`app/src/main/java` 428 个文件全部覆盖（A 126 / B 98 / C 75 / D 129 含 provider 与门禁）；另读 `app/src/test` 78 个文件、`build.gradle`。
 
 ## 汇总结论
 

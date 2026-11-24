@@ -8,7 +8,7 @@ import com.yovo.lib_bluetooth.model.ble.BleOperationHandle;
 /**
  * 订阅级扫描句柄：既是可取消的 {@link BleOperationHandle}，又允许热替换帧级过滤器。
  *
- * <p>两条变更路径语义写死（见 {@code docs/architecture/2026-11-refactor/scan-architecture.md} §2.2）：</p>
+ * <p>两条变更路径语义写死：</p>
  * <ul>
  *   <li>{@link #setFrameFilter(BleScanFrameFilter)}：只替换谓词对象，求值在帧管道内逐帧进行，
  *       <b>绝不</b>触发平台扫描的 stop/start，也不清空订阅或已收到的数据。</li>

@@ -1,8 +1,6 @@
 # APP 全量重构契约（2026-11 · app-rebuild）
 
-> 本文件是本轮重构的**唯一权威契约**，与以下文件冲突时以本文件为准：
-> `docs/architecture/2026-11-refactor/design.md`（旧契约，WY/record 部分已失效）、
-> `docs/architecture/2026-11-device-mgmt/design.md`（其中 home→roster 迁移未落地，撤销）。
+> 本文件是本轮重构的**唯一权威契约**；与 `docs/architecture/2026-11-device-mgmt/design.md`（其中 home→roster 迁移未落地，撤销）冲突时以本文件为准。
 >
 > 依据：YoAgentDocs `task.architecture-review` + `playbook/architecture-review` + `rules/common/architecture.md`
 > （旧架构不打补丁 / 严禁兼容层 / 禁止防御性修补 / 严禁残留技术债务 / 严禁简化实现）。
