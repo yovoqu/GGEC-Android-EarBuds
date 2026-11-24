@@ -77,3 +77,9 @@ replay_pid*.log
 /biz_ggec_record/src/main/assets/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx
 /bleplayer-master/app/src/main/assets/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx
 
+# ── 备份/临时产物（避免误入库；正式 *.aar 仍由 .gitattributes 走 LFS 正常跟踪）──
+*.before*.aar
+*.orig
+*.rej
+*.copy
+
