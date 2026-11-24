@@ -75,17 +75,19 @@ public final class YoBleAndroidGattCallback extends BluetoothGattCallback {
                 status);
     }
 
-    @SuppressWarnings("deprecation")
     @Override
     public void onCharacteristicWrite(BluetoothGatt gatt,
                                       BluetoothGattCharacteristic characteristic,
                                       int status) {
-        if (characteristic == null || AndroidPlatform.usesTypedGattValueCallbacks()) {
+        if (characteristic == null) {
             return;
         }
+        byte[] echoedValue = AndroidPlatform.usesTypedGattValueCallbacks()
+                ? null
+                : characteristicValueSnapshot(characteristic);
         listener.onCharacteristicWrite(
                 YoBleAndroidGattAddressing.targetForCharacteristic(characteristic),
-                characteristicValueSnapshot(characteristic),
+                echoedValue,
                 status);
     }
 
