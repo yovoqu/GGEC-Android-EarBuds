@@ -18,8 +18,8 @@ import com.ggec.earbuds.ui.device.component.DeviceLayouts;
 import com.yohu.youi.api.controls.YoButton;
 
 /**
- * 设备首页最底部的 APP 版本信息与「检查更新」预留入口。
- * 当前仅展示 UI 与点击占位，不接入更新检查逻辑。
+ * 设备首页最底部的 APP 版本信息与「检查更新」入口。
+ * 点击回调交给 {@link DeviceHomePage.Listener#onCheckAppUpdate()}，由宿主接入更新会话。
  */
 final class DeviceHomeFooterView {
 

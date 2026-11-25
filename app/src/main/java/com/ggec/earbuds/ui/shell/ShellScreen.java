@@ -39,6 +39,9 @@ final class ShellScreen {
         void onSelect(@NonNull String key);
 
         void onAIHistory();
+
+        /** 设备首页底部的「检查更新」被点击，交给宿主接入更新会话。 */
+        void onCheckAppUpdate();
     }
 
     private final AppCompatActivity activity;
@@ -208,7 +211,8 @@ final class ShellScreen {
 
         @Override
         public void onCheckAppUpdate() {
-            // 预留 UI 入口：检查更新功能暂不接入。
+            // 设备首页底部的「检查更新」入口：交回外壳监听，由宿主驱动更新会话。
+            listener.onCheckAppUpdate();
         }
 
     }

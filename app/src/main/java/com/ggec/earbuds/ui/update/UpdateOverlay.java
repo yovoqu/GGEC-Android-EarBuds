@@ -25,7 +25,7 @@ public final class UpdateOverlay implements UpdateUiPort.Renderer {
     private final UpdateUiPort.Actions actions;
 
     @Nullable
-    private YoDialog checkingDialog;
+    private UpdateDialogs.LoadingHandle checkingLoading;
     @Nullable
     private UpdateDialogs.ProgressHandle progressHandle;
     @Nullable
@@ -42,12 +42,12 @@ public final class UpdateOverlay implements UpdateUiPort.Renderer {
 
     // ------------------------------------------------------------------ 端口
 
-    /** 状态整体替换：检查中给占位弹窗，下载中给进度。 */
+    /** 状态整体替换：检查中给 Loading 叠层，下载中给进度。 */
     @Override
     public void onState(@NonNull UpdateUiPort.State state) {
         if (state.checking()) {
-            if (checkingDialog == null) {
-                checkingDialog = UpdateDialogs.showChecking(context);
+            if (checkingLoading == null) {
+                checkingLoading = UpdateDialogs.showLoading(context);
             }
         } else {
             dismissChecking();
@@ -156,9 +156,9 @@ public final class UpdateOverlay implements UpdateUiPort.Renderer {
     }
 
     private void dismissChecking() {
-        if (checkingDialog != null) {
-            checkingDialog.dismiss();
-            checkingDialog = null;
+        if (checkingLoading != null) {
+            checkingLoading.dismiss();
+            checkingLoading = null;
         }
     }
 

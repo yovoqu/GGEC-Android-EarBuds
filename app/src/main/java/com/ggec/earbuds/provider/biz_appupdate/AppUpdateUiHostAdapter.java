@@ -45,6 +45,8 @@ public final class AppUpdateUiHostAdapter
 
     /** 安装未知来源设置页已拉起，等宿主回前台收口。 */
     private boolean installPermissionPending;
+    /** 会话尚未就绪时点了「检查更新」，待会话挂上后补发一次。 */
+    private boolean pendingCheck;
     private boolean detached;
 
     AppUpdateUiHostAdapter(@NonNull Activity hostActivity,
@@ -103,6 +105,7 @@ public final class AppUpdateUiHostAdapter
             target.dismissAll();
         }
         installPermissionPending = false;
+        pendingCheck = false;
     }
 
     // ------------------------------------------------------- 反向：用户动作 → 会话
@@ -112,7 +115,10 @@ public final class AppUpdateUiHostAdapter
         UpdateUiSession current = session;
         if (current != null) {
             current.checkUpdate();
+            return;
         }
+        // 启动检查（SplashGate）还没跑完时 session 还是空，此时点击不能丢：记下，挂上会话后补发。
+        pendingCheck = true;
     }
 
     @Override
@@ -185,6 +191,10 @@ public final class AppUpdateUiHostAdapter
                 appUpdate.attachLaunchPrompt(hostIntent, prompt);
             }
             session = appUpdate.attachUpdateUi(hostActivity, hostIntent, this);
+            if (pendingCheck) {
+                pendingCheck = false;
+                session.checkUpdate();
+            }
         });
     }
 

@@ -49,6 +49,13 @@ public class MainActivity extends AppCompatActivity {
                         AiHistorySheet.show(
                                 MainActivity.this, container.ai().historyViewModel());
                     }
+
+                    @Override
+                    public void onCheckAppUpdate() {
+                        if (updateHost != null) {
+                            updateHost.actions().onCheckUpdate();
+                        }
+                    }
                 });
         components.own(screen::destroy);
         setContentView(screen.view());
