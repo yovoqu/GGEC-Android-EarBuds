@@ -50,6 +50,10 @@ output-metadata.json
 # 签名与 Firebase 密钥。若团队约定入库 google-services.json，删掉下一行。
 *.jks
 *.keystore
+
+# keystore 目录纳管：抵消上面的全局 *.jks / *.keystore 忽略，允许跟踪 keystore/ 下的签名文件
+!keystore/
+!keystore/**
 google-services.json
 
 # 本机界面对照：截图、裁切脚本、备份和候选对比不入库。
