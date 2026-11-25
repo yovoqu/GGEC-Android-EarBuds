@@ -5,12 +5,11 @@ import android.view.Surface;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.yovo.biz_ggec_record.model.RecordAsrModel;
 import com.yovo.biz_ggec_record.model.RecordAudioCodec;
 import com.yovo.biz_ggec_record.model.RecordVideoCodec;
 
 /**
- * Ambiq BLE 音视频 / ASR 会话。
+ * Ambiq BLE 音视频会话。
  * 调用方只提交业务动作和接收观察者事件，不接触 GATT、特征 UUID 或 lib_bluetooth。
  */
 public interface YoRecordClient {
@@ -46,10 +45,6 @@ public interface YoRecordClient {
     void setAudioConfig(@NonNull RecordAudioCodec codec, int sampleRateHz, int channelCount);
 
     void setMuted(boolean muted);
-
-    void setAsrEnabled(boolean enabled);
-
-    void setAsrModel(@NonNull RecordAsrModel model);
 
     /** 向设备 RX 特征写入 US-ASCII 文本。未就绪时忽略。 */
     void sendText(@NonNull String text);

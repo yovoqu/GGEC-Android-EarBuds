@@ -1,4 +1,0 @@
-// 把本地 sherpa-onnx AAR 暴露为普通 project 依赖。
-// AGP 禁止 library 模块直接 files('*.aar')，否则打出的 AAR 会缺类/缺 so。
-configurations.maybeCreate('default')
-artifacts.add('default', file('sherpa-onnx-2.0.1.aar'))

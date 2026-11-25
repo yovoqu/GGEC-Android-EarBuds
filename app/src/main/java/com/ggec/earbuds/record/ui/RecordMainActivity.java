@@ -11,7 +11,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.ListView;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -24,12 +23,10 @@ import androidx.core.view.WindowInsetsCompat;
 import com.ggec.earbuds.R;
 import com.ggec.earbuds.domain.device.port.ScanPermissionRequest;
 import com.ggec.earbuds.domain.device.port.ScanPermissionResult;
-import com.ggec.earbuds.domain.record.model.RecordAsrModel;
 import com.ggec.earbuds.domain.record.model.RecordConnectionState;
 import com.ggec.earbuds.domain.record.model.RecordLinkStats;
 import com.ggec.earbuds.domain.record.model.RecordNearbyDevice;
 import com.ggec.earbuds.domain.record.model.RecordScanFailure;
-import com.ggec.earbuds.domain.record.model.RecordSubtitleEvent;
 import com.ggec.earbuds.domain.record.model.RecordVideoCodec;
 import com.ggec.earbuds.domain.record.port.RecordControlPort;
 import com.ggec.earbuds.domain.record.port.RecordObserver;
@@ -61,27 +58,18 @@ public final class RecordMainActivity extends AppCompatActivity {
     private ScanPermissionRequest permissionRequest;
     private TextView statusView;
     private TextView statsView;
-    private TextView subtitleFinalView;
-    private TextView subtitlePartialView;
     private TextView videoPlaceholder;
     private TextView deviceSectionTitle;
-    private ScrollView subtitleScroll;
     private TextureView videoView;
     private MaterialButton muteButton;
-    private MaterialButton asrToggleButton;
-    private MaterialButton asrModelButton;
     private MaterialButton codecH264;
     private MaterialButton codecH265;
     private MaterialButton captureButton;
     private ListView deviceList;
     private DeviceAdapter adapter;
     private final List<RecordNearbyDevice> devices = new ArrayList<>();
-    private final StringBuilder finals = new StringBuilder();
     private boolean pendingScan;
     private boolean muted;
-    private boolean asrEnabled = true;
-    @NonNull
-    private RecordAsrModel asrModel = RecordAsrModel.ZIPFORMER_SMALL;
     @NonNull
     private RecordVideoCodec videoCodec = RecordVideoCodec.H265;
     @Nullable
@@ -123,15 +111,10 @@ public final class RecordMainActivity extends AppCompatActivity {
 
         statusView = findViewById(R.id.record_status);
         statsView = findViewById(R.id.record_stats);
-        subtitleFinalView = findViewById(R.id.record_subtitle_final);
-        subtitlePartialView = findViewById(R.id.record_subtitle_partial);
-        subtitleScroll = findViewById(R.id.record_subtitle_scroll);
         videoPlaceholder = findViewById(R.id.record_video_placeholder);
         deviceSectionTitle = findViewById(R.id.record_device_section_title);
         videoView = findViewById(R.id.record_video);
         muteButton = findViewById(R.id.record_mute);
-        asrToggleButton = findViewById(R.id.record_asr_toggle);
-        asrModelButton = findViewById(R.id.record_asr_model);
         codecH264 = findViewById(R.id.record_codec_h264);
         codecH265 = findViewById(R.id.record_codec_h265);
         captureButton = findViewById(R.id.record_capture);
@@ -165,26 +148,6 @@ public final class RecordMainActivity extends AppCompatActivity {
             control.setMuted(muted);
             muteButton.setText(muted ? R.string.record_unmute : R.string.record_mute);
             styleChip(muteButton, muted);
-        });
-        asrToggleButton.setOnClickListener(v -> {
-            asrEnabled = !asrEnabled;
-            control.setAsrEnabled(asrEnabled);
-            asrToggleButton.setText(asrEnabled ? R.string.record_asr_off : R.string.record_asr_on);
-            styleChip(asrToggleButton, asrEnabled);
-        });
-        asrModelButton.setOnClickListener(v -> {
-            asrModel = asrModel == RecordAsrModel.ZIPFORMER_SMALL
-                    ? RecordAsrModel.PARAFORMER
-                    : RecordAsrModel.ZIPFORMER_SMALL;
-            control.setAsrModel(asrModel);
-            asrModelButton.setText(asrModel == RecordAsrModel.ZIPFORMER_SMALL
-                    ? R.string.record_asr_model_zipformer
-                    : R.string.record_asr_model_paraformer);
-        });
-        findViewById(R.id.record_asr_clear).setOnClickListener(v -> {
-            finals.setLength(0);
-            subtitleFinalView.setText("");
-            subtitlePartialView.setText("");
         });
         captureButton.setOnClickListener(v -> {
             if (control.isRecording()) {
@@ -221,9 +184,6 @@ public final class RecordMainActivity extends AppCompatActivity {
         });
 
         selectCodec(RecordVideoCodec.H265);
-        control.setAsrEnabled(true);
-        control.setAsrModel(RecordAsrModel.ZIPFORMER_SMALL);
-        styleChip(asrToggleButton, true);
         styleChip(muteButton, false);
 
         control.setObserver(new RecordObserver() {
@@ -259,23 +219,6 @@ public final class RecordMainActivity extends AppCompatActivity {
                         stats.videoKbps(),
                         stats.videoFps(),
                         stats.audioKbps()));
-            }
-
-            @Override
-            public void onSubtitle(@NonNull RecordSubtitleEvent event) {
-                if (event.finalResult()) {
-                    if (!event.text().isBlank()) {
-                        if (finals.length() > 0) {
-                            finals.append('\n');
-                        }
-                        finals.append(event.text());
-                        subtitleFinalView.setText(finals.toString());
-                        subtitleScroll.post(() -> subtitleScroll.fullScroll(View.FOCUS_DOWN));
-                    }
-                    subtitlePartialView.setText("");
-                } else {
-                    subtitlePartialView.setText(event.text());
-                }
             }
 
             @Override

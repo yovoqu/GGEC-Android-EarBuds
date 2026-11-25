@@ -1,11 +1,9 @@
 package com.ggec.earbuds.provider.biz_ggec_record;
 
-import com.ggec.earbuds.domain.record.model.RecordAsrModel;
 import com.ggec.earbuds.domain.record.model.RecordConnectionState;
 import com.ggec.earbuds.domain.record.model.RecordLinkStats;
 import com.ggec.earbuds.domain.record.model.RecordNearbyDevice;
 import com.ggec.earbuds.domain.record.model.RecordScanFailure;
-import com.ggec.earbuds.domain.record.model.RecordSubtitleEvent;
 import com.ggec.earbuds.domain.record.model.RecordVideoCodec;
 
 /**
@@ -24,13 +22,6 @@ public final class RecordMappers {
             case CONNECTED -> RecordConnectionState.CONNECTED;
             case READY -> RecordConnectionState.READY;
             case DISCONNECTED -> RecordConnectionState.DISCONNECTED;
-        };
-    }
-
-    public static com.yovo.biz_ggec_record.model.RecordAsrModel asr(RecordAsrModel model) {
-        return switch (model) {
-            case ZIPFORMER_SMALL -> com.yovo.biz_ggec_record.model.RecordAsrModel.ZIPFORMER_SMALL;
-            case PARAFORMER -> com.yovo.biz_ggec_record.model.RecordAsrModel.PARAFORMER;
         };
     }
 
@@ -59,10 +50,5 @@ public final class RecordMappers {
     public static RecordNearbyDevice device(
             com.yovo.biz_ggec_record.model.RecordNearbyDevice device) {
         return new RecordNearbyDevice(device.macAddress(), device.name(), device.rssi());
-    }
-
-    public static RecordSubtitleEvent subtitle(
-            com.yovo.biz_ggec_record.model.RecordSubtitleEvent event) {
-        return new RecordSubtitleEvent(event.text(), event.isFinalResult());
     }
 }

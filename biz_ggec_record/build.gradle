@@ -28,11 +28,6 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
 
-    // sherpa-onnx native AssetManager 需要未压缩的 .onnx。
-    androidResources {
-        noCompress 'onnx'
-    }
-
     testOptions {
         unitTests.returnDefaultValues = true
     }
@@ -43,11 +38,6 @@ dependencies {
     implementation project(':lib_common')
     // 录音文件命名复用 lib_ggec_audio.record.RecordFileName（型号+类型+时间的唯一格式化实现）。
     implementation project(':lib_ggec_audio')
-    // 本地 AAR 不能 files() 进 library；经 :sherpa_onnx 包装后以 project 依赖引入。
-    // sherpa 只在本模块 internal/asr 使用，不得经 api 泄漏给消费者。
-    implementation project(':sherpa_onnx')
-    // sherpa-onnx AAR 为 Kotlin 编译产物，Java 调用需 stdlib。
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.0.20'
     implementation 'androidx.annotation:annotation:1.9.1'
     testImplementation 'junit:junit:4.13.2'
 }
@@ -56,11 +46,11 @@ def bizGgecRecordRoot = project.projectDir
 
 tasks.register('checkBizGgecRecordBoundary') {
     group = 'verification'
-    description = 'Keep Record media/ASR off lib_bluetooth internals and keep BLE calls inside the provider.'
+    description = 'Keep Record media off lib_bluetooth internals and keep BLE calls inside the provider.'
     doLast {
         def offenders = []
         def rel = { File file -> '/' + project.rootDir.relativePath(file).replace('\\', '/') }
-        // 日志缝：media/asr/link 等内部目录允许引用 provider/lib_common/log（唯一日志入口）。
+        // 日志缝：media/link 等内部目录允许引用 provider/lib_common/log（唯一日志入口）。
         def logSeam = 'com.yovo.biz_ggec_record.provider.lib_common.log.'
 
         fileTree(bizGgecRecordRoot) {
@@ -71,7 +61,6 @@ tasks.register('checkBizGgecRecordBoundary') {
             def inProvider = path.contains('/provider/lib_bluetooth/')
             def inInternalMedia = path.contains('/internal/video/') ||
                     path.contains('/internal/audio/') ||
-                    path.contains('/internal/asr/') ||
                     path.contains('/internal/mux/') ||
                     path.contains('/internal/link/')
             file.eachLine { line, index ->
@@ -82,8 +71,7 @@ tasks.register('checkBizGgecRecordBoundary') {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
                 if (inProvider && (line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.video\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.audio\./
-                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.asr\./)) {
+                        || line =~ /import\s+com\.yovo\.biz_ggec_record\.internal\.audio\./)) {
                     offenders << "${path}:${index}: ${line.trim()}"
                 }
                 if (inInternalMedia && (line =~ /import\s+com\.yovo\.lib_bluetooth\./

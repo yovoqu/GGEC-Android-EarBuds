@@ -24,11 +24,6 @@
     <string name="record_codec_h265">H.265</string>
     <string name="record_mute">静音</string>
     <string name="record_unmute">有声</string>
-    <string name="record_asr_on">识别关</string>
-    <string name="record_asr_off">识别开</string>
-    <string name="record_asr_model_zipformer">Zipformer</string>
-    <string name="record_asr_model_paraformer">Paraformer</string>
-    <string name="record_asr_clear">清空字幕</string>
     <string name="record_capture_start">录制</string>
     <string name="record_capture_stop">停止录制</string>
     <string name="record_capture_started">正在录制 MP4…</string>

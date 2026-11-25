@@ -1,6 +1,5 @@
 package com.ggec.earbuds.domain.record.port;
 
-import com.ggec.earbuds.domain.record.model.RecordAsrModel;
 import com.ggec.earbuds.domain.record.model.RecordVideoCodec;
 
 /**
@@ -19,10 +18,6 @@ public interface RecordControlPort {
     boolean isReady();
 
     void setMuted(boolean muted);
-
-    void setAsrEnabled(boolean enabled);
-
-    void setAsrModel(RecordAsrModel model);
 
     void setVideoCodec(RecordVideoCodec codec);
 

@@ -67,45 +67,6 @@
                 android:textColor="@color/record_text_secondary"
                 android:textSize="11sp" />
         </LinearLayout>
-
-        <!-- 字幕叠在画面底部 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@drawable/record_subtitle_scrim"
-            android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingTop="36dp"
-            android:paddingBottom="16dp">
-
-            <ScrollView
-                android:id="@+id/record_subtitle_scroll"
-                android:layout_width="match_parent"
-                android:layout_height="64dp"
-                android:fillViewport="true"
-                android:scrollbars="none">
-
-                <TextView
-                    android:id="@+id/record_subtitle_final"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="bottom"
-                    android:lineSpacingExtra="3dp"
-                    android:textColor="@color/record_text_primary"
-                    android:textSize="14sp" />
-            </ScrollView>
-
-            <TextView
-                android:id="@+id/record_subtitle_partial"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:ellipsize="end"
-                android:maxLines="2"
-                android:textColor="@color/record_accent"
-                android:textSize="13sp" />
-        </LinearLayout>
     </FrameLayout>
 
     <!-- 底部控制面板 -->
@@ -157,27 +118,6 @@
                     style="@style/Widget.Record.Chip"
                     android:layout_width="wrap_content"
                     android:text="@string/record_mute" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/record_asr_toggle"
-                    style="@style/Widget.Record.Chip"
-                    android:layout_width="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/record_asr_off" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/record_asr_model"
-                    style="@style/Widget.Record.Chip"
-                    android:layout_width="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/record_asr_model_zipformer" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/record_asr_clear"
-                    style="@style/Widget.Record.Chip"
-                    android:layout_width="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/record_asr_clear" />
             </LinearLayout>
         </HorizontalScrollView>
 

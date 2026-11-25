@@ -5,7 +5,6 @@ import android.view.Surface;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.ggec.earbuds.domain.record.model.RecordAsrModel;
 import com.ggec.earbuds.domain.record.model.RecordNearbyDevice;
 import com.ggec.earbuds.domain.record.model.RecordVideoCodec;
 import com.ggec.earbuds.domain.record.port.RecordControlPort;
@@ -61,14 +60,6 @@ public final class RecordPortAdapter implements RecordControlPort, RecordScanPor
             RecordObserver target = observer;
             if (target != null) {
                 target.onLinkStats(RecordMappers.stats(stats));
-            }
-        }
-
-        @Override
-        public void onSubtitle(@NonNull com.yovo.biz_ggec_record.model.RecordSubtitleEvent event) {
-            RecordObserver target = observer;
-            if (target != null) {
-                target.onSubtitle(RecordMappers.subtitle(event));
             }
         }
 
@@ -131,16 +122,6 @@ public final class RecordPortAdapter implements RecordControlPort, RecordScanPor
     @Override
     public void setMuted(boolean muted) {
         client.setMuted(muted);
-    }
-
-    @Override
-    public void setAsrEnabled(boolean enabled) {
-        client.setAsrEnabled(enabled);
-    }
-
-    @Override
-    public void setAsrModel(RecordAsrModel model) {
-        client.setAsrModel(RecordMappers.asr(model));
     }
 
     @Override

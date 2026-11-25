@@ -12,16 +12,12 @@ import androidx.annotation.Nullable;
 import com.yovo.biz_ggec_record.api.RecordConnectionObserver;
 import com.yovo.biz_ggec_record.api.RecordSessionObserver;
 import com.yovo.biz_ggec_record.api.YoRecordClient;
-import com.yovo.biz_ggec_record.internal.asr.AsrStatus;
-import com.yovo.biz_ggec_record.internal.asr.SpeechRecognizer;
 import com.yovo.biz_ggec_record.internal.audio.AudioStreamDecoder;
 import com.yovo.biz_ggec_record.internal.mux.AvRecorder;
 import com.yovo.biz_ggec_record.internal.video.VideoStreamDecoder;
-import com.yovo.biz_ggec_record.model.RecordAsrModel;
 import com.yovo.biz_ggec_record.model.RecordAudioCodec;
 import com.yovo.biz_ggec_record.model.RecordConnectionState;
 import com.yovo.biz_ggec_record.model.RecordLinkStats;
-import com.yovo.biz_ggec_record.model.RecordSubtitleEvent;
 import com.yovo.biz_ggec_record.model.RecordVideoCodec;
 import com.yovo.biz_ggec_record.provider.lib_bluetooth.YoBleRecordLink;
 import com.yovo.lib_ggec_audio.record.RecordFileName;
@@ -30,7 +26,7 @@ import java.io.File;
 import java.util.Objects;
 
 /**
- * Record 会话实现：连接后硬解播放 + 端侧 ASR + 旁路 MP4 录制。
+ * Record 会话实现：连接后硬解播放 + 旁路 MP4 录制。
  */
 public final class YoRecordClientImpl implements YoRecordClient {
 
@@ -42,7 +38,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
     private final VideoStreamDecoder videoDecoder = new VideoStreamDecoder();
     private final AudioStreamDecoder audioDecoder = new AudioStreamDecoder();
     private final AvRecorder avRecorder = new AvRecorder();
-    private final SpeechRecognizer speechRecognizer;
     private final Object pipelineLock = new Object();
 
     @Nullable
@@ -58,9 +53,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
     private int sampleRateHz = 16_000;
     private int channelCount = 1;
     private boolean muted;
-    private boolean asrEnabled = true;
-    @NonNull
-    private RecordAsrModel asrModel = RecordAsrModel.ZIPFORMER_SMALL;
     @NonNull
     private volatile RecordConnectionState state = RecordConnectionState.IDLE;
     /** 录音文件命名用的设备标识（型号/广播名）；连接时写入，空则命名回落 UNKNOWN。 */
@@ -105,7 +97,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
         Context app = context.getApplicationContext();
         this.appContext = app != null ? app : context;
         this.link = Objects.requireNonNull(link, "link");
-        this.speechRecognizer = new SpeechRecognizer(this.appContext);
         videoDecoder.setListener(new VideoStreamDecoder.Listener() {
             @Override
             public void onDecoderError(@NonNull String message) {
@@ -119,9 +110,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
         audioDecoder.setListener(new AudioStreamDecoder.Listener() {
             @Override
             public void onAudioSamples(@NonNull float[] samples) {
-                if (asrEnabled) {
-                    speechRecognizer.acceptPcm(samples);
-                }
             }
 
             @Override
@@ -154,27 +142,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
                 if (session != null) {
                     mainHandler.post(() -> session.onRecordingFailed(message));
                 }
-            }
-        });
-        speechRecognizer.setListener(new SpeechRecognizer.Listener() {
-            @Override
-            public void onAsrStatus(@NonNull AsrStatus status) {
-                // 加载中可由 UI 通过 session error/status 扩展；暂不额外抛事件。
-            }
-
-            @Override
-            public void onAsrPartial(@NonNull String text) {
-                dispatchSubtitle(text, false);
-            }
-
-            @Override
-            public void onAsrFinal(@NonNull String text) {
-                dispatchSubtitle(text, true);
-            }
-
-            @Override
-            public void onAsrError(@NonNull String message) {
-                notifySessionError(message);
             }
         });
         this.link.setListener(new YoBleRecordLink.Listener() {
@@ -320,30 +287,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
     }
 
     @Override
-    public void setAsrEnabled(boolean enabled) {
-        synchronized (pipelineLock) {
-            this.asrEnabled = enabled;
-            if (state == RecordConnectionState.READY) {
-                if (enabled) {
-                    restartAsrLocked();
-                } else {
-                    speechRecognizer.stop();
-                }
-            }
-        }
-    }
-
-    @Override
-    public void setAsrModel(@NonNull RecordAsrModel model) {
-        synchronized (pipelineLock) {
-            this.asrModel = Objects.requireNonNull(model, "model");
-            if (state == RecordConnectionState.READY && asrEnabled) {
-                restartAsrLocked();
-            }
-        }
-    }
-
-    @Override
     public void sendText(@NonNull String text) {
         link.writeRxText(Objects.requireNonNull(text, "text"));
     }
@@ -413,11 +356,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
         synchronized (pipelineLock) {
             restartAudioLocked();
             restartVideoLocked();
-            if (asrEnabled) {
-                restartAsrLocked();
-            } else {
-                speechRecognizer.stop();
-            }
         }
     }
 
@@ -425,7 +363,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
         synchronized (pipelineLock) {
             videoDecoder.stop();
             audioDecoder.stop();
-            speechRecognizer.stop();
         }
     }
 
@@ -442,11 +379,6 @@ public final class YoRecordClientImpl implements YoRecordClient {
         audioDecoder.stop();
         audioDecoder.setMuted(muted);
         audioDecoder.start(new AudioStreamDecoder.Config(audioCodec, sampleRateHz, channelCount));
-    }
-
-    private void restartAsrLocked() {
-        speechRecognizer.stop();
-        speechRecognizer.start(asrModel);
     }
 
     @NonNull
@@ -469,14 +401,5 @@ public final class YoRecordClientImpl implements YoRecordClient {
         if (session != null) {
             mainHandler.post(() -> session.onSessionError(message));
         }
-    }
-
-    private void dispatchSubtitle(@NonNull String text, boolean finalResult) {
-        RecordSessionObserver session = sessionObserver;
-        if (session == null) {
-            return;
-        }
-        RecordSubtitleEvent event = new RecordSubtitleEvent(text, finalResult);
-        mainHandler.post(() -> session.onSubtitle(event));
     }
 }
