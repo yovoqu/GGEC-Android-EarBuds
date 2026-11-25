@@ -82,20 +82,12 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
-        <!-- Record 独立入口：单独 taskAffinity，避免点图标时复用主壳任务栈而打开 MainActivity。 -->
+        <!-- Record：仅由主壳「添加设备」分流启动，不再单独出现桌面图标。 -->
         <activity
             android:name=".record.ui.RecordMainActivity"
-            android:exported="true"
-            android:label="@string/record_app_label"
-            android:launchMode="singleTask"
+            android:exported="false"
             android:screenOrientation="portrait"
-            android:taskAffinity="com.ggec.earbuds.record"
-            android:theme="@style/Theme.GGECRecord">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.GGECRecord" />
 
         <!-- APP 更新：安装器只能读到 FileProvider 授出的 Uri，不暴露应用私有外部目录之外的路径。
              authority 与 AppUpdateProviders 的推导值（packageName + ".fileprovider"）一一对应。 -->
