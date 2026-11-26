@@ -206,6 +206,8 @@ public final class WyClassicRadio implements WyClassicRadioPort {
         Objects.requireNonNull(classicAddress, "classicAddress");
         Objects.requireNonNull(listener, "listener");
 
+        stopDiscovery();
+
         final int current;
         synchronized (lock) {
             cancelLinkSessionLocked();

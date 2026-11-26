@@ -47,6 +47,10 @@ public final class WyControl {
 
         record Rename(String name) implements Action {
         }
+
+        /** 同步设备状态（WY01：查询三部分电量 99 EC 80 00 01 00 12 34）。 */
+        record SyncDeviceState() implements Action {
+        }
     }
 
     public interface Callback {
