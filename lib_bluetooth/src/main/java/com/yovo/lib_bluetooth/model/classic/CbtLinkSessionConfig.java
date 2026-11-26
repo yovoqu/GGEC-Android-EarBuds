@@ -10,8 +10,8 @@ import androidx.annotation.NonNull;
  */
 public final class CbtLinkSessionConfig {
 
-    /** 默认就绪等待超时：15 秒。 */
-    public static final long DEFAULT_READINESS_TIMEOUT_MILLIS = 15_000L;
+    /** 默认就绪等待超时：25 秒（覆盖未配对设备 createBond + SDP + 音频 Profile 建立）。 */
+    public static final long DEFAULT_READINESS_TIMEOUT_MILLIS = 25_000L;
 
     /** 默认查询重试间隔：链路可能正在建立，定期复核既有事实。 */
     public static final long DEFAULT_QUERY_RETRY_MILLIS = 2_000L;

@@ -94,8 +94,17 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
     private boolean audioRequested;
     /** 是否已经发起过 createBond。 */
     private boolean bondRequested;
+    /** 是否正处于配对进行中（BONDING）；配对完成前不得抢跑 connectAudio。 */
+    private boolean bondingInProgress;
     /** 是否曾经到达 READY。到达后本会话只负责上报事实变化，不再自动驱动重连。 */
     private boolean everReady;
+
+    private enum BondFact {
+        NONE,
+        BONDING,
+        BONDED,
+        UNKNOWN
+    }
 
     public YoCbtLinkSession(@NonNull YoCbtClient client,
                             @NonNull YoCbtLinkRuntime runtime,
@@ -118,6 +127,9 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
         if (!active.get()) {
             return;
         }
+        // 经典蓝牙发现会干扰后续 createBond / SDP / 音频与 SPP 连接，进入链路就绪前先停止发现。
+        client.stopDiscovery();
+
         // 1. 订阅三条事实源，覆盖「后续变化」。
         aclWatch = client.observeAclLinkState(new CbtAclLinkObserver() {
             @Override
@@ -233,10 +245,16 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
 
     /** 明确未连接（或系统查询确认不在已连接集合）时才发起配对/音频连接。 */
     private void requestConnectIfAllowed() {
-        if (!active.get()) {
+        if (!active.get() || bondingInProgress) {
             return;
         }
-        if (config.createBondWhenUnbonded() && !bondRequested && !isBonded()) {
+        BondFact bondFact = queryBondFact();
+        if (bondFact == BondFact.BONDING) {
+            bondingInProgress = true;
+            ensureBondWatch();
+            return;
+        }
+        if (bondFact == BondFact.NONE && config.createBondWhenUnbonded() && !bondRequested) {
             requestBond();
             return;
         }
@@ -277,8 +295,10 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
         return state == null ? null : state.state();
     }
 
-    private void requestBond() {
-        bondRequested = true;
+    private void ensureBondWatch() {
+        if (bondWatch != null) {
+            return;
+        }
         bondWatch = client.observeBondState(new CbtBondStateObserver() {
             @Override
             public void onBondStateChanged(@NonNull CbtDeviceSnapshot snapshot) {
@@ -290,18 +310,33 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
                     if (!active.get()) {
                         return;
                     }
-                    if (bondState == CbtBondState.BONDED) {
+                    if (bondState == CbtBondState.BONDING) {
+                        bondingInProgress = true;
+                    } else if (bondState == CbtBondState.BONDED) {
+                        bondingInProgress = false;
                         evaluate();
-                    } else if (bondState == CbtBondState.NONE) {
+                    } else if (bondState == CbtBondState.NONE
+                            || bondState == CbtBondState.FAILED
+                            || bondState == CbtBondState.REMOVED) {
+                        bondingInProgress = false;
                         failWithBondRejected();
                     }
                 });
             }
         });
+    }
+
+    private void requestBond() {
+        bondRequested = true;
+        bondingInProgress = true;
+        ensureBondWatch();
         Result<Void> started = client.createBond(deviceId);
         if (started.isFailure()) {
-            // 配对发起失败：退化为直接尝试音频连接，不阻断链路。
-            requestAudio();
+            // 配对发起失败：清除配对中标记，退化为尝试音频连接。
+            bondingInProgress = false;
+            if (config.connectAudioWhenDown() && !audioRequested) {
+                requestAudio();
+            }
         }
     }
 
@@ -374,19 +409,25 @@ public final class YoCbtLinkSession implements CbtLinkSessionHandle {
                 "配对被拒绝: " + deviceId.value(), null, false, false, TAG, deviceId));
     }
 
-    private boolean isBonded() {
+    @NonNull
+    private BondFact queryBondFact() {
         Result<List<CbtDeviceSnapshot>> bonded = client.getBondedDevices();
         if (bonded.isFailure() || bonded.getValue() == null) {
-            // 查不到配对事实时按「已配对」处理：不主动发起配对，
-            // 避免对已配对设备重复触发配对流程。
-            return true;
+            // 查不到配对事实时按 UNKNOWN 处理，避免对未知态设备盲目发起配对。
+            return BondFact.UNKNOWN;
         }
         for (CbtDeviceSnapshot snapshot : bonded.getValue()) {
             if (matches(snapshot.deviceId())) {
-                return snapshot.bondState() == CbtBondState.BONDED;
+                return switch (snapshot.bondState()) {
+                    case BONDED -> BondFact.BONDED;
+                    case BONDING -> BondFact.BONDING;
+                    case NONE, REMOVED, FAILED -> BondFact.NONE;
+                    case UNKNOWN -> BondFact.UNKNOWN;
+                };
             }
         }
-        return true;
+        // 查询成功且目标不在系统已配对列表中：明确未配对。
+        return BondFact.NONE;
     }
 
     private boolean matches(@Nullable CbtDeviceId other) {

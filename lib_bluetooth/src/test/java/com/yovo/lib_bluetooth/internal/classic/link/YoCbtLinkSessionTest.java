@@ -169,10 +169,12 @@ public final class YoCbtLinkSessionTest {
         CbtFailure queryFailure;
         int connectAudioCalls;
         int createBondCalls;
+        int stopDiscoveryCalls;
         boolean adapterEnabled = true;
         int queryCalls;
 
         CbtAclLinkObserver aclObserver;
+        CbtBondStateObserver bondObserver;
 
         @NonNull
         @Override
@@ -209,7 +211,10 @@ public final class YoCbtLinkSessionTest {
         @NonNull
         @Override
         public Result<List<CbtDeviceSnapshot>> getBondedDevices() {
-            return Result.success(List.of(snapshot(bonded ? CbtBondState.BONDED : CbtBondState.NONE,
+            if (!bonded) {
+                return Result.success(List.of());
+            }
+            return Result.success(List.of(snapshot(CbtBondState.BONDED,
                     CbtAclLinkState.UNKNOWN)));
         }
 
@@ -250,6 +255,7 @@ public final class YoCbtLinkSessionTest {
         @NonNull
         @Override
         public CbtOperationHandle observeBondState(@NonNull CbtBondStateObserver observer) {
+            bondObserver = observer;
             return noop();
         }
 
@@ -268,6 +274,7 @@ public final class YoCbtLinkSessionTest {
         @NonNull
         @Override
         public Result<Void> stopDiscovery() {
+            stopDiscoveryCalls++;
             return Result.success(null);
         }
 
@@ -580,5 +587,60 @@ public final class YoCbtLinkSessionTest {
         assertFalse(session.isActive());
         assertEquals(1, obs.cancelled);
         assertEquals(0, obs.failures);
+    }
+
+    @Test
+    public void unbondedDevice_requestsBondFirst_andWaitsForBondedBeforeConnectAudio() {
+        FakeClient client = new FakeClient();
+        client.aclState = CbtAclLinkState.DISCONNECTED;
+        client.connectedProfiles = List.of();
+        client.bonded = false; // 不在系统已配对列表（真实未配对场景）
+        client.queryResult = List.of();
+        FakeRuntime rt = new FakeRuntime();
+        RecordingObserver obs = new RecordingObserver();
+
+        new YoCbtLinkSession(client, rt, ID, fastConfig(), obs).start();
+
+        assertEquals("启动链路前应先停止发现", 1, client.stopDiscoveryCalls);
+        assertEquals("未配对设备必须先发起 createBond", 1, client.createBondCalls);
+        assertEquals("配对完成前绝不能抢跑 connectAudio", 0, client.connectAudioCalls);
+
+        // 模拟 2s 重试触发，此时仍在配对中（BONDING）
+        FakeRuntime.Task retry = rt.firstActiveWithDelay(500L);
+        assertNotNull(retry);
+        retry.fire();
+        assertEquals("配对中重试也不得抢跑 connectAudio", 0, client.connectAudioCalls);
+
+        // 模拟配对完成：BONDED
+        client.bonded = true;
+        client.bondObserver.onBondStateChanged(snapshot(CbtBondState.BONDED, CbtAclLinkState.DISCONNECTED));
+        assertEquals("配对完成后再发起一次 connectAudio", 1, client.connectAudioCalls);
+
+        // 模拟音频/ACL 连上
+        client.aclState = CbtAclLinkState.CONNECTED;
+        client.aclObserver.onAclLinkChanged(snapshot(CbtBondState.BONDED, CbtAclLinkState.CONNECTED));
+        assertEquals(CbtLinkReadiness.READY, obs.last());
+    }
+
+    @Test
+    public void unbondedDevice_bondRejected_failsWithoutConnectAudio() {
+        FakeClient client = new FakeClient();
+        client.aclState = CbtAclLinkState.DISCONNECTED;
+        client.connectedProfiles = List.of();
+        client.bonded = false;
+        client.queryResult = List.of();
+        FakeRuntime rt = new FakeRuntime();
+        RecordingObserver obs = new RecordingObserver();
+
+        YoCbtLinkSession session = new YoCbtLinkSession(client, rt, ID, fastConfig(), obs);
+        session.start();
+
+        assertEquals(1, client.createBondCalls);
+        assertEquals(0, client.connectAudioCalls);
+
+        client.bondObserver.onBondStateChanged(snapshot(CbtBondState.NONE, CbtAclLinkState.DISCONNECTED));
+        assertFalse(session.isActive());
+        assertEquals(1, obs.failures);
+        assertEquals(0, client.connectAudioCalls);
     }
 }
