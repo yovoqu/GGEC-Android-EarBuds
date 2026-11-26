@@ -150,6 +150,40 @@ public final class DeviceHomeUiMapperTest {
         assertTrue(state.devices().isEmpty());
     }
 
+    @Test
+    public void modelWithoutFindEarHidesFindDevicePageCard() {
+        DeviceId wyId = new DeviceId("WY01", "C4:D7:DC:48:31:9B");
+        DeviceHomeUiMapper wyMapper = new DeviceHomeUiMapper(new DeviceCapabilityCatalog() {
+            @Override
+            public List<DeviceProfileView> models() {
+                return List.of(new DeviceProfileView("WY01", "WY01", List.of(
+                        new DeviceCapabilityView("AI_CHAT", "AI 对话", DeviceCapabilityGroup.AI,
+                                DeviceCapabilityKind.GATE, List.of(), Optional.empty()))));
+            }
+
+            @Override
+            public Optional<DeviceProfileView> model(String modelId) {
+                return models().stream().filter(p -> p.modelId().equals(modelId)).findFirst();
+            }
+        });
+        DeviceRecord wyRecord = new DeviceRecord(wyId, "",
+                new DeviceIdentity("WY01-Lilili", "C4:D7:DC:48:31:9B", ""),
+                new DeviceStatus(RecordOrigin.LIVE, ConnectionState.READY, NOW),
+                new DeviceFacts(new BatterySnapshot(80, 90, 100, false), "", WearState.UNKNOWN, 0),
+                new DeviceState(Map.of()));
+        List<DeviceEntry> wyEntries = List.of(
+                new DeviceEntry(DeviceCapabilityGroup.RECORD, 1),
+                new DeviceEntry(DeviceCapabilityGroup.ABOUT, 2));
+
+        DeviceHomeUiState state = wyMapper.map(
+                new DeviceRoster(List.of(wyRecord), Optional.of(wyId)), wyEntries, Map.of());
+
+        assertEquals(0, countPageCard(state.sections().get(3))); // 无佩戴设置
+        assertEquals(1, countPageCard(state.sections().get(4))); // 有 AI 对话
+        assertEquals(0, countPageCard(state.sections().get(5))); // 无查找设备
+        assertEquals(2, entryCards(state.sections().get(5)).size());
+    }
+
     private static int countPageCard(DeviceHomeUiState.Section section) {
         return (int) section.cards().stream()
                 .filter(c -> c instanceof DeviceHomeUiState.PageCard).count();
@@ -189,7 +223,9 @@ public final class DeviceHomeUiMapperTest {
                 new DeviceCapabilityView("AI_CHAT", "AI 对话", DeviceCapabilityGroup.AI,
                         DeviceCapabilityKind.GATE, List.of(), Optional.empty()),
                 new DeviceCapabilityView("VOLUME_ADAPTIVE", "音量自适应", DeviceCapabilityGroup.MUSIC,
-                        DeviceCapabilityKind.TOGGLE, List.of(), Optional.empty()));
+                        DeviceCapabilityKind.TOGGLE, List.of(), Optional.empty()),
+                new DeviceCapabilityView("FIND_EAR", "查找耳机", DeviceCapabilityGroup.FUNCTION,
+                        DeviceCapabilityKind.ACTION, List.of(), Optional.empty()));
     }
 
     private static DeviceRecord live() {

@@ -24,11 +24,15 @@ public final class WyValueMapper {
     private WyValueMapper() {
     }
 
-    public static WyDevice.Capability capabilityOf(String capabilityId) {
-        if (capabilityId == null) {
-            throw new IllegalArgumentException("capability id must not be null");
+    public static Optional<WyDevice.Capability> tryCapabilityOf(String capabilityId) {
+        if (capabilityId == null || capabilityId.isEmpty()) {
+            return Optional.empty();
         }
-        return WyDevice.Capability.valueOf(capabilityId);
+        try {
+            return Optional.of(WyDevice.Capability.valueOf(capabilityId));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
     }
 
     public static DeviceCapabilityView toCapabilityView(WyDevice.Feature descriptor) {
@@ -118,13 +122,19 @@ public final class WyValueMapper {
         };
     }
 
-    public static WyControl.Action toWyAction(DeviceAction action) {
+    /**
+     * 领域动作 → WY 动作。不支持的动作返回 {@link Optional#empty()}，
+     * 由链路适配器经回调返回 {@link DeviceFailure#UNSUPPORTED_CAPABILITY}，不在 UI 线程抛异常。
+     */
+    public static Optional<WyControl.Action> tryToWyAction(DeviceAction action) {
         if (action instanceof DeviceAction.Reboot) {
-            return new WyControl.Action.Reboot();
+            return Optional.of(new WyControl.Action.Reboot());
         } else if (action instanceof DeviceAction.Rename r) {
-            return new WyControl.Action.Rename(r.name());
+            return Optional.of(new WyControl.Action.Rename(r.name()));
+        } else if (action instanceof DeviceAction.SyncDeviceState) {
+            return Optional.of(new WyControl.Action.SyncDeviceState());
         }
-        throw new IllegalArgumentException("Unsupported device action: " + action);
+        return Optional.empty();
     }
 
     public static DeviceWriteResult toWriteResult(WyControl.Outcome<?> outcome) {

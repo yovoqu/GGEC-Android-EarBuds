@@ -176,16 +176,24 @@ public final class WyDeviceLinkAdapter implements DeviceLinkPort {
     @Override
     public void write(String capabilityId, ControlValue value,
                       Consumer<DeviceWriteResult> callback) {
-        WyDevice.Capability capability = WyValueMapper.capabilityOf(capabilityId);
-        sdk.write(capability, WyValueMapper.toWyControlValue(value),
+        Optional<WyDevice.Capability> capability = WyValueMapper.tryCapabilityOf(capabilityId);
+        if (capability.isEmpty()) {
+            callback.accept(new DeviceWriteResult.Failed(DeviceFailure.UNSUPPORTED_CAPABILITY));
+            return;
+        }
+        sdk.write(capability.get(), WyValueMapper.toWyControlValue(value),
                 result -> callback.accept(WyValueMapper.toWriteResult(result)));
     }
 
     @Override
     public void writeWithProgress(String capabilityId, ControlValue value,
                                   Runnable onStarted, Consumer<DeviceWriteResult> callback) {
-        WyDevice.Capability capability = WyValueMapper.capabilityOf(capabilityId);
-        sdk.write(capability, WyValueMapper.toWyControlValue(value), new WyControl.Callback() {
+        Optional<WyDevice.Capability> capability = WyValueMapper.tryCapabilityOf(capabilityId);
+        if (capability.isEmpty()) {
+            callback.accept(new DeviceWriteResult.Failed(DeviceFailure.UNSUPPORTED_CAPABILITY));
+            return;
+        }
+        sdk.write(capability.get(), WyValueMapper.toWyControlValue(value), new WyControl.Callback() {
             @Override
             public void onStarted() {
                 onStarted.run();
@@ -200,7 +208,12 @@ public final class WyDeviceLinkAdapter implements DeviceLinkPort {
 
     @Override
     public void perform(DeviceAction action, Consumer<DeviceWriteResult> callback) {
-        sdk.perform(WyValueMapper.toWyAction(action),
+        Optional<WyControl.Action> mapped = WyValueMapper.tryToWyAction(action);
+        if (mapped.isEmpty()) {
+            callback.accept(new DeviceWriteResult.Failed(DeviceFailure.UNSUPPORTED_CAPABILITY));
+            return;
+        }
+        sdk.perform(mapped.get(),
                 result -> callback.accept(WyValueMapper.toWriteResult(result)));
     }
 
@@ -368,6 +381,10 @@ public final class WyDeviceLinkAdapter implements DeviceLinkPort {
 
         @Override
         public void onDeviceEvent(@NonNull WyControl.Event event) {
+            // WySession 每次电量更新均会紧接着推送 onSnapshotChanged，此处无需重复 publish。
+            if (event instanceof WyControl.Event.BatteryChanged) {
+                return;
+            }
             publish();
         }
     }

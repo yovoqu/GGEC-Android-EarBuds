@@ -101,6 +101,8 @@ public final class DeviceHomeUiMapper {
             entryByGroup.put(entry.group(), entry);
         }
         Optional<DeviceProfileView> profile = catalog.model(active.id().modelId());
+        boolean findEarSupported = profile.map(p -> p.supports(DeviceCapabilityIds.FIND_EAR))
+                .orElse(false);
         boolean wearSupported = profile.map(p -> p.supports(DeviceCapabilityIds.WEAR_DETECT))
                 .orElse(false);
         boolean aiSupported = profile.map(p -> p.supports(DeviceCapabilityIds.AI_CHAT))
@@ -115,8 +117,8 @@ public final class DeviceHomeUiMapper {
         List<DeviceHomeUiState.Section> sections = new ArrayList<>(SPECS.size());
         for (Spec spec : SPECS) {
             List<DeviceHomeUiState.Card> cards = new ArrayList<>();
-            if (spec.titleRes() == R.string.device_section_more) {
-                // 「更多」固定「查找设备」页面卡（对齐音频管家：查找设备是设备页的功能入口）。
+            if (spec.titleRes() == R.string.device_section_more && findEarSupported) {
+                // 「更多」下的「查找设备」页面卡：仅当机型目录声明 FIND_EAR 时展示。
                 cards.add(new DeviceHomeUiState.PageCard(PAGE_FIND_DEVICE,
                         R.string.find_device_title, R.drawable.ic_hw_find,
                         DeviceHomeUiState.CardSize.HALF));
