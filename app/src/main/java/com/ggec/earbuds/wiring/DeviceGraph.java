@@ -207,6 +207,11 @@ public final class DeviceGraph {
         return recordPort;
     }
 
+    @NonNull
+    DeviceCapabilityCatalog capabilityCatalog() {
+        return catalog;
+    }
+
     private interface Builder<T extends ViewModel> {
         T create();
     }

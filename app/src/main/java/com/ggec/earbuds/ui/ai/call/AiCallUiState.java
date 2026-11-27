@@ -213,9 +213,9 @@ public record AiCallUiState(
         return activeSource != null && AiAudioSource.BLUETOOTH_STREAM_ID.equals(activeSource.id());
     }
 
-    /** 蓝牙设备播放仅在未选择蓝牙设备 MIC 录音时可选。 */
+    /** 蓝牙设备播放：未用蓝牙 MIC 时可选，或当前蓝牙 MIC 支持主动上下行（如 WY01）时也可选。 */
     public boolean bluetoothOutputAvailable() {
-        return !bluetoothMicSelected();
+        return !bluetoothMicSelected() || (activeSource != null && activeSource.activeDuplex());
     }
 
     /** 当前是否有支持随录随传音频流的蓝牙设备可用。 */

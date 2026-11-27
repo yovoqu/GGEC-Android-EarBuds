@@ -8,9 +8,11 @@ import com.ggec.earbuds.domain.ai.port.AiAudioSourceCatalog;
 import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
 import com.ggec.earbuds.domain.device.model.RecordMode;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.Subscription;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
+import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 
 import java.util.Objects;
 
@@ -25,19 +27,29 @@ public final class DeviceBluetoothAudioSourceBridge {
     private final ObserveDevice observeDevice;
     private final RecordPort recordPort;
     private final AiAudioSourceCatalog audioSourceCatalog;
+    @Nullable
+    private final DeviceCapabilityCatalog capabilityCatalog;
     private final Object lock = new Object();
 
     @Nullable
     private Subscription subscription;
     @Nullable
-    private String registeredLabel;
+    private String registeredKey;
 
     public DeviceBluetoothAudioSourceBridge(@NonNull ObserveDevice observeDevice,
                                             @NonNull RecordPort recordPort,
                                             @NonNull AiAudioSourceCatalog audioSourceCatalog) {
+        this(observeDevice, recordPort, audioSourceCatalog, null);
+    }
+
+    public DeviceBluetoothAudioSourceBridge(@NonNull ObserveDevice observeDevice,
+                                            @NonNull RecordPort recordPort,
+                                            @NonNull AiAudioSourceCatalog audioSourceCatalog,
+                                            @Nullable DeviceCapabilityCatalog capabilityCatalog) {
         this.observeDevice = Objects.requireNonNull(observeDevice, "observeDevice");
         this.recordPort = Objects.requireNonNull(recordPort, "recordPort");
         this.audioSourceCatalog = Objects.requireNonNull(audioSourceCatalog, "audioSourceCatalog");
+        this.capabilityCatalog = capabilityCatalog;
     }
 
     public void start() {
@@ -54,7 +66,7 @@ public final class DeviceBluetoothAudioSourceBridge {
         synchronized (lock) {
             active = subscription;
             subscription = null;
-            registeredLabel = null;
+            registeredKey = null;
         }
         if (active != null) {
             active.unsubscribe();
@@ -68,8 +80,8 @@ public final class DeviceBluetoothAudioSourceBridge {
         if (!ready) {
             boolean wasRegistered;
             synchronized (lock) {
-                wasRegistered = registeredLabel != null;
-                registeredLabel = null;
+                wasRegistered = registeredKey != null;
+                registeredKey = null;
             }
             if (wasRegistered) {
                 audioSourceCatalog.unregisterExternal(BluetoothStreamAudioSource.SOURCE_ID);
@@ -77,13 +89,20 @@ public final class DeviceBluetoothAudioSourceBridge {
             return;
         }
         String label = resolveLabel(snapshot);
+        boolean activeDuplex = capabilityCatalog != null
+                && snapshot.modelId() != null
+                && capabilityCatalog.model(snapshot.modelId())
+                        .map(p -> p.supports(DeviceCapabilityIds.ACTIVE_DUPLEX))
+                        .orElse(false);
+        String key = label + "|" + activeDuplex;
         synchronized (lock) {
-            if (label.equals(registeredLabel)) {
+            if (key.equals(registeredKey)) {
                 return;
             }
-            registeredLabel = label;
+            registeredKey = key;
         }
-        audioSourceCatalog.registerExternal(new BluetoothStreamAudioSource(recordPort, label));
+        audioSourceCatalog.registerExternal(
+                new BluetoothStreamAudioSource(recordPort, label, activeDuplex));
     }
 
     @NonNull

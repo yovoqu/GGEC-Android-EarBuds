@@ -219,7 +219,7 @@ public final class AiCallViewModel extends ViewModel {
     public void setOutputMode(@NonNull AiCallUiState.OutputMode mode) {
         Objects.requireNonNull(mode, "mode");
         AiCallUiState current = requireState(uiState.getValue());
-        if (mode == AiCallUiState.OutputMode.BLUETOOTH && current.bluetoothMicSelected()) {
+        if (mode == AiCallUiState.OutputMode.BLUETOOTH && !current.bluetoothOutputAvailable()) {
             return;
         }
         AiVoiceSession running;
@@ -301,7 +301,8 @@ public final class AiCallViewModel extends ViewModel {
         }
         userRequestedPhoneMic = false;
         setMicMuted(false);
-        if (requireState(uiState.getValue()).outputMode() == AiCallUiState.OutputMode.BLUETOOTH) {
+        if (requireState(uiState.getValue()).outputMode() == AiCallUiState.OutputMode.BLUETOOTH
+                && !bt.descriptor().activeDuplex()) {
             setOutputMode(AiCallUiState.OutputMode.SPEAKER);
         }
         selectAudioSource(AiAudioSource.BLUETOOTH_STREAM_ID);

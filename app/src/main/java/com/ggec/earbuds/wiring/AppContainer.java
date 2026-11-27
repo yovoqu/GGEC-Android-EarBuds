@@ -44,7 +44,8 @@ public final class AppContainer {
         // release() 里的停止因此一定与这次启动成对。
         device.start();
         bluetoothAudioBridge = new DeviceBluetoothAudioSourceBridge(
-                device.observeDevice(), device.recordPort(), ai.audioSourceCatalog());
+                device.observeDevice(), device.recordPort(), ai.audioSourceCatalog(),
+                device.capabilityCatalog());
         bluetoothAudioBridge.start();
         // 下载引擎是更新能力的底层依赖（启动检查会 queryAll 恢复断点续传任务），
         // 必须在 AppUpdateProviders 之前装好，否则 YoDownload.queryAll 抛未初始化。

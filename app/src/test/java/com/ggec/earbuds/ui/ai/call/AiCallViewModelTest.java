@@ -384,6 +384,43 @@ public class AiCallViewModelTest {
         assertSame(external, fakeSession.customSource);
     }
 
+    @Test
+    public void bluetoothOutputAllowedWithActiveDuplexBluetoothMic() {
+        // HS02（activeDuplex=false）：选中蓝牙 MIC 时不可选蓝牙播放
+        FakeAudioSource hs02Mic = new FakeAudioSource(BluetoothStreamAudioSource.SOURCE_ID,
+                AiAudioSource.Kind.BLUETOOTH_BLE, "HS02", 16_000);
+        sourceCatalog.registerExternal(hs02Mic);
+        viewModel.selectBluetoothMic();
+        assertFalse(viewModel.uiState().getValue().bluetoothOutputAvailable());
+        viewModel.setOutputMode(AiCallUiState.OutputMode.BLUETOOTH);
+        assertEquals(AiCallUiState.OutputMode.SPEAKER, viewModel.uiState().getValue().outputMode());
+
+        // WY01（activeDuplex=true）：选中蓝牙 MIC 时仍可选蓝牙播放
+        AiAudioSource wy01Mic = new AiAudioSource() {
+            private final Descriptor d = new Descriptor(
+                    BluetoothStreamAudioSource.SOURCE_ID,
+                    Kind.BLUETOOTH_BLE, "WY01", 16_000, true);
+
+            @Override
+            public Descriptor descriptor() {
+                return d;
+            }
+
+            @Override
+            public void start(Listener listener) {
+            }
+
+            @Override
+            public void stop() {
+            }
+        };
+        sourceCatalog.registerExternal(wy01Mic);
+        viewModel.selectBluetoothMic();
+        assertTrue(viewModel.uiState().getValue().bluetoothOutputAvailable());
+        viewModel.setOutputMode(AiCallUiState.OutputMode.BLUETOOTH);
+        assertEquals(AiCallUiState.OutputMode.BLUETOOTH, viewModel.uiState().getValue().outputMode());
+    }
+
     private static final class FakeTicker implements AiCallViewModel.Ticker {
         Runnable scheduled;
 

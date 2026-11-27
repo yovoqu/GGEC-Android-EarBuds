@@ -97,11 +97,18 @@ public final class BluetoothStreamAudioSource implements AiAudioSource {
     };
 
     public BluetoothStreamAudioSource(@NonNull RecordPort recordPort, @NonNull String label) {
+        this(recordPort, label, false);
+    }
+
+    public BluetoothStreamAudioSource(@NonNull RecordPort recordPort,
+                                      @NonNull String label,
+                                      boolean activeDuplex) {
         this.recordPort = Objects.requireNonNull(recordPort, "recordPort");
         String safeLabel = Objects.requireNonNull(label, "label").isBlank()
                 ? "Bluetooth Device"
                 : label.strip();
-        this.descriptor = new Descriptor(SOURCE_ID, Kind.BLUETOOTH_BLE, safeLabel, STREAM_SAMPLE_RATE_HZ);
+        this.descriptor = new Descriptor(
+                SOURCE_ID, Kind.BLUETOOTH_BLE, safeLabel, STREAM_SAMPLE_RATE_HZ, activeDuplex);
     }
 
     @NonNull

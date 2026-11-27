@@ -41,7 +41,15 @@ public interface AiAudioSource {
             @NonNull String id,
             @NonNull Kind kind,
             @NonNull String label,
-            int preferredSampleRateHz) {
+            int preferredSampleRateHz,
+            boolean activeDuplex) {
+
+        public Descriptor(@NonNull String id,
+                          @NonNull Kind kind,
+                          @NonNull String label,
+                          int preferredSampleRateHz) {
+            this(id, kind, label, preferredSampleRateHz, false);
+        }
 
         public Descriptor {
             Objects.requireNonNull(id, "id");
