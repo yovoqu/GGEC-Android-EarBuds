@@ -28,6 +28,7 @@ public class WyApiContractTest {
         assertTrue(catalog.supports("WY01", WyDevice.Capability.AI_CHAT));
         assertTrue(catalog.supports("WY01", WyDevice.Capability.DEVICE_INFO));
         assertTrue(catalog.supports("WY01", WyDevice.Capability.BATTERY));
+        assertTrue(catalog.supports("WY01", WyDevice.Capability.ACTIVE_DUPLEX));
     }
 
     @Test

@@ -42,7 +42,7 @@ public final class WyDevice {
 
     /** 能力 id。机型是否支持，看 {@link Product#capabilities()}。 */
     public enum Capability {
-        CONNECTION, RECORD_STREAM, AI_CHAT, DEVICE_INFO, BATTERY
+        CONNECTION, RECORD_STREAM, AI_CHAT, DEVICE_INFO, BATTERY, ACTIVE_DUPLEX
     }
 
     /** 设置分组。 */

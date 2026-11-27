@@ -29,7 +29,8 @@ public final class WyCatalogImpl {
             WyDevice.Capability.RECORD_STREAM,
             WyDevice.Capability.AI_CHAT,
             WyDevice.Capability.DEVICE_INFO,
-            WyDevice.Capability.BATTERY
+            WyDevice.Capability.BATTERY,
+            WyDevice.Capability.ACTIVE_DUPLEX
     ));
 
     private final Map<String, WyDevice.Product> products = new LinkedHashMap<>();
@@ -84,6 +85,15 @@ public final class WyCatalogImpl {
                 WyDevice.Capability.BATTERY,
                 "耳机电量",
                 WyDevice.Group.ABOUT,
+                WyDevice.Form.GATE,
+                List.of(),
+                Optional.empty()
+        ));
+
+        features.put(WyDevice.Capability.ACTIVE_DUPLEX, new WyDevice.Feature(
+                WyDevice.Capability.ACTIVE_DUPLEX,
+                "主动上下行",
+                WyDevice.Group.RECORD,
                 WyDevice.Form.GATE,
                 List.of(),
                 Optional.empty()
