@@ -158,7 +158,7 @@ public final class DeviceGraph {
         return new Factory<>(RecordViewModel.class,
                 () -> new RecordViewModel(recordPort, observeDevice,
                         new AndroidPcmPlayback(appContext), new MainThreadTicker(),
-                        SystemClock::elapsedRealtime));
+                        SystemClock::elapsedRealtime, catalog));
     }
 
     @NonNull

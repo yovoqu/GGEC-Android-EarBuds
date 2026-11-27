@@ -41,6 +41,8 @@ public final class DeviceCapabilityIds {
     public static final String RECORD_STREAM = "RECORD_STREAM";
     public static final String RECORD_LIST = "RECORD_LIST";
     public static final String RECORD_TRANSFER = "RECORD_TRANSFER";
+    /** 主动上下行（录音时仍允许通过该耳机设备播放音频）。 */
+    public static final String ACTIVE_DUPLEX = "ACTIVE_DUPLEX";
 
     /** 关于页里的 APP 级设备管理（重命名别名 / 忘记设备），不来自 biz 能力目录。 */
     public static final String DEVICE_MANAGEMENT = "APP_DEVICE_MANAGEMENT";

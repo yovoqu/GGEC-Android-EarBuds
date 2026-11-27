@@ -1,16 +1,20 @@
 package com.ggec.earbuds.ui.device.record;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 
+import com.ggec.earbuds.domain.device.model.ConnectionState;
 import com.ggec.earbuds.domain.device.model.DeviceSnapshot;
+import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordMode;
 import com.ggec.earbuds.domain.device.model.RecordOutcome;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 import com.ggec.earbuds.domain.device.model.SyncProgressState;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.PcmPlaybackPort;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.port.Subscription;
@@ -20,8 +24,11 @@ import com.ggec.earbuds.domain.device.record.RecordFailure;
 import com.ggec.earbuds.domain.device.record.RecordMachine;
 import com.ggec.earbuds.domain.device.record.RecordState;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
+import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.yovo.lib_common.event.OneShotLiveData;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -60,6 +67,8 @@ public final class RecordViewModel extends ViewModel {
     private final PcmPlaybackPort playbackPort;
     private final Ticker ticker;
     private final LongSupplier clock;
+    @Nullable
+    private final DeviceCapabilityCatalog catalog;
     private final RecordUiMapper mapper = new RecordUiMapper();
 
     private final MutableLiveData<RecordUiState> uiState;
@@ -69,6 +78,7 @@ public final class RecordViewModel extends ViewModel {
     private final RecordPort.StreamRecordObserver streamObserver = new PortStreamObserver();
 
     private RecordState state = RecordState.initial();
+    private volatile boolean activeDuplexSupported;
     private boolean deviceTicking;
     private boolean playbackTicking;
 
@@ -98,11 +108,21 @@ public final class RecordViewModel extends ViewModel {
                            @NonNull PcmPlaybackPort playbackPort,
                            @NonNull Ticker ticker,
                            @NonNull LongSupplier clock) {
+        this(recordPort, observeDevice, playbackPort, ticker, clock, null);
+    }
+
+    public RecordViewModel(@NonNull RecordPort recordPort,
+                           @NonNull ObserveDevice observeDevice,
+                           @NonNull PcmPlaybackPort playbackPort,
+                           @NonNull Ticker ticker,
+                           @NonNull LongSupplier clock,
+                           @Nullable DeviceCapabilityCatalog catalog) {
         this.recordPort = Objects.requireNonNull(recordPort, "recordPort");
         this.observeDevice = Objects.requireNonNull(observeDevice, "observeDevice");
         this.playbackPort = Objects.requireNonNull(playbackPort, "playbackPort");
         this.ticker = Objects.requireNonNull(ticker, "ticker");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.catalog = catalog;
         this.uiState = new MutableLiveData<>(mapper.map(state));
 
         this.deviceSubscription = observeDevice.execute(this::onDeviceSnapshot);
@@ -184,13 +204,22 @@ public final class RecordViewModel extends ViewModel {
 
     private void dispatch(@NonNull RecordEvent event) {
         RecordMachine.Transition transition;
+        boolean wasRecording;
+        boolean nowRecording;
+        boolean playbackActive;
         synchronized (this) {
+            wasRecording = isRecordingActiveLocked();
             transition = RecordMachine.reduce(state, event);
             state = transition.state();
+            nowRecording = isRecordingActiveLocked();
+            playbackActive = state.playback().active();
             uiState.postValue(mapper.map(state));
         }
         for (RecordEffect effect : transition.effects()) {
             execute(effect);
+        }
+        if (playbackActive && wasRecording != nowRecording && !(event instanceof RecordEvent.PlaybackRouteChanged)) {
+            publishPlaybackRoute();
         }
         syncTicker();
     }
@@ -257,6 +286,10 @@ public final class RecordViewModel extends ViewModel {
             }
             case RecordEffect.StopPlayback ignored -> playbackPort.stop();
             case RecordEffect.SelectPlaybackOutput select -> {
+                if (shouldExcludeEarbudsOutput() && isEarbudsOutputId(select.outputId())) {
+                    publishPlaybackRoute();
+                    return;
+                }
                 playbackPort.selectOutput(select.outputId());
                 publishPlaybackRoute();
             }
@@ -266,11 +299,61 @@ public final class RecordViewModel extends ViewModel {
         }
     }
 
-    /** 把端口此刻的输出设备事实回灌状态机：当前设备 + 可选设备列表。 */
+    /** 把端口此刻的输出设备事实回灌状态机：不支持主动上下行的机型在录音期间屏蔽耳机输出。 */
     private void publishPlaybackRoute() {
+        List<PlaybackOutput> raw = playbackPort.availableOutputs();
+        PlaybackOutput current = playbackPort.currentOutput();
+        if (shouldExcludeEarbudsOutput()) {
+            List<PlaybackOutput> filtered = new ArrayList<>(raw.size());
+            for (PlaybackOutput output : raw) {
+                if (output.kind() != PlaybackOutput.Kind.EARBUDS) {
+                    filtered.add(output);
+                }
+            }
+            if (current == null || current.kind() == PlaybackOutput.Kind.EARBUDS) {
+                PlaybackOutput fallback = findFallbackOutput(filtered);
+                if (fallback != null) {
+                    playbackPort.selectOutput(fallback.id());
+                    current = fallback;
+                } else {
+                    current = null;
+                }
+            }
+            dispatch(new RecordEvent.PlaybackRouteChanged(
+                    Optional.ofNullable(current), filtered));
+            return;
+        }
         dispatch(new RecordEvent.PlaybackRouteChanged(
-                Optional.ofNullable(playbackPort.currentOutput()),
-                playbackPort.availableOutputs()));
+                Optional.ofNullable(current), raw));
+    }
+
+    private synchronized boolean isRecordingActiveLocked() {
+        return state.stream().active()
+                || state.deviceRecord().phase() == RecordState.DeviceRecordPhase.STARTING
+                || state.deviceRecord().phase() == RecordState.DeviceRecordPhase.ACTIVE;
+    }
+
+    private boolean shouldExcludeEarbudsOutput() {
+        return isRecordingActiveLocked() && !activeDuplexSupported;
+    }
+
+    private boolean isEarbudsOutputId(@NonNull String outputId) {
+        for (PlaybackOutput output : playbackPort.availableOutputs()) {
+            if (output.id().equals(outputId) && output.kind() == PlaybackOutput.Kind.EARBUDS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Nullable
+    private static PlaybackOutput findFallbackOutput(@NonNull List<PlaybackOutput> outputs) {
+        for (PlaybackOutput output : outputs) {
+            if (output.kind() == PlaybackOutput.Kind.PHONE_SPEAKER) {
+                return output;
+            }
+        }
+        return outputs.isEmpty() ? null : outputs.get(0);
     }
 
     /**
@@ -285,10 +368,17 @@ public final class RecordViewModel extends ViewModel {
     }
 
     private void onDeviceSnapshot(@NonNull DeviceSnapshot snapshot) {
-        switch (snapshot.connection()) {
-            case READY -> dispatch(new RecordEvent.Connected(
+        if (snapshot.connection() == ConnectionState.READY) {
+            activeDuplexSupported = catalog != null
+                    && snapshot.modelId() != null
+                    && catalog.model(snapshot.modelId())
+                            .map(p -> p.supports(DeviceCapabilityIds.ACTIVE_DUPLEX))
+                            .orElse(false);
+            dispatch(new RecordEvent.Connected(
                     recordPort.supportedModes(), snapshot.recordFiles()));
-            case IDLE, CONNECTING, DISCONNECTED -> dispatch(new RecordEvent.Disconnected());
+        } else {
+            activeDuplexSupported = false;
+            dispatch(new RecordEvent.Disconnected());
         }
     }
 

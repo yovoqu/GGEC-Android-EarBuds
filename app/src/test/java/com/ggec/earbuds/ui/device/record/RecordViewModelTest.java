@@ -7,6 +7,10 @@ import static org.junit.Assert.assertTrue;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityGroup;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityKind;
+import com.ggec.earbuds.domain.device.model.DeviceCapabilityView;
+import com.ggec.earbuds.domain.device.model.DeviceProfileView;
 import com.ggec.earbuds.domain.device.model.DeviceState;
 import com.ggec.earbuds.domain.device.model.PlaybackOutput;
 import com.ggec.earbuds.domain.device.model.RecordMode;
@@ -14,6 +18,7 @@ import com.ggec.earbuds.domain.device.model.RecordOutcome;
 import com.ggec.earbuds.domain.device.model.SavedRecordItem;
 import com.ggec.earbuds.domain.device.model.StreamAudioSessionState;
 import com.ggec.earbuds.domain.device.model.SyncProgressState;
+import com.ggec.earbuds.domain.device.port.DeviceCapabilityCatalog;
 import com.ggec.earbuds.domain.device.port.PcmPlaybackPort;
 import com.ggec.earbuds.domain.device.port.RecordPort;
 import com.ggec.earbuds.domain.device.record.RecordEffect;
@@ -22,6 +27,7 @@ import com.ggec.earbuds.domain.device.record.RecordState;
 import com.ggec.earbuds.domain.device.session.DeviceSession;
 import com.ggec.earbuds.domain.device.usecase.ObserveDevice;
 import com.ggec.earbuds.testing.device.FakeDeviceLinkPort;
+import com.ggec.earbuds.ui.device.DeviceCapabilityIds;
 import com.ggec.earbuds.ui.device.DeviceProfileFixtures;
 
 import org.junit.Before;
@@ -31,6 +37,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -213,6 +220,9 @@ public final class RecordViewModelTest {
     }
 
     private static final class FakePlayback implements PcmPlaybackPort {
+        List<PlaybackOutput> outputs = List.of();
+        PlaybackOutput current;
+        final List<String> selectedIds = new ArrayList<>();
 
         @Override
         public void play(String filePath, Runnable onCompletion) {
@@ -244,22 +254,92 @@ public final class RecordViewModelTest {
 
         @Override
         public List<PlaybackOutput> availableOutputs() {
-            return List.of();
+            return outputs;
         }
 
         @Override
         public PlaybackOutput currentOutput() {
-            return null;
+            return current;
         }
 
         @Override
         public boolean selectOutput(String outputId) {
+            selectedIds.add(outputId);
+            for (PlaybackOutput o : outputs) {
+                if (o.id().equals(outputId)) {
+                    current = o;
+                    return true;
+                }
+            }
             return false;
         }
 
         @Override
         public void release() {
         }
+    }
+
+    @Test
+    public void hs02WithoutActiveDuplexExcludesEarbudsWhileRecording() {
+        PlaybackOutput earbuds = new PlaybackOutput("bt-1", PlaybackOutput.Kind.EARBUDS, "HS02");
+        PlaybackOutput speaker = new PlaybackOutput("spk-1", PlaybackOutput.Kind.PHONE_SPEAKER, "Speaker");
+        playback.outputs = List.of(earbuds, speaker);
+        playback.current = earbuds;
+
+        DeviceCapabilityCatalog catalog = duplexCatalog("WY01", "HS02");
+        DeviceSession session = new DeviceSession(link);
+        RecordViewModel vm = new RecordViewModel(recordPort, new ObserveDevice(session),
+                playback, ticker, () -> nowMs, catalog);
+
+        link.emit(DeviceProfileFixtures.ready("HS02", new DeviceState(Map.of())));
+        vm.startStreamRecord();
+        vm.togglePlayLocalFile(new SavedRecordItem("/tmp/a.pcm", "a.pcm", 100L, 1000L, 1000L));
+
+        RecordUiState ui = vm.uiState().getValue();
+        assertEquals(List.of(speaker), ui.playbackOutputs());
+        assertEquals(Optional.of(speaker), ui.playbackOutput());
+        assertTrue(playback.selectedIds.contains("spk-1"));
+    }
+
+    @Test
+    public void wy01WithActiveDuplexAllowsEarbudsWhileRecording() {
+        PlaybackOutput earbuds = new PlaybackOutput("bt-1", PlaybackOutput.Kind.EARBUDS, "WY01");
+        PlaybackOutput speaker = new PlaybackOutput("spk-1", PlaybackOutput.Kind.PHONE_SPEAKER, "Speaker");
+        playback.outputs = List.of(earbuds, speaker);
+        playback.current = earbuds;
+
+        DeviceCapabilityCatalog catalog = duplexCatalog("WY01", "HS02");
+        DeviceSession session = new DeviceSession(link);
+        RecordViewModel vm = new RecordViewModel(recordPort, new ObserveDevice(session),
+                playback, ticker, () -> nowMs, catalog);
+
+        link.emit(DeviceProfileFixtures.ready("WY01", new DeviceState(Map.of())));
+        vm.startStreamRecord();
+        vm.togglePlayLocalFile(new SavedRecordItem("/tmp/a.pcm", "a.pcm", 100L, 1000L, 1000L));
+
+        RecordUiState ui = vm.uiState().getValue();
+        assertEquals(List.of(earbuds, speaker), ui.playbackOutputs());
+        assertEquals(Optional.of(earbuds), ui.playbackOutput());
+    }
+
+    private static DeviceCapabilityCatalog duplexCatalog(String duplexModel, String nonDuplexModel) {
+        DeviceProfileView duplexProfile = new DeviceProfileView(duplexModel, duplexModel, List.of(
+                new DeviceCapabilityView(DeviceCapabilityIds.ACTIVE_DUPLEX, "主动上下行",
+                        DeviceCapabilityGroup.RECORD, DeviceCapabilityKind.GATE,
+                        List.of(), Optional.empty())));
+        DeviceProfileView nonDuplexProfile = new DeviceProfileView(nonDuplexModel, nonDuplexModel, List.of());
+        List<DeviceProfileView> all = List.of(duplexProfile, nonDuplexProfile);
+        return new DeviceCapabilityCatalog() {
+            @Override
+            public List<DeviceProfileView> models() {
+                return all;
+            }
+
+            @Override
+            public Optional<DeviceProfileView> model(String modelId) {
+                return all.stream().filter(p -> p.modelId().equals(modelId)).findFirst();
+            }
+        };
     }
 
     private static final class FakeRecordPort implements RecordPort {
